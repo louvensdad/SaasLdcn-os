@@ -1,0 +1,17 @@
+{
+  "id": "portfolio",
+  "name": "React Portfolio",
+  "description": "Deterministic React portfolio foundation for showcase sites.",
+  "runtime": "local_static_v0",
+  "metadata": {
+    "framework": "react",
+    "mode": "static",
+    "no_ai": true,
+    "no_agents": true
+  },
+  "variables_schema": {
+    "project.name": "string",
+    "project.locale": "string"
+  },
+  "supported_capabilities": ["seo", "i18n"]
+}

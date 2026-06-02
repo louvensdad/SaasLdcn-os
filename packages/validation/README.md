@@ -1,0 +1,12 @@
+# Validation Package
+
+status: reserved
+
+purpose: Placeholder for shared validation logic after contracts stabilize.
+
+not active in runtime: true
+
+planned phase: package consolidation.
+
+do not import from here yet: true
+

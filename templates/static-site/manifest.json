@@ -1,0 +1,17 @@
+{
+  "id": "static-site",
+  "name": "Vanilla Static Site",
+  "description": "Deterministic vanilla HTML/CSS static site foundation.",
+  "runtime": "local_static_v0",
+  "metadata": {
+    "framework": "vanilla",
+    "mode": "static",
+    "no_ai": true,
+    "no_agents": true
+  },
+  "variables_schema": {
+    "project.name": "string",
+    "project.locale": "string"
+  },
+  "supported_capabilities": ["seo", "analytics", "i18n", "search"]
+}

@@ -1,0 +1,31 @@
+{
+  "contractVersion": "1.0.0",
+  "generated_at": "2026-06-02T18:05:07+00:00",
+  "no_agents": true,
+  "no_ai": true,
+  "offline_first": true,
+  "project": {
+    "archetype": "landing_page",
+    "architecture": "modular_monolith",
+    "framework": "Next.js",
+    "id": "project_8aefeb0dbb34",
+    "language": "TypeScript",
+    "locale": "pt-BR",
+    "name": "ldcn-local-landing",
+    "slug": "ldcn-local-landing",
+    "summary": "ldcn-local-landing generated from deterministic LDCN OS static foundations."
+  },
+  "runtime": "local_static_v0",
+  "template": {
+    "deterministic": true,
+    "id": "landing-page",
+    "name": "Next.js Static Landing",
+    "offline_first": true,
+    "runtime": "local_static_v0",
+    "supported_capabilities": [
+      "seo",
+      "analytics",
+      "i18n"
+    ]
+  }
+}

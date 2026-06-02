@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="{{project.locale}}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{project.name}} Docs</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <aside>
+      <strong>{{project.name}}</strong>
+      <a href="#overview">Overview</a>
+      <a href="#scope">Scope</a>
+      <a href="#handoff">Handoff</a>
+    </aside>
+    <main>
+      <section id="overview">
+        <p class="eyebrow">{{template.name}}</p>
+        <h1>{{project.name}} Documentation</h1>
+        <p>{{project.summary}}</p>
+      </section>
+      <section id="scope">
+        <h2>Selected Scope</h2>
+        <pre>{{scope.capability_list}}</pre>
+      </section>
+      <section id="handoff">
+        <h2>Handoff</h2>
+        <p>Readiness: {{handoff.readiness}}</p>
+      </section>
+    </main>
+  </body>
+</html>

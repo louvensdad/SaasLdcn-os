@@ -1,0 +1,14 @@
+import './globals.css';
+
+export const metadata = {
+  title: '{{project.name}}',
+  description: '{{project.summary}}',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="{{project.locale}}">
+      <body>{children}</body>
+    </html>
+  );
+}

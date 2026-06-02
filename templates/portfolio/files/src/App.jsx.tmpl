@@ -1,0 +1,23 @@
+import './styles.css';
+
+const projects = ['Signature work', 'Selected case study', 'Contact-ready profile'];
+
+export default function App() {
+  return (
+    <main>
+      <header>
+        <p>{{template.name}}</p>
+        <h1>{{project.name}}</h1>
+        <span>{{project.framework}} / {{project.archetype}}</span>
+      </header>
+      <section>
+        {projects.map((project) => (
+          <article key={project}>
+            <h2>{project}</h2>
+            <p>Static portfolio block assembled from deterministic LDCN OS templates.</p>
+          </article>
+        ))}
+      </section>
+    </main>
+  );
+}

@@ -1,0 +1,11 @@
+:root { font-family: Inter, system-ui, sans-serif; background: #101214; color: #f4f0e8; }
+body { margin: 0; }
+main { min-height: 100vh; padding: 72px 7vw; }
+header { max-width: 900px; }
+header p { color: #91c7b1; text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 700; }
+h1 { font-size: clamp(44px, 9vw, 104px); line-height: .92; margin: 14px 0; letter-spacing: 0; }
+header span { color: #c9c1b2; }
+section { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 64px; }
+article { border: 1px solid #34383b; border-radius: 8px; padding: 24px; background: #181b1e; }
+article p { color: #c9c1b2; line-height: 1.6; }
+@media (max-width: 760px) { section { grid-template-columns: 1fr; } }

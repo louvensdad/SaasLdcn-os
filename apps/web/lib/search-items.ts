@@ -1,0 +1,240 @@
+import type { ThemeId } from '@/lib/themes';
+
+export type SearchItemKind = 'page' | 'theme' | 'documentation' | 'action' | 'registry' | 'specialist';
+
+export interface SearchItem {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly kind: SearchItemKind;
+  readonly keywords: readonly string[];
+  readonly href?: string;
+  readonly themeId?: ThemeId;
+  readonly actionId?: 'open-notifications' | 'open-settings' | 'open-example-modal' | 'open-example-drawer';
+}
+
+export const SEARCH_ITEMS: readonly SearchItem[] = [
+  {
+    id: 'page-dashboard',
+    title: 'Dashboard',
+    description: 'Open the operational overview.',
+    kind: 'page',
+    href: '/dashboard',
+    keywords: ['home', 'overview', 'cockpit', 'metrics'],
+  },
+  {
+    id: 'page-projects',
+    title: 'Projects',
+    description: 'Open the project registry.',
+    kind: 'page',
+    href: '/projects',
+    keywords: ['registry', 'project', 'delivery'],
+  },
+  {
+    id: 'page-templates',
+    title: 'Templates',
+    description: 'Open template previews.',
+    kind: 'page',
+    href: '/templates',
+    keywords: ['blueprint', 'template', 'preview'],
+  },
+  {
+    id: 'page-wizard',
+    title: 'Wizard',
+    description: 'Open the stack setup flow.',
+    kind: 'page',
+    href: '/wizard',
+    keywords: ['setup', 'flow', 'stack'],
+  },
+  {
+    id: 'page-documentation',
+    title: 'Documentation',
+    description: 'Open platform documentation.',
+    kind: 'documentation',
+    href: '/documentation',
+    keywords: ['docs', 'architecture', 'quality', 'standards'],
+  },
+  {
+    id: 'page-settings',
+    title: 'Settings',
+    description: 'Open runtime preferences.',
+    kind: 'page',
+    href: '/settings',
+    keywords: ['preferences', 'theme', 'configuration'],
+  },
+  {
+    id: 'theme-obsidian-blue',
+    title: 'Obsidian Blue',
+    description: 'Switch to the default blue premium theme.',
+    kind: 'theme',
+    themeId: 'obsidian-blue',
+    keywords: ['theme', 'blue', 'obsidian'],
+  },
+  {
+    id: 'theme-graphite-cyan',
+    title: 'Graphite Cyan',
+    description: 'Switch to the graphite cyan theme.',
+    kind: 'theme',
+    themeId: 'graphite-cyan',
+    keywords: ['theme', 'cyan', 'graphite'],
+  },
+  {
+    id: 'theme-titanium-violet',
+    title: 'Titanium Violet',
+    description: 'Switch to the titanium violet theme.',
+    kind: 'theme',
+    themeId: 'titanium-violet',
+    keywords: ['theme', 'violet', 'titanium'],
+  },
+  {
+    id: 'theme-emerald-matrix',
+    title: 'Emerald Matrix',
+    description: 'Switch to the emerald matrix theme.',
+    kind: 'theme',
+    themeId: 'emerald-matrix',
+    keywords: ['theme', 'emerald', 'green', 'matrix'],
+  },
+  {
+    id: 'theme-crimson-pulse',
+    title: 'Crimson Pulse',
+    description: 'Switch to the crimson pulse theme.',
+    kind: 'theme',
+    themeId: 'crimson-pulse',
+    keywords: ['theme', 'crimson', 'red', 'pulse'],
+  },
+  {
+    id: 'action-open-notifications',
+    title: 'Open Notification Center',
+    description: 'Open foundation-only notification center.',
+    kind: 'action',
+    actionId: 'open-notifications',
+    keywords: ['notification', 'bell', 'center', 'updates'],
+  },
+  {
+    id: 'action-open-settings',
+    title: 'Open Settings',
+    description: 'Navigate to settings and theme controls.',
+    kind: 'action',
+    actionId: 'open-settings',
+    href: '/settings',
+    keywords: ['settings', 'preferences', 'theme'],
+  },
+  {
+    id: 'action-example-modal',
+    title: 'Open Example Modal',
+    description: 'Preview accessible modal foundation.',
+    kind: 'action',
+    actionId: 'open-example-modal',
+    keywords: ['modal', 'confirmation', 'dialog', 'overlay'],
+  },
+  {
+    id: 'action-example-drawer',
+    title: 'Open Example Drawer',
+    description: 'Preview right drawer foundation.',
+    kind: 'action',
+    actionId: 'open-example-drawer',
+    keywords: ['drawer', 'details', 'panel', 'overlay'],
+  },
+] as const;
+
+export function createTechnologySearchItems(
+  items: readonly {
+    id: string;
+    name: string;
+    description: string;
+    category?: string;
+    keywords?: readonly string[];
+    prefix: string;
+  }[],
+): readonly SearchItem[] {
+  return items.map((item) => ({
+    id: `${item.prefix}-${item.id}`,
+    title: item.name,
+    description: item.category ? `${item.description} (${item.category})` : item.description,
+    kind: 'registry',
+    href: '/wizard',
+    keywords: [item.prefix, item.id, item.name.toLowerCase(), ...(item.category ? [item.category] : []), ...(item.keywords ?? [])],
+  }));
+}
+
+export function createArchetypeSearchItems(
+  archetypes: readonly {
+    id: string;
+    name: string;
+    description: string;
+    category: string;
+  }[],
+): readonly SearchItem[] {
+  return createTechnologySearchItems(
+    archetypes.map((archetype) => ({ ...archetype, prefix: 'archetype' })),
+  );
+}
+
+export function createCapabilitySearchItems(
+  capabilities: readonly {
+    id: string;
+    name: string;
+    description: string;
+    category: string;
+  }[],
+): readonly SearchItem[] {
+  return createTechnologySearchItems(
+    capabilities.map((capability) => ({ ...capability, prefix: 'capability' })),
+  );
+}
+
+export function createFrameworkSpecialistSearchItems(
+  frameworks: readonly {
+    id: string;
+    name: string;
+    description: string;
+    framework_type: string;
+    language_id: string;
+    runtime_id: string;
+  }[],
+): readonly SearchItem[] {
+  return frameworks.map((framework) => ({
+    id: `framework-specialist-${framework.id}`,
+    title: `${framework.name} specialist profile`,
+    description: `Architecture guidance, tradeoffs and readiness for ${framework.name}.`,
+    kind: 'specialist',
+    href: '/wizard',
+    keywords: [
+      'specialist',
+      'framework specialist',
+      framework.id,
+      framework.name.toLowerCase(),
+      framework.description,
+      framework.framework_type,
+      framework.language_id,
+      framework.runtime_id,
+      'readiness',
+      'architecture guidance',
+      'capabilities',
+    ],
+  }));
+}
+
+export function filterSearchItems(
+  query: string,
+  items: readonly SearchItem[] = SEARCH_ITEMS,
+): readonly SearchItem[] {
+  const normalized = query.trim().toLowerCase();
+
+  if (!normalized) {
+    return items;
+  }
+
+  return items.filter((item) => {
+    const haystack = [
+      item.title,
+      item.description,
+      item.kind,
+      ...item.keywords,
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes(normalized);
+  });
+}

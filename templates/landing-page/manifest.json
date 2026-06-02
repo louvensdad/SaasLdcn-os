@@ -1,0 +1,18 @@
+{
+  "id": "landing-page",
+  "name": "Next.js Static Landing",
+  "description": "Deterministic static landing page foundation for LDCN OS local generation V0.",
+  "runtime": "local_static_v0",
+  "metadata": {
+    "framework": "nextjs",
+    "mode": "static",
+    "no_ai": true,
+    "no_agents": true
+  },
+  "variables_schema": {
+    "project.name": "string",
+    "project.locale": "string",
+    "scope.capabilities": "string"
+  },
+  "supported_capabilities": ["seo", "analytics", "i18n"]
+}
