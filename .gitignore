@@ -1,10 +1,47 @@
+# Python
+**pycache**/
+*.pyc
+.pytest_cache/
+
+# Node
 node_modules/
 .next/
 dist/
 build/
 coverage/
 *.tsbuildinfo
+
+# Playwright
+playwright-report/
+test-results/
+
+# Logs
+logs/
 *.log
+*.err
+
+# Generated downloads
+prepared-downloads/
+downloads/
+
+# Runtime temp
+tmp/
+temp/
+
+# Screenshots
+reports/screenshots/
+
+# Browser/runtime report caches
+reports/cdp-search-profile*/
+
+# Generated archives
+*.zip
+
+# Environment
 .env
 .env.*
 !.env.example
+
+# OS
+.DS_Store
+Thumbs.db
