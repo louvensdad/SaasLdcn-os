@@ -12,7 +12,12 @@ class GoogleAdapter(LLMAdapter):
     Translation contract:
     - system goes as `system_instruction` (separate field, not a message).
     - creativity -> `temperature` in the generation config.
-    - JSON via `response_mime_type=application/json` + `response_schema`.
+    - JSON via `response_mime_type=application/json` (JSON mode). We deliberately
+      do NOT forward a `response_schema`: Pydantic's JSON Schema carries
+      `additionalProperties`/`$ref`/`$defs`, which the Gemini *Developer API*
+      (AI Studio) rejects ("additionalProperties is only supported in ...
+      Enterprise Agent Platform mode"). The prompt already demands strict JSON
+      adherence to the schema, and we validate the parsed result with Pydantic.
     - `max_output_tokens` for the output cap.
     """
 
@@ -45,8 +50,9 @@ class GoogleAdapter(LLMAdapter):
             "max_output_tokens": req.max_output_tokens,
         }
         if req.json_schema:
+            # JSON mode only — no response_schema (see class docstring): the raw
+            # Pydantic schema is incompatible with the Gemini Developer API.
             config["response_mime_type"] = "application/json"
-            config["response_schema"] = req.json_schema
         return config
 
     def complete(self, model: str, req: LLMRequest, *, api_key: str | None = None) -> LLMResponse:

@@ -268,7 +268,9 @@ def test_google_build_config():
 
     cfg_json = adapter._build_config(_req(json_schema={"type": "object"}))
     assert cfg_json["response_mime_type"] == "application/json"
-    assert cfg_json["response_schema"] == {"type": "object"}
+    # No response_schema: the raw Pydantic schema (additionalProperties/$ref) is
+    # rejected by the Gemini Developer API; we use JSON mode + Pydantic validation.
+    assert "response_schema" not in cfg_json
 
 
 def test_router_dispatches_by_provider():
