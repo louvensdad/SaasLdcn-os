@@ -1,8 +1,10 @@
 # LDCN OS
 
-LDCN OS is a V1 Foundation workspace for planning, validating, previewing, and locally generating governed software project foundations. The current release focuses on deterministic architecture contracts, registry-backed wizard flows, Prompt Master previews, Gatekeeper checks, safe local generation previews, and clear governance surfaces.
+LDCN OS is a workspace for planning, validating, generating, and modernizing governed software project foundations. It combines deterministic architecture contracts, registry-backed wizard flows, Prompt Master previews, Gatekeeper checks, and clear governance surfaces with an AI meta-factory that turns an idea into a full, secure project — and a brownfield path that ingests and refactors an existing codebase.
 
-V1 Foundation does not run real AI agents, does not call model providers, does not export to Git providers, and does not analyze PDF contracts. Those secure extensions are documented and exposed only as inactive placeholders.
+**AI with graceful degrade.** The multi-provider LLM router (Anthropic / OpenAI / Google) is optional: when no provider key/SDK is reachable, the system falls back to a deterministic high-fidelity Mock generator instead of failing. The degrade is always signalled to the UI (`degraded` / "Modo Mock"), never disguised as a real model run. Set `LDCN_FORCE_MOCK=1` for a fully offline demo.
+
+PDF contract analysis remains an inactive placeholder.
 
 ## Stack
 
@@ -15,7 +17,11 @@ V1 Foundation does not run real AI agents, does not call model providers, does n
 ## Architecture
 
 - `apps/api`: FastAPI app, routes, schemas, engines, services, tests
+  - `app/engines/llm`: multi-provider LLM router + adapters + deterministic mock fallback
+  - meta-factory: orchestrator → mega-prompt → API-first agent pipeline (`/meta-factory/*`, incl. SSE `generate/stream`)
+  - modernize: brownfield ingestion (ZIP/Git) → diagnosis → migration plan → refactor (`/modernize/*`)
 - `apps/web`: Next.js shell, pages, API client, UI components, frontend tests
+  - `/meta-factory` (greenfield, real-time progress) and `/modernize` (brownfield) surfaces
 - `packages/contracts`: shared TypeScript contracts used by the frontend and documentation
 - `templates`: local static/site/app templates used by local generation V0
 - `generated-projects`: active, archived, and temp generated output areas
@@ -58,17 +64,13 @@ npm run build
 
 ## Current Limitations
 
-- No real AI/model provider calls.
-- No real agent runtime.
-- No production authentication or authorization.
-- No GitHub/GitLab export.
-- No PDF parsing, OCR, or contract analysis.
-- Local generation supports deterministic foundation templates only.
-- Placeholder secure extension endpoints return HTTP `501`.
+- Real model calls require provider SDKs + API keys (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`); without them, the deterministic Mock generator serves instead (signalled as `degraded`).
+- Authentication is JWT-based but not yet hardened for multi-instance production (in-memory rate limiter, ephemeral secret unless `LDCN_SECRET_KEY` is set).
+- Brownfield git ingestion requires a `git` binary on the server; only https/ssh remotes are accepted.
+- No PDF parsing, OCR, or contract analysis (inactive placeholder).
 
 ## Planned Features
 
 - User Key Boost for temporary user-owned AI keys.
-- Git Export to GitHub/GitLab after Security Gate validation.
 - PDF Contract Input for embedded-text contract understanding.
 - Future agent/service boundaries under `future`.

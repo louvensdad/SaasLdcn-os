@@ -1586,7 +1586,7 @@ export default function WizardPage() {
                 {
                   label: t('wizard.hero.complexity'),
                   value: String(backendBlueprint?.complexity_profile.overall_score ?? complexityEstimate.score),
-                  detail: backendBlueprint?.complexity_profile.risk_level ?? complexityEstimate.label,
+                  detail: backendBlueprint?.complexity_profile.risk_level ?? t(complexityEstimate.key),
                   tone: 'accent2',
                 },
                 {
