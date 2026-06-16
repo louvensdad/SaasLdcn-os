@@ -138,6 +138,7 @@ test('architecture page renders active and future maps', async ({ page }) => {
   await page.goto(`${WEB_BASE}/architecture`);
 
   await expect(page.getByRole('heading', { name: 'Architecture', exact: true })).toBeVisible();
+  await page.locator('summary').filter({ hasText: 'Advanced architecture' }).click();
   await expect(page.getByText('Active Runtime Map')).toBeVisible();
   await expect(page.getByText('Future Modules Map')).toBeVisible();
   await expect(page.getByText('Engine Overview')).toBeVisible();

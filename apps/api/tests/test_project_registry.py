@@ -14,6 +14,16 @@ def _build_blueprint(client, *, valid: bool = True):
         "endpoint_ids": ["auth.login", "auth.register", "auth.me", "analytics.overview", "ai.chat"] if valid else ["auth.login", "ai.chat"],
         "locale": "pt-BR",
         "generation_mode": "local_build_90",
+        "project_requirements": {
+            "project_goal": "Deliver a governed registry application.",
+            "business_context": "Commercial SaaS operation.",
+            "target_users": ["operators", "customers"],
+            "business_rules": ["Authorized users manage records."],
+            "entities": ["User", "Subscription"],
+            "workflows": ["Customer request is reviewed by an operator."],
+            "constraints": ["Protect personal data."],
+            "delivery_target": "github",
+        },
     }
     response = client.post("/api/blueprints/preview", json=payload)
     assert response.status_code == 200

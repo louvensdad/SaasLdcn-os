@@ -6,7 +6,19 @@ from pydantic import Field
 
 from app.schemas.common import ApiModel
 from app.schemas.dependency_graph import DependencyGraphSnapshot
+from app.schemas.localization import GeneratedProjectLocaleProfile
 from app.schemas.registry import Architecture, Archetype, BusinessModule, Capability, Endpoint, Framework, Language, Runtime
+
+
+class ProjectRequirements(ApiModel):
+    project_goal: str = ""
+    business_context: str = ""
+    target_users: list[str] = Field(default_factory=list)
+    business_rules: list[str] = Field(default_factory=list)
+    entities: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    delivery_target: Literal["zip", "github", "gitlab", "both"] | None = None
 
 
 class BlueprintPreviewRequest(ApiModel):
@@ -22,6 +34,7 @@ class BlueprintPreviewRequest(ApiModel):
     infrastructure_component_ids: list[str] = Field(default_factory=list)
     locale: str = Field(min_length=1)
     generation_mode: str = Field(min_length=1)
+    project_requirements: ProjectRequirements = Field(default_factory=ProjectRequirements)
 
 
 class BlueprintTechnologyGraph(ApiModel):
@@ -92,7 +105,9 @@ class ProjectBlueprint(ApiModel):
     blueprint_id: str
     project_name: str
     locale: str
+    locale_profile: GeneratedProjectLocaleProfile = Field(default_factory=GeneratedProjectLocaleProfile)
     generation_mode: str
+    project_requirements: ProjectRequirements = Field(default_factory=ProjectRequirements)
     technology_graph: BlueprintTechnologyGraph
     architecture_profile: BlueprintArchitectureProfile
     archetype_profile: BlueprintArchetypeProfile

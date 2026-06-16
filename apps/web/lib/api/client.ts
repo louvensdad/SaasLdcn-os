@@ -1,8 +1,18 @@
 import { apiEndpoints } from '@/lib/api/endpoints';
 import type {
+  AccountDeletionResponse,
   Architecture,
   Archetype,
   ApiErrorPayload,
+  AuthResponse,
+  ConsentRequest,
+  DataExportResponse,
+  PasswordChangeRequest,
+  RefreshRequest,
+  UserLoginRequest,
+  UserPublic,
+  UserRegisterRequest,
+  UserUpdateRequest,
   BusinessModule,
   BlueprintPreviewPayload,
   Capability,
@@ -31,6 +41,13 @@ import type {
   GatekeeperPreviewPayload,
   GeneratedFileContentResponse,
   GeneratedProjectFilesResponse,
+  GeneratedProjectQualityResponse,
+  GitExportJob,
+  GitExportRequest,
+  GitExportStatusResponse,
+  GitProviderConnection,
+  RepositoryCreateRequest,
+  RepositoryDelivery,
   GatekeeperReport,
   HealthResponse,
   Language,
@@ -64,11 +81,19 @@ import type {
   ArchitectureTopology,
   ArchitecturalGraph,
   ArchitecturalGraphPayload,
+  BackendGenerationManifest,
+  BackendGenerationRequest,
+  BackendGenerationTemplateCatalog,
   DependencyVisualization,
   DeploymentTopology,
   InfrastructureTopology,
   LocalGenerationRequest,
   LocalGenerationResult,
+  LocaleDefinition,
+  LocalizationPreviewRequest,
+  LocalizationPreviewResponse,
+  LocalizationValidationResponse,
+  TranslationDictionary,
   PreparedDownloadResponse,
   ReadinessZone,
   RiskZone,
@@ -107,6 +132,93 @@ export class ApiClientError extends Error {
 
 const API_REQUEST_TIMEOUT_MS = 5_000;
 
+// In-memory holder for the current session's access token. The auth store is
+// responsible for calling `setAccessToken` after login/refresh and clearing
+// it on logout. Kept out of localStorage/sessionStorage so the token never
+// outlives the in-memory session (refresh tokens are what persist).
+let accessToken: string | null = null;
+
+// Called when a request fails with 401 while an access token was attached,
+// i.e. the session has expired or been revoked server-side. The auth store
+// wires this up to attempt a token refresh / redirect to login.
+let onUnauthorized: (() => void) | null = null;
+let refreshPromise: Promise<string | null> | null = null;
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(apiEndpoints.auth.refresh, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (!response.ok) return null;
+      const payload = (await response.json()) as AuthResponse;
+      accessToken = payload.tokens.access_token;
+      return accessToken;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+export async function downloadAuthenticated(
+  url: string,
+  filename: string,
+  allowRefresh = true,
+): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
+  const response = await fetch(url, {
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    if (response.status === 401 && allowRefresh && await refreshAccessToken()) {
+      return downloadAuthenticated(url, filename, false);
+    }
+    if (response.status === 401 && accessToken) onUnauthorized?.();
+    const body = await parseResponseBody(response);
+    throw new ApiClientError({
+      status: response.status,
+      code: isApiErrorPayload(body) ? body.error.code : `http_${response.status}`,
+      message: isApiErrorPayload(body)
+        ? body.error.message
+        : `HTTP ${response.status} download failed.`,
+    });
+  }
+
+  const blobUrl = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(blobUrl);
+}
+
 function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
   if (!value || typeof value !== 'object') return false;
   return 'error' in value;
@@ -123,17 +235,28 @@ async function parseResponseBody(response: Response) {
   return text ? { message: text } : null;
 }
 
-export async function apiRequest<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+export async function apiRequest<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  allowRefresh = true,
+): Promise<T> {
   const controller = new AbortController();
   const timeoutId = globalThis.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  const hasAuthHeader = 'Authorization' in headers;
+  if (accessToken && !hasAuthHeader) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
 
   try {
     const response = await fetch(input, {
       ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(init?.headers ?? {}),
-      },
+      headers,
+      credentials: 'include',
       cache: 'no-store',
       signal: controller.signal,
     });
@@ -141,6 +264,22 @@ export async function apiRequest<T>(input: RequestInfo | URL, init?: RequestInit
     const body = await parseResponseBody(response);
 
     if (!response.ok) {
+      if (
+        response.status === 401
+        && allowRefresh
+        && (accessToken || hasAuthHeader)
+        && String(input) !== apiEndpoints.auth.refresh
+      ) {
+        const refreshedToken = await refreshAccessToken();
+        if (refreshedToken) {
+          return apiRequest<T>(input, init, false);
+        }
+      }
+
+      if (response.status === 401 && (accessToken || hasAuthHeader)) {
+        onUnauthorized?.();
+      }
+
       const fallbackMessage = `HTTP ${response.status} request failed.`;
       if (isApiErrorPayload(body)) {
         throw new ApiClientError({
@@ -202,6 +341,38 @@ function skillSelectionParams(selection: Partial<ValidateSelectionPayload> & { p
 }
 
 export const apiClient = {
+  register: (body: UserRegisterRequest) =>
+    apiRequest<AuthResponse>(apiEndpoints.auth.register, { method: 'POST', body: JSON.stringify(body) }),
+  login: (body: UserLoginRequest) =>
+    apiRequest<AuthResponse>(apiEndpoints.auth.login, { method: 'POST', body: JSON.stringify(body) }),
+  refreshSession: (body?: RefreshRequest) =>
+    apiRequest<AuthResponse>(apiEndpoints.auth.refresh, {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+  logout: (body?: RefreshRequest) =>
+    apiRequest<void>(apiEndpoints.auth.logout, {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+  getCurrentUser: () => apiRequest<UserPublic>(apiEndpoints.auth.me),
+  updateCurrentUser: (body: UserUpdateRequest) =>
+    apiRequest<UserPublic>(apiEndpoints.auth.me, { method: 'PATCH', body: JSON.stringify(body) }),
+  changePassword: (body: PasswordChangeRequest) =>
+    apiRequest<void>(apiEndpoints.auth.changePassword, { method: 'POST', body: JSON.stringify(body) }),
+  recordConsent: (body: ConsentRequest) =>
+    apiRequest<UserPublic>(apiEndpoints.auth.consent, { method: 'POST', body: JSON.stringify(body) }),
+  exportMyData: () => apiRequest<DataExportResponse>(apiEndpoints.auth.exportData),
+  deleteAccount: () => apiRequest<AccountDeletionResponse>(apiEndpoints.auth.me, { method: 'DELETE' }),
+  getLocales: () => apiRequest<LocaleDefinition[]>(apiEndpoints.localization.locales),
+  getLocalizationDictionary: (locale: string) => apiRequest<TranslationDictionary>(apiEndpoints.localization.dictionary(locale)),
+  previewLocalization: (body: LocalizationPreviewRequest) =>
+    apiRequest<LocalizationPreviewResponse>(apiEndpoints.localization.preview, { method: 'POST', body: JSON.stringify(body) }),
+  validateLocalization: (locale: string, requiredKeys: string[] = []) =>
+    apiRequest<LocalizationValidationResponse>(apiEndpoints.localization.validate, {
+      method: 'POST',
+      body: JSON.stringify({ locale, required_keys: requiredKeys, fallback_locale: 'en-US' }),
+    }),
   getHealth: () => apiRequest<HealthResponse>(apiEndpoints.health),
   getStacks: () => apiRequest<Stack[]>(apiEndpoints.stacks),
   getRegistryStacks: () => apiRequest<Stack[]>(apiEndpoints.registry.stacks),
@@ -352,6 +523,20 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  previewBackendGeneration: (body: BackendGenerationRequest) =>
+    apiRequest<BackendGenerationManifest>(apiEndpoints.backendGeneration.preview, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  runBackendGeneration: (body: BackendGenerationRequest) =>
+    apiRequest<BackendGenerationManifest>(apiEndpoints.backendGeneration.run, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getBackendGenerationTemplates: () =>
+    apiRequest<BackendGenerationTemplateCatalog>(apiEndpoints.backendGeneration.templates),
+  getBackendGenerationStatus: (generationId: string) =>
+    apiRequest<BackendGenerationManifest>(apiEndpoints.backendGeneration.status(generationId)),
   runLocalGeneration: (body: LocalGenerationRequest) =>
     apiRequest<LocalGenerationResult>(apiEndpoints.localGeneration.run, {
       method: 'POST',
@@ -364,6 +549,47 @@ export const apiClient = {
   prepareGeneratedDownload: (projectId: string) =>
     apiRequest<PreparedDownloadResponse>(apiEndpoints.localGeneration.prepareDownload(projectId), {
       method: 'POST',
+    }),
+  runGeneratedProjectQualityCheck: (projectId: string) =>
+    apiRequest<GeneratedProjectQualityResponse>(apiEndpoints.generatedProjectQuality.run(projectId), {
+      method: 'POST',
+    }),
+  previewGitExport: (body: GitExportRequest) =>
+    apiRequest<GitExportJob>(apiEndpoints.gitExport.preview, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  exportToGithub: (body: GitExportRequest) =>
+    apiRequest<GitExportJob>(apiEndpoints.gitExport.github, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  exportToGitlab: (body: GitExportRequest) =>
+    apiRequest<GitExportJob>(apiEndpoints.gitExport.gitlab, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getGitExportStatus: (exportId: string) =>
+    apiRequest<GitExportStatusResponse>(apiEndpoints.gitExport.status(exportId)),
+  getGitProviderConnection: (provider: 'github' | 'gitlab') =>
+    apiRequest<GitProviderConnection>(apiEndpoints.gitProviders.connection(provider)),
+  connectGitProvider: (provider: 'github' | 'gitlab', token: string) =>
+    apiRequest<GitProviderConnection>(apiEndpoints.gitProviders.connect(provider), {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  validateGitProvider: (provider: 'github' | 'gitlab') =>
+    apiRequest<GitProviderConnection>(apiEndpoints.gitProviders.validate(provider), {
+      method: 'POST',
+    }),
+  disconnectGitProvider: (provider: 'github' | 'gitlab') =>
+    apiRequest<GitProviderConnection>(apiEndpoints.gitProviders.connection(provider), {
+      method: 'DELETE',
+    }),
+  createRepository: (body: RepositoryCreateRequest) =>
+    apiRequest<RepositoryDelivery>(apiEndpoints.gitProviders.repositories, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
   getTemplates: () => apiRequest<Template[]>(apiEndpoints.templates),
   getSkills: () => apiRequest<SkillCatalogResponse>(apiEndpoints.skills),

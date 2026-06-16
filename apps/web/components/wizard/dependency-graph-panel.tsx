@@ -6,6 +6,7 @@ import { ChevronDown, GitBranch, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { ComplexityRadar, OperationalRail, ReadinessRing } from '@/components/visual/engineering-surface';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 import type {
   DependencyGraphSnapshot,
@@ -23,9 +24,9 @@ interface DependencyGraphPanelProps {
   readonly errorMessage?: string | null;
 }
 
-function compact(items: readonly string[], limit = 3) {
+function compact(items: readonly string[], overflowLabel: string, limit = 3) {
   if (items.length <= limit) return items;
-  return [...items.slice(0, limit), `+${items.length - limit} more`];
+  return [...items.slice(0, limit), `+${items.length - limit} ${overflowLabel}`];
 }
 
 function bandTone(value?: string | null) {
@@ -43,6 +44,7 @@ export function DependencyGraphPanel({
   isLoading,
   errorMessage,
 }: DependencyGraphPanelProps) {
+  const { t } = useLocale();
   const [isOpen, setIsOpen] = useState(true);
 
   useEffect(() => {
@@ -71,8 +73,8 @@ export function DependencyGraphPanel({
               <ShieldAlert className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">Dependency graph</p>
-              <h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">Dependency graph unavailable</h3>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('dependencyGraph.title')}</p>
+              <h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{t('dependencyGraph.unavailable')}</h3>
             </div>
           </div>
           <div className="rounded-[var(--radius-xl)] border border-rose-500/20 bg-rose-500/5 p-4 text-sm leading-6 text-rose-100">
@@ -98,26 +100,26 @@ export function DependencyGraphPanel({
             </div>
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">Dependency graph</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('dependencyGraph.title')}</p>
                 <Badge className="border-white/10 text-[color:var(--muted)]">
-                  {snapshot?.propagation.required_node_ids.length ?? 0} required
+                  {t('dependencyGraph.requiredCount', { count: snapshot?.propagation.required_node_ids.length ?? 0 })}
                 </Badge>
               </div>
-              <h3 className="text-xl font-semibold text-[color:var(--text)]">Propagation and impact surface</h3>
+              <h3 className="text-xl font-semibold text-[color:var(--text)]">{t('dependencyGraph.surface')}</h3>
               <p className="max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
-                The engine propagates architectural dependencies, mutates recommendations, recalculates readiness and exposes risk before any generation step.
+                {t('dependencyGraph.description')}
               </p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Badge className="border-white/10 text-[color:var(--muted)]">{snapshot?.nodes.length ?? 0} nodes</Badge>
+            <Badge className="border-white/10 text-[color:var(--muted)]">{t('dependencyGraph.nodeCount', { count: snapshot?.nodes.length ?? 0 })}</Badge>
             <ChevronDown className={cn('h-4 w-4 text-[color:var(--muted)] transition-transform', isOpen ? 'rotate-180' : 'rotate-0')} />
           </div>
         </button>
 
         {isLoading && !snapshot ? (
           <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4 text-sm text-[color:var(--muted)]">
-            Loading dependency propagation...
+            {t('dependencyGraph.loading')}
           </div>
         ) : null}
 
@@ -126,37 +128,37 @@ export function DependencyGraphPanel({
             <div className="grid gap-4">
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Impact</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">{t('dependencyGraph.impact')}</p>
                   <p className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{impact?.score ?? snapshot?.impact_profile.score ?? 0}</p>
-                  <p className="mt-1 text-xs text-[color:var(--muted)]">{impact?.operational_burden ?? snapshot?.impact_profile.operational_burden ?? 'pending'}</p>
+                  <p className="mt-1 text-xs text-[color:var(--muted)]">{impact?.operational_burden ?? snapshot?.impact_profile.operational_burden ?? t('common.pending')}</p>
                 </div>
                 <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Readiness</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">{t('dependencyGraph.readiness')}</p>
                   <p className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{readiness?.score ?? snapshot?.readiness_profile.score ?? 0}</p>
-                  <p className="mt-1 text-xs text-[color:var(--muted)]">{readiness?.production_readiness ?? snapshot?.readiness_profile.production_readiness ?? 0}/100 production</p>
+                  <p className="mt-1 text-xs text-[color:var(--muted)]">{t('dependencyGraph.productionScore', { score: readiness?.production_readiness ?? snapshot?.readiness_profile.production_readiness ?? 0 })}</p>
                 </div>
                 <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Risk</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">{t('dependencyGraph.risk')}</p>
                   <p className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{risks?.score ?? snapshot?.risk_profile.score ?? 0}</p>
-                  <p className="mt-1 text-xs text-[color:var(--muted)]">{risks?.risk_level ?? snapshot?.risk_profile.risk_level ?? 'pending'}</p>
+                  <p className="mt-1 text-xs text-[color:var(--muted)]">{risks?.risk_level ?? snapshot?.risk_profile.risk_level ?? t('common.pending')}</p>
                 </div>
                 <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Mutations</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">{t('dependencyGraph.mutations')}</p>
                   <p className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{snapshot?.mutations.length ?? 0}</p>
-                  <p className="mt-1 text-xs text-[color:var(--muted)]">Architecture mutation feed</p>
+                  <p className="mt-1 text-xs text-[color:var(--muted)]">{t('dependencyGraph.mutationFeed')}</p>
                 </div>
               </div>
 
               <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Node graph</p>
-                    <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">Topology relationships and propagated dependencies</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('dependencyGraph.nodeGraph')}</p>
+                    <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{t('dependencyGraph.nodeGraphDetail')}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge className="border-white/10 text-[color:var(--muted)]">Required {snapshot?.propagation.required_node_ids.length ?? 0}</Badge>
-                    <Badge className="border-white/10 text-[color:var(--muted)]">Recommended {snapshot?.propagation.recommended_node_ids.length ?? 0}</Badge>
-                    <Badge className="border-white/10 text-[color:var(--muted)]">Warnings {snapshot?.propagation.warnings.length ?? 0}</Badge>
+                    <Badge className="border-white/10 text-[color:var(--muted)]">{t('dependencyGraph.requiredCount', { count: snapshot?.propagation.required_node_ids.length ?? 0 })}</Badge>
+                    <Badge className="border-white/10 text-[color:var(--muted)]">{t('dependencyGraph.recommendedCount', { count: snapshot?.propagation.recommended_node_ids.length ?? 0 })}</Badge>
+                    <Badge className="border-white/10 text-[color:var(--muted)]">{t('dependencyGraph.warningCount', { count: snapshot?.propagation.warnings.length ?? 0 })}</Badge>
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
@@ -211,7 +213,7 @@ export function DependencyGraphPanel({
                       })}
                       <circle cx="80" cy="110" r="24" fill="color-mix(in srgb, var(--accent) 20%, transparent)" stroke="var(--accent)" />
                       <text x="80" y="116" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">
-                        Graph
+                        {t('dependencyGraph.graph')}
                       </text>
                     </svg>
                     <div className="flex flex-wrap gap-2">
@@ -225,28 +227,28 @@ export function DependencyGraphPanel({
 
                   <div className="space-y-3">
                     <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.03] p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Propagated dependencies</p>
+                      <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">{t('dependencyGraph.propagated')}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {compact(snapshot?.propagation.required_node_ids ?? [], 3).map((item) => (
+                        {compact(snapshot?.propagation.required_node_ids ?? [], t('common.more'), 3).map((item) => (
                           <Badge key={item} className="border-white/10 text-[color:var(--text)]">
-                            Required {item}
+                            {t('common.required')} {item}
                           </Badge>
                         ))}
-                        {compact(snapshot?.propagation.recommended_node_ids ?? [], 3).map((item) => (
+                        {compact(snapshot?.propagation.recommended_node_ids ?? [], t('common.more'), 3).map((item) => (
                           <Badge key={item} className="border-white/10 bg-white/[0.04] text-[color:var(--muted)]">
-                            Rec {item}
+                            {t('dependencyGraph.rec')} {item}
                           </Badge>
                         ))}
-                        {compact(snapshot?.propagation.conflicting_node_ids ?? [], 2).map((item) => (
+                        {compact(snapshot?.propagation.conflicting_node_ids ?? [], t('common.more'), 2).map((item) => (
                           <Badge key={item} className="border-white/10 text-[color:var(--warning)]">
-                            Conflict {item}
+                            {t('dependencyGraph.conflict')} {item}
                           </Badge>
                         ))}
                       </div>
                     </div>
 
                     <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.03] p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Architecture mutation feed</p>
+                      <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">{t('dependencyGraph.mutationFeed')}</p>
                       <div className="mt-3 space-y-2">
                         {mutationFeed.map((mutation) => (
                           <div key={mutation.id} className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-3">
@@ -266,38 +268,38 @@ export function DependencyGraphPanel({
 
             <div className="grid gap-4">
               <ReadinessRing
-                title="Readiness radar"
+                title={t('dependencyGraph.readinessRadar')}
                 value={readiness?.score ?? snapshot?.readiness_profile.score ?? 0}
-                label={((readiness?.production_readiness ?? snapshot?.readiness_profile.production_readiness ?? 0) >= 70) ? 'Ready' : 'Needs work'}
-                caption="Readiness changes as dependencies propagate."
+                label={((readiness?.production_readiness ?? snapshot?.readiness_profile.production_readiness ?? 0) >= 70) ? t('dependencyGraph.ready') : t('dependencyGraph.needsWork')}
+                caption={t('dependencyGraph.readinessDetail')}
                 tone={bandTone(readiness?.warnings?.length ? 'high' : readiness?.blockers?.length ? 'high' : 'low') as 'accent' | 'accent2' | 'success' | 'warning' | 'danger' | 'muted'}
               />
 
               <OperationalRail
-                title="Impact surface"
+                title={t('dependencyGraph.impactSurface')}
                 items={[
-                  { label: 'Infra', value: impact?.infra_complexity ?? snapshot?.impact_profile.infra_complexity ?? 'pending' },
-                  { label: 'Deploy', value: impact?.deployment_complexity ?? snapshot?.impact_profile.deployment_complexity ?? 'pending' },
-                  { label: 'Ops burden', value: impact?.operational_burden ?? snapshot?.impact_profile.operational_burden ?? 'pending' },
-                  { label: 'Scale', value: impact?.scaling_complexity ?? snapshot?.impact_profile.scaling_complexity ?? 'pending' },
+                  { label: t('dependencyGraph.infra'), value: impact?.infra_complexity ?? snapshot?.impact_profile.infra_complexity ?? t('common.pending') },
+                  { label: t('dependencyGraph.deploy'), value: impact?.deployment_complexity ?? snapshot?.impact_profile.deployment_complexity ?? t('common.pending') },
+                  { label: t('dependencyGraph.opsBurden'), value: impact?.operational_burden ?? snapshot?.impact_profile.operational_burden ?? t('common.pending') },
+                  { label: t('dependencyGraph.scale'), value: impact?.scaling_complexity ?? snapshot?.impact_profile.scaling_complexity ?? t('common.pending') },
                 ]}
               />
 
               <ComplexityRadar
-                title="Impact radar"
+                title={t('dependencyGraph.impactRadar')}
                 score={impact?.score ?? snapshot?.impact_profile.score ?? 0}
                 axes={[
-                  { label: 'Infrastructure', value: impact?.score ?? snapshot?.impact_profile.score ?? 0 },
-                  { label: 'Deployment', value: snapshot?.impact_profile.score ?? 0 },
-                  { label: 'Ops', value: readiness?.score ? Math.max(10, 100 - readiness.score) : 38 },
-                  { label: 'Security', value: risks?.score ? Math.max(10, 100 - risks.score) : 36 },
+                  { label: t('dependencyGraph.infrastructure'), value: impact?.score ?? snapshot?.impact_profile.score ?? 0 },
+                  { label: t('dependencyGraph.deployment'), value: snapshot?.impact_profile.score ?? 0 },
+                  { label: t('dependencyGraph.ops'), value: readiness?.score ? Math.max(10, 100 - readiness.score) : 38 },
+                  { label: t('dependencyGraph.security'), value: risks?.score ? Math.max(10, 100 - risks.score) : 36 },
                 ]}
               />
 
               <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.03] p-4">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-[color:var(--accent)]" />
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Risk surface</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('dependencyGraph.riskSurface')}</p>
                 </div>
                 <div className="mt-3 space-y-2">
                   {(risks?.issues ?? snapshot?.risk_profile.issues ?? []).slice(0, 3).map((issue) => (
@@ -310,7 +312,7 @@ export function DependencyGraphPanel({
                     </div>
                   ))}
                   {!((risks?.issues ?? snapshot?.risk_profile.issues ?? []).length) ? (
-                    <p className="text-sm text-[color:var(--muted)]">No critical risks were detected for the current dependency set.</p>
+                    <p className="text-sm text-[color:var(--muted)]">{t('dependencyGraph.noCriticalRisks')}</p>
                   ) : null}
                 </div>
               </div>

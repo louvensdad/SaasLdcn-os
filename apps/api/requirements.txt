@@ -3,3 +3,21 @@ uvicorn==0.47.0
 pydantic==2.13.4
 pytest==9.0.3
 httpx==0.28.1
+
+# Auth / security (Fase B): JWT access+refresh tokens and password hashing.
+pyjwt>=2.8.0
+passlib[bcrypt]>=1.7.4
+# passlib 1.7.4 is not compatible with bcrypt 5.x.
+bcrypt>=3.1.0,<4.1
+
+# Encryption at rest for stored provider credentials (Gap C).
+cryptography>=42.0.0
+
+# Multi-LLM router (apps/api/app/engines/llm). All provider SDKs are imported
+# lazily inside their adapters, so the app and test suite import cleanly without
+# them. Install only the providers you actually route to, and set the matching
+# API key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY).
+# anthropic requires a recent build for adaptive thinking / output_config / fallbacks.
+anthropic>=0.69.0
+openai>=1.50.0
+google-genai>=0.3.0

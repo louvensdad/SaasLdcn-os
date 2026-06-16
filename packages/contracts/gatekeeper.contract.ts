@@ -1,5 +1,6 @@
 import type { ProjectBlueprint } from './blueprint.contract';
 import type { PromptMasterDocument } from './prompt-master.contract';
+import type { GeneratedProjectLocaleProfile } from './locale.contract';
 import type { ContractId, ContractMetadata } from './shared.contract';
 
 export type GatekeeperSeverity = 'info' | 'warning' | 'critical';
@@ -8,6 +9,10 @@ export type GatekeeperDecision = 'approved' | 'approved_with_warnings' | 'blocke
 
 export type GatekeeperCheckId =
   | 'technology_graph_check'
+  | 'requirements_completeness_check'
+  | 'business_rules_check'
+  | 'entity_model_check'
+  | 'delivery_target_check'
   | 'architecture_compatibility_check'
   | 'business_module_check'
   | 'endpoint_plan_check'
@@ -45,6 +50,7 @@ export interface GatekeeperReport extends ContractMetadata {
   readonly blueprint_id: ProjectBlueprint['blueprint_id'] | string;
   readonly prompt_master_id: PromptMasterDocument['prompt_master_id'] | string;
   readonly decision: GatekeeperDecision;
+  readonly locale_profile: GeneratedProjectLocaleProfile;
   readonly summary: string;
   readonly blockers: readonly string[];
   readonly warnings: readonly string[];

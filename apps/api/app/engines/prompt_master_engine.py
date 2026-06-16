@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.data.foundation import CONTRACT_VERSION
+from app.engines.project_requirements_engine import normalize_project_requirements
 
 
 PROMPT_MASTER_ENGINE_VERSION = "0.1.0"
@@ -42,6 +43,7 @@ def build_prompt_master_document(blueprint: dict[str, Any]) -> dict[str, Any]:
         "blueprint_id": normalized_blueprint["blueprint_id"],
         "project_name": normalized_blueprint["project_name"],
         "locale": normalized_blueprint["locale"],
+        "locale_profile": normalized_blueprint["locale_profile"],
         "generation_mode": normalized_blueprint["generation_mode"],
         "source_blueprint_valid": normalized_blueprint["validation"]["valid"],
         "version": {
@@ -61,13 +63,21 @@ def build_prompt_master_document(blueprint: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_blueprint_input(blueprint: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(blueprint)
-    normalized["project_name"] = str(normalized.get("project_name") or "ldcn-blueprint").strip() or "ldcn-blueprint"
+    normalized["project_name"] = str(normalized.get("project_name") or "").strip()
     normalized["locale"] = str(normalized.get("locale") or "pt-BR").strip() or "pt-BR"
+    normalized["locale_profile"] = normalized.get("locale_profile") or {
+        "selected_locale": normalized["locale"],
+        "fallback_locale": "pt-BR",
+        "generated_docs_locale": normalized["locale"],
+        "generated_readme_locale": normalized["locale"],
+        "generated_comments_locale": normalized["locale"],
+    }
     normalized["generation_mode"] = str(normalized.get("generation_mode") or "foundation_only").strip() or "foundation_only"
     normalized["capabilities"] = list(normalized.get("capabilities") or [])
     normalized["business_modules"] = list(normalized.get("business_modules") or [])
     normalized["endpoints"] = list(normalized.get("endpoints") or [])
     normalized["recommendations"] = list(normalized.get("recommendations") or [])
+    normalized["project_requirements"] = normalize_project_requirements(normalized.get("project_requirements"))
     normalized["validation"] = normalized.get("validation") or {
         "valid": False,
         "errors": [{"code": "blueprint_missing_validation", "message": "Blueprint validation was not provided.", "related_item_ids": []}],
@@ -87,6 +97,7 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
     complexity = blueprint["complexity_profile"]
     validation = blueprint["validation"]
     recommendations = blueprint["recommendations"]
+    requirements = blueprint["project_requirements"]
 
     warnings = [item["message"] for item in validation["warnings"]]
     suggestion_lines = validation.get("suggestions", [])
@@ -96,16 +107,18 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
         _section(
             "product_intent",
             "Product Intent",
-            "High-level product scope inferred directly from the validated blueprint.",
+            "User-defined product scope preserved directly from the validated blueprint.",
             (
-                f"Build '{blueprint['project_name']}' as a {archetype_profile['name']} product in locale "
-                f"{blueprint['locale']} using the fixed technology path selected in the wizard."
+                f"Build '{blueprint['project_name']}' to achieve this goal: {requirements['project_goal']}. "
+                f"Business context: {requirements['business_context']}."
             ),
             [
+                f"Target users: {', '.join(requirements['target_users']) or 'missing'}",
+                f"Delivery target: {requirements['delivery_target'] or 'missing'}",
                 f"Archetype: {archetype_profile['name']} ({archetype_profile['category']})",
                 f"Generation mode: {blueprint['generation_mode']}",
                 f"Complexity score: {complexity['overall_score']} ({complexity['risk_level']})",
-                "Do not reinterpret the product category beyond the selected blueprint archetype.",
+                "Do not reinterpret or invent product requirements beyond the user-defined intent.",
             ],
         ),
         _section(
@@ -147,7 +160,8 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
             [
                 f"{module['name']} ({module['id']}): {module['description']}"
                 for module in modules
-            ] or ["No business modules were selected."],
+            ] + [f"Business rule: {rule}" for rule in requirements["business_rules"]]
+            + [f"Workflow: {workflow}" for workflow in requirements["workflows"]],
         ),
         _section(
             "endpoint_plan",
@@ -180,8 +194,10 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
             "data_model_hints",
             "Data Model Hints",
             "Non-authoritative data shape guidance for future design phases.",
-            "Use module and endpoint ownership to seed aggregates, entities, and access boundaries without generating a schema yet.",
-            _data_model_hints(modules, endpoints),
+            "Use user-defined entities plus module and endpoint ownership to seed aggregates, relationships, and access boundaries.",
+            [f"Required entity/data concept: {entity}" for entity in requirements["entities"]]
+            + _data_model_hints(modules, endpoints)
+            + [f"Constraint: {constraint}" for constraint in requirements["constraints"]],
         ),
         _section(
             "testing_requirements",

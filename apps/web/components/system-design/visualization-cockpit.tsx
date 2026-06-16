@@ -10,6 +10,7 @@ import { useReadinessZones } from '@/hooks/use-readiness-zones';
 import { useRiskZones } from '@/hooks/use-risk-zones';
 import { useRuntimeFlow } from '@/hooks/use-runtime-flow';
 import { useTeamTopology } from '@/hooks/use-team-topology';
+import { useLocale } from '@/hooks/use-locale';
 import { ArchitectureTopologySurface } from './architecture-topology-surface';
 import { DependencyGraphSurface } from './dependency-graph-surface';
 import { DeploymentTopologySurface } from './deployment-topology-surface';
@@ -20,6 +21,7 @@ import { RuntimeFlowSurface } from './runtime-flow-surface';
 import { TeamTopologySurface } from './team-topology-surface';
 
 export function VisualizationCockpit({ payload, offlineMessage }: { readonly payload: SystemDesignVisualizationPayload | null; readonly offlineMessage: string }) {
+  const { t } = useLocale();
   const architecture = useArchitectureTopology(payload);
   const infrastructure = useInfrastructureTopology(payload);
   const runtime = useRuntimeFlow(payload);
@@ -32,8 +34,8 @@ export function VisualizationCockpit({ payload, offlineMessage }: { readonly pay
   const error = queries.some((query) => query.isError);
   const loading = queries.some((query) => query.isLoading);
 
-  if (!payload || loading) return <Card className="grid gap-3 p-5" data-testid="visualization-cockpit"><p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Architecture Cockpit</p><p className="text-sm text-[color:var(--muted)]">{payload ? 'Synchronizing system design topology.' : 'Select an architecture path to activate topology visualization.'}</p></Card>;
-  if (error || !architecture.data || !infrastructure.data || !runtime.data || !dependency.data || !risks.data || !readiness.data || !team.data || !deployment.data) return <Card className="grid gap-3 p-5" data-testid="visualization-cockpit"><div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text)]"><Activity className="h-4 w-4 text-[color:var(--warning)]" />Architecture cockpit offline</div><p className="text-sm text-[color:var(--muted)]">{offlineMessage}</p></Card>;
+  if (!payload || loading) return <Card className="grid gap-3 p-5" data-testid="visualization-cockpit"><p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('systemDesign.cockpit')}</p><p className="text-sm text-[color:var(--muted)]">{payload ? t('systemDesign.synchronizing') : t('systemDesign.selectArchitecture')}</p></Card>;
+  if (error || !architecture.data || !infrastructure.data || !runtime.data || !dependency.data || !risks.data || !readiness.data || !team.data || !deployment.data) return <Card className="grid gap-3 p-5" data-testid="visualization-cockpit"><div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text)]"><Activity className="h-4 w-4 text-[color:var(--warning)]" />{t('systemDesign.offline')}</div><p className="text-sm text-[color:var(--muted)]">{offlineMessage}</p></Card>;
 
   return (
     <section className="grid gap-4" data-testid="visualization-cockpit">

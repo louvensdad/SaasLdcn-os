@@ -129,6 +129,26 @@ class ProjectRepository:
             ).fetchone()
         return self._row_to_project(dict(row)) if row else None
 
+    def get_project_by_blueprint_id(self, blueprint_id: str) -> dict[str, Any] | None:
+        with self.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COALESCE(project_id, project_key) AS project_id,
+                    project_key, project_name, status, locale, generation_mode,
+                    technology_graph_json, architecture_id, archetype_id,
+                    selected_capabilities_json, selected_business_modules_json, selected_endpoints_json,
+                    blueprint_snapshot_json, architectural_graph_snapshot_json, prompt_master_snapshot_json, gatekeeper_snapshot_json,
+                    readiness_status, contract_version, generated_project_path, created_at, updated_at
+                FROM projects
+                WHERE json_extract(blueprint_snapshot_json, '$.blueprint_id') = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (blueprint_id,),
+            ).fetchone()
+        return self._row_to_project(dict(row)) if row else None
+
     def save_from_wizard(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         blueprint = self._sanitize_snapshot(payload["blueprint"])

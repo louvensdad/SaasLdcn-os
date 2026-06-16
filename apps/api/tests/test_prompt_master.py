@@ -14,6 +14,16 @@ def _build_blueprint(client, *, valid: bool = True):
         "endpoint_ids": ["auth.login", "auth.register", "auth.me", "ai.chat", "analytics.overview"] if valid else ["auth.login", "ai.chat"],
         "locale": "pt-BR",
         "generation_mode": "local_build_90",
+        "project_requirements": {
+            "project_goal": "Deliver a governed enterprise application.",
+            "business_context": "Commercial SaaS operation.",
+            "target_users": ["operators", "customers"],
+            "business_rules": ["Authorized users manage records."],
+            "entities": ["User", "Subscription"],
+            "workflows": ["Customer request is reviewed by an operator."],
+            "constraints": ["Protect personal data."],
+            "delivery_target": "github",
+        },
     }
     response = client.post("/api/blueprints/preview", json=payload)
     assert response.status_code == 200
@@ -91,3 +101,38 @@ def test_prompt_master_preview_payload_without_blueprint_returns_422(client):
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_prompt_master_preview_by_blueprint_id(client):
+    blueprint = _build_blueprint(client)
+    prompt_master = _build_blueprint_prompt_master(client, blueprint)
+    gatekeeper = client.post(
+        "/api/gatekeeper/preview",
+        json={"blueprint": blueprint, "prompt_master": prompt_master},
+    ).json()
+    saved = client.post(
+        "/api/projects/save-from-wizard",
+        json={"blueprint": blueprint, "prompt_master": prompt_master, "gatekeeper": gatekeeper},
+    ).json()
+
+    response = client.post(
+        "/api/prompt-master/preview",
+        json={"blueprint_id": saved["blueprint_snapshot"]["blueprint_id"]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["blueprint_id"] == blueprint["blueprint_id"]
+    assert payload["project_name"] == blueprint["project_name"]
+
+
+def test_prompt_master_preview_by_unknown_blueprint_id_returns_404(client):
+    response = client.post("/api/prompt-master/preview", json={"blueprint_id": "does-not-exist"})
+
+    assert response.status_code == 404
+
+
+def _build_blueprint_prompt_master(client, blueprint: dict):
+    response = client.post("/api/prompt-master/preview", json={"blueprint": blueprint})
+    assert response.status_code == 200
+    return response.json()

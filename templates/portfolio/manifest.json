@@ -3,6 +3,8 @@
   "name": "React Portfolio",
   "description": "Deterministic React portfolio foundation for showcase sites.",
   "runtime": "local_static_v0",
+  "supported_locales": ["pt-BR", "en-US", "es-ES", "fr-FR"],
+  "fallback_locale": "en-US",
   "metadata": {
     "framework": "react",
     "mode": "static",

@@ -15,7 +15,7 @@ ITEMS: list[dict[str, Any]] = [
     ("roadmap_center", "Roadmap Center", "module", "IMPLEMENTED", "Governed roadmap grouped by lifecycle status."),
     ("local_generation", "Local Generation Download Preview", "engine", "IMPLEMENTED", "Safe local generation inspection and ZIP preparation."),
     ("user_key_boost", "User Key Boost", "extension", "PLANNED", "Temporary user-owned AI key boost is planned with no key material active in V1 Foundation."),
-    ("git_export", "Git Export", "extension", "PLANNED", "GitHub and GitLab export is planned behind generated-project and security-gate requirements."),
+    ("git_export", "Git Provider Export", "extension", "IMPLEMENTED", "Self-service GitHub and GitLab connection, repository creation, initial commit, and push."),
     ("pdf_contract_input", "PDF Contract Input", "extension", "PLANNED", "PDF contract context upload and embedded text extraction are planned without OCR or auto-generation."),
     ("agent_runtime", "Agent Runtime", "module", "FUTURE", "Agents remain explicitly out of scope."),
     ("external_marketplace", "External Marketplace", "registry", "FUTURE", "No external marketplace integration in current foundation."),

@@ -1,6 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import { webUrl } from './test-urls';
 
-const WIZARD_URL = 'http://127.0.0.1:3003/wizard';
+const WIZARD_URL = webUrl('/wizard');
+
+test.setTimeout(60_000);
 
 async function completeSelection(page: Page, options: {
   readonly languageId: string;
@@ -25,14 +28,14 @@ async function completeSelection(page: Page, options: {
     }
   });
   await page.goto(WIZARD_URL);
-  await page.getByRole('button', { name: /1Technology PathChoose language, runtime, and framework\./ }).click();
-  await page.locator('select').nth(0).selectOption(options.languageId);
-  await page.locator('select').nth(1).selectOption(options.runtimeId);
-  await page.locator('select').nth(2).selectOption(options.frameworkId);
+  await page.getByRole('button', { name: '1 Technology Path Choose language, runtime, and framework.' }).click();
+  await page.getByLabel('1. Language').selectOption(options.languageId);
+  await page.getByLabel('2. Runtime').selectOption(options.runtimeId);
+  await page.getByLabel('3. Framework').selectOption(options.frameworkId);
   await page.getByRole('button', { name: 'Continue to Architecture' }).click();
-  await page.locator('select').nth(0).selectOption(options.architectureId);
+  await page.getByLabel('4. Architecture').selectOption(options.architectureId);
   await page.getByRole('button', { name: 'Continue to Project Type' }).click();
-  await page.locator('select').nth(0).selectOption(options.archetypeId);
+  await page.getByLabel('5. Archetype').selectOption(options.archetypeId);
   await page.getByRole('button', { name: 'Continue to Capabilities' }).click();
   await page.getByRole('button', { name: 'View advanced capabilities' }).click();
   for (const capabilityLabel of options.capabilityLabels) {
@@ -61,7 +64,7 @@ test('wizard shows dependency propagation for microservices', async ({ page }) =
 
   await expect(page.getByText('Dependency graph', { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Propagation and impact surface')).toBeVisible();
-  await expect(page.getByText('Microservices complexity increased')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('Microservices increase deployment coordination and operational burden.').first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Required observability', { exact: false })).toBeVisible({ timeout: 15000 });
 });
 
@@ -77,7 +80,7 @@ test('wizard shows vector database mutation for AI RAG', async ({ page }) => {
   });
 
   await expect(page.getByText('Dependency graph', { exact: true })).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText('AI infrastructure mutation detected')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('AI chat mutates infrastructure toward vector search support.')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Required vector_database', { exact: false })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Readiness radar')).toBeVisible();
 });

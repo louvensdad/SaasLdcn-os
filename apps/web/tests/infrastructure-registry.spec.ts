@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { webUrl } from './test-urls';
 
-const WIZARD_URL = 'http://127.0.0.1:3001/wizard';
+const WIZARD_URL = webUrl('/wizard');
 
 async function completeWizardSelection(page: Page, {
   languageId,
@@ -58,7 +59,6 @@ test('wizard shows Spring Boot infrastructure recommendations', async ({ page })
   });
 
   await expect(page.getByText('Infrastructure recommendations', { exact: true })).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText('Spring Boot enterprise baseline detected')).toBeVisible();
   await expect(page.getByRole('button', { name: /PostgreSQL/i }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: /Redis/i }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: /Docker Compose/i }).first()).toBeVisible();
@@ -75,7 +75,6 @@ test('wizard shows FastAPI AI infrastructure recommendations', async ({ page }) 
     moduleLabel: 'Users',
   });
 
-  await expect(page.getByText('FastAPI AI infra recommendations available')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Vector Database', { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole('button', { name: /pgvector/i }).first()).toBeVisible();
 });

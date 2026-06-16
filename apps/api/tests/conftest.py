@@ -11,10 +11,28 @@ API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
+from app.core import deps as auth_deps
 from app.core.config import get_settings
 from app.main import create_application
+from app.repositories.user_repository import AuditLogRepository, UserRepository
+from app.routes import prompt_master as prompt_master_route
+from app.routes.auth import service as auth_route_service
 from app.routes.projects import service as project_route_service
 from app.services.project_service import ProjectService
+
+
+@pytest.fixture
+def project_requirements() -> dict:
+    return {
+        "project_goal": "Deliver a governed business application.",
+        "business_context": "Commercial SaaS operation with explicit user workflows.",
+        "target_users": ["operators", "customers"],
+        "business_rules": ["Only authorized users may change protected records."],
+        "entities": ["User", "Account", "Record"],
+        "workflows": ["User submits a request and an operator reviews it."],
+        "constraints": ["Do not expose secrets or personal data."],
+        "delivery_target": "github",
+    }
 
 
 @pytest.fixture
@@ -28,8 +46,36 @@ def client() -> TestClient:
     isolated_service = ProjectService()
     project_route_service.project_repository = isolated_service.project_repository
     project_route_service.catalog_repository = isolated_service.catalog_repository
+
+    # The prompt-master route holds its own module-level ProjectRepository
+    # (bound to the default DB at import time), so point it at the same
+    # isolated per-test database used by the projects route above.
+    prompt_master_route.project_repository = isolated_service.project_repository
+
+    # Point the auth system (used to protect every non-public route) at the
+    # same isolated, per-test SQLite database.
+    isolated_user_repository = UserRepository(database_path)
+    auth_route_service.user_repository = isolated_user_repository
+    auth_route_service.audit_repository = AuditLogRepository(database_path)
+    auth_deps.configure_user_repository(isolated_user_repository)
+
     app = create_application()
     with TestClient(app) as test_client:
+        # Most routes now require authentication. Register a throwaway user
+        # for this test run and attach its access token to every request the
+        # test makes, so existing tests that don't set up auth themselves
+        # keep working unchanged.
+        register_response = test_client.post(
+            "/api/auth/register",
+            json={
+                "email": f"test_{uuid4().hex}@example.com",
+                "password": "TestPassword123!",
+                "full_name": "Test User",
+                "privacy_policy_accepted": True,
+            },
+        )
+        access_token = register_response.json()["tokens"]["access_token"]
+        test_client.headers.update({"Authorization": f"Bearer {access_token}"})
         yield test_client
     if database_path.exists():
         database_path.unlink()

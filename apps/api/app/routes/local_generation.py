@@ -22,6 +22,8 @@ generated_project_service = GeneratedProjectService()
 @router.post("/generation/local-run", response_model=LocalGenerationResult)
 def run_local_generation(payload: LocalGenerationRequest) -> LocalGenerationResult:
     project = project_service.get_project(payload.project_id)
+    if payload.locale_profile is not None:
+        project = {**project, "locale_profile": payload.locale_profile.model_dump()}
     result = engine.run(project, payload.output_path)
     if result["status"] == "generated":
         project_service.update_project(

@@ -9,6 +9,7 @@ import { CardLoading } from '@/components/feedback/loading-system';
 import { SectionHeader } from '@/components/shell/section-header';
 import { DeploymentPathSurface, OperationalRail, ReadinessRing } from '@/components/visual/engineering-surface';
 import { useSystemStatus } from '@/hooks/use-system-status';
+import { useLocale } from '@/hooks/use-locale';
 import { getApiErrorMessage } from '@/lib/api/errors';
 import type { SystemStatusResponse } from '@/lib/api/types';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
@@ -22,6 +23,7 @@ function statusTone(status: string) {
 type StatusSignal = SystemStatusResponse['backend_status'];
 
 export default function SystemStatusPage() {
+  const { t } = useLocale();
   const statusQuery = useSystemStatus();
   const status = statusQuery.data;
   const setPresenceState = useLDCNStore((state) => state.setPresenceState);
@@ -31,44 +33,44 @@ export default function SystemStatusPage() {
     setPresenceState(statusQuery.isError ? 'warning' : 'observing');
     setContext({
       route: '/system-status',
-      page_title: 'System Status Center',
-      current_phase: 'Runtime health',
+      page_title: t('systemStatus.context.pageTitle'),
+      current_phase: t('systemStatus.context.phase'),
       pipeline: {
         route: '/system-status',
-        phase: 'Runtime health',
+        phase: t('systemStatus.context.phase'),
         status: statusQuery.isError ? 'degraded' : 'ready',
-        readiness_label: status ? `${status.active_modules.length} modules observed` : 'Status loading',
-        detail: 'Internal observability center for LDCN OS.',
+        readiness_label: status ? t('systemStatus.context.moduleCount', { count: status.active_modules.length }) : t('systemStatus.context.loading'),
+        detail: t('systemStatus.context.detail'),
       },
       status: statusQuery.isError ? 'warning' : 'observing',
-      summary: 'Runtime health, validation, build and registry status are visible without external integrations.',
+      summary: t('systemStatus.context.summary'),
       suggestions: [],
     });
-  }, [setContext, setPresenceState, status, statusQuery.isError]);
+  }, [setContext, setPresenceState, status, statusQuery.isError, t]);
 
   return (
     <div className="space-y-8">
       <SectionHeader
-        title="System Status"
-        description="Operational panel for the LDCN OS runtime, validation state, build health and internal registries."
+        title={t('systemStatus.title')}
+        description={t('systemStatus.description')}
       />
 
       {statusQuery.isLoading ? (
         <CardLoading />
       ) : statusQuery.isError ? (
         <PageError
-          title="System status unavailable"
-          description={getApiErrorMessage(statusQuery.error, 'Unable to load system status.')}
+          title={t('systemStatus.error.title')}
+          description={getApiErrorMessage(statusQuery.error, t('systemStatus.error.description'))}
           onRetry={() => void statusQuery.refetch()}
         />
       ) : status ? (
         <>
           <div className="grid gap-4 lg:grid-cols-4">
             {([
-              ['Runtime Health', status.backend_status],
-              ['Validation Status', status.api_status],
-              ['Build Health', status.build_status],
-              ['Registry Health', status.registry_health[0]],
+              [t('systemStatus.runtimeHealth'), status.backend_status],
+              [t('systemStatus.validationStatus'), status.api_status],
+              [t('systemStatus.buildHealth'), status.build_status],
+              [t('systemStatus.registryHealth'), status.registry_health[0]],
             ] as [string, StatusSignal][]).map(([title, signal]) => (
               <Card key={String(title)} className="space-y-3 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{String(title)}</p>
@@ -81,15 +83,15 @@ export default function SystemStatusPage() {
 
           <div className="grid gap-5 xl:grid-cols-[0.75fr_1.25fr]">
             <ReadinessRing
-              title="Platform health"
+              title={t('systemStatus.platformHealth')}
               value={status.registry_health.every((signal) => signal.status === 'healthy') ? 96 : 68}
-              label="Governed"
-              caption="Health is derived from local runtime and registry signals."
+              label={t('systemStatus.governed')}
+              caption={t('systemStatus.platformHealthDetail')}
               tone="success"
             />
 
             <OperationalRail
-              title="Registry Health"
+              title={t('systemStatus.registryHealth')}
               items={status.registry_health.map((signal) => ({
                 label: signal.label,
                 value: signal.status,
@@ -100,21 +102,21 @@ export default function SystemStatusPage() {
           </div>
 
           <DeploymentPathSurface
-            title="Validation Status"
+            title={t('systemStatus.validationStatus')}
             steps={[
-              { label: 'Last validation', detail: status.last_validation, tone: 'success' },
-              { label: 'Test coverage', detail: status.test_coverage, tone: 'accent' },
-              { label: 'Frontend status', detail: status.frontend_status.detail, tone: 'accent2' },
-              { label: 'API status', detail: status.api_status.detail, tone: 'success' },
+              { label: t('systemStatus.lastValidation'), detail: status.last_validation, tone: 'success' },
+              { label: t('systemStatus.testCoverage'), detail: status.test_coverage, tone: 'accent' },
+              { label: t('systemStatus.frontendStatus'), detail: status.frontend_status.detail, tone: 'accent2' },
+              { label: t('systemStatus.apiStatus'), detail: status.api_status.detail, tone: 'success' },
             ]}
           />
 
           <div className="grid gap-4 lg:grid-cols-4">
             {[
-              ['Active modules', status.active_modules],
-              ['Active engines', status.active_engines],
-              ['Active templates', status.active_templates],
-              ['Active skills', status.active_skills],
+              [t('systemStatus.activeModules'), status.active_modules],
+              [t('systemStatus.activeEngines'), status.active_engines],
+              [t('systemStatus.activeTemplates'), status.active_templates],
+              [t('systemStatus.activeSkills'), status.active_skills],
             ].map(([title, values]) => (
               <Card key={String(title)} className="space-y-3 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{String(title)}</p>

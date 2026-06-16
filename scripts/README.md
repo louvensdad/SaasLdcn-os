@@ -1,12 +1,9 @@
 # Scripts
 
-status: reserved
+status: active
 
 purpose: Canonical home for project automation scripts.
 
-not active in runtime: true
+active scripts: dev.mjs starts the backend and frontend through the root dev.cmd.
 
-planned phase: automation consolidation.
-
-do not import from here yet: true
-
+do not import from application runtime: true

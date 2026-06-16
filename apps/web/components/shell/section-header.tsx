@@ -8,12 +8,12 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ title, description, className }: SectionHeaderProps) {
   return (
-    <div className={cn('mb-4 flex flex-col gap-2', className)}>
-      <h2 className="text-lg font-semibold tracking-normal text-[color:var(--text)] md:text-xl">
+    <div className={cn('mb-8 flex flex-col gap-3', className)}>
+      <h1 className="type-page text-[color:var(--text)]">
         {title}
-      </h2>
+      </h1>
       {description ? (
-        <p className="max-w-3xl text-sm leading-6 text-[color:var(--muted)]">{description}</p>
+        <p className="type-body max-w-3xl text-[color:var(--muted)]">{description}</p>
       ) : null}
     </div>
   );

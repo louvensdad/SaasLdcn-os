@@ -9,10 +9,11 @@ import { ActionLink } from '@/components/ui/action-link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Disclosure } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/empty-states/empty-state';
 import { PageError } from '@/components/feedback/error-system';
 import { ButtonLoading, CardLoading } from '@/components/feedback/loading-system';
-import { CheckboxField, SelectField, TextField } from '@/components/forms/form-field';
+import { CheckboxField, SelectField, TextareaField, TextField } from '@/components/forms/form-field';
 import { SectionHeader } from '@/components/shell/section-header';
 import {
   ArchitectureGraphSurface,
@@ -49,6 +50,7 @@ import { useRiskAnalysis } from '@/hooks/use-risk-analysis';
 import { useTeamProfile } from '@/hooks/use-team-profile';
 import { useLanguages } from '@/hooks/use-languages';
 import { usePromptMasterPreview } from '@/hooks/use-prompt-master-preview';
+import { useLocale } from '@/hooks/use-locale';
 import { useSaveProjectFromWizard } from '@/hooks/use-projects';
 import { useRuntimes } from '@/hooks/use-runtimes';
 import { useRecommendedSkills } from '@/hooks/use-skills';
@@ -66,6 +68,7 @@ import type {
 } from '@/lib/api/types';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
 import { useUiStore } from '@/stores/use-ui-store';
+import { useLocaleStore } from '@/stores/use-locale-store';
 import { FrameworkSpecialistPanel } from '@/components/wizard/framework-specialist-panel';
 import { DependencyGraphPanel } from '@/components/wizard/dependency-graph-panel';
 import { InfrastructureRecommendationsPanel } from '@/components/wizard/infrastructure-recommendations-panel';
@@ -74,6 +77,7 @@ import { VisualizationCockpit } from '@/components/system-design/visualization-c
 import { ArchitecturalGraphCanvas } from '@/components/architectural-graph/architectural-graph-canvas';
 
 type WizardStepId =
+  | 'project_requirements'
   | 'technology_path'
   | 'architecture'
   | 'project_type'
@@ -92,6 +96,12 @@ interface WizardStepDefinition {
 }
 
 const WIZARD_STEPS: readonly WizardStepDefinition[] = [
+  {
+    id: 'project_requirements',
+    title: 'Project Requirements',
+    eyebrow: 'Step 1',
+    description: 'Define intent, business rules, data model, and delivery target.',
+  },
   {
     id: 'technology_path',
     title: 'Technology Path',
@@ -141,39 +151,48 @@ const STEP_INDEX_BY_ID = Object.fromEntries(WIZARD_STEPS.map((step, index) => [s
   number
 >;
 
-const CAPABILITY_CATEGORY_LABELS: Record<string, string> = {
-  security: 'Security',
-  platform: 'Platform',
-  commerce: 'Commerce',
-  communication: 'Communication',
-  ai: 'AI',
-  data: 'Data',
-  quality: 'Quality',
-  experience: 'Experience',
+const CAPABILITY_CATEGORY_KEYS: Record<string, string> = {
+  security: 'wizard.category.capability.security',
+  platform: 'wizard.category.capability.platform',
+  commerce: 'wizard.category.capability.commerce',
+  communication: 'wizard.category.capability.communication',
+  ai: 'wizard.category.capability.ai',
+  data: 'wizard.category.capability.data',
+  quality: 'wizard.category.capability.quality',
+  experience: 'wizard.category.capability.experience',
 };
 
-const MODULE_CATEGORY_LABELS: Record<string, string> = {
-  core: 'Core',
-  commerce: 'Commerce',
-  operations: 'Operations',
-  finance: 'Finance',
-  communication: 'Communication',
-  governance: 'Governance',
-  education: 'Education',
+const MODULE_CATEGORY_KEYS: Record<string, string> = {
+  core: 'wizard.category.module.core',
+  commerce: 'wizard.category.module.commerce',
+  operations: 'wizard.category.module.operations',
+  finance: 'wizard.category.module.finance',
+  communication: 'wizard.category.module.communication',
+  governance: 'wizard.category.module.governance',
+  education: 'wizard.category.module.education',
 };
 
 const LOCALE_OPTIONS = ['pt-BR', 'en-US', 'es-ES', 'fr-FR'] as const;
 const GENERATION_MODE_OPTIONS = [
-  { value: 'local_build_90', label: 'Local build 90' },
-  { value: 'foundation_only', label: 'Foundation only' },
-  { value: 'template_assisted', label: 'Template assisted' },
-  { value: 'guided', label: 'Guided' },
+  { value: 'local_build_90' },
+  { value: 'foundation_only' },
+  { value: 'template_assisted' },
+  { value: 'guided' },
 ] as const;
+const PRODUCT_GOAL_OPTIONS = ['erp', 'crm', 'marketplace', 'saas', 'internal', 'education', 'finance', 'healthcare', 'other'] as const;
+const TARGET_USER_OPTIONS = ['administrator', 'customer', 'operator', 'partner', 'manager'] as const;
 
 function toggleSelection(current: readonly string[], value: string) {
   return current.includes(value)
     ? current.filter((item) => item !== value)
     : [...current, value];
+}
+
+function splitRequirements(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function createRegionId(stepId: WizardStepId) {
@@ -218,18 +237,19 @@ function calculateComplexityEstimate(
   );
 
   if (score >= 80) {
-    return { score, label: 'Enterprise heavy' };
+    return { score, key: 'wizard.complexity.enterpriseHeavy' };
   }
   if (score >= 60) {
-    return { score, label: 'Strategic build' };
+    return { score, key: 'wizard.complexity.strategicBuild' };
   }
   if (score >= 35) {
-    return { score, label: 'Balanced foundation' };
+    return { score, key: 'wizard.complexity.balancedFoundation' };
   }
-  return { score, label: 'Lean blueprint' };
+  return { score, key: 'wizard.complexity.leanBlueprint' };
 }
 
 function StepStatusBadge({ state }: { readonly state: StepVisualState }) {
+  const { t } = useLocale();
   const styles: Record<StepVisualState, string> = {
     locked: 'border-white/10 text-[color:var(--muted)]',
     active: 'border-[color-mix(in_srgb,var(--accent)_45%,transparent)] text-[color:var(--text)]',
@@ -239,11 +259,11 @@ function StepStatusBadge({ state }: { readonly state: StepVisualState }) {
   };
 
   const labels: Record<StepVisualState, string> = {
-    locked: 'Locked',
-    active: 'Active',
-    completed: 'Done',
-    warning: 'Warning',
-    error: 'Error',
+    locked: t('wizard.status.locked'),
+    active: t('wizard.status.active'),
+    completed: t('wizard.status.done'),
+    warning: t('wizard.status.warning'),
+    error: t('wizard.status.error'),
   };
 
   return <Badge className={styles[state]}>{labels[state]}</Badge>;
@@ -261,32 +281,18 @@ function StepShell({
   readonly actions?: React.ReactNode;
 }) {
   return (
-    <Card className="relative min-h-[40rem] p-0">
+    <Card surface="primary" className="relative min-h-[32rem] p-0" data-visibility-audit="wizard-step-card">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,color-mix(in_srgb,var(--accent)_10%,transparent),transparent_30%)]" />
       <div className="relative space-y-8 p-6 md:p-8">
-        <div className="grid gap-4 xl:grid-cols-[1.04fr_0.96fr] xl:items-start">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[color:var(--muted)]">
+            <p className="type-label text-[color:var(--muted)]">
               {step.eyebrow}
             </p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-[color:var(--text)]">{step.title}</h2>
-            <p className="mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">{step.description}</p>
+            <h2 className="type-page mt-3 text-[color:var(--text)]">{step.title}</h2>
+            <p className="type-body mt-3 max-w-xl text-[color:var(--muted)]">{step.description}</p>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">Step state</p>
-              <StepStatusBadge state={stepState} />
-              <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">
-                The wizard keeps the current step visible while the topology and validation state remain synchronized.
-              </p>
-            </div>
-            <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">Visual control</p>
-              <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">
-                Each section carries the same contract-safe flow, but now sits inside a more layered engineering surface.
-              </p>
-            </div>
-          </div>
+          <StepStatusBadge state={stepState} />
         </div>
 
         <div className="space-y-6">{children}</div>
@@ -304,11 +310,12 @@ function PreviewRow({
   readonly label: string;
   readonly value: string;
 }) {
+  const { t } = useLocale();
   const pending = value === 'pending';
   return (
     <div className="flex items-start justify-between gap-4 text-sm">
       <span className="text-[color:var(--muted)]">{label}</span>
-      <span className={pending ? 'text-[color:var(--muted)]' : 'font-semibold text-[color:var(--text)]'}>{value}</span>
+      <span className={pending ? 'text-[color:var(--muted)]' : 'font-semibold text-[color:var(--text)]'}>{pending ? t('wizard.pending') : value}</span>
     </div>
   );
 }
@@ -365,6 +372,15 @@ function ReviewDisclosure({
 }
 
 export default function WizardPage() {
+  const { t } = useLocale();
+  const statusLabel = (status: string) => t(`wizard.status.${status}`);
+  const interfaceLocale = useLocaleStore((state) => state.interfaceLocale);
+  const localizedWizardSteps = WIZARD_STEPS.map((step, index) => ({
+    ...step,
+    title: t(`wizard.steps.${step.id}.title`),
+    eyebrow: t('wizard.step', { number: index + 1 }),
+    description: t(`wizard.steps.${step.id}.description`),
+  }));
   const router = useRouter();
   const languagesQuery = useLanguages();
   const runtimesQuery = useRuntimes();
@@ -372,7 +388,7 @@ export default function WizardPage() {
   const endpointsQuery = useEndpoints();
   const addToast = useUiStore((state) => state.addToast);
 
-  const [currentStepId, setCurrentStepId] = useState<WizardStepId>('technology_path');
+  const [currentStepId, setCurrentStepId] = useState<WizardStepId>('project_requirements');
   const [languageId, setLanguageId] = useState('');
   const [runtimeId, setRuntimeId] = useState('');
   const [frameworkId, setFrameworkId] = useState('');
@@ -382,12 +398,29 @@ export default function WizardPage() {
   const [businessModuleIds, setBusinessModuleIds] = useState<string[]>([]);
   const [endpointIds, setEndpointIds] = useState<string[]>([]);
   const [infrastructureComponentIds, setInfrastructureComponentIds] = useState<string[]>([]);
-  const [projectName, setProjectName] = useState('ldcn-enterprise-app');
-  const [locale, setLocale] = useState<(typeof LOCALE_OPTIONS)[number]>('pt-BR');
+  const [projectName, setProjectName] = useState('');
+  const [projectGoal, setProjectGoal] = useState('');
+  const [businessContext, setBusinessContext] = useState('');
+  const [targetUsers, setTargetUsers] = useState('');
+  const [businessRules, setBusinessRules] = useState('');
+  const [entities, setEntities] = useState('');
+  const [workflows, setWorkflows] = useState('');
+  const [constraints, setConstraints] = useState('');
+  const [deliveryTarget, setDeliveryTarget] = useState<'zip' | 'github' | 'gitlab' | 'both' | ''>('');
+  const [locale, setLocale] = useState<(typeof LOCALE_OPTIONS)[number]>(interfaceLocale);
   const [generationMode, setGenerationMode] = useState<(typeof GENERATION_MODE_OPTIONS)[number]['value']>('local_build_90');
   const [showAdvancedCapabilities, setShowAdvancedCapabilities] = useState(false);
   const [openEndpointModules, setOpenEndpointModules] = useState<string[]>([]);
   const lastInfrastructureSelectionKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    setLocale(interfaceLocale);
+  }, [interfaceLocale]);
+
+  const toggleTargetUser = (value: string) => {
+    const current = splitRequirements(targetUsers);
+    setTargetUsers(toggleSelection(current, value).join('\n'));
+  };
 
   const languageProfileQuery = useLanguageProfile(languageId || null);
   const languageFrameworksQuery = useLanguageFrameworks(languageId || null);
@@ -725,15 +758,27 @@ export default function WizardPage() {
     (Boolean(languageId) && languageFrameworksQuery.isLoading) ||
     (Boolean(languageId) && (languageArchitecturesQuery.isLoading || languageArchetypesQuery.isLoading || languageCapabilitiesQuery.isLoading || languageRecommendationsQuery.isLoading));
 
-  const technologyPathComplete = Boolean(languageId && runtimeId && frameworkId);
+  const requirementsComplete = Boolean(
+    projectName.trim() &&
+      projectGoal.trim() &&
+      businessContext.trim() &&
+      splitRequirements(targetUsers).length &&
+      splitRequirements(businessRules).length &&
+      splitRequirements(entities).length &&
+      splitRequirements(workflows).length &&
+      splitRequirements(constraints).length &&
+      deliveryTarget,
+  );
+  const technologyPathComplete = Boolean(requirementsComplete && languageId && runtimeId && frameworkId);
   const architectureComplete = Boolean(technologyPathComplete && architectureId);
   const projectTypeComplete = Boolean(architectureComplete && archetypeId);
   const capabilitiesComplete = Boolean(projectTypeComplete && (capabilityIds.length > 0 || availableCapabilities.length === 0));
   const modulesComplete = Boolean(capabilitiesComplete && businessModuleIds.length > 0);
-  const endpointsComplete = Boolean(modulesComplete);
+  const endpointsComplete = Boolean(modulesComplete && endpointIds.length > 0);
 
   const stepAvailability: Record<WizardStepId, boolean> = {
-    technology_path: true,
+    project_requirements: true,
+    technology_path: requirementsComplete,
     architecture: technologyPathComplete,
     project_type: architectureComplete,
     capabilities: projectTypeComplete,
@@ -801,6 +846,14 @@ export default function WizardPage() {
     languageId,
     locale,
     projectName,
+    projectGoal,
+    businessContext,
+    targetUsers,
+    businessRules,
+    entities,
+    workflows,
+    constraints,
+    deliveryTarget,
     runtimeId,
   ]);
 
@@ -809,6 +862,10 @@ export default function WizardPage() {
       return;
     }
 
+    if (!requirementsComplete) {
+      setCurrentStepId('project_requirements');
+      return;
+    }
     if (!technologyPathComplete) {
       setCurrentStepId('technology_path');
       return;
@@ -840,6 +897,7 @@ export default function WizardPage() {
     endpointsComplete,
     modulesComplete,
     projectTypeComplete,
+    requirementsComplete,
     stepAvailability,
     technologyPathComplete,
   ]);
@@ -849,12 +907,12 @@ export default function WizardPage() {
 
     addToast({
       tone: backendBlueprint.validation.valid ? 'success' : 'warning',
-      title: backendBlueprint.validation.valid ? 'Blueprint preview ready' : 'Blueprint preview returned issues',
+      title: backendBlueprint.validation.valid ? t('wizard.toast.blueprintReady.title') : t('wizard.toast.blueprintIssues.title'),
       description: backendBlueprint.validation.valid
-        ? 'The backend resolved the blueprint with complexity, validation and recommendations.'
-        : 'The backend returned explicit blueprint issues and recommendations.',
+        ? t('wizard.toast.blueprintReady.description')
+        : t('wizard.toast.blueprintIssues.description'),
     });
-  }, [addToast, backendBlueprint, blueprintPreviewMutation.isSuccess]);
+  }, [addToast, backendBlueprint, blueprintPreviewMutation.isSuccess, t]);
 
   useEffect(() => {
     if (!promptMasterPreviewMutation.isSuccess || !promptMasterDocument) return;
@@ -862,13 +920,13 @@ export default function WizardPage() {
     addToast({
       tone: promptMasterDocument.validation.valid ? 'success' : 'warning',
       title: promptMasterDocument.validation.valid
-        ? 'Prompt Master preview ready'
-        : 'Prompt Master preview returned issues',
+        ? t('wizard.toast.promptMasterReady.title')
+        : t('wizard.toast.promptMasterIssues.title'),
       description: promptMasterDocument.validation.valid
-        ? 'The Prompt Master contract is ready for inspection and copy.'
-        : 'The Prompt Master preserved the blueprint issues and surfaced explicit constraints.',
+        ? t('wizard.toast.promptMasterReady.description')
+        : t('wizard.toast.promptMasterIssues.description'),
     });
-  }, [addToast, promptMasterDocument, promptMasterPreviewMutation.isSuccess]);
+  }, [addToast, promptMasterDocument, promptMasterPreviewMutation.isSuccess, t]);
 
   useEffect(() => {
     if (!gatekeeperPreviewMutation.isSuccess || !gatekeeperReport) return;
@@ -882,13 +940,13 @@ export default function WizardPage() {
             : 'error',
       title:
         gatekeeperReport.decision === 'approved'
-          ? 'Gatekeeper approved'
+          ? t('wizard.toast.gatekeeperApproved.title')
           : gatekeeperReport.decision === 'approved_with_warnings'
-            ? 'Gatekeeper approved with warnings'
-            : 'Gatekeeper blocked progression',
+            ? t('wizard.toast.gatekeeperApprovedWithWarnings.title')
+            : t('wizard.toast.gatekeeperBlocked.title'),
       description: gatekeeperReport.summary,
     });
-  }, [addToast, gatekeeperPreviewMutation.isSuccess, gatekeeperReport]);
+  }, [addToast, gatekeeperPreviewMutation.isSuccess, gatekeeperReport, t]);
 
   function goToNextStep(stepId: WizardStepId) {
     const currentIndex = STEP_INDEX_BY_ID[stepId];
@@ -999,11 +1057,19 @@ export default function WizardPage() {
   }
 
   function previewCurrentBlueprint() {
+    if (!requirementsComplete) {
+      addToast({
+        tone: 'error',
+        title: t('wizard.toast.requirementsIncomplete.title'),
+        description: t('wizard.toast.requirementsIncomplete.description'),
+      });
+      return;
+    }
     if (!languageId || !runtimeId || !frameworkId || !architectureId || !archetypeId) {
       addToast({
         tone: 'error',
-        title: 'Selection incomplete',
-        description: 'Choose language, runtime, framework, architecture and archetype before previewing the blueprint.',
+        title: t('wizard.toast.selectionIncomplete.title'),
+        description: t('wizard.toast.selectionIncomplete.description'),
       });
       return;
     }
@@ -1023,6 +1089,16 @@ export default function WizardPage() {
       infrastructure_component_ids: infrastructureComponentIds,
       locale,
       generation_mode: generationMode,
+      project_requirements: {
+        project_goal: projectGoal.trim(),
+        business_context: businessContext.trim(),
+        target_users: splitRequirements(targetUsers),
+        business_rules: splitRequirements(businessRules),
+        entities: splitRequirements(entities),
+        workflows: splitRequirements(workflows),
+        constraints: splitRequirements(constraints),
+        delivery_target: deliveryTarget || null,
+      },
     });
   }
 
@@ -1030,8 +1106,8 @@ export default function WizardPage() {
     if (!backendBlueprint) {
       addToast({
         tone: 'error',
-        title: 'Blueprint preview required',
-        description: 'Run the blueprint preview first so the Prompt Master can derive a validated technical contract.',
+        title: t('wizard.toast.blueprintPreviewRequired.title'),
+        description: t('wizard.toast.blueprintPreviewRequired.description'),
       });
       return;
     }
@@ -1046,8 +1122,8 @@ export default function WizardPage() {
     if (!backendBlueprint || !promptMasterDocument) {
       addToast({
         tone: 'error',
-        title: 'Preview chain incomplete',
-        description: 'Build the blueprint and Prompt Master previews before running Gatekeeper.',
+        title: t('wizard.toast.previewChainIncomplete.title'),
+        description: t('wizard.toast.previewChainIncomplete.description'),
       });
       return;
     }
@@ -1062,8 +1138,8 @@ export default function WizardPage() {
     if (!backendBlueprint || !promptMasterDocument || !gatekeeperReport) {
       addToast({
         tone: 'error',
-        title: 'Validation chain incomplete',
-        description: 'Build the blueprint, Prompt Master and Gatekeeper previews before saving the project.',
+        title: t('wizard.toast.validationChainIncomplete.title'),
+        description: t('wizard.toast.validationChainIncomplete.description'),
       });
       return;
     }
@@ -1077,18 +1153,15 @@ export default function WizardPage() {
 
       addToast({
         tone: 'success',
-        title: 'Project saved',
-        description: `${saved.project_name} is now persisted in the backend registry.`,
+        title: t('wizard.toast.projectSaved.title'),
+        description: t('wizard.toast.projectSaved.description', { projectName: saved.project_name }),
       });
       router.push(`/projects/${saved.project_id}`);
     } catch (error) {
       addToast({
         tone: 'error',
-        title: 'Project save failed',
-        description: getApiErrorMessage(
-          error,
-          'Unable to persist the current wizard selection as a project record.',
-        ),
+        title: t('wizard.toast.projectSaveFailed.title'),
+        description: getApiErrorMessage(error, t('wizard.toast.projectSaveFailedFallback')),
       });
     }
   }
@@ -1097,8 +1170,8 @@ export default function WizardPage() {
     if (!promptMasterDocument) {
       addToast({
         tone: 'error',
-        title: 'Prompt Master unavailable',
-        description: 'Build the Prompt Master preview before copying it.',
+        title: t('wizard.toast.promptMasterUnavailable.title'),
+        description: t('wizard.toast.promptMasterUnavailable.description'),
       });
       return;
     }
@@ -1107,14 +1180,14 @@ export default function WizardPage() {
       await navigator.clipboard.writeText(promptMasterDocument.compiled_prompt);
       addToast({
         tone: 'success',
-        title: 'Prompt Master copied',
-        description: 'The compiled technical prompt was copied to the clipboard.',
+        title: t('wizard.toast.promptMasterCopied.title'),
+        description: t('wizard.toast.promptMasterCopied.description'),
       });
     } catch {
       addToast({
         tone: 'error',
-        title: 'Copy failed',
-        description: 'Clipboard access is unavailable in this environment.',
+        title: t('wizard.toast.copyFailed.title'),
+        description: t('wizard.toast.copyFailed.description'),
       });
     }
   }
@@ -1152,11 +1225,12 @@ export default function WizardPage() {
       return 'active';
     }
 
-    if (!stepAvailability[stepId] && stepId !== 'technology_path') {
+    if (!stepAvailability[stepId] && stepId !== 'project_requirements') {
       return 'locked';
     }
 
     const completedStates: Record<WizardStepId, boolean> = {
+      project_requirements: requirementsComplete,
       technology_path: technologyPathComplete,
       architecture: architectureComplete,
       project_type: projectTypeComplete,
@@ -1174,7 +1248,7 @@ export default function WizardPage() {
     return completedStates[stepId] ? 'completed' : 'locked';
   }
 
-  const currentStep = WIZARD_STEPS[STEP_INDEX_BY_ID[currentStepId]];
+  const currentStep = localizedWizardSteps[STEP_INDEX_BY_ID[currentStepId]];
 
   const previewSummary = {
     language: backendBlueprint?.technology_graph.language.name ?? selectedLanguageProfile?.name ?? selectedLanguage?.name ?? 'pending',
@@ -1194,6 +1268,7 @@ export default function WizardPage() {
   };
 
   const journeyCompletion = [
+    requirementsComplete,
     technologyPathComplete,
     architectureComplete,
     projectTypeComplete,
@@ -1217,11 +1292,11 @@ export default function WizardPage() {
 
   const architectureGraphNodes = [
     {
-      label: 'Language',
+      label: t('wizard.language'),
       value: previewSummary.language,
       detail:
         selectedLanguageProfile?.summary ??
-        (selectedLanguage ? `${selectedLanguage.ecosystem} ecosystem` : 'Select a language to begin'),
+        (selectedLanguage ? t('wizard.presence.ecosystemSuffix', { ecosystem: selectedLanguage.ecosystem }) : t('wizard.presence.selectLanguageToBegin')),
       tone: selectedLanguageProfile?.ecosystem.includes('JVM')
         ? 'accent'
         : selectedLanguageProfile?.ecosystem.includes('Python')
@@ -1231,21 +1306,21 @@ export default function WizardPage() {
             : 'muted',
     },
     {
-      label: 'Runtime',
+      label: t('wizard.runtime'),
       value: previewSummary.runtime,
-      detail: selectedRuntime?.performance_profile ?? 'runtime profile',
+      detail: selectedRuntime?.performance_profile ?? t('wizard.presence.runtimeProfile'),
       tone: 'accent2',
     },
     {
-      label: 'Framework',
+      label: t('wizard.framework'),
       value: previewSummary.framework,
-      detail: selectedFramework?.framework_type ?? 'framework topology',
+      detail: selectedFramework?.framework_type ?? t('wizard.presence.frameworkTopology'),
       tone: 'success',
     },
     {
-      label: 'Architecture',
+      label: t('wizard.architecture'),
       value: previewSummary.architecture,
-      detail: selectedArchitecture?.scalability_profile ?? 'architecture profile',
+      detail: selectedArchitecture?.scalability_profile ?? t('wizard.presence.architectureProfile'),
       tone: 'muted',
     },
   ] as const;
@@ -1253,88 +1328,88 @@ export default function WizardPage() {
   const frameworkPresenceMessage = useMemo(() => {
     if (!selectedFrameworkSpecialistProfile) {
       return selectedLanguageProfile
-        ? `${selectedLanguageProfile.name} framework guidance ready`
-        : 'Reserved presence layer watching the engineering shell without executing generation or voice.';
+        ? t('wizard.presence.frameworkGuidanceReady', { language: selectedLanguageProfile.name })
+        : t('wizard.presence.reservedLayer');
     }
 
-    if (frameworkId === 'spring_boot') return 'Spring Boot specialist profile loaded';
-    if (frameworkId === 'nestjs') return 'NestJS architecture guidance ready';
-    if (frameworkId === 'fastapi') return 'FastAPI AI service profile ready';
+    if (frameworkId === 'spring_boot') return t('wizard.presence.springBootSpecialistLoaded');
+    if (frameworkId === 'nestjs') return t('wizard.presence.nestjsArchitectureGuidance');
+    if (frameworkId === 'fastapi') return t('wizard.presence.fastapiAiServiceReady');
 
-    return `${selectedFrameworkSpecialistProfile.framework_name} specialist profile ready`;
-  }, [frameworkId, selectedFrameworkSpecialistProfile, selectedLanguageProfile?.name]);
+    return t('wizard.presence.specialistProfileReady', { framework: selectedFrameworkSpecialistProfile.framework_name });
+  }, [frameworkId, selectedFrameworkSpecialistProfile, selectedLanguageProfile?.name, t]);
   const infrastructurePresenceMessage = useMemo(() => {
     if (!infrastructureRecommendations) {
-      return 'Infrastructure profile ready';
+      return t('wizard.presence.infrastructureProfileReady');
     }
 
     if (frameworkId === 'spring_boot' && architectureId === 'microservices') {
-      return 'Spring Boot enterprise baseline detected';
+      return t('wizard.presence.springBootEnterpriseBaseline');
     }
 
     if (frameworkId === 'fastapi' && (capabilityIds.includes('ai_chat') || capabilityIds.includes('rag'))) {
-      return 'FastAPI AI infra recommendations available';
+      return t('wizard.presence.fastapiAiInfraAvailable');
     }
 
-    return 'Infrastructure profile ready';
-  }, [architectureId, capabilityIds, frameworkId, infrastructureRecommendations]);
+    return t('wizard.presence.infrastructureProfileReady');
+  }, [architectureId, capabilityIds, frameworkId, infrastructureRecommendations, t]);
   const dependencyPresenceMessage = useMemo(() => {
     if (!dependencyGraphSnapshot) {
-      return 'Dependency propagation active';
+      return t('wizard.presence.dependencyPropagationActive');
     }
 
     if (capabilityIds.includes('ai_chat') || capabilityIds.includes('rag')) {
-      return 'AI infrastructure mutation detected';
+      return t('wizard.presence.aiInfrastructureMutation');
     }
 
     if (architectureId === 'microservices') {
-      return 'Microservices complexity increased';
+      return t('wizard.presence.microservicesComplexityIncreased');
     }
 
     if ((dependencyReadiness?.score ?? dependencyGraphSnapshot.readiness_profile.score) > 0) {
-      return 'Readiness score recalculated';
+      return t('wizard.presence.readinessScoreRecalculated');
     }
 
-    return 'Operational burden increased';
-  }, [architectureId, capabilityIds, dependencyGraphSnapshot, dependencyReadiness?.score]);
+    return t('wizard.presence.operationalBurdenIncreased');
+  }, [architectureId, capabilityIds, dependencyGraphSnapshot, dependencyReadiness?.score, t]);
   const engineeringPresenceMessage = useMemo(() => {
     if (!engineeringReadiness) {
       return null;
     }
 
     if (engineeringReadiness.team_recommendation.required_seniority === 'senior_plus' && engineeringReadiness.team_size >= 7) {
-      return 'Enterprise team profile detected';
+      return t('wizard.presence.enterpriseTeamProfileDetected');
     }
 
     if (architectureId === 'microservices') {
-      return 'Microservices require platform maturity';
+      return t('wizard.presence.microservicesRequirePlatformMaturity');
     }
 
     if (engineeringReadiness.operational_burden.level === 'high' || engineeringReadiness.operational_burden.level === 'enterprise') {
-      return 'Operational burden increased';
+      return t('wizard.presence.operationalBurdenIncreased');
     }
 
-    return 'Production readiness recalculated';
-  }, [architectureId, engineeringReadiness]);
+    return t('wizard.presence.productionReadinessRecalculated');
+  }, [architectureId, engineeringReadiness, t]);
   const topologyPresenceMessage = useMemo(() => {
     if (!dependencyGraphPayload) return null;
-    if (infrastructureComponentIds.includes('kafka')) return 'Kafka node increases operational burden';
-    if (infrastructureComponentIds.includes('kubernetes')) return 'Kubernetes ownership requires SRE';
-    if (capabilityIds.includes('payments')) return 'Payment edge requires audit trail';
-    if (dependencyRisks?.issues.length) return 'Risk zones recalculated';
-    if (dependencyGraphSnapshot?.propagation.required_node_ids.length) return 'Dependency propagation visualized';
-    if (architecturalGraphPayload) return 'Architectural graph synchronized';
-    if (dependencyGraphSnapshot) return 'Runtime topology synchronized';
-    if (infrastructureComponentIds.length) return 'Operational topology active';
-    if (architectureId) return 'Architecture graph updated';
-    return 'Operational topology active';
-  }, [architectureId, architecturalGraphPayload, capabilityIds, dependencyGraphPayload, dependencyGraphSnapshot, dependencyGraphSnapshot?.propagation.required_node_ids.length, dependencyRisks?.issues.length, infrastructureComponentIds, infrastructureComponentIds.length]);
+    if (infrastructureComponentIds.includes('kafka')) return t('wizard.presence.kafkaIncreasesOperationalBurden');
+    if (infrastructureComponentIds.includes('kubernetes')) return t('wizard.presence.kubernetesRequiresSre');
+    if (capabilityIds.includes('payments')) return t('wizard.presence.paymentEdgeRequiresAudit');
+    if (dependencyRisks?.issues.length) return t('wizard.presence.riskZonesRecalculated');
+    if (dependencyGraphSnapshot?.propagation.required_node_ids.length) return t('wizard.presence.dependencyPropagationVisualized');
+    if (architecturalGraphPayload) return t('wizard.presence.architecturalGraphSynchronized');
+    if (dependencyGraphSnapshot) return t('wizard.presence.runtimeTopologySynchronized');
+    if (infrastructureComponentIds.length) return t('wizard.presence.operationalTopologyActive');
+    if (architectureId) return t('wizard.presence.architectureGraphUpdated');
+    return t('wizard.presence.operationalTopologyActive');
+  }, [architectureId, architecturalGraphPayload, capabilityIds, dependencyGraphPayload, dependencyGraphSnapshot, dependencyGraphSnapshot?.propagation.required_node_ids.length, dependencyRisks?.issues.length, infrastructureComponentIds, infrastructureComponentIds.length, t]);
 
   const ldcnContext = useMemo(
     () =>
       ({
         route: '/wizard',
-        page_title: selectedLanguageProfile ? `${selectedLanguageProfile.name} domain journey` : 'Architecture Journey',
+        page_title: selectedLanguageProfile ? t('wizard.presence.domainJourney', { language: selectedLanguageProfile.name }) : t('wizard.presence.architectureJourney'),
         current_phase: currentStep.title,
         pipeline: {
           route: '/wizard',
@@ -1349,11 +1424,11 @@ export default function WizardPage() {
                   : 'previewing',
           readiness_label:
             gatekeeperReport?.decision === 'blocked'
-              ? 'Gatekeeper blocked progression'
+              ? t('wizard.toast.gatekeeperBlocked.title')
               : gatekeeperReport?.decision === 'approved_with_warnings'
-                ? 'Approved with warnings'
+                ? t('wizard.presence.approvedWithWarnings')
               : gatekeeperReport?.decision === 'approved'
-                  ? 'Approved and ready'
+                  ? t('wizard.presence.approvedAndReady')
                   : dependencyGraphSnapshot
                     ? topologyPresenceMessage ?? engineeringPresenceMessage ?? dependencyPresenceMessage
                     : infrastructureRecommendations
@@ -1361,12 +1436,12 @@ export default function WizardPage() {
                   : selectedFrameworkSpecialistProfile
                     ? frameworkPresenceMessage
                     : selectedLanguageProfile
-                      ? `Observing ${selectedLanguageProfile.name} ecosystem`
-                      : 'Wizard topology under observation',
+                      ? t('wizard.presence.observingEcosystem', { language: selectedLanguageProfile.name })
+                      : t('wizard.presence.topologyUnderObservation'),
           detail:
             gatekeeperReport?.summary ??
             selectedFrameworkSpecialistProfile?.summary ??
-            'The wizard is shaping the blueprint, Prompt Master, and Gatekeeper flow.',
+            t('wizard.presence.pipelineDetail'),
         },
         status:
           gatekeeperReport?.decision === 'blocked'
@@ -1383,32 +1458,32 @@ export default function WizardPage() {
                 dependencyGraphSnapshot
                   ? `${topologyPresenceMessage ?? engineeringPresenceMessage ?? dependencyPresenceMessage}.`
                   : infrastructureRecommendations
-                    ? 'Infrastructure profile is ready in the side rail.'
+                    ? t('wizard.presence.infrastructureProfileInSideRail')
                   : selectedFrameworkSpecialistProfile?.summary
-                    ? 'Framework specialist guidance is available in the side rail.'
-                    : 'Framework recommendations are available in the side rail.'
+                    ? t('wizard.presence.frameworkSpecialistGuidanceInSideRail')
+                    : t('wizard.presence.frameworkRecommendationsInSideRail')
               }`
-            : 'Reserved presence layer watching the engineering shell without executing generation or voice.'),
+            : t('wizard.presence.reservedLayer')),
         suggestions: [
           {
             id: 'ldcn-wizard-review',
             action: 'review_blueprint',
-            label: 'Review blueprint',
-            summary: 'Reserved for future blueprint explanation on the wizard surface.',
+            label: t('wizard.presence.suggestionReviewBlueprint'),
+            summary: t('wizard.presence.suggestionReviewBlueprintSummary'),
             reserved: true,
           },
           {
             id: 'ldcn-wizard-gatekeeper',
             action: 'inspect_gatekeeper',
-            label: 'Inspect gatekeeper',
-            summary: 'Reserved for future governed validation insight.',
+            label: t('wizard.presence.suggestionInspectGatekeeper'),
+            summary: t('wizard.presence.suggestionInspectGatekeeperSummary'),
             reserved: true,
           },
           {
             id: 'ldcn-wizard-palette',
             action: 'open_command_palette',
-            label: 'Open command palette',
-            summary: 'Reserved for future command palette entry points.',
+            label: t('wizard.presence.suggestionOpenCommandPalette'),
+            summary: t('wizard.presence.suggestionOpenCommandPaletteSummary'),
             reserved: true,
           },
         ],
@@ -1428,6 +1503,7 @@ export default function WizardPage() {
       selectedLanguageProfile?.summary,
       selectedFrameworkSpecialistProfile?.summary,
       infrastructureRecommendations,
+      t,
     ],
   );
 
@@ -1437,12 +1513,17 @@ export default function WizardPage() {
   }, [ldcnContext]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-12">
       <SectionHeader
-        title="Wizard"
-        description="Architecture journey for real engineering decisions, with a visible technology graph and governed progression."
+        title={t('shell.wizard.title')}
+        description={t('shell.wizard.subtitle')}
       />
 
+      <Disclosure
+        title={t('wizard.architectureIntelligence')}
+        description={t('wizard.architectureIntelligenceDescription')}
+        badge={<Badge>{journeyScore}%</Badge>}
+      >
       <section className="cinematic-surface relative overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--border)] p-5 md:p-6">
         <div className="ambient-grid pointer-events-none absolute inset-0 opacity-25" />
         <div className="cinematic-gradient-motion pointer-events-none absolute inset-0" />
@@ -1450,74 +1531,74 @@ export default function WizardPage() {
           <div className="grid gap-4">
             <div className="max-w-3xl">
               <Badge className="w-fit border-[color-mix(in_srgb,var(--accent)_26%,transparent)] bg-white/5">
-                Technology graph explorer
+                {t('wizard.hero.badge')}
               </Badge>
               <h2 className="mt-3 text-3xl font-semibold text-[color:var(--text)] md:text-4xl">
-                Design the system like a living architecture.
+                {t('wizard.hero.title')}
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-[color:var(--muted)] md:text-base">
-                Language, runtime, framework, architecture, and archetype now change the runtime surface of the Wizard so the user can see the system they are building.
+                {t('wizard.hero.description')}
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Badge className="border-[color-mix(in_srgb,var(--accent)_22%,transparent)] bg-white/5">Technology graph</Badge>
-              <Badge className="border-[color-mix(in_srgb,var(--accent)_22%,transparent)] bg-white/5">Architecture profile</Badge>
-              <Badge className="border-[color-mix(in_srgb,var(--accent)_22%,transparent)] bg-white/5">Complexity profile</Badge>
+              <Badge className="border-[color-mix(in_srgb,var(--accent)_22%,transparent)] bg-white/5">{t('wizard.hero.badgeTechnologyGraph')}</Badge>
+              <Badge className="border-[color-mix(in_srgb,var(--accent)_22%,transparent)] bg-white/5">{t('wizard.hero.badgeArchitectureProfile')}</Badge>
+              <Badge className="border-[color-mix(in_srgb,var(--accent)_22%,transparent)] bg-white/5">{t('wizard.hero.badgeComplexityProfile')}</Badge>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <SurfaceLabel
                 icon={<SurfaceIcon icon={Sparkles} />}
-                label="Language"
+                label={t('wizard.language')}
                 value={previewSummary.language}
-                detail={selectedLanguage ? selectedLanguage.ecosystem : 'No language selected'}
+                detail={selectedLanguage ? selectedLanguage.ecosystem : t('wizard.hero.noLanguageSelected')}
               />
               <SurfaceLabel
                 icon={<SurfaceIcon icon={Activity} />}
-                label="Runtime"
+                label={t('wizard.runtime')}
                 value={previewSummary.runtime}
-                detail={selectedRuntime?.performance_profile ?? 'Pending runtime profile'}
+                detail={selectedRuntime?.performance_profile ?? t('wizard.hero.pendingRuntimeProfile')}
               />
               <SurfaceLabel
                 icon={<SurfaceIcon icon={Database} />}
-                label="Framework"
+                label={t('wizard.framework')}
                 value={previewSummary.framework}
-                detail={selectedFramework?.framework_type ?? 'Framework topology'}
+                detail={selectedFramework?.framework_type ?? t('wizard.hero.frameworkTopology')}
               />
               <SurfaceLabel
                 icon={<SurfaceIcon icon={Layers3} />}
-                label="Architecture"
+                label={t('wizard.architecture')}
                 value={previewSummary.architecture}
-                detail={selectedArchitecture?.scalability_profile ?? 'Architecture profile'}
+                detail={selectedArchitecture?.scalability_profile ?? t('wizard.hero.architectureProfileDetail')}
               />
             </div>
 
             <OperationalRail
-              title="Journey intelligence"
+              title={t('wizard.hero.journeyIntelligence')}
               items={[
                 {
-                  label: 'Journey',
+                  label: t('wizard.hero.journey'),
                   value: `${journeyScore}%`,
                   detail: currentStep.title,
                   tone: journeyTone,
                 },
                 {
-                  label: 'Complexity',
+                  label: t('wizard.hero.complexity'),
                   value: String(backendBlueprint?.complexity_profile.overall_score ?? complexityEstimate.score),
                   detail: backendBlueprint?.complexity_profile.risk_level ?? complexityEstimate.label,
                   tone: 'accent2',
                 },
                 {
-                  label: 'Validation',
-                  value: validationStatus === 'valid' ? 'Ready' : validationStatus === 'invalid' ? 'Attention' : validationStatus,
-                  detail: 'Blueprint preview surface',
+                  label: t('wizard.validation'),
+                  value: validationStatus === 'valid' ? t('wizard.hero.ready') : validationStatus === 'invalid' ? t('wizard.hero.attention') : validationStatus,
+                  detail: t('wizard.hero.blueprintPreviewSurface'),
                   tone: validationStatus === 'valid' ? 'success' : validationStatus === 'invalid' ? 'warning' : 'muted',
                 },
                 {
-                  label: 'Gatekeeper',
-                  value: gatekeeperStatus === 'valid' ? 'Approved' : gatekeeperStatus === 'warning' ? 'Warnings' : gatekeeperStatus === 'invalid' ? 'Blocked' : gatekeeperStatus,
-                  detail: 'Governed progression',
+                  label: t('wizard.gatekeeper'),
+                  value: gatekeeperStatus === 'valid' ? t('wizard.hero.approved') : gatekeeperStatus === 'warning' ? t('wizard.hero.warnings') : gatekeeperStatus === 'invalid' ? t('wizard.hero.blocked') : gatekeeperStatus,
+                  detail: t('wizard.hero.governedProgression'),
                   tone: gatekeeperToneFromStatus(gatekeeperStatus),
                 },
               ]}
@@ -1526,43 +1607,43 @@ export default function WizardPage() {
 
           <div className="grid gap-4">
             <ArchitectureGraphSurface
-              title="Topology surface"
-              subtitle="Selecting Java, TypeScript, or Python reshapes the runtime ecosystem and architecture path immediately."
+              title={t('wizard.hero.topologySurface')}
+              subtitle={t('wizard.hero.topologySubtitle')}
               nodes={architectureGraphNodes}
             />
             <div className="grid gap-4 md:grid-cols-2">
               <ReadinessRing
-                title="Journey readiness"
+                title={t('wizard.hero.journeyReadiness')}
                 value={journeyScore}
                 label={currentStep.title}
-                caption="Progress grows as the selected stack moves through the decision cockpit."
+                caption={t('wizard.hero.journeyReadinessCaption')}
                 tone={journeyTone}
               />
               <StackEcosystemMap
-                title="Stack ecosystem"
+                title={t('wizard.hero.stackEcosystem')}
                 nodes={[
                   {
-                    label: 'Archetype',
+                    label: t('wizard.archetype'),
                     value: previewSummary.archetype,
-                    detail: selectedArchetype?.preview_type ?? 'Archetype preview',
+                    detail: selectedArchetype?.preview_type ?? t('wizard.hero.archetypePreview'),
                     tone: 'accent',
                   },
                   {
-                    label: 'Modules',
+                    label: t('wizard.modules'),
                     value: previewSummary.modules,
-                    detail: 'Business module grouping',
+                    detail: t('wizard.hero.businessModuleGrouping'),
                     tone: 'accent2',
                   },
                   {
-                    label: 'Endpoints',
+                    label: t('wizard.endpoints'),
                     value: previewSummary.endpoints,
-                    detail: 'Route ownership and selection',
+                    detail: t('wizard.hero.routeOwnershipSelection'),
                     tone: 'success',
                   },
                   {
-                    label: 'Locale',
+                    label: t('wizard.hero.localeLabel'),
                     value: locale,
-                    detail: 'Blueprint locale contract',
+                    detail: t('wizard.hero.localeContractDetail'),
                     tone: 'muted',
                   },
                 ]}
@@ -1571,24 +1652,25 @@ export default function WizardPage() {
           </div>
         </div>
       </section>
+      </Disclosure>
 
       <SurfaceDivider />
 
-      <div className="grid gap-6 xl:grid-cols-[17rem_minmax(0,1fr)] 2xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
-        <Card className="h-fit p-4 md:p-5">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[15rem_minmax(0,1fr)] 2xl:grid-cols-[15rem_minmax(0,1fr)_minmax(20rem,24rem)]">
+        <Card className="h-fit min-w-0 p-4 md:p-5">
           <div className="space-y-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.26em] text-[color:var(--muted)]">
-                Progress
+                {t('wizard.progress')}
               </p>
               <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                Move one decision at a time. Locked steps open only after the prior choice is complete.
+                {t('wizard.progressDescription')}
               </p>
             </div>
 
-            <nav aria-label="Wizard steps">
+            <nav aria-label={t('wizard.rail.navLabel')}>
               <ol className="space-y-2">
-                {WIZARD_STEPS.map((step, index) => {
+                {localizedWizardSteps.map((step, index) => {
                   const state = getStepState(step.id);
                   const isNavigable = state !== 'locked';
                   return (
@@ -1624,7 +1706,7 @@ export default function WizardPage() {
           </div>
         </Card>
 
-        <div id={createRegionId(currentStep.id)} aria-labelledby={createTriggerId(currentStep.id)}>
+        <div className="min-w-0" id={createRegionId(currentStep.id)} aria-labelledby={createTriggerId(currentStep.id)}>
           {isFoundationLoading ? (
             <Card className="space-y-4 p-6">
               <CardLoading className="p-0 shadow-none" />
@@ -1634,10 +1716,10 @@ export default function WizardPage() {
           ) : foundationError ? (
             <Card className="p-6">
               <PageError
-                title="Technology graph unavailable"
+                title={t('wizard.rail.technologyGraphUnavailable')}
                 description={getApiErrorMessage(
                   foundationError,
-                  'Unable to load the language, runtime or framework registries needed by the wizard.',
+                  t('wizard.rail.technologyGraphFallback'),
                 )}
                 onRetry={() => {
                   void languagesQuery.refetch();
@@ -1657,6 +1739,71 @@ export default function WizardPage() {
             <EmptyState kind="projects" />
           ) : (
             <>
+              {currentStepId === 'project_requirements' ? (
+                <StepShell
+                  step={currentStep}
+                  stepState={getStepState('project_requirements')}
+                  actions={
+                    <Button
+                      type="button"
+                      variant="primary"
+                      disabled={!requirementsComplete}
+                      onClick={() => goToNextStep('project_requirements')}
+                    >
+                      {t('wizard.businessFirst.continue')}
+                    </Button>
+                  }
+                >
+                  <SelectionGroup title={t('wizard.businessFirst.objective')} description={t('wizard.businessFirst.objective.description')}>
+                    <TextField label={t('wizard.businessFirst.projectName')} value={projectName} onChange={(event) => setProjectName(event.target.value)} required />
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {PRODUCT_GOAL_OPTIONS.map((option) => (
+                        <Button key={option} type="button" variant={projectGoal === t(`wizard.businessFirst.goal.${option}`) ? 'primary' : 'secondary'} onClick={() => setProjectGoal(t(`wizard.businessFirst.goal.${option}`))}>
+                          {t(`wizard.businessFirst.goal.${option}`)}
+                        </Button>
+                      ))}
+                    </div>
+                  </SelectionGroup>
+                  <SelectionGroup title={t('wizard.businessFirst.problem')} description={t('wizard.businessFirst.problem.description')}>
+                    <TextareaField label={t('wizard.businessFirst.problem.label')} value={businessContext} onChange={(event) => setBusinessContext(event.target.value)} required />
+                  </SelectionGroup>
+                  <SelectionGroup title={t('wizard.businessFirst.users')} description={t('wizard.businessFirst.users.description')}>
+                    <div className="flex flex-wrap gap-3">
+                      {TARGET_USER_OPTIONS.map((option) => {
+                        const label = t(`wizard.businessFirst.user.${option}`);
+                        return <Button key={option} type="button" variant={splitRequirements(targetUsers).includes(label) ? 'primary' : 'secondary'} onClick={() => toggleTargetUser(label)}>{label}</Button>;
+                      })}
+                    </div>
+                  </SelectionGroup>
+                  <SelectionGroup title={t('wizard.businessFirst.rules')} description={t('wizard.businessFirst.rules.description')}>
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <TextareaField label={t('wizard.businessFirst.rules.label')} description={t('wizard.businessFirst.onePerLine')} value={businessRules} onChange={(event) => setBusinessRules(event.target.value)} required />
+                      <TextareaField label={t('wizard.businessFirst.workflows.label')} description={t('wizard.businessFirst.onePerLine')} value={workflows} onChange={(event) => setWorkflows(event.target.value)} required />
+                    </div>
+                  </SelectionGroup>
+                  <SelectionGroup title={t('wizard.businessFirst.data')} description={t('wizard.businessFirst.data.description')}>
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <TextareaField label={t('wizard.businessFirst.entities')} description={t('wizard.businessFirst.entities.description')} value={entities} onChange={(event) => setEntities(event.target.value)} required />
+                      <TextareaField label={t('wizard.businessFirst.constraints')} description={t('wizard.businessFirst.constraints.description')} value={constraints} onChange={(event) => setConstraints(event.target.value)} required />
+                    </div>
+                  </SelectionGroup>
+                  <SelectionGroup title={t('wizard.businessFirst.delivery')} description={t('wizard.businessFirst.delivery.description')}>
+                    <SelectField label={t('wizard.businessFirst.delivery.label')} value={deliveryTarget} onChange={(event) => setDeliveryTarget(event.target.value as typeof deliveryTarget)} required>
+                      <option value="">{t('wizard.businessFirst.delivery.select')}</option>
+                      <option value="github">GitHub</option>
+                      <option value="gitlab">GitLab</option>
+                      <option value="both">GitHub + GitLab</option>
+                      <option value="zip">{t('wizard.businessFirst.delivery.zip')}</option>
+                    </SelectField>
+                    {!requirementsComplete ? (
+                      <p className="rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--warning)_35%,transparent)] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] p-4 text-sm text-[color:var(--warning)]">
+                        {t('wizard.businessFirst.incomplete')}
+                      </p>
+                    ) : null}
+                  </SelectionGroup>
+                </StepShell>
+              ) : null}
+
               {currentStepId === 'technology_path' ? (
                 <StepShell
                   step={currentStep}
@@ -1665,30 +1812,37 @@ export default function WizardPage() {
                     <>
                       <Button
                         type="button"
+                        variant="secondary"
+                        onClick={() => goToPreviousStep('technology_path')}
+                      >
+                        Back
+                      </Button>
+                      <Button
+                        type="button"
                         variant="primary"
                         disabled={!technologyPathComplete}
                         onClick={() => goToNextStep('technology_path')}
                       >
-                        Continue to Architecture
+                        {t('wizard.continueArchitecture')}
                       </Button>
                       <ActionLink href="/projects" variant="secondary">
-                        Review projects
+                        {t('wizard.reviewProjects')}
                       </ActionLink>
                     </>
                   }
                 >
                   <SelectionGroup
-                    title="Choose the technology spine"
-                    description="The Wizard now starts with the real engineering path. Runtime appears only after a language, and framework appears only after a runtime."
+                    title={t('wizard.chooseTechnologySpine')}
+                    description={t('wizard.chooseTechnologySpineDescription')}
                   >
                     <div className="grid gap-5 xl:grid-cols-3">
                       <SelectField
-                        label="1. Language"
-                        description="Programming ecosystem."
+                        label={t('wizard.languageField')}
+                        description={t('wizard.programmingEcosystem')}
                         value={languageId}
                         onChange={(event) => handleLanguageChange(event.target.value)}
                       >
-                        <option value="">Select a language</option>
+                        <option value="">{t('wizard.selectLanguage')}</option>
                         {(languagesQuery.data ?? []).map((language) => (
                           <option key={language.id} value={language.id}>
                             {language.name}
@@ -1698,12 +1852,12 @@ export default function WizardPage() {
 
                       {languageId ? (
                         <SelectField
-                          label="2. Runtime"
-                          description="Execution environment."
+                          label={t('wizard.runtimeField')}
+                          description={t('wizard.executionEnvironment')}
                           value={runtimeId}
                           onChange={(event) => handleRuntimeChange(event.target.value)}
                         >
-                          <option value="">Select a runtime</option>
+                          <option value="">{t('wizard.selectRuntime')}</option>
                           {availableRuntimes.map((runtime) => (
                             <option key={runtime.id} value={runtime.id}>
                               {runtime.name}
@@ -1712,18 +1866,18 @@ export default function WizardPage() {
                         </SelectField>
                       ) : (
                         <div className="rounded-[var(--radius-xl)] border border-dashed border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                          Runtime unlocks after selecting a language.
+                          {t('wizard.runtimeUnlocks')}
                         </div>
                       )}
 
                       {runtimeId ? (
                         <SelectField
-                          label="3. Framework"
-                          description="Delivery framework."
+                          label={t('wizard.frameworkField')}
+                          description={t('wizard.deliveryFramework')}
                           value={frameworkId}
                           onChange={(event) => handleFrameworkChange(event.target.value)}
                         >
-                          <option value="">Select a framework</option>
+                          <option value="">{t('wizard.selectFramework')}</option>
                           {availableFrameworks.map((framework) => (
                             <option key={framework.id} value={framework.id}>
                               {framework.name}
@@ -1732,7 +1886,7 @@ export default function WizardPage() {
                         </SelectField>
                       ) : (
                         <div className="rounded-[var(--radius-xl)] border border-dashed border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                          Framework unlocks after selecting a runtime.
+                          {t('wizard.frameworkUnlocks')}
                         </div>
                       )}
                     </div>
@@ -1740,47 +1894,47 @@ export default function WizardPage() {
 
                   <div className="grid gap-4 xl:grid-cols-2">
                     <SelectionGroup
-                      title="Language profile"
-                      description="Evaluate ecosystem fit, learning curve, and enterprise readiness."
+                      title={t('wizard.languageProfile')}
+                      description={t('wizard.languageProfileDescription')}
                     >
                       <div className="space-y-2 text-sm text-[color:var(--muted)]">
-                        <p>{selectedLanguageProfile?.summary ?? selectedLanguage?.description ?? 'Select a language to inspect its ecosystem.'}</p>
+                        <p>{selectedLanguageProfile?.summary ?? selectedLanguage?.description ?? t('wizard.selectLanguageEcosystem')}</p>
                         <p>
-                          Ecosystem:{' '}
+                          {t('wizard.ecosystem')}:{' '}
                           <span className="font-semibold text-[color:var(--text)]">
-                            {selectedLanguageProfile?.ecosystem ?? selectedLanguage?.ecosystem ?? 'pending'}
+                            {selectedLanguageProfile?.ecosystem ?? selectedLanguage?.ecosystem ?? t('wizard.pending')}
                           </span>
                         </p>
                         <p>
-                          Primary use cases:{' '}
+                          {t('wizard.primaryUseCases')}:{' '}
                           <span className="font-semibold text-[color:var(--text)]">
-                            {selectedLanguageProfile?.primary_use_cases.join(', ') || 'pending'}
+                            {selectedLanguageProfile?.primary_use_cases.join(', ') || t('wizard.pending')}
                           </span>
                         </p>
                         <p>
-                          Enterprise score:{' '}
+                          {t('wizard.enterpriseScore')}:{' '}
                           <span className="font-semibold text-[color:var(--text)]">
-                            {selectedLanguageProfile?.enterprise_score ?? selectedLanguage?.enterprise_score ?? 'pending'}
+                            {selectedLanguageProfile?.enterprise_score ?? selectedLanguage?.enterprise_score ?? t('wizard.pending')}
                           </span>
                         </p>
                         <p>
-                          Learning curve:{' '}
+                          {t('wizard.learningCurve')}:{' '}
                           <span className="font-semibold text-[color:var(--text)]">
-                            {selectedLanguageProfile?.learning_curve ?? selectedLanguage?.learning_curve ?? 'pending'}
+                            {selectedLanguageProfile?.learning_curve ?? selectedLanguage?.learning_curve ?? t('wizard.pending')}
                           </span>
                         </p>
                         <p>
-                          Scalability:{' '}
+                          {t('wizard.scalability')}:{' '}
                           <span className="font-semibold text-[color:var(--text)]">
-                            {selectedLanguageProfile?.scalability_profile ?? selectedLanguage?.scalability_profile ?? 'pending'}
+                            {selectedLanguageProfile?.scalability_profile ?? selectedLanguage?.scalability_profile ?? t('wizard.pending')}
                           </span>
                         </p>
                         <p>
-                          Frameworks / architectures / capabilities:{' '}
+                          {t('wizard.frameworkArchitectureCapabilities')}:{' '}
                           <span className="font-semibold text-[color:var(--text)]">
                             {selectedLanguageProfile
                               ? `${selectedLanguageProfile.framework_count} / ${selectedLanguageProfile.architecture_count} / ${selectedLanguageProfile.capability_count}`
-                              : 'pending'}
+                              : t('wizard.pending')}
                           </span>
                         </p>
                       </div>
@@ -1825,23 +1979,23 @@ export default function WizardPage() {
                         disabled={!architectureComplete}
                         onClick={() => goToNextStep('architecture')}
                       >
-                        Continue to Project Type
+                        {t('wizard.steps.continueToProjectType')}
                       </Button>
                     </>
                   }
                 >
                   <SelectionGroup
-                    title="Shape the system style"
-                    description="Architecture opens only after the framework is chosen so complexity stays grounded in real framework support."
+                    title={t('wizard.steps.architectureTitle')}
+                    description={t('wizard.steps.architectureDescription')}
                   >
                     <div className="grid gap-5 xl:grid-cols-[minmax(0,18rem)_1fr]">
                       <SelectField
-                        label="4. Architecture"
-                        description="Structural pattern."
+                        label={t('wizard.steps.architectureLabel')}
+                        description={t('wizard.steps.architectureFieldDescription')}
                         value={architectureId}
                         onChange={(event) => handleArchitectureChange(event.target.value)}
                       >
-                        <option value="">Select an architecture</option>
+                        <option value="">{t('wizard.steps.architectureSelectPlaceholder')}</option>
                         {availableArchitectures.map((architecture) => (
                           <option key={architecture.id} value={architecture.id}>
                             {architecture.name}
@@ -1850,20 +2004,20 @@ export default function WizardPage() {
                       </SelectField>
 
                       <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                        <p className="font-semibold text-[color:var(--text)]">Architecture profile</p>
-                        <p className="mt-3">{selectedArchitecture?.description ?? 'Select an architecture to inspect complexity, scalability, and deployment shape.'}</p>
+                        <p className="font-semibold text-[color:var(--text)]">{t('wizard.steps.architectureProfileTitle')}</p>
+                        <p className="mt-3">{selectedArchitecture?.description ?? t('wizard.steps.architectureProfilePlaceholder')}</p>
                         <div className="mt-4 grid gap-3 md:grid-cols-3">
                           <div>
-                            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Complexity</p>
-                            <p className="mt-1 font-semibold text-[color:var(--text)]">{formatComplexityLabel(selectedArchitecture?.complexity_level)}</p>
+                            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.steps.complexityLabel')}</p>
+                            <p className="mt-1 font-semibold text-[color:var(--text)]">{selectedArchitecture?.complexity_level?.replaceAll('_', ' ') ?? t('wizard.complexity.pending')}</p>
                           </div>
                           <div>
-                            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Scalability</p>
-                            <p className="mt-1 font-semibold text-[color:var(--text)]">{selectedArchitecture?.scalability_profile ?? 'pending'}</p>
+                            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.steps.scalabilityLabel')}</p>
+                            <p className="mt-1 font-semibold text-[color:var(--text)]">{selectedArchitecture?.scalability_profile ?? t('wizard.complexity.pending')}</p>
                           </div>
                           <div>
-                            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Deployment</p>
-                            <p className="mt-1 font-semibold text-[color:var(--text)]">{selectedArchitecture?.deployment_complexity ?? 'pending'}</p>
+                            <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.steps.deploymentLabel')}</p>
+                            <p className="mt-1 font-semibold text-[color:var(--text)]">{selectedArchitecture?.deployment_complexity ?? t('wizard.complexity.pending')}</p>
                           </div>
                         </div>
                       </div>
@@ -1887,23 +2041,23 @@ export default function WizardPage() {
                         disabled={!projectTypeComplete}
                         onClick={() => goToNextStep('project_type')}
                       >
-                        Continue to Capabilities
+                        {t('wizard.steps.continueToCapabilities')}
                       </Button>
                     </>
                   }
                 >
                   <SelectionGroup
-                    title="Choose the project type"
-                    description="Archetype comes after architecture so the product shape inherits real structural support."
+                    title={t('wizard.steps.projectTypeTitle')}
+                    description={t('wizard.steps.projectTypeDescription')}
                   >
                     <div className="grid gap-5 xl:grid-cols-[minmax(0,18rem)_1fr]">
                       <SelectField
-                        label="5. Archetype"
-                        description="What kind of system you are building."
+                        label={t('wizard.steps.archetypeLabel')}
+                        description={t('wizard.steps.archetypeFieldDescription')}
                         value={archetypeId}
                         onChange={(event) => handleArchetypeChange(event.target.value)}
                       >
-                        <option value="">Select an archetype</option>
+                        <option value="">{t('wizard.steps.archetypeSelectPlaceholder')}</option>
                         {filteredArchetypes.map((archetype) => (
                           <option key={archetype.id} value={archetype.id}>
                             {archetype.name}
@@ -1912,13 +2066,13 @@ export default function WizardPage() {
                       </SelectField>
 
                       <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                        <p className="font-semibold text-[color:var(--text)]">Archetype profile</p>
-                        <p className="mt-3">{selectedArchetype?.description ?? 'Select an archetype to see default capabilities, modules, and blueprint direction.'}</p>
+                        <p className="font-semibold text-[color:var(--text)]">{t('wizard.steps.archetypeProfileTitle')}</p>
+                        <p className="mt-3">{selectedArchetype?.description ?? t('wizard.steps.archetypeProfilePlaceholder')}</p>
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <Badge>{selectedArchetype?.category ?? 'pending'}</Badge>
-                          <Badge>Preview {selectedArchetype?.preview_type ?? 'pending'}</Badge>
+                          <Badge>{selectedArchetype?.category ?? t('wizard.complexity.pending')}</Badge>
+                          <Badge>{selectedArchetype?.preview_type ?? t('wizard.complexity.pending')}</Badge>
                           <Badge>
-                            Complexity {selectedArchetype ? `${selectedArchetype.complexity_range.minimum}-${selectedArchetype.complexity_range.maximum}` : 'pending'}
+                            {t('wizard.steps.complexityLabel')} {selectedArchetype ? `${selectedArchetype.complexity_range.minimum}-${selectedArchetype.complexity_range.maximum}` : t('wizard.complexity.pending')}
                           </Badge>
                         </div>
                       </div>
@@ -1942,14 +2096,14 @@ export default function WizardPage() {
                         disabled={!capabilitiesComplete}
                         onClick={() => goToNextStep('capabilities')}
                       >
-                        Continue to Business Modules
+                        {t('wizard.steps.continueToBusinessModules')}
                       </Button>
                     </>
                   }
                 >
                   <SelectionGroup
-                    title="Recommended capabilities first"
-                    description="Start from the archetype and architecture recommendations. Advanced capabilities stay collapsed until explicitly requested."
+                    title={t('wizard.recommendedCapabilitiesFirst')}
+                    description={t('wizard.steps.capabilitiesDescription')}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap gap-2">
@@ -1963,13 +2117,13 @@ export default function WizardPage() {
                         aria-controls="advanced-capabilities-region"
                         onClick={() => setShowAdvancedCapabilities((current) => !current)}
                       >
-                        {showAdvancedCapabilities ? 'Hide advanced capabilities' : 'View advanced capabilities'}
+                        {showAdvancedCapabilities ? t('wizard.steps.hideAdvancedCapabilities') : t('wizard.steps.viewAdvancedCapabilities')}
                       </Button>
                     </div>
 
                     {recommendedCapabilities.length ? (
                       <div className="space-y-3">
-                        <p className="text-sm font-semibold text-[color:var(--text)]">Recommended for this blueprint</p>
+                        <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.steps.recommendedForBlueprint')}</p>
                         <div className="grid gap-3 md:grid-cols-2">
                           {recommendedCapabilities.map((capability) => (
                             <CheckboxField
@@ -1984,7 +2138,7 @@ export default function WizardPage() {
                       </div>
                     ) : (
                       <div className="rounded-[var(--radius-xl)] border border-dashed border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                        No recommended capabilities were returned for this combination yet.
+                        {t('wizard.steps.noRecommendedCapabilities')}
                       </div>
                     )}
 
@@ -1996,7 +2150,7 @@ export default function WizardPage() {
                       {groupedAdvancedCapabilities.map(([category, capabilities]) => (
                         <div key={category} className="space-y-3 rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
                           <p className="text-sm font-semibold text-[color:var(--text)]">
-                            {CAPABILITY_CATEGORY_LABELS[category] ?? category}
+                            {CAPABILITY_CATEGORY_KEYS[category] ? t(CAPABILITY_CATEGORY_KEYS[category]) : category}
                           </p>
                           <div className="grid gap-3 md:grid-cols-2">
                             {capabilities.map((capability) => (
@@ -2031,21 +2185,21 @@ export default function WizardPage() {
                         disabled={!modulesComplete}
                         onClick={() => goToNextStep('business_modules')}
                       >
-                        Continue to Endpoints
+                        {t('wizard.steps.continueToEndpoints')}
                       </Button>
                     </>
                   }
                 >
                   <SelectionGroup
-                    title="Business modules by domain"
-                    description="Recommended modules for the chosen archetype rise to the top, while broader business domains remain grouped for controlled expansion."
+                    title={t('wizard.steps.businessModulesTitle')}
+                    description={t('wizard.steps.businessModulesDescription')}
                   >
                     <div className="space-y-5">
                       {groupedModules.map(([category, modules]) => (
                         <div key={category} className="space-y-3">
                           <div className="flex items-center gap-3">
                             <p className="text-sm font-semibold text-[color:var(--text)]">
-                              {MODULE_CATEGORY_LABELS[category] ?? category}
+                              {MODULE_CATEGORY_KEYS[category] ? t(MODULE_CATEGORY_KEYS[category]) : category}
                             </p>
                             <Badge>{modules.length}</Badge>
                           </div>
@@ -2054,7 +2208,7 @@ export default function WizardPage() {
                               <div key={module.id} className="relative">
                                 {recommendedModuleIds.has(module.id) ? (
                                   <Badge className="absolute right-3 top-3 border-[color-mix(in_srgb,var(--accent)_34%,transparent)] text-[color:var(--text)]">
-                                    Recommended
+                                    {t('wizard.steps.recommendedBadge')}
                                   </Badge>
                                 ) : null}
                                 <CheckboxField
@@ -2098,18 +2252,18 @@ export default function WizardPage() {
                         Back
                       </Button>
                       <Button type="button" variant="primary" onClick={() => goToNextStep('endpoints')}>
-                        Continue to Blueprint Review
+                        {t('wizard.continueBlueprint')}
                       </Button>
                     </>
                   }
                 >
                   <SelectionGroup
-                    title="Endpoints grouped by module"
-                    description="Endpoints are hidden until business modules exist. Each module opens as its own accordion and supports recommended or full-batch selection."
+                    title={t('wizard.steps.endpointsTitle')}
+                    description={t('wizard.steps.endpointsDescription')}
                   >
                     {selectedModules.length === 0 ? (
                       <div className="rounded-[var(--radius-xl)] border border-dashed border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                        Select at least one business module to unlock endpoint groups.
+                        {t('wizard.steps.selectModuleFirst')}
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -2140,10 +2294,10 @@ export default function WizardPage() {
                               <div id={accordionRegionId} hidden={!isOpen} className="space-y-4 border-t border-white/10 px-5 py-4">
                                 <div className="flex flex-wrap gap-3">
                                   <Button type="button" variant="soft" onClick={() => selectModuleEndpoints(module, 'recommended')}>
-                                    Select recommended
+                                    {t('wizard.steps.selectRecommended')}
                                   </Button>
                                   <Button type="button" variant="secondary" onClick={() => selectModuleEndpoints(module, 'all')}>
-                                    Select all in module
+                                    {t('wizard.steps.selectAllInModule')}
                                   </Button>
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-2">
@@ -2177,7 +2331,7 @@ export default function WizardPage() {
                         Back
                       </Button>
                       <Button type="button" variant="primary" onClick={previewCurrentBlueprint} disabled={blueprintPreviewMutation.isPending}>
-                        {blueprintPreviewMutation.isPending ? <ButtonLoading label="Building blueprint preview" /> : 'Preview blueprint'}
+                        {blueprintPreviewMutation.isPending ? <ButtonLoading label={t('wizard.button.buildingBlueprintPreview')} /> : t('wizard.button.previewBlueprint')}
                       </Button>
                       <Button
                         type="button"
@@ -2185,7 +2339,7 @@ export default function WizardPage() {
                         onClick={previewPromptMaster}
                         disabled={!backendBlueprint || promptMasterPreviewMutation.isPending}
                       >
-                        {promptMasterPreviewMutation.isPending ? <ButtonLoading label="Building Prompt Master" /> : 'Preview Prompt Master'}
+                        {promptMasterPreviewMutation.isPending ? <ButtonLoading label={t('wizard.button.buildingPromptMaster')} /> : t('wizard.previewPromptMaster')}
                       </Button>
                       <Button
                         type="button"
@@ -2193,7 +2347,7 @@ export default function WizardPage() {
                         onClick={() => void copyPromptMaster()}
                         disabled={!promptMasterDocument}
                       >
-                        Copy Prompt Master
+                        {t('wizard.button.copyPromptMaster')}
                       </Button>
                       <Button
                         type="button"
@@ -2201,7 +2355,7 @@ export default function WizardPage() {
                         onClick={runGatekeeper}
                         disabled={!promptMasterDocument || gatekeeperPreviewMutation.isPending}
                       >
-                        {gatekeeperPreviewMutation.isPending ? <ButtonLoading label="Running Gatekeeper" /> : 'Run Gatekeeper'}
+                        {gatekeeperPreviewMutation.isPending ? <ButtonLoading label={t('wizard.button.runningGatekeeper')} /> : t('wizard.runGatekeeper')}
                       </Button>
                       <Button
                         type="button"
@@ -2209,25 +2363,25 @@ export default function WizardPage() {
                         onClick={saveProject}
                         disabled={!gatekeeperReport || saveProjectMutation.isPending}
                       >
-                        {saveProjectMutation.isPending ? <ButtonLoading label="Saving project" /> : 'Save Project'}
+                        {saveProjectMutation.isPending ? <ButtonLoading label={t('wizard.button.savingProject')} /> : t('wizard.button.saveProject')}
                       </Button>
                     </>
                   }
                 >
                   <SelectionGroup
-                    title="Blueprint review"
-                    description="Build a normalized backend preview with technology graph, complexity, validation and explicit recommendations before any future generation layer exists."
+                    title={t('wizard.review.title')}
+                    description={t('wizard.review.description')}
                   >
                     <div className="grid gap-4 lg:grid-cols-3">
                       <TextField
-                        label="Project name"
-                        description="Human-readable blueprint label."
+                        label={t('wizard.review.projectNameLabel')}
+                        description={t('wizard.review.projectNameDescription')}
                         value={projectName}
                         onChange={(event) => setProjectName(event.target.value)}
                       />
                       <SelectField
-                        label="Locale"
-                        description="Output locale stored in the blueprint."
+                        label={t('wizard.review.localeLabel')}
+                        description={t('wizard.review.localeDescription')}
                         value={locale}
                         onChange={(event) => setLocale(event.target.value as (typeof LOCALE_OPTIONS)[number])}
                       >
@@ -2238,14 +2392,14 @@ export default function WizardPage() {
                         ))}
                       </SelectField>
                       <SelectField
-                        label="Generation mode"
-                        description="Planning-only mode for future phases."
+                        label={t('wizard.review.generationModeLabel')}
+                        description={t('wizard.review.generationModeDescription')}
                         value={generationMode}
                         onChange={(event) => setGenerationMode(event.target.value as (typeof GENERATION_MODE_OPTIONS)[number]['value'])}
                       >
                         {GENERATION_MODE_OPTIONS.map((mode) => (
                           <option key={mode.value} value={mode.value}>
-                            {mode.label}
+                            {t(`wizard.generationMode.${mode.value}`)}
                           </option>
                         ))}
                       </SelectField>
@@ -2253,97 +2407,95 @@ export default function WizardPage() {
 
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                        <p className="font-semibold text-[color:var(--text)]">Complexity estimate</p>
+                        <p className="font-semibold text-[color:var(--text)]">{t('wizard.review.complexityEstimateTitle')}</p>
                         <p className="mt-3 text-3xl font-semibold text-[color:var(--text)]">
                           {backendBlueprint?.complexity_profile.overall_score ?? complexityEstimate.score}
                         </p>
                         <p className="mt-2">
-                          {backendBlueprint?.complexity_profile.risk_level ?? complexityEstimate.label}
+                          {backendBlueprint?.complexity_profile.risk_level ?? t(complexityEstimate.key)}
                         </p>
                         <p className="mt-4">
-                          Architecture complexity:{' '}
+                          {t('wizard.review.architectureComplexity')}{' '}
                           <span className="font-semibold text-[color:var(--text)]">
-                            {formatComplexityLabel(
-                              backendBlueprint?.technology_graph.architecture.complexity_level ?? selectedArchitecture?.complexity_level,
-                            )}
+                            {(backendBlueprint?.technology_graph.architecture.complexity_level ?? selectedArchitecture?.complexity_level)?.replaceAll('_', ' ') ?? t('wizard.complexity.pending')}
                           </span>
                         </p>
                       </div>
                       <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                        <p className="font-semibold text-[color:var(--text)]">Validation status</p>
+                        <p className="font-semibold text-[color:var(--text)]">{t('wizard.review.validationStatusTitle')}</p>
                         <p className="mt-3 font-semibold text-[color:var(--text)]">
                           {validationStatus === 'loading'
-                            ? 'Building preview'
+                            ? t('wizard.review.validationBuilding')
                             : validationStatus === 'valid'
-                              ? 'Healthy'
+                              ? t('wizard.review.validationHealthy')
                               : validationStatus === 'invalid'
-                                ? 'Needs attention'
+                                ? t('wizard.review.validationAttention')
                                 : validationStatus === 'error'
-                                  ? 'Preview failed'
-                                  : 'Empty'}
+                                  ? t('wizard.review.validationFailed')
+                                  : t('wizard.review.validationEmpty')}
                         </p>
                         <p className="mt-2">
                           {validationStatus === 'empty'
-                            ? 'Run preview to inspect warnings, recommendations and the normalized technology graph.'
+                            ? t('wizard.review.validationDescEmpty')
                             : validationStatus === 'valid'
-                              ? 'The backend returned a valid foundation blueprint.'
+                              ? t('wizard.review.validationDescValid')
                               : validationStatus === 'loading'
-                                ? 'The backend is resolving the blueprint now.'
-                                : 'The backend returned explicit blueprint issues or failed to complete the preview.'}
+                                ? t('wizard.review.validationDescLoading')
+                                : t('wizard.review.validationDescError')}
                         </p>
                       </div>
                       <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)] md:col-span-2">
-                        <p className="font-semibold text-[color:var(--text)]">Prompt Master status</p>
+                        <p className="font-semibold text-[color:var(--text)]">{t('wizard.review.promptMasterStatusTitle')}</p>
                         <p className="mt-3 font-semibold text-[color:var(--text)]">
                           {promptMasterStatus === 'loading'
-                            ? 'Building Prompt Master'
+                            ? t('wizard.review.promptMasterBuilding')
                             : promptMasterStatus === 'valid'
-                              ? 'Ready'
+                              ? t('wizard.review.promptMasterReady')
                               : promptMasterStatus === 'invalid'
-                                ? 'Needs attention'
+                                ? t('wizard.review.promptMasterAttention')
                                 : promptMasterStatus === 'error'
-                                  ? 'Preview failed'
-                                  : 'Empty'}
+                                  ? t('wizard.review.promptMasterFailed')
+                                  : t('wizard.review.promptMasterStatusEmpty')}
                         </p>
                         <p className="mt-2">
                           {promptMasterStatus === 'empty'
-                            ? 'Build the blueprint first, then transform it into a structured Prompt Master document.'
+                            ? t('wizard.review.promptMasterDescEmpty')
                             : promptMasterStatus === 'loading'
-                              ? 'The backend is turning the blueprint into a technical contract now.'
+                              ? t('wizard.review.promptMasterDescLoading')
                               : promptMasterStatus === 'valid'
-                                ? 'All mandatory Prompt Master sections are available.'
+                                ? t('wizard.review.promptMasterDescValid')
                                 : promptMasterStatus === 'invalid'
-                                  ? 'The Prompt Master preserved blueprint issues and explicit constraints.'
-                                  : 'The Prompt Master preview request failed.'}
+                                  ? t('wizard.review.promptMasterDescInvalid')
+                                  : t('wizard.review.promptMasterDescError')}
                         </p>
                       </div>
                       <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)] md:col-span-2">
-                        <p className="font-semibold text-[color:var(--text)]">Gatekeeper status</p>
+                        <p className="font-semibold text-[color:var(--text)]">{t('wizard.review.gatekeeperStatusTitle')}</p>
                         <p className="mt-3 font-semibold text-[color:var(--text)]">
                           {gatekeeperStatus === 'loading'
-                            ? 'Running Gatekeeper'
+                            ? t('wizard.review.gatekeeperRunning')
                             : gatekeeperStatus === 'valid'
-                              ? 'Approved'
+                              ? t('wizard.review.gatekeeperApproved')
                               : gatekeeperStatus === 'warning'
-                                ? 'Approved with warnings'
+                                ? t('wizard.review.gatekeeperApprovedWarnings')
                                 : gatekeeperStatus === 'invalid'
-                                  ? 'Blocked'
+                                  ? t('wizard.review.gatekeeperBlocked')
                                   : gatekeeperStatus === 'error'
-                                    ? 'Preview failed'
-                                    : 'Empty'}
+                                    ? t('wizard.review.gatekeeperFailed')
+                                    : t('wizard.review.gatekeeperStatusEmpty')}
                         </p>
                         <p className="mt-2">
                           {gatekeeperStatus === 'empty'
-                            ? 'Run Gatekeeper after the Prompt Master preview to get a governed decision before any future generation phase.'
+                            ? t('wizard.review.gatekeeperDescEmpty')
                             : gatekeeperStatus === 'loading'
-                              ? 'The backend is validating the blueprint and Prompt Master pair now.'
+                              ? t('wizard.review.gatekeeperDescLoading')
                               : gatekeeperStatus === 'valid'
-                                ? 'All mandatory Gatekeeper checks passed.'
+                                ? t('wizard.review.gatekeeperDescValid')
                                 : gatekeeperStatus === 'warning'
-                                  ? 'The Gatekeeper found warnings but did not block progression.'
+                                  ? t('wizard.review.gatekeeperDescWarning')
                                   : gatekeeperStatus === 'invalid'
-                                    ? 'The Gatekeeper found critical blockers.'
-                                    : 'The Gatekeeper preview request failed.'}
+                                    ? t('wizard.review.gatekeeperDescInvalid')
+                                    : t('wizard.review.gatekeeperDescError')}
                         </p>
                       </div>
                     </div>
@@ -2356,20 +2508,20 @@ export default function WizardPage() {
                       isLoading={dependencyGraphQuery.isLoading || impactAnalysisQuery.isLoading || readinessAnalysisQuery.isLoading || riskAnalysisQuery.isLoading}
                       errorMessage={
                         dependencyGraphQuery.isError || impactAnalysisQuery.isError || readinessAnalysisQuery.isError || riskAnalysisQuery.isError
-                          ? 'Dependency graph services are offline, but the wizard keeps the current selection safe.'
+                          ? t('wizard.review.dependencyGraphOffline')
                           : null
                       }
                     />
 
                     <ArchitecturalGraphCanvas
                       payload={architecturalGraphPayload}
-                      title="Architecture Graph"
-                      offlineMessage="Architectural graph services are offline, but the selected blueprint remains safe."
+                      title={t('wizard.review.architecturalGraphTitle')}
+                      offlineMessage={t('wizard.review.architecturalGraphOffline')}
                     />
 
                     <VisualizationCockpit
                       payload={dependencyGraphPayload}
-                      offlineMessage="System design visualization services are offline, but the selected architecture path remains safe."
+                      offlineMessage={t('wizard.review.visualizationOffline')}
                     />
 
                     <EngineeringReadinessPanel
@@ -2379,17 +2531,17 @@ export default function WizardPage() {
                       isLoading={engineeringReadinessQuery.isLoading || teamProfileQuery.isLoading || deliveryEstimateQuery.isLoading}
                       errorMessage={
                         engineeringReadinessQuery.isError || teamProfileQuery.isError || deliveryEstimateQuery.isError
-                          ? 'Engineering readiness services are offline, but the wizard keeps the selected team profile safe.'
+                          ? t('wizard.review.engineeringReadinessOffline')
                           : null
                       }
                     />
 
                     {blueprintPreviewMutation.isError ? (
                       <PageError
-                        title="Blueprint preview failed"
+                        title={t('wizard.review.blueprintPreviewFailedTitle')}
                         description={getApiErrorMessage(
                           blueprintPreviewMutation.error,
-                          'Unable to build the current blueprint preview.',
+                          t('wizard.review.blueprintPreviewFailedFallback'),
                         )}
                         onRetry={previewCurrentBlueprint}
                         className="p-4"
@@ -2401,15 +2553,15 @@ export default function WizardPage() {
                     ) : backendBlueprint ? (
                       <div className="space-y-4">
                         <div className="flex flex-wrap gap-2">
-                          <Badge>{backendBlueprint.validation.valid ? 'Valid blueprint' : 'Blueprint returned issues'}</Badge>
-                          <Badge>{backendBlueprint.validation.errors.length} errors</Badge>
-                          <Badge>{backendBlueprint.validation.warnings.length} warnings</Badge>
-                          <Badge>{backendBlueprint.recommendations.length} recommendations</Badge>
+                          <Badge>{backendBlueprint.validation.valid ? t('wizard.validBlueprint') : t('wizard.blueprintIssues')}</Badge>
+                          <Badge>{backendBlueprint.validation.errors.length} {t('common.errors')}</Badge>
+                          <Badge>{backendBlueprint.validation.warnings.length} {t('common.warnings')}</Badge>
+                          <Badge>{backendBlueprint.recommendations.length} {t('common.recommendations')}</Badge>
                         </div>
 
                         {backendBlueprint.validation.errors.length ? (
                           <div className="space-y-2 rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--danger)_34%,var(--border))] bg-white/5 p-4">
-                            <p className="text-sm font-semibold text-[color:var(--text)]">Errors</p>
+                            <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.errorsHeading')}</p>
                             {backendBlueprint.validation.errors.map((item) => (
                               <p key={item.code} className="text-sm text-[color:var(--muted)]">{item.message}</p>
                             ))}
@@ -2418,7 +2570,7 @@ export default function WizardPage() {
 
                         {backendBlueprint.validation.warnings.length ? (
                           <div className="space-y-2 rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--warning)_28%,var(--border))] bg-white/5 p-4">
-                            <p className="text-sm font-semibold text-[color:var(--text)]">Warnings</p>
+                            <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.warningsHeading')}</p>
                             {backendBlueprint.validation.warnings.map((item) => (
                               <p key={item.code} className="text-sm text-[color:var(--muted)]">{item.message}</p>
                             ))}
@@ -2427,7 +2579,7 @@ export default function WizardPage() {
 
                         {backendBlueprint.validation.suggestions.length ? (
                           <div className="space-y-2 rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
-                            <p className="text-sm font-semibold text-[color:var(--text)]">Suggestions</p>
+                            <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.suggestionsHeading')}</p>
                             {backendBlueprint.validation.suggestions.map((suggestion) => (
                               <p key={suggestion} className="text-sm text-[color:var(--muted)]">{suggestion}</p>
                             ))}
@@ -2436,67 +2588,67 @@ export default function WizardPage() {
 
                         <div className="grid gap-3 md:grid-cols-4">
                           <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
-                            <p className="text-sm font-semibold text-[color:var(--text)]">Technology graph snapshot</p>
-                            <p className="mt-2 text-sm text-[color:var(--muted)]">Normalized stack path returned by the backend preview engine.</p>
+                            <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.technologyGraphSnapshotTitle')}</p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">{t('wizard.review.technologyGraphSnapshotDesc')}</p>
                           </div>
                           <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
-                            <p className="text-sm font-semibold text-[color:var(--text)]">Architecture profile snapshot</p>
-                            <p className="mt-2 text-sm text-[color:var(--muted)]">Operational complexity, infrastructure expectations and recommended patterns.</p>
+                            <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.architectureProfileSnapshotTitle')}</p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">{t('wizard.review.architectureProfileSnapshotDesc')}</p>
                           </div>
                           <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
-                            <p className="text-sm font-semibold text-[color:var(--text)]">Complexity profile snapshot</p>
-                            <p className="mt-2 text-sm text-[color:var(--muted)]">Explicit foundation scoring before any future generation phase.</p>
+                            <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.complexityProfileSnapshotTitle')}</p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">{t('wizard.review.complexityProfileSnapshotDesc')}</p>
                           </div>
                           <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
-                            <p className="text-sm font-semibold text-[color:var(--text)]">Infrastructure profile snapshot</p>
-                            <p className="mt-2 text-sm text-[color:var(--muted)]">Selected foundation components and recommendations stay visible in the blueprint preview.</p>
+                            <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.infrastructureProfileSnapshotTitle')}</p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">{t('wizard.review.infrastructureProfileSnapshotDesc')}</p>
                           </div>
                         </div>
 
                         <ReviewDisclosure
-                          title="Stack path preview"
-                          description="Normalized stack path returned by the backend preview engine."
+                          title={t('wizard.review.stackPathTitle')}
+                          description={t('wizard.review.stackPathDesc')}
                           defaultOpen
                         >
                           <div className="grid gap-3 md:grid-cols-2">
                             <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Language</p>
+                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.language')}</p>
                               <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{backendBlueprint.technology_graph.language.name}</p>
                             </div>
                             <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Runtime</p>
+                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.runtime')}</p>
                               <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{backendBlueprint.technology_graph.runtime.name}</p>
                             </div>
                             <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Framework</p>
+                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.framework')}</p>
                               <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{backendBlueprint.technology_graph.framework.name}</p>
                             </div>
                             <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Architecture</p>
+                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.architecture')}</p>
                               <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{backendBlueprint.technology_graph.architecture.name}</p>
                             </div>
                           </div>
                         </ReviewDisclosure>
 
                         <ReviewDisclosure
-                          title="Architecture profile details"
-                          description="Operational complexity, infrastructure expectations and recommended patterns."
+                          title={t('wizard.review.architectureProfileDetailsTitle')}
+                          description={t('wizard.review.architectureProfileDetailsDesc')}
                         >
                           <div className="space-y-3 text-sm text-[color:var(--muted)]">
-                            <p>Scalability profile: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.architecture_profile.scalability_profile}</span></p>
-                            <p>Deployment complexity: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.architecture_profile.deployment_complexity}</span></p>
-                            <p>Required infrastructure: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.architecture_profile.required_infrastructure.join(', ') || 'none'}</span></p>
-                            <p>Recommended patterns: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.architecture_profile.recommended_patterns.join(', ') || 'none'}</span></p>
+                            <p>{t('wizard.review.scalabilityProfile')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.architecture_profile.scalability_profile}</span></p>
+                            <p>{t('wizard.review.deploymentComplexity')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.architecture_profile.deployment_complexity}</span></p>
+                            <p>{t('wizard.review.requiredInfrastructure')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.architecture_profile.required_infrastructure.join(', ') || 'none'}</span></p>
+                            <p>{t('wizard.review.recommendedPatterns')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.architecture_profile.recommended_patterns.join(', ') || 'none'}</span></p>
                           </div>
                         </ReviewDisclosure>
 
                         <ReviewDisclosure
-                          title="Infrastructure profile details"
-                          description="Foundation components selected in the wizard and the backend recommendations returned for this blueprint."
+                          title={t('wizard.review.infrastructureProfileDetailsTitle')}
+                          description={t('wizard.review.infrastructureProfileDetailsDesc')}
                         >
                           <div className="space-y-4 text-sm text-[color:var(--muted)]">
                             <div>
-                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Selected foundation</p>
+                              <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.review.selectedFoundation')}</p>
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {selectedInfrastructureComponents.length ? (
                                   selectedInfrastructureComponents.map((component) => (
@@ -2505,13 +2657,13 @@ export default function WizardPage() {
                                     </Badge>
                                   ))
                                 ) : (
-                                  <span className="text-[color:var(--muted)]">No infrastructure foundation selected yet.</span>
+                                  <span className="text-[color:var(--muted)]">{t('wizard.review.noFoundationSelected')}</span>
                                 )}
                               </div>
                             </div>
                             <div className="grid gap-3 md:grid-cols-3">
                               <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Required</p>
+                                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.review.requiredLabel')}</p>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {backendBlueprint.infrastructure_profile.required_component_ids.length ? (
                                     backendBlueprint.infrastructure_profile.required_component_ids.map((componentId) => (
@@ -2520,12 +2672,12 @@ export default function WizardPage() {
                                       </Badge>
                                     ))
                                   ) : (
-                                    <span>No required foundation items.</span>
+                                    <span>{t('wizard.review.noRequiredItems')}</span>
                                   )}
                                 </div>
                               </div>
                               <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Recommended</p>
+                                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.review.recommendedLabel')}</p>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {backendBlueprint.infrastructure_profile.recommended_component_ids.length ? (
                                     backendBlueprint.infrastructure_profile.recommended_component_ids.map((componentId) => (
@@ -2534,12 +2686,12 @@ export default function WizardPage() {
                                       </Badge>
                                     ))
                                   ) : (
-                                    <span>No recommended foundation items.</span>
+                                    <span>{t('wizard.review.noRecommendedItems')}</span>
                                   )}
                                 </div>
                               </div>
                               <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Optional</p>
+                                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.review.optionalLabel')}</p>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {backendBlueprint.infrastructure_profile.optional_component_ids.length ? (
                                     backendBlueprint.infrastructure_profile.optional_component_ids.map((componentId) => (
@@ -2548,7 +2700,7 @@ export default function WizardPage() {
                                       </Badge>
                                     ))
                                   ) : (
-                                    <span>No optional foundation items.</span>
+                                    <span>{t('wizard.review.noOptionalItems')}</span>
                                   )}
                                 </div>
                               </div>
@@ -2567,26 +2719,26 @@ export default function WizardPage() {
                         </ReviewDisclosure>
 
                         <ReviewDisclosure
-                          title="Complexity profile details"
-                          description="Explicit foundation scoring before any future generation phase."
+                          title={t('wizard.review.complexityProfileDetailsTitle')}
+                          description={t('wizard.review.complexityProfileDetailsDesc')}
                         >
                           <div className="grid gap-3 md:grid-cols-2">
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">Learning curve: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.learning_curve}</span></div>
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">Implementation effort: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.implementation_effort}</span></div>
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">Infrastructure cost: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.infrastructure_cost}</span></div>
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">Maintenance cost: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.maintenance_cost}</span></div>
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">Team recommendation: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.team_size_recommendation}</span></div>
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">Risk level: <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.risk_level}</span></div>
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">{t('wizard.review.learningCurveLabel')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.learning_curve}</span></div>
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">{t('wizard.review.implementationEffortLabel')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.implementation_effort}</span></div>
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">{t('wizard.review.infrastructureCostLabel')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.infrastructure_cost}</span></div>
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">{t('wizard.review.maintenanceCostLabel')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.maintenance_cost}</span></div>
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">{t('wizard.review.teamRecommendationLabel')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.team_size_recommendation}</span></div>
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">{t('wizard.review.riskLevelLabel')} <span className="font-semibold text-[color:var(--text)]">{backendBlueprint.complexity_profile.risk_level}</span></div>
                           </div>
                         </ReviewDisclosure>
 
                         <ReviewDisclosure
-                          title="Modules and endpoints"
-                          description="Selected operational domains and route ownership returned by the backend."
+                          title={t('wizard.review.modulesEndpointsTitle')}
+                          description={t('wizard.review.modulesEndpointsDesc')}
                         >
                           <div className="grid gap-4 lg:grid-cols-2">
                             <div className="space-y-2">
-                              <p className="text-sm font-semibold text-[color:var(--text)]">Business modules</p>
+                              <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.businessModulesLabel')}</p>
                               {backendBlueprint.business_modules.map((module) => (
                                 <div key={module.id} className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">
                                   <span className="font-semibold text-[color:var(--text)]">{module.name}</span> {module.description}
@@ -2594,7 +2746,7 @@ export default function WizardPage() {
                               ))}
                             </div>
                             <div className="space-y-2">
-                              <p className="text-sm font-semibold text-[color:var(--text)]">Endpoints</p>
+                              <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.endpointsLabel')}</p>
                               {backendBlueprint.endpoints.map((endpoint) => (
                                 <div key={endpoint.id} className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-[color:var(--muted)]">
                                   <span className="font-semibold text-[color:var(--text)]">{endpoint.method} {endpoint.path}</span> {endpoint.description}
@@ -2605,8 +2757,8 @@ export default function WizardPage() {
                         </ReviewDisclosure>
 
                         <ReviewDisclosure
-                          title="Recommendations"
-                          description="Foundation recommendations returned by the backend engine."
+                          title={t('wizard.review.recommendationsTitle')}
+                          description={t('wizard.review.recommendationsDesc')}
                         >
                           {backendBlueprint.recommendations.length ? (
                             <div className="space-y-2">
@@ -2617,16 +2769,16 @@ export default function WizardPage() {
                               ))}
                             </div>
                           ) : (
-                            <p className="text-sm text-[color:var(--muted)]">No additional recommendations were generated for this preview.</p>
+                            <p className="text-sm text-[color:var(--muted)]">{t('wizard.review.noRecommendations')}</p>
                           )}
                         </ReviewDisclosure>
 
                         {promptMasterPreviewMutation.isError ? (
                           <PageError
-                            title="Prompt Master preview failed"
+                            title={t('wizard.review.promptMasterPreviewFailedTitle')}
                             description={getApiErrorMessage(
                               promptMasterPreviewMutation.error,
-                              'Unable to transform the current blueprint into a Prompt Master preview.',
+                              t('wizard.review.promptMasterPreviewFailedFallback'),
                             )}
                             onRetry={previewPromptMaster}
                             className="p-4"
@@ -2637,11 +2789,11 @@ export default function WizardPage() {
                           <CardLoading className="p-0 shadow-none" />
                         ) : promptMasterDocument ? (
                           <SelectionGroup
-                            title="Prompt Master preview"
-                            description="A structured technical contract derived from the current Project Blueprint. This layer is preview-only and does not generate code."
+                            title={t('wizard.review.promptMasterPreviewTitle')}
+                            description={t('wizard.review.promptMasterPreviewDesc')}
                           >
                             <div className="flex flex-wrap gap-2">
-                              <Badge>{promptMasterDocument.validation.valid ? 'Valid Prompt Master' : 'Prompt Master returned issues'}</Badge>
+                              <Badge>{promptMasterDocument.validation.valid ? t('wizard.review.validPromptMasterBadge') : t('wizard.review.promptMasterIssuesBadge')}</Badge>
                               <Badge>{promptMasterDocument.sections.length} sections</Badge>
                               <Badge>{promptMasterDocument.validation.errors.length} errors</Badge>
                               <Badge>{promptMasterDocument.validation.warnings.length} warnings</Badge>
@@ -2649,7 +2801,7 @@ export default function WizardPage() {
 
                             {promptMasterDocument.validation.errors.length ? (
                               <div className="space-y-2 rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--danger)_34%,var(--border))] bg-white/5 p-4">
-                                <p className="text-sm font-semibold text-[color:var(--text)]">Prompt Master errors</p>
+                                <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.promptMasterErrorsHeading')}</p>
                                 {promptMasterDocument.validation.errors.map((item) => (
                                   <p key={item.code} className="text-sm text-[color:var(--muted)]">{item.message}</p>
                                 ))}
@@ -2658,7 +2810,7 @@ export default function WizardPage() {
 
                             {promptMasterDocument.validation.warnings.length ? (
                               <div className="space-y-2 rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--warning)_28%,var(--border))] bg-white/5 p-4">
-                                <p className="text-sm font-semibold text-[color:var(--text)]">Prompt Master warnings</p>
+                                <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.promptMasterWarningsHeading')}</p>
                                 {promptMasterDocument.validation.warnings.map((item) => (
                                   <p key={item.code} className="text-sm text-[color:var(--muted)]">{item.message}</p>
                                 ))}
@@ -2667,7 +2819,7 @@ export default function WizardPage() {
 
                             {promptMasterDocument.validation.constraints.length ? (
                               <div className="space-y-2 rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
-                                <p className="text-sm font-semibold text-[color:var(--text)]">Constraints</p>
+                                <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.constraintsHeading')}</p>
                                 {promptMasterDocument.validation.constraints.map((item) => (
                                   <p key={item} className="text-sm text-[color:var(--muted)]">{item}</p>
                                 ))}
@@ -2675,13 +2827,13 @@ export default function WizardPage() {
                             ) : null}
 
                             <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
-                              <p className="text-sm font-semibold text-[color:var(--text)]">Prompt Master sections</p>
-                              <p className="mt-2 text-sm text-[color:var(--muted)]">All mandatory sections are compiled from the validated blueprint without changing the chosen stack.</p>
+                              <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.promptMasterSectionsTitle')}</p>
+                              <p className="mt-2 text-sm text-[color:var(--muted)]">{t('wizard.review.promptMasterSectionsDesc')}</p>
                             </div>
 
                             <ReviewDisclosure
-                              title="Prompt Master sections details"
-                              description="All mandatory sections are compiled from the validated blueprint without changing the chosen stack."
+                              title={t('wizard.review.promptMasterSectionsDetailsTitle')}
+                              description={t('wizard.review.promptMasterSectionsDetailsDesc')}
                               defaultOpen
                             >
                               <div className="space-y-3">
@@ -2706,40 +2858,40 @@ export default function WizardPage() {
                             </ReviewDisclosure>
 
                             <ReviewDisclosure
-                              title="Prompt Master trace"
-                              description="Safe trace metadata keeps the Prompt Master auditable without carrying secrets."
+                              title={t('wizard.review.promptMasterTraceTitle')}
+                              description={t('wizard.review.promptMasterTraceDesc')}
                             >
                               <div className="space-y-3 text-sm text-[color:var(--muted)]">
                                 <p>
-                                  Blueprint id:{' '}
+                                  {t('wizard.review.blueprintIdLabel')}{' '}
                                   <span className="font-semibold text-[color:var(--text)]">
                                     {promptMasterDocument.trace.blueprint_id}
                                   </span>
                                 </p>
                                 <p>
-                                  Included sections:{' '}
+                                  {t('wizard.review.includedSectionsLabel')}{' '}
                                   <span className="font-semibold text-[color:var(--text)]">
                                     {promptMasterDocument.trace.included_sections.join(', ')}
                                   </span>
                                 </p>
                                 <p>
-                                  Redacted fields:{' '}
+                                  {t('wizard.review.redactedFieldsLabel')}{' '}
                                   <span className="font-semibold text-[color:var(--text)]">
                                     {promptMasterDocument.trace.redacted_fields.join(', ')}
                                   </span>
                                 </p>
                                 <p>
-                                  Contains secrets:{' '}
+                                  {t('wizard.review.containsSecretsLabel')}{' '}
                                   <span className="font-semibold text-[color:var(--text)]">
-                                    {promptMasterDocument.trace.contains_secrets ? 'yes' : 'no'}
+                                    {promptMasterDocument.trace.contains_secrets ? t('wizard.review.yes') : t('wizard.review.no')}
                                   </span>
                                 </p>
                               </div>
                             </ReviewDisclosure>
 
                             <ReviewDisclosure
-                              title="Compiled Prompt Master"
-                              description="Plain-text technical contract for later human-approved phases. Copy is enabled, generation is not."
+                              title={t('wizard.review.compiledPromptMasterTitle')}
+                              description={t('wizard.review.compiledPromptMasterDesc')}
                             >
                               <pre className="overflow-x-auto whitespace-pre-wrap rounded-[var(--radius-xl)] border border-white/10 bg-black/20 p-4 text-xs leading-6 text-[color:var(--muted)]">
                                 {promptMasterDocument.compiled_prompt}
@@ -2748,16 +2900,16 @@ export default function WizardPage() {
                           </SelectionGroup>
                         ) : (
                           <div className="rounded-[var(--radius-xl)] border border-dashed border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                            The Prompt Master preview will appear here once you transform a real blueprint preview.
+                            {t('wizard.review.promptMasterPreviewEmpty')}
                           </div>
                         )}
 
                         {gatekeeperPreviewMutation.isError ? (
                           <PageError
-                            title="Gatekeeper preview failed"
+                            title={t('wizard.review.gatekeeperPreviewFailedTitle')}
                             description={getApiErrorMessage(
                               gatekeeperPreviewMutation.error,
-                              'Unable to validate the current blueprint and Prompt Master pair.',
+                              t('wizard.review.gatekeeperPreviewFailedFallback'),
                             )}
                             onRetry={runGatekeeper}
                             className="p-4"
@@ -2768,8 +2920,8 @@ export default function WizardPage() {
                           <CardLoading className="p-0 shadow-none" />
                         ) : gatekeeperReport ? (
                           <SelectionGroup
-                            title="Gatekeeper report"
-                            description="Governed validation over the Project Blueprint and Prompt Master before any future generation phase."
+                            title={t('wizard.review.gatekeeperReportTitle')}
+                            description={t('wizard.review.gatekeeperReportDesc')}
                           >
                             <div className="flex flex-wrap gap-2">
                               <Badge>{gatekeeperReport.decision}</Badge>
@@ -2779,18 +2931,18 @@ export default function WizardPage() {
                             </div>
 
                             <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4 text-sm text-[color:var(--muted)]">
-                              <p className="font-semibold text-[color:var(--text)]">Decision summary</p>
+                              <p className="font-semibold text-[color:var(--text)]">{t('wizard.review.decisionSummary')}</p>
                               <p className="mt-2">{gatekeeperReport.summary}</p>
                             </div>
 
                             <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
-                              <p className="text-sm font-semibold text-[color:var(--text)]">Gatekeeper checks</p>
-                              <p className="mt-2 text-sm text-[color:var(--muted)]">Each mandatory validation check is evaluated independently and surfaced with blockers or warnings.</p>
+                              <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.gatekeeperChecksTitle')}</p>
+                              <p className="mt-2 text-sm text-[color:var(--muted)]">{t('wizard.review.gatekeeperChecksDesc')}</p>
                             </div>
 
                             {gatekeeperReport.blockers.length ? (
                               <div className="space-y-2 rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--danger)_34%,var(--border))] bg-white/5 p-4">
-                                <p className="text-sm font-semibold text-[color:var(--text)]">Blockers</p>
+                                <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.blockersHeading')}</p>
                                 {gatekeeperReport.blockers.map((item) => (
                                   <p key={item} className="text-sm text-[color:var(--muted)]">{item}</p>
                                 ))}
@@ -2799,7 +2951,7 @@ export default function WizardPage() {
 
                             {gatekeeperReport.warnings.length ? (
                               <div className="space-y-2 rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--warning)_28%,var(--border))] bg-white/5 p-4">
-                                <p className="text-sm font-semibold text-[color:var(--text)]">Warnings</p>
+                                <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.review.warningsHeading')}</p>
                                 {gatekeeperReport.warnings.map((item) => (
                                   <p key={item} className="text-sm text-[color:var(--muted)]">{item}</p>
                                 ))}
@@ -2807,8 +2959,8 @@ export default function WizardPage() {
                             ) : null}
 
                             <ReviewDisclosure
-                              title="Gatekeeper checks details"
-                              description="Each mandatory validation check is evaluated independently and surfaced with blockers or warnings."
+                              title={t('wizard.review.gatekeeperChecksDetailsTitle')}
+                              description={t('wizard.review.gatekeeperChecksDetailsDesc')}
                               defaultOpen
                             >
                               <div className="space-y-3">
@@ -2825,14 +2977,14 @@ export default function WizardPage() {
                                     {check.blockers.length ? (
                                       <div className="mt-3 space-y-2">
                                         {check.blockers.map((item) => (
-                                          <p key={item} className="text-sm text-[color:var(--muted)]">Blocker: {item}</p>
+                                          <p key={item} className="text-sm text-[color:var(--muted)]">{t('wizard.review.blockerPrefix')} {item}</p>
                                         ))}
                                       </div>
                                     ) : null}
                                     {check.warnings.length ? (
                                       <div className="mt-3 space-y-2">
                                         {check.warnings.map((item) => (
-                                          <p key={item} className="text-sm text-[color:var(--muted)]">Warning: {item}</p>
+                                          <p key={item} className="text-sm text-[color:var(--muted)]">{t('wizard.review.warningPrefix')} {item}</p>
                                         ))}
                                       </div>
                                     ) : null}
@@ -2842,40 +2994,40 @@ export default function WizardPage() {
                             </ReviewDisclosure>
 
                             <ReviewDisclosure
-                              title="Gatekeeper trace"
-                              description="Safe trace metadata for the Gatekeeper execution without any secret exposure."
+                              title={t('wizard.review.gatekeeperTraceTitle')}
+                              description={t('wizard.review.gatekeeperTraceDesc')}
                             >
                               <div className="space-y-3 text-sm text-[color:var(--muted)]">
                                 <p>
-                                  Blueprint id: <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.blueprint_id}</span>
+                                  {t('wizard.review.blueprintIdLabel')} <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.blueprint_id}</span>
                                 </p>
                                 <p>
-                                  Prompt Master id: <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.prompt_master_id}</span>
+                                  {t('wizard.review.promptMasterIdLabel')} <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.prompt_master_id}</span>
                                 </p>
                                 <p>
-                                  Checks: <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.check_ids.join(', ')}</span>
+                                  {t('wizard.review.checksLabel')} <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.check_ids.join(', ')}</span>
                                 </p>
                                 <p>
-                                  Redacted fields: <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.redacted_fields.join(', ')}</span>
+                                  {t('wizard.review.redactedFieldsLabel')} <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.redacted_fields.join(', ')}</span>
                                 </p>
                                 <p>
-                                  Contains secrets: <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.contains_secrets ? 'yes' : 'no'}</span>
+                                  {t('wizard.review.containsSecretsLabel')} <span className="font-semibold text-[color:var(--text)]">{gatekeeperReport.trace.contains_secrets ? t('wizard.review.yes') : t('wizard.review.no')}</span>
                                 </p>
                               </div>
                             </ReviewDisclosure>
                           </SelectionGroup>
                         ) : (
                           <div className="rounded-[var(--radius-xl)] border border-dashed border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                            The Gatekeeper report will appear here once you validate the current blueprint and Prompt Master pair.
+                            {t('wizard.review.gatekeeperReportEmpty')}
                           </div>
                         )}
 
                         {saveProjectMutation.isError ? (
                           <PageError
-                            title="Project save failed"
+                            title={t('wizard.review.projectSaveFailedTitle')}
                             description={getApiErrorMessage(
                               saveProjectMutation.error,
-                              'Unable to persist the current wizard selection as a project record.',
+                              t('wizard.review.projectSaveFailedFallback'),
                             )}
                             onRetry={saveProject}
                             className="p-4"
@@ -2884,22 +3036,22 @@ export default function WizardPage() {
 
                         {savedProject ? (
                           <SelectionGroup
-                            title="Project saved"
-                            description="The validated wizard selection is now persisted as a Project Record in the backend registry."
+                            title={t('wizard.review.projectSavedTitle')}
+                            description={t('wizard.review.projectSavedDesc')}
                           >
                             <div className="flex flex-wrap gap-2">
                               <Badge>{savedProject.status}</Badge>
                               <Badge>{savedProject.readiness_status}</Badge>
                             </div>
                             <p className="text-sm text-[color:var(--muted)]">
-                              Project id: <span className="font-semibold text-[color:var(--text)]">{savedProject.project_id}</span>
+                              {t('wizard.review.projectIdLabel')} <span className="font-semibold text-[color:var(--text)]">{savedProject.project_id}</span>
                             </p>
                             <div className="flex flex-wrap gap-3">
                               <ActionLink href={`/projects/${savedProject.project_id}`} variant="primary">
-                                Open project details
+                                {t('wizard.review.openProjectDetails')}
                               </ActionLink>
                               <ActionLink href="/projects" variant="secondary">
-                                Open project registry
+                                {t('wizard.review.openProjectRegistry')}
                               </ActionLink>
                             </div>
                           </SelectionGroup>
@@ -2907,7 +3059,7 @@ export default function WizardPage() {
                       </div>
                     ) : (
                       <div className="rounded-[var(--radius-xl)] border border-dashed border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
-                        The backend blueprint preview will appear here once you run the preview action.
+                        {t('wizard.review.blueprintPreviewEmpty')}
                       </div>
                     )}
                   </SelectionGroup>
@@ -2917,13 +3069,13 @@ export default function WizardPage() {
           )}
         </div>
 
-        <Card className="h-fit space-y-5 p-5 2xl:sticky 2xl:top-24">
+        <Card className="col-span-full h-fit min-w-0 space-y-5 p-5 2xl:col-span-1 2xl:sticky 2xl:top-24" data-visibility-audit="wizard-right-rail">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.26em] text-[color:var(--muted)]">
-              Blueprint Preview
+              {t('wizard.blueprintPreview')}
             </p>
             <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-              A sticky summary stays visible while the center panel reveals only the current step.
+              {t('wizard.blueprintPreviewDescription')}
             </p>
           </div>
 
@@ -2931,18 +3083,18 @@ export default function WizardPage() {
             <div className="space-y-3 rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-[color:var(--text)]">
-                  {selectedLanguageProfile ? `${selectedLanguageProfile.name} recommendations` : 'Language recommendations'}
+                  {selectedLanguageProfile ? t('wizard.rail.languageRecommendations', { language: selectedLanguageProfile.name }) : t('wizard.rail.languageRecommendationsFallback')}
                 </p>
                 <Badge>{languageRecommendationsQuery.data?.length ?? 0}</Badge>
               </div>
               {languageRecommendationsQuery.isLoading ? (
-                <p className="text-sm text-[color:var(--muted)]">Loading language recommendations...</p>
+                <p className="text-sm text-[color:var(--muted)]">{t('wizard.rail.loadingRecommendations')}</p>
               ) : languageRecommendationsQuery.isError ? (
                 <p className="text-sm text-[color:var(--muted)]">
-                  The language recommendation feed is unavailable, but the wizard remains safe to use offline.
+                  {t('wizard.rail.recommendationsFeedOffline')}
                 </p>
               ) : languageRecommendationsQuery.isEmpty ? (
-                <p className="text-sm text-[color:var(--muted)]">No recommendations were returned for this language.</p>
+                <p className="text-sm text-[color:var(--muted)]">{t('wizard.rail.noRecommendations')}</p>
               ) : (
                 <div className="grid gap-2">
                   {(languageRecommendationsQuery.data ?? []).slice(0, 3).map((recommendation) => (
@@ -2962,14 +3114,14 @@ export default function WizardPage() {
           {templateSelectionPayload ? (
             <div className="space-y-3 rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4" data-testid="template-recommendations-panel">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-[color:var(--text)]">Compatible templates</p>
+                <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.rail.compatibleTemplates')}</p>
                 <Badge>{compatibleTemplateRecommendations.length}</Badge>
               </div>
               {recommendedTemplatesQuery.isLoading ? (
-                <p className="text-sm text-[color:var(--muted)]">Validating template compatibility...</p>
+                <p className="text-sm text-[color:var(--muted)]">{t('wizard.rail.validatingTemplates')}</p>
               ) : recommendedTemplatesQuery.isError ? (
                 <p className="text-sm leading-6 text-[color:var(--muted)]">
-                  Template recommendations are offline. The wizard remains usable without external marketplace access.
+                  {t('wizard.rail.templateRecommendationsOffline')}
                 </p>
               ) : compatibleTemplateRecommendations.length ? (
                 <div className="grid gap-2">
@@ -2980,7 +3132,7 @@ export default function WizardPage() {
                         <Badge>{recommendation.compatibility?.score ?? 0}% match</Badge>
                       </div>
                       <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                        Matched {recommendation.compatibility?.matched.join(', ') || 'template metadata'} from the local registry.
+                        {t('wizard.rail.matchedTemplate', { matched: recommendation.compatibility?.matched.join(', ') || 'template metadata' })}
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Badge>{recommendation.template.category}</Badge>
@@ -2992,13 +3144,13 @@ export default function WizardPage() {
                 </div>
               ) : (
                 <p className="text-sm leading-6 text-[color:var(--muted)]">
-                  No compatible local templates for the current selection. Incompatible templates are hidden.
+                  {t('wizard.rail.noCompatibleTemplates')}
                 </p>
               )}
               <div className="grid gap-2 text-xs text-[color:var(--muted)]">
-                <span>Template compatibility validated</span>
-                <span>{compatibleTemplateRecommendations.length ? 'Recommended template detected' : 'Recommended template pending'}</span>
-                <span>Template maturity verified</span>
+                <span>{t('wizard.rail.templateCompatibilityValidated')}</span>
+                <span>{compatibleTemplateRecommendations.length ? t('wizard.rail.recommendedTemplateDetected') : t('wizard.rail.recommendedTemplatePending')}</span>
+                <span>{t('wizard.rail.templateMaturityVerified')}</span>
               </div>
             </div>
           ) : null}
@@ -3006,14 +3158,14 @@ export default function WizardPage() {
           {templateSelectionPayload ? (
             <div className="space-y-3 rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4" data-testid="wizard-skills-panel">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-[color:var(--text)]">Skills unlocked by this project</p>
+                <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.rail.skillsUnlocked')}</p>
                 <Badge>{recommendedSkillsQuery.data?.filter((skill) => skill.unlocked).length ?? 0}</Badge>
               </div>
               {recommendedSkillsQuery.isLoading ? (
-                <p className="text-sm text-[color:var(--muted)]">Syncing skill registry...</p>
+                <p className="text-sm text-[color:var(--muted)]">{t('wizard.rail.syncingSkillRegistry')}</p>
               ) : recommendedSkillsQuery.isError ? (
                 <p className="text-sm leading-6 text-[color:var(--muted)]">
-                  Skill registry is offline. The wizard remains usable without skill execution.
+                  {t('wizard.rail.skillRegistryOffline')}
                 </p>
               ) : (
                 <div className="grid gap-2">
@@ -3033,27 +3185,28 @@ export default function WizardPage() {
 
           <LDCNPresenceRail
             context={ldcnContext}
-            stepLabel={`Current step: ${currentStep.title}`}
+            stepLabel={t('wizard.currentStep', { step: currentStep.title })}
             actions={['explain_current_page', 'review_blueprint', 'inspect_gatekeeper']}
           />
 
           <div className="space-y-3 rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4">
-            <PreviewRow label="Language" value={previewSummary.language} />
-            <PreviewRow label="Runtime" value={previewSummary.runtime} />
-            <PreviewRow label="Framework" value={previewSummary.framework} />
-            <PreviewRow label="Architecture" value={previewSummary.architecture} />
-            <PreviewRow label="Archetype" value={previewSummary.archetype} />
-            <PreviewRow label="Capabilities" value={previewSummary.capabilities} />
-            <PreviewRow label="Modules" value={previewSummary.modules} />
-            <PreviewRow label="Endpoints" value={previewSummary.endpoints} />
+            <PreviewRow label={t('wizard.language')} value={previewSummary.language} />
+            <PreviewRow label={t('wizard.runtime')} value={previewSummary.runtime} />
+            <PreviewRow label={t('wizard.framework')} value={previewSummary.framework} />
+            <PreviewRow label={t('wizard.architecture')} value={previewSummary.architecture} />
+            <PreviewRow label={t('wizard.archetype')} value={previewSummary.archetype} />
+            <PreviewRow label={t('wizard.capabilities')} value={previewSummary.capabilities} />
+            <PreviewRow label={t('wizard.modules')} value={previewSummary.modules} />
+            <PreviewRow label={t('wizard.endpoints')} value={previewSummary.endpoints} />
           </div>
 
+          <Disclosure title={t('wizard.advancedComplexity')} description={t('wizard.advancedComplexityDescription')}>
           <ComplexityRadar
-            title="Complexity radar"
+            title={t('wizard.rail.complexityRadarTitle')}
             score={backendBlueprint?.complexity_profile.overall_score ?? complexityEstimate.score}
             axes={[
               {
-                label: 'Learning curve',
+                label: t('wizard.rail.axisLearningCurve'),
                 value:
                   backendBlueprint?.complexity_profile.learning_curve === 'low'
                     ? 24
@@ -3062,7 +3215,7 @@ export default function WizardPage() {
                       : 80,
               },
               {
-                label: 'Implementation',
+                label: t('wizard.rail.axisImplementation'),
                 value:
                   backendBlueprint?.complexity_profile.implementation_effort === 'low'
                     ? 26
@@ -3071,7 +3224,7 @@ export default function WizardPage() {
                       : 84,
               },
               {
-                label: 'Infrastructure',
+                label: t('wizard.rail.axisInfrastructure'),
                 value:
                   backendBlueprint?.complexity_profile.infrastructure_cost === 'low'
                     ? 24
@@ -3080,7 +3233,7 @@ export default function WizardPage() {
                       : 86,
               },
               {
-                label: 'Maintenance',
+                label: t('wizard.rail.axisMaintenance'),
                 value:
                   backendBlueprint?.complexity_profile.maintenance_cost === 'low'
                     ? 24
@@ -3089,7 +3242,7 @@ export default function WizardPage() {
                       : 82,
               },
               {
-                label: 'Risk',
+                label: t('wizard.rail.axisRisk'),
                 value:
                   backendBlueprint?.complexity_profile.risk_level === 'low'
                     ? 22
@@ -3099,22 +3252,23 @@ export default function WizardPage() {
               },
             ]}
           />
+          </Disclosure>
 
           <SurfaceDivider />
 
           <div className="space-y-3 rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[color:var(--text)]">Complexity estimate</p>
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.complexityEstimate')}</p>
               <Badge>{backendBlueprint?.complexity_profile.overall_score ?? complexityEstimate.score}</Badge>
             </div>
             <p className="text-sm text-[color:var(--muted)]">
-              {backendBlueprint?.complexity_profile.risk_level ?? complexityEstimate.label}
+              {backendBlueprint?.complexity_profile.risk_level ?? t('wizard.leanBlueprint')}
             </p>
           </div>
 
           <div className="space-y-3 rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[color:var(--text)]">Validation</p>
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.validation')}</p>
               <Badge
                 className={
                   validationStatus === 'valid'
@@ -3126,25 +3280,25 @@ export default function WizardPage() {
                         : ''
                 }
               >
-                {validationStatus}
+                {statusLabel(validationStatus)}
               </Badge>
             </div>
             <p className="text-sm text-[color:var(--muted)]">
               {validationStatus === 'empty'
-                ? 'Pending until blueprint review requests a real backend preview.'
+                ? t('wizard.validationPending')
                 : validationStatus === 'loading'
-                  ? 'Building the normalized blueprint now.'
+                  ? t('wizard.rail.validationBuildingNow')
                   : validationStatus === 'valid'
-                    ? 'The current blueprint preview is valid.'
+                    ? t('wizard.rail.validationCurrentValid')
                     : validationStatus === 'invalid'
-                      ? 'Warnings or incompatibilities were found.'
-                      : 'Validation request failed.'}
+                      ? t('wizard.rail.validationWarningsFound')
+                      : t('wizard.rail.validationRequestFailed')}
             </p>
           </div>
 
           <div className="space-y-3 rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[color:var(--text)]">Prompt Master</p>
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.promptMaster')}</p>
               <Badge
                 className={
                   promptMasterStatus === 'valid'
@@ -3156,25 +3310,25 @@ export default function WizardPage() {
                         : ''
                 }
               >
-                {promptMasterStatus}
+                {statusLabel(promptMasterStatus)}
               </Badge>
             </div>
             <p className="text-sm text-[color:var(--muted)]">
               {promptMasterStatus === 'empty'
-                ? 'Pending until a real blueprint preview is transformed into a Prompt Master.'
+                ? t('wizard.promptMasterPending')
                 : promptMasterStatus === 'loading'
-                  ? 'Building the technical contract now.'
+                  ? t('wizard.rail.promptMasterBuildingNow')
                   : promptMasterStatus === 'valid'
-                    ? 'The Prompt Master preview is ready to inspect and copy.'
+                    ? t('wizard.rail.promptMasterPreviewReady')
                     : promptMasterStatus === 'invalid'
-                      ? 'The Prompt Master captured unresolved blueprint issues.'
-                      : 'Prompt Master request failed.'}
+                      ? t('wizard.rail.promptMasterBlueprintIssues')
+                      : t('wizard.rail.promptMasterRequestFailed')}
             </p>
           </div>
 
           <div className="space-y-3 rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[color:var(--text)]">Gatekeeper</p>
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.gatekeeper')}</p>
               <Badge
                 className={
                   gatekeeperStatus === 'valid'
@@ -3186,26 +3340,26 @@ export default function WizardPage() {
                         : ''
                 }
               >
-                {gatekeeperStatus}
+                {statusLabel(gatekeeperStatus)}
               </Badge>
             </div>
             <p className="text-sm text-[color:var(--muted)]">
               {gatekeeperStatus === 'empty'
-                ? 'Pending until Gatekeeper validates the blueprint and Prompt Master pair.'
+                ? t('wizard.gatekeeperPending')
                 : gatekeeperStatus === 'loading'
-                  ? 'Running governed validation now.'
+                  ? t('wizard.rail.gatekeeperRunningNow')
                   : gatekeeperStatus === 'valid'
-                    ? 'The Gatekeeper approved the current pair.'
+                    ? t('wizard.rail.gatekeeperApprovedPair')
                     : gatekeeperStatus === 'warning'
-                      ? 'The Gatekeeper approved with warnings.'
+                      ? t('wizard.rail.gatekeeperApprovedWithWarnings')
                       : gatekeeperStatus === 'invalid'
-                        ? 'The Gatekeeper blocked progression.'
-                        : 'Gatekeeper request failed.'}
+                        ? t('wizard.rail.gatekeeperBlockedProgression')
+                        : t('wizard.rail.gatekeeperRequestFailed')}
             </p>
           </div>
 
           <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4 text-xs leading-6 text-[color:var(--muted)]">
-            Next step: <span className="font-semibold text-[color:var(--text)]">{currentStep.title}</span>
+            {t('wizard.nextStep')}: <span className="font-semibold text-[color:var(--text)]">{currentStep.title}</span>
           </div>
         </Card>
       </div>

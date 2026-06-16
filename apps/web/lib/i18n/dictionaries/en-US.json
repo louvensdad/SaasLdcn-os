@@ -1,0 +1,1606 @@
+{
+  "product.name": "LDCN OS",
+  "sidebar.close": "Close sidebar",
+  "shell.runtimeObserving": "Observing runtime surfaces",
+  "common.offline": "Offline",
+  "common.pending": "Pending",
+  "common.unavailable": "Unavailable",
+  "common.visible": "Visible",
+  "common.aligned": "Aligned",
+  "common.awaitingResponse": "Awaiting response",
+  "common.recovery": "Recovery",
+  "common.live": "Live",
+  "common.loading": "Loading",
+  "common.never": "Never",
+  "settings.integrations.eyebrow": "Settings / Integrations",
+  "settings.integrations.title": "Git provider integrations",
+  "settings.integrations.description": "Connect and validate repository delivery without leaving the platform. Tokens are never displayed or returned by the backend.",
+  "settings.integrations.connected": "{{provider}} connected",
+  "settings.integrations.notConnected": "{{provider}} not connected",
+  "settings.integrations.username": "Username",
+  "settings.integrations.organizations": "Organizations",
+  "settings.integrations.groups": "Groups",
+  "settings.integrations.repositories": "Repositories",
+  "settings.integrations.projects": "Projects",
+  "settings.integrations.permission": "Permission",
+  "settings.integrations.scopes": "Scopes",
+  "settings.integrations.providerManaged": "Provider managed",
+  "settings.integrations.lastSync": "Last sync",
+  "settings.integrations.validate": "Validate permissions",
+  "settings.integrations.disconnect": "Disconnect {{provider}}",
+  "settings.integrations.tokenLabel": "{{provider}} access token",
+  "settings.integrations.tokenDescription": "The token is held only in the current backend runtime and is revoked from LDCN OS when disconnected.",
+  "settings.integrations.connect": "Connect {{provider}}",
+  "settings.integrations.errorTitle": "{{provider}} connection problem",
+  "settings.integrations.errorDescription": "Unable to connect {{provider}}.",
+  "settings.theme.title": "Theme engine",
+  "settings.theme.description": "Theme switching remains independent from backend availability and preserves the current engineering shell.",
+  "settings.contracts.title": "Contract registry overview",
+  "settings.contracts.description": "The frontend stays aligned with the foundation contracts that shape projects, blueprints, and validation surfaces.",
+  "settings.contracts.languages": "Languages",
+  "settings.contracts.languagesDetail": "Language registry entries",
+  "settings.contracts.frameworks": "Frameworks",
+  "settings.contracts.frameworksDetail": "Framework registry entries",
+  "settings.contracts.architectures": "Architectures",
+  "settings.contracts.architecturesDetail": "Architecture registry entries",
+  "settings.contracts.archetypes": "Archetypes",
+  "settings.contracts.archetypesDetail": "Archetype registry entries",
+  "settings.health.title": "Foundation health",
+  "settings.health.description": "Backend runtime, registry access, and local-first persistence are tracked here.",
+  "settings.runtime.title": "Runtime synchronization",
+  "settings.runtime.backendRegistry": "Backend registry",
+  "settings.runtime.backendRegistryDetail": "API base URL and health endpoint are exposed",
+  "settings.runtime.contractSync": "Contract sync",
+  "settings.runtime.contractSyncDetail": "Typed contract shapes remain shared across frontend and backend",
+  "settings.runtime.topologySync": "Topology sync",
+  "settings.runtime.topologySyncDetail": "Stack registry is part of the operational surface",
+  "settings.runtime.projectRegistry": "Project registry",
+  "settings.runtime.projectRegistryDetail": "Persisted records confirm backend registry connectivity",
+  "settings.runtime.stackCount": "{{count}} stacks",
+  "settings.runtime.recordCount": "{{count}} records",
+  "settings.panels.title": "Foundation health panels",
+  "settings.panels.apiBase": "API base",
+  "settings.panels.apiBaseDetail": "Backend foundation endpoint",
+  "settings.panels.health": "Health",
+  "settings.panels.capabilities": "Capabilities",
+  "settings.panels.capabilitiesDetail": "Capability registry visibility",
+  "settings.panels.registryMode": "Registry mode",
+  "settings.panels.registryModeDetail": "Explicit operational posture",
+  "settings.actions.title": "Quick actions",
+  "settings.actions.backendOffline": "backend offline",
+  "settings.actions.backendOnline": "backend online",
+  "settings.actions.projectCount": "{{count}} projects",
+  "settings.actions.stackCount": "{{count}} stacks",
+  "settings.actions.dashboard": "Return dashboard",
+  "settings.actions.rules": "Review rules",
+  "settings.errors.offlineTitle": "Backend offline state active",
+  "settings.errors.healthTitle": "API health unavailable",
+  "settings.errors.healthDescription": "Unable to load backend health status.",
+  "common.yes": "yes",
+  "common.no": "no",
+  "common.blocked": "blocked",
+  "common.enabled": "enabled",
+  "common.required": "required",
+  "common.optional": "optional",
+  "status.generated": "generated",
+  "status.ready": "ready",
+  "status.ready_with_warnings": "ready with warnings",
+  "status.blueprint_ready": "blueprint ready",
+  "status.blocked": "blocked",
+  "status.failed": "failed",
+  "status.ready_for_generation": "ready for generation",
+  "status.generation_blocked": "generation blocked",
+  "status.local": "local",
+  "status.agent_boost": "Agent Boost",
+  "status.approved": "approved",
+  "status.rejected": "rejected",
+  "status.needs_revision": "needs revision",
+  "projects.title": "Projects",
+  "projects.description": "Persisted project records are surfaced as a registry of architecture identity, readiness, and lineage.",
+  "projects.error.title": "Project registry unavailable",
+  "projects.error.description": "Unable to load the persisted project registry from the backend.",
+  "projects.card.architectureIdentity": "Architecture identity",
+  "projects.card.handoffReady": "handoff ready",
+  "projects.card.stackVisualization": "Stack visualization",
+  "projects.card.language": "Language",
+  "projects.card.ecosystem": "Ecosystem: {{ecosystem}}",
+  "projects.card.runtime": "Runtime",
+  "projects.card.runtimeDetail": "Runtime aligned with the blueprint",
+  "projects.card.framework": "Framework",
+  "projects.card.frameworkDetail": "Framework topology remains contract-safe",
+  "projects.card.architecture": "Architecture",
+  "projects.card.archetype": "Archetype {{archetype}}",
+  "projects.card.locale": "Locale",
+  "projects.card.mode": "Mode {{mode}}",
+  "projects.card.blueprintLineage": "Blueprint lineage",
+  "projects.card.blueprintLineageDetail": "Prompt Master and Gatekeeper snapshots are persisted alongside it.",
+  "projects.card.operationalState": "Operational state",
+  "projects.card.issues": "{{blockers}} blockers / {{warnings}} warnings",
+  "projects.card.capabilityCount": "{{count}} capabilities",
+  "projects.card.moduleCount": "{{count}} modules",
+  "projects.card.endpointCount": "{{count}} endpoints",
+  "projects.card.readiness": "Readiness ring",
+  "projects.card.readinessDetail": "Project readiness and gatekeeper posture.",
+  "projects.card.deploymentProfile": "Deployment profile",
+  "projects.card.projectStatus": "Project status",
+  "projects.card.architectureClass": "Architecture class",
+  "projects.card.gatekeeperDecision": "Gatekeeper decision",
+  "projects.card.openDetails": "Open details",
+  "projects.registry.title": "Project intelligence registry",
+  "projects.registry.description": "Each project carries its blueprint, Prompt Master, Gatekeeper, and readiness snapshots without generating code yet.",
+  "projects.registry.projects": "Projects",
+  "projects.registry.projectsDetail": "Persisted records",
+  "projects.registry.approved": "Approved",
+  "projects.registry.approvedDetail": "Ready for generation",
+  "projects.registry.blocked": "Blocked",
+  "projects.registry.blockedDetail": "Gatekeeper stopped progression",
+  "projects.registry.generated": "Generated",
+  "projects.registry.generatedDetail": "Historic completed records",
+  "projects.flow.title": "Registry flow",
+  "projects.flow.architectureIdentity": "Architecture identity",
+  "projects.flow.architectureIdentityDetail": "Language, runtime, framework, architecture, and archetype define the operational surface.",
+  "projects.flow.snapshots": "Persisted snapshots",
+  "projects.flow.snapshotsDetail": "Blueprint, Prompt Master, and Gatekeeper snapshots remain attached to the record.",
+  "projects.flow.detailView": "Detail view",
+  "projects.flow.detailViewDetail": "Open a record to inspect lineage, selected modules, and selected endpoints.",
+  "templates.compatibilityValidated": "Template compatibility validated",
+  "templates.maturityVerified": "Template maturity verified",
+  "skills.error.title": "Skill registry unavailable",
+  "skills.error.description": "Unable to load the local skill registry.",
+  "skills.context.pageTitle": "Skill Registry",
+  "skills.context.phase": "Skill registry foundation",
+  "skills.context.synchronized": "{{count}} skills synchronized",
+  "skills.context.loading": "Skill registry loading",
+  "skills.context.detail": "Read-only operational skills are indexed without agents, AI, or external integrations.",
+  "skills.context.summary": "Skill registry synchronized. Architecture review is available. Generation unlocks when project context exists.",
+  "skills.trust.safe": "Safe",
+  "skills.trust.safeDetail": "No direct executor is attached.",
+  "skills.trust.ai": "AI",
+  "skills.trust.aiDetail": "No AI path exists in this registry.",
+  "skills.trust.agents": "Agents",
+  "skills.trust.agentsDetail": "No agent runtime is connected.",
+  "skills.trust.external": "External",
+  "skills.trust.externalDetail": "Local-only registry.",
+  "skills.dependencies": "Dependencies",
+  "skills.requirements": "Requirements",
+  "skills.examples": "Examples",
+  "roadmap.title": "Roadmap",
+  "roadmap.description": "Governed platform roadmap grouped by lifecycle status across modules, engines, registries, visualizations, templates, and skills.",
+  "roadmap.error.title": "Roadmap unavailable",
+  "roadmap.error.description": "Unable to load roadmap center data.",
+  "roadmap.lifecycle": "Roadmap lifecycle",
+  "roadmap.itemCount": "{{count}} items",
+  "roadmap.context.pageTitle": "Roadmap Center",
+  "roadmap.context.phase": "Roadmap governance",
+  "roadmap.context.itemCount": "{{count}} roadmap items",
+  "roadmap.context.loading": "Roadmap loading",
+  "roadmap.context.detail": "Roadmap groups modules, engines, registries, visualizations, templates, and skills.",
+  "roadmap.context.summary": "Roadmap is grouped by implemented, in progress, planned, future, and archived states.",
+  "roadmap.status.IMPLEMENTED": "Implemented",
+  "roadmap.status.IN_PROGRESS": "In progress",
+  "roadmap.status.PLANNED": "Planned",
+  "roadmap.status.FUTURE": "Future",
+  "roadmap.status.ARCHIVED": "Archived",
+  "documentation.title": "Documentation",
+  "documentation.description": "Architecture knowledge system for lifecycle surfaces, gates, dependency maps, and operational standards.",
+  "documentation.map.title": "Architecture knowledge map",
+  "documentation.map.description": "Each surface describes how blueprint, validation, and registry knowledge fit together.",
+  "documentation.map.blueprint": "Blueprint",
+  "documentation.map.blueprintValue": "Lifecycle input",
+  "documentation.map.blueprintDetail": "Selection, validation, and snapshots",
+  "documentation.map.promptMaster": "Prompt Master",
+  "documentation.map.promptMasterValue": "Technical contract",
+  "documentation.map.promptMasterDetail": "Structured document with redacted trace data",
+  "documentation.map.gatekeeper": "Gatekeeper",
+  "documentation.map.gatekeeperValue": "Governance layer",
+  "documentation.map.gatekeeperDetail": "Approved, warning, or blocked decision",
+  "documentation.map.registry": "Registry",
+  "documentation.map.registryValue": "Persistent record",
+  "documentation.map.registryDetail": "Project snapshots stored in backend",
+  "documentation.lifecycle.title": "Lifecycle surface",
+  "documentation.lifecycle.blueprint": "Blueprint formation",
+  "documentation.lifecycle.blueprintDetail": "Define the engineering intent and stack topology.",
+  "documentation.lifecycle.promptMaster": "Prompt Master synthesis",
+  "documentation.lifecycle.promptMasterDetail": "Transform the blueprint into a safe technical contract.",
+  "documentation.lifecycle.gatekeeper": "Gatekeeper review",
+  "documentation.lifecycle.gatekeeperDetail": "Run governed review before generation.",
+  "documentation.lifecycle.registry": "Project registry persistence",
+  "documentation.lifecycle.registryDetail": "Persist the validated Project Registry entry.",
+  "documentation.lifecycle.readiness": "Generation readiness",
+  "documentation.lifecycle.readinessDetail": "Mark the project ready, blocked, or generated.",
+  "documentation.lifecycle.download": "Future download phase",
+  "documentation.lifecycle.downloadDetail": "The future phase remains intentionally disabled.",
+  "documentation.block.architecture": "Architecture maps",
+  "documentation.block.architectureDetail": "Visual topology of language, runtime, framework, architecture, and archetype relationships.",
+  "documentation.block.lifecycle": "Lifecycle surfaces",
+  "documentation.block.lifecycleDetail": "Blueprint, Prompt Master, and Gatekeeper stages remain explicit.",
+  "documentation.block.quality": "Quality gates",
+  "documentation.block.qualityDetail": "Validation, blockers, warnings, and readiness are shown without shortcuts.",
+  "documentation.block.standards": "Operational standards",
+  "documentation.block.standardsDetail": "Runtime health, registry rules, and backend boundaries are first-class knowledge.",
+  "documentation.block.dependencies": "Dependency maps",
+  "documentation.block.dependenciesDetail": "Capabilities, modules, and endpoints remain connected to contract lineage.",
+  "documentation.block.phases": "Engineering phases",
+  "documentation.block.phasesDetail": "The platform keeps a clear sequence from architecture to generation control.",
+  "documentation.quality.title": "Quality gate visualization",
+  "documentation.quality.validation": "Validation",
+  "documentation.quality.explicit": "Explicit",
+  "documentation.quality.validationDetail": "Blueprint and Prompt Master validation are surfaced",
+  "documentation.quality.lineage": "Lineage",
+  "documentation.quality.persisted": "Persisted",
+  "documentation.quality.lineageDetail": "Snapshots are attached to project records",
+  "documentation.quality.dependencies": "Dependencies",
+  "documentation.quality.mapped": "Mapped",
+  "documentation.quality.dependenciesDetail": "Modules and endpoints stay connected to architecture",
+  "documentation.quality.generation": "Generation",
+  "documentation.quality.disabled": "Disabled",
+  "documentation.quality.generationDetail": "This surface is visual and operational only",
+  "documentation.dependencies.title": "Dependency map",
+  "documentation.dependencies.capabilities": "Capabilities",
+  "documentation.dependencies.selected": "Selected",
+  "documentation.dependencies.capabilitiesDetail": "Capability choice narrows the architecture surface",
+  "documentation.dependencies.modules": "Modules",
+  "documentation.dependencies.owned": "Owned",
+  "documentation.dependencies.modulesDetail": "Business modules drive the system shape",
+  "documentation.dependencies.endpoints": "Endpoints",
+  "documentation.dependencies.grouped": "Grouped",
+  "documentation.dependencies.endpointsDetail": "Route groups remain visible and governable",
+  "documentation.dependencies.standards": "Standards",
+  "documentation.dependencies.codified": "Codified",
+  "documentation.dependencies.standardsDetail": "Operating rules remain easy to audit",
+  "systemStatus.title": "System Status",
+  "systemStatus.description": "Operational panel for runtime, validation, build health, and internal registries.",
+  "systemStatus.error.title": "System status unavailable",
+  "systemStatus.error.description": "Unable to load system status.",
+  "systemStatus.context.pageTitle": "System Status Center",
+  "systemStatus.context.phase": "Runtime health",
+  "systemStatus.context.moduleCount": "{{count}} modules observed",
+  "systemStatus.context.loading": "Status loading",
+  "systemStatus.context.detail": "Internal observability center for LDCN OS.",
+  "systemStatus.context.summary": "Runtime, validation, build, and registry health are visible without external integrations.",
+  "systemStatus.runtimeHealth": "Runtime health",
+  "systemStatus.validationStatus": "Validation status",
+  "systemStatus.buildHealth": "Build health",
+  "systemStatus.registryHealth": "Registry health",
+  "systemStatus.platformHealth": "Platform health",
+  "systemStatus.governed": "Governed",
+  "systemStatus.platformHealthDetail": "Health is derived from local runtime and registry signals.",
+  "systemStatus.lastValidation": "Last validation",
+  "systemStatus.testCoverage": "Test coverage",
+  "systemStatus.frontendStatus": "Frontend status",
+  "systemStatus.apiStatus": "API status",
+  "systemStatus.activeModules": "Active modules",
+  "systemStatus.activeEngines": "Active engines",
+  "systemStatus.activeTemplates": "Active templates",
+  "systemStatus.activeSkills": "Active skills",
+  "auth.login.title": "Sign in",
+  "auth.login.description": "Access the protected LDCN OS workspace.",
+  "auth.login.submit": "Sign in",
+  "auth.login.switch": "Need an account? Create one",
+  "auth.register.title": "Create account",
+  "auth.register.description": "Create your local workspace identity and record privacy consent.",
+  "auth.register.submit": "Create account",
+  "auth.register.switch": "Already have an account? Sign in",
+  "auth.fullName": "Full name",
+  "auth.email": "Email",
+  "auth.password": "Password",
+  "auth.privacyAcceptance": "I have read and accept the current privacy policy.",
+  "auth.processing": "Processing...",
+  "auth.session.loading": "Validating secure session...",
+  "settings.privacy.eyebrow": "Security / LGPD",
+  "settings.privacy.title": "Account and personal data",
+  "settings.privacy.description": "Review consent, export your personal data, or anonymize your account.",
+  "settings.privacy.account": "Account",
+  "settings.privacy.role": "Role",
+  "settings.privacy.consent": "Consent version",
+  "settings.privacy.notRecorded": "Not recorded",
+  "settings.privacy.export": "Export my data",
+  "settings.privacy.exporting": "Exporting...",
+  "settings.privacy.logout": "Sign out",
+  "settings.privacy.delete": "Delete account",
+  "settings.privacy.deleting": "Deleting...",
+  "settings.privacy.deleteConfirm": "Delete and anonymize this account? This action cannot be undone.",
+  "settings.privacy.error": "Account operation failed",
+  "settings.privacy.errorDescription": "Unable to complete the requested account operation.",
+  "settings.integrations.restrictedEyebrow": "Settings / Integrations",
+  "settings.integrations.restrictedTitle": "Administrator access required",
+  "settings.integrations.restrictedDescription": "Git credentials are workspace-wide in this version, so only administrators can manage provider connections.",
+  "common.settings": "Settings",
+  "common.language": "Language",
+  "common.save": "Save",
+  "common.errors": "errors",
+  "common.warnings": "warnings",
+  "common.recommendations": "recommendations",
+  "settings.title": "Settings",
+  "settings.description": "Operational runtime view for theme control, localization, backend registry visibility, and contract synchronization.",
+  "settings.localization.title": "Language & Localization",
+  "settings.localization.description": "Control the interface and deterministic generated-project language independently.",
+  "settings.interfaceLanguage": "Interface language",
+  "settings.generatedProjectLanguage": "Generated project language",
+  "settings.documentationLanguage": "Documentation language",
+  "settings.codeCommentsLanguage": "Code comments language",
+  "settings.fallbackLanguage": "Fallback language",
+  "topbar.foundation": "LDCN OS / Frontend Foundation",
+  "topbar.toggleNavigation": "Toggle navigation",
+  "ldcn.idle": "LDCN idle",
+  "ldcn.observing": "LDCN observing",
+  "ldcn.thinking": "LDCN thinking",
+  "ldcn.speaking_future": "LDCN future insight",
+  "ldcn.warning": "LDCN warning",
+  "ldcn.blocked": "LDCN blocked",
+  "ldcn.offline": "LDCN offline",
+  "ldcn.blueprintValidated": "Blueprint validated",
+  "ldcn.generationReady": "Generation ready",
+  "wizard.blueprintReview": "Blueprint Review",
+  "wizard.continueBlueprint": "Continue to Blueprint Review",
+  "wizard.previewBlueprint": "Preview Blueprint",
+  "wizard.previewPromptMaster": "Preview Prompt Master",
+  "wizard.runGatekeeper": "Run Gatekeeper",
+  "wizard.validBlueprint": "Valid blueprint",
+  "wizard.blueprintIssues": "Blueprint returned issues",
+  "wizard.gatekeeperApproved": "Gatekeeper approved",
+  "wizard.generationReady": "Generation ready",
+  "wizard.step": "Step {{number}}",
+  "wizard.steps.project_requirements.title": "Project Requirements",
+  "wizard.steps.project_requirements.description": "Define intent, business rules, data model, and delivery target.",
+  "wizard.steps.technology_path.title": "Technology Path",
+  "wizard.steps.technology_path.description": "Choose language, runtime, and framework.",
+  "wizard.steps.architecture.title": "Architecture",
+  "wizard.steps.architecture.description": "Define the structural style and complexity.",
+  "wizard.steps.project_type.title": "Project Type",
+  "wizard.steps.project_type.description": "Select the archetype that matches the product goal.",
+  "wizard.steps.capabilities.title": "Capabilities",
+  "wizard.steps.capabilities.description": "Start with recommended capabilities and expand only if needed.",
+  "wizard.steps.business_modules.title": "Business Modules",
+  "wizard.steps.business_modules.description": "Pick the operational domains that shape the blueprint.",
+  "wizard.steps.endpoints.title": "Endpoints",
+  "wizard.steps.endpoints.description": "Reveal route groups by module and select in batches.",
+  "wizard.steps.blueprint_review.title": "Blueprint Review",
+  "wizard.steps.blueprint_review.description": "Inspect validation, warnings, recommendations, and complexity.",
+  "generation.generatedBy": "Generated by LDCN OS Local Generation Engine.",
+  "generation.scope": "Scope",
+  "generation.capabilities": "Capabilities",
+  "generation.modules": "Modules",
+  "generation.endpoints": "Endpoints",
+  "generation.noAi": "No AI, no agents, no external downloads, no shell execution.",
+  "generation.summary": "{{project}} generated from deterministic LDCN OS foundations.",
+  "generation.docs": "Documentation",
+  "generation.staticSite": "Static site generated locally by LDCN OS.",
+  "generation.portfolio": "Portfolio generated locally by LDCN OS.",
+  "generation.deterministic": "Generation is deterministic and offline-first."
+  ,"generation.language": "Language"
+  ,"generation.framework": "Framework"
+  ,"generation.profile": "Profile"
+  ,"generation.database": "Database"
+  ,"generation.safety": "Safety constraints: no AI, no agents, no deploy, no shell execution, no external access."
+  ,"generation.envDescription": "Local deterministic environment configuration."
+  ,"sidebar.foundation": "Foundation"
+  ,"sidebar.badge": "Enterprise engineering system"
+  ,"sidebar.rules": "Foundation rules"
+  ,"sidebar.rulesDescription": "Local architecture, navigation, and governance foundations."
+  ,"navigation.dashboard.label": "Dashboard"
+  ,"navigation.dashboard.description": "Operational overview and system pulse."
+  ,"navigation.projects.label": "Projects"
+  ,"navigation.projects.description": "Project registry and delivery state."
+  ,"navigation.templates.label": "Templates"
+  ,"navigation.templates.description": "Blueprint-driven starting points."
+  ,"navigation.skills.label": "Skills"
+  ,"navigation.skills.description": "Operational skills registry."
+  ,"navigation.wizard.label": "Wizard"
+  ,"navigation.wizard.description": "Stack-specific setup journeys."
+  ,"navigation.metaFactory.label": "Meta-Factory"
+  ,"navigation.metaFactory.description": "Idea to spec to generated project via AI agents."
+  ,"navigation.systemStatus.label": "System Status"
+  ,"navigation.systemStatus.description": "Internal platform health."
+  ,"navigation.architecture.label": "Architecture"
+  ,"navigation.architecture.description": "Runtime and module map."
+  ,"navigation.roadmap.label": "Roadmap"
+  ,"navigation.roadmap.description": "Governed platform plan."
+  ,"navigation.documentation.label": "Documentation"
+  ,"navigation.documentation.description": "Platform memory and standards."
+  ,"navigation.settings.label": "Settings"
+  ,"navigation.settings.description": "Theme and runtime preferences."
+  ,"shell.dashboard.title": "Engineering Runtime"
+  ,"shell.dashboard.subtitle": "Runtime topology, architecture awareness, and operational control."
+  ,"shell.projects.title": "Project Registry"
+  ,"shell.projects.subtitle": "Project identity, readiness, and delivery lineage."
+  ,"shell.templates.title": "Template Atlas"
+  ,"shell.templates.subtitle": "Production templates organized by stack and complexity."
+  ,"shell.wizard.title": "Architecture Journey"
+  ,"shell.wizard.subtitle": "Governed blueprint assembly without generation."
+  ,"shell.skills.title": "Skill Registry"
+  ,"shell.skills.subtitle": "Operational skills for architecture, planning, and support."
+  ,"shell.systemStatus.title": "System Status"
+  ,"shell.systemStatus.subtitle": "Runtime, registry, build, and validation health."
+  ,"shell.architecture.title": "Architecture Studio"
+  ,"shell.architecture.subtitle": "Active runtime, registries, engines, and future modules."
+  ,"shell.roadmap.title": "Roadmap"
+  ,"shell.roadmap.subtitle": "Governed platform plan across current and future work."
+  ,"shell.documentation.title": "Knowledge System"
+  ,"shell.documentation.subtitle": "Blueprint lifecycle, standards, and quality gates."
+  ,"shell.settings.title": "Settings"
+  ,"shell.settings.subtitle": "Runtime, localization, and interface preferences."
+  ,"wizard.architectureIntelligence": "Architecture intelligence"
+  ,"wizard.architectureIntelligenceDescription": "Topology, readiness, ecosystem, and journey diagnostics."
+  ,"wizard.continueArchitecture": "Continue to Architecture"
+  ,"wizard.reviewProjects": "Review projects"
+  ,"wizard.chooseTechnologySpine": "Choose the technology spine"
+  ,"wizard.chooseTechnologySpineDescription": "Start with the real engineering path. Runtime appears after a language, and framework appears after a runtime."
+  ,"wizard.languageProfile": "Language profile"
+  ,"wizard.recommendedCapabilitiesFirst": "Recommended capabilities first"
+  ,"wizard.blueprintPreview": "Blueprint Preview"
+  ,"wizard.advancedComplexity": "Advanced complexity"
+  ,"wizard.advancedComplexityDescription": "Engineering complexity radar and cost axes."
+  ,"wizard.validation": "Validation"
+  ,"wizard.promptMaster": "Prompt Master"
+  ,"wizard.gatekeeper": "Gatekeeper"
+  ,"wizard.framework": "Framework"
+  ,"wizard.frameworkSpecialist": "Framework specialist"
+  ,"wizard.selectFrameworkGuidance": "Select a framework to load specialist guidance."
+  ,"wizard.frameworkPanelDescription": "This panel shows architectures, capabilities, endpoint guidance, pitfalls, and readiness after a framework is selected."
+  ,"wizard.readinessPending": "Readiness pending"
+  ,"wizard.specialistGuidancePending": "Specialist guidance will appear after the framework profile loads."
+  ,"wizard.specialistGuidance": "Specialist guidance"
+  ,"wizard.loadingFrameworkProfile": "Loading framework specialist profile..."
+  ,"wizard.percentReady": "{{score}}% ready"
+  ,"wizard.moreItems": "+{{count}} more"
+  ,"wizard.architectureGuidance": "Architecture guidance"
+  ,"wizard.recommendedFrameworkShapes": "Recommended shapes for this framework"
+  ,"wizard.tradeoff": "Tradeoff"
+  ,"wizard.recommendedCapabilities": "Recommended capabilities"
+  ,"wizard.readiness": "Readiness"
+  ,"wizard.pitfallsTradeoffs": "Pitfalls and tradeoffs"
+  ,"wizard.endpointGuidance": "Endpoint guidance"
+  ,"wizard.testingBaseline": "Testing and baseline"
+  ,"wizard.testing": "Testing"
+  ,"wizard.security": "Security"
+  ,"wizard.infrastructure": "Infrastructure"
+  ,"wizard.supportedArchetypes": "Supported archetypes"
+  ,"wizard.engineeringReadinessOffline": "Engineering readiness offline"
+  ,"wizard.engineeringReadiness": "Engineering readiness"
+  ,"wizard.calculatingTeamPosture": "Calculating team and production posture."
+  ,"wizard.selectStackForTeam": "Select a stack path to calculate team intelligence."
+  ,"wizard.teamIntelligencePanel": "Team Intelligence Panel"
+  ,"wizard.readinessValue": "{{value}} readiness"
+  ,"wizard.peopleCount": "{{count}} people"
+  ,"wizard.productionReadinessSurface": "Production Readiness Surface"
+  ,"wizard.productionReadinessCaption": "Production readiness recalculated from delivery, operations, and team maturity."
+  ,"wizard.deliveryComplexityRadar": "Delivery Complexity Radar"
+  ,"wizard.delivery": "Delivery"
+  ,"wizard.onboarding": "Onboarding"
+  ,"wizard.deployment": "Deployment"
+  ,"wizard.maintenance": "Maintenance"
+  ,"wizard.learning": "Learning"
+  ,"wizard.operationalBurdenSurface": "Operational Burden Surface"
+  ,"wizard.serviceOwnership": "Service ownership"
+  ,"wizard.deploymentBurden": "Deployment burden"
+  ,"wizard.observabilityBurden": "Observability burden"
+  ,"wizard.incidentBurden": "Incident burden"
+  ,"wizard.teamTopologyVisualization": "Team topology visualization"
+  ,"wizard.weeksCount": "{{count}} weeks"
+  ,"wizard.engineeringMaturityRings": "Engineering maturity rings"
+  ,"wizard.weekRampUp": "{{count}} week ramp-up"
+  ,"wizard.enterprise": "Enterprise"
+  ,"wizard.team": "Team"
+  ,"wizard.operations": "Operations"
+  ,"wizard.status.locked": "Locked"
+  ,"wizard.status.active": "Active"
+  ,"wizard.status.done": "Done"
+  ,"wizard.status.warning": "Warning"
+  ,"wizard.status.error": "Error"
+  ,"wizard.status.empty": "Pending"
+  ,"wizard.status.loading": "Loading"
+  ,"wizard.status.valid": "Valid"
+  ,"wizard.status.invalid": "Invalid"
+  ,"wizard.progress": "Progress"
+  ,"wizard.progressDescription": "Move one decision at a time. Locked steps open only after the prior choice is complete."
+  ,"wizard.languageField": "1. Language"
+  ,"wizard.programmingEcosystem": "Programming ecosystem."
+  ,"wizard.selectLanguage": "Select a language"
+  ,"wizard.runtimeField": "2. Runtime"
+  ,"wizard.executionEnvironment": "Execution environment."
+  ,"wizard.selectRuntime": "Select a runtime"
+  ,"wizard.runtimeUnlocks": "Runtime unlocks after selecting a language."
+  ,"wizard.frameworkField": "3. Framework"
+  ,"wizard.deliveryFramework": "Delivery framework."
+  ,"wizard.selectFramework": "Select a framework"
+  ,"wizard.frameworkUnlocks": "Framework unlocks after selecting a runtime."
+  ,"wizard.languageProfileDescription": "Evaluate ecosystem fit, learning curve, and enterprise readiness."
+  ,"wizard.selectLanguageEcosystem": "Select a language to inspect its ecosystem."
+  ,"wizard.ecosystem": "Ecosystem"
+  ,"wizard.primaryUseCases": "Primary use cases"
+  ,"wizard.enterpriseScore": "Enterprise score"
+  ,"wizard.learningCurve": "Learning curve"
+  ,"wizard.scalability": "Scalability"
+  ,"wizard.frameworkArchitectureCapabilities": "Frameworks / architectures / capabilities"
+  ,"wizard.pending": "Pending"
+  ,"wizard.blueprintPreviewDescription": "The summary remains visible while the center panel shows the current step."
+  ,"wizard.currentStep": "Current step: {{step}}"
+  ,"wizard.language": "Language"
+  ,"wizard.runtime": "Runtime"
+  ,"wizard.architecture": "Architecture"
+  ,"wizard.archetype": "Archetype"
+  ,"wizard.capabilities": "Capabilities"
+  ,"wizard.modules": "Modules"
+  ,"wizard.endpoints": "Endpoints"
+  ,"wizard.complexityEstimate": "Complexity estimate"
+  ,"wizard.leanBlueprint": "Lean blueprint"
+  ,"wizard.validationPending": "Pending until blueprint review requests a real backend preview."
+  ,"wizard.promptMasterPending": "Pending until a real blueprint preview is transformed into a Prompt Master."
+  ,"wizard.gatekeeperPending": "Pending until Gatekeeper validates the blueprint and Prompt Master pair."
+  ,"wizard.nextStep": "Next step"
+  ,"ldcn.context": "LDCN context"
+  ,"ldcn.contextDetails": "Context details"
+  ,"ldcn.route": "Route"
+  ,"ldcn.pipeline": "Pipeline"
+  ,"ldcn.reservedFutureActions": "Reserved future actions"
+  ,"dashboard.title": "Executive Dashboard"
+  ,"dashboard.description": "A clear portfolio view of delivery, risk, effort, and business readiness."
+  ,"dashboard.newProject": "Start a new project"
+  ,"dashboard.metrics": "Executive portfolio metrics"
+  ,"dashboard.activeProjects": "Active projects"
+  ,"dashboard.activeProjects.detail": "Initiatives currently in the portfolio."
+  ,"dashboard.readyProjects": "Ready projects"
+  ,"dashboard.readyProjects.detail": "Projects prepared for the next delivery step."
+  ,"dashboard.risks": "Risks requiring attention"
+  ,"dashboard.risks.detail": "Blocked initiatives that need a decision."
+  ,"dashboard.exports": "Completed deliveries"
+  ,"dashboard.exports.detail": "Projects generated and ready to distribute."
+  ,"dashboard.portfolio.eyebrow": "Portfolio outlook"
+  ,"dashboard.portfolio.title": "Delivery plan at a glance"
+  ,"dashboard.portfolio.description": "Prioritize decisions using business readiness instead of internal system metrics."
+  ,"dashboard.team": "Estimated team"
+  ,"dashboard.time": "Estimated time"
+  ,"dashboard.weeks": "weeks"
+  ,"dashboard.readiness": "Portfolio readiness"
+  ,"dashboard.readiness.detail": "Share of initiatives prepared for delivery."
+  ,"dashboard.attention": "Attention needed"
+  ,"dashboard.healthy": "On track"
+  ,"dashboard.complexity": "Portfolio complexity"
+  ,"dashboard.axis.scope": "Scope"
+  ,"dashboard.axis.risk": "Risk"
+  ,"dashboard.axis.team": "Team"
+  ,"dashboard.axis.time": "Time"
+  ,"dashboard.empty": "Start a project to build your executive portfolio."
+  ,"dashboard.error.title": "Executive dashboard unavailable"
+  ,"dashboard.error.description": "Unable to load portfolio information."
+  ,"architecture.title": "Architecture Center"
+  ,"architecture.description": "Understand the product architecture, ownership, and integrations through a connected visual model."
+  ,"architecture.phase": "Architecture visualization"
+  ,"architecture.ready": "Ready"
+  ,"architecture.graph.eyebrow": "Engineering Architecture Graph"
+  ,"architecture.graph.title": "Connected product architecture"
+  ,"architecture.graph.description": "A visual map of frontend, APIs, backend, data, queues, contracts, modules, and integrations."
+  ,"architecture.graph.compatible": "Architectural Graph Engine compatible"
+  ,"architecture.node.frontend": "Frontend"
+  ,"architecture.node.frontend.detail": "Customer and team experiences"
+  ,"architecture.node.api": "APIs & contracts"
+  ,"architecture.node.api.detail": "Stable product boundaries"
+  ,"architecture.node.backend": "Backend"
+  ,"architecture.node.backend.detail": "Business services and engines"
+  ,"architecture.node.database": "Database"
+  ,"architecture.node.database.detail": "Operational product data"
+  ,"architecture.node.queues": "Queues"
+  ,"architecture.node.queues.detail": "Asynchronous workflows"
+  ,"architecture.node.integrations": "Integrations"
+  ,"architecture.node.integrations.detail": "External delivery channels"
+  ,"architecture.layers.title": "Architecture layers"
+  ,"architecture.layers.contracts": "Contracts"
+  ,"architecture.layers.contracts.detail": "Shared and governed product contracts"
+  ,"architecture.layers.modules": "Modules"
+  ,"architecture.layers.modules.detail": "Product and service ownership"
+  ,"architecture.layers.integrations": "Delivery"
+  ,"architecture.layers.integrations.detail": "Connected repository providers"
+  ,"architecture.layers.governance": "Validation"
+  ,"architecture.layers.governance.detail": "Readiness and quality controls"
+  ,"architecture.summary.eyebrow": "Architecture summary"
+  ,"architecture.summary.title": "One model, clear ownership"
+  ,"architecture.summary.description": "The graph remains compatible with the existing engine while presenting architecture as a product decision."
+  ,"architecture.advanced.title": "Advanced architecture"
+  ,"architecture.advanced.description": "Technical diagnostics remain available on demand."
+  ,"architecture.advanced.runtime": "Runtime map"
+  ,"architecture.advanced.runtime.detail": "Active frontend, API, contract, and report surfaces."
+  ,"architecture.advanced.engines": "Engine overview"
+  ,"architecture.advanced.engines.detail": "Deterministic engines and validation services."
+  ,"architecture.advanced.registries": "Registry overview"
+  ,"architecture.advanced.registries.detail": "Technology, template, skill, and project registries."
+  ,"templates.title": "Template Marketplace"
+  ,"templates.description": "Commercial starting points organized by outcome, maturity, compatibility, and delivery effort."
+  ,"templates.featured": "Featured template"
+  ,"templates.featured.title": "Recommended starting point"
+  ,"templates.featured.description": "A recommended foundation selected for fast, governed delivery."
+  ,"templates.start": "Start with this template"
+  ,"templates.search": "Search templates, stacks, or categories"
+  ,"templates.filter.category": "Filter templates by category"
+  ,"templates.filter.complexity": "Filter templates by complexity"
+  ,"templates.allCategories": "All categories"
+  ,"templates.allComplexities": "All complexities"
+  ,"templates.complexity.low": "Beginner friendly"
+  ,"templates.complexity.medium": "Balanced"
+  ,"templates.complexity.high": "Advanced"
+  ,"templates.noResults": "No templates match these filters."
+  ,"templates.clear": "Clear filters"
+  ,"templates.recommended": "Recommended"
+  ,"templates.enterpriseReady": "Enterprise ready"
+  ,"templates.beginnerFriendly": "Beginner friendly"
+  ,"templates.time": "Estimated time"
+  ,"templates.weeks": "weeks"
+  ,"templates.maturity": "Maturity"
+  ,"templates.compatibility": "Compatibility"
+  ,"templates.compatible": "Compatible"
+  ,"templates.review": "Review needed"
+  ,"templates.use": "Use template"
+  ,"templates.error.title": "Template catalog unavailable"
+  ,"templates.error.description": "Unable to load the template catalog."
+  ,"skills.title": "Outcome Library"
+  ,"skills.description": "Guided actions focused on business results, planning, readiness, and delivery."
+  ,"skills.search": "Search by outcome or business need"
+  ,"skills.filter": "Filter outcomes by category"
+  ,"skills.allCategories": "All categories"
+  ,"skills.count": "{{count}} guided actions"
+  ,"skills.outcomeFocused": "Outcome focused"
+  ,"skills.safe": "Governed and safe"
+  ,"skills.viewDetails": "View expected outcome"
+  ,"skills.details": "Expected outcome"
+  ,"skills.trust": "Trust and governance"
+  ,"skills.previewing": "Preparing plan"
+  ,"skills.preview": "Preview action plan"
+  ,"skills.select": "Select an action to understand its expected outcome."
+  ,"skills.item.review_blueprint": "Validate Product Blueprint"
+  ,"skills.item.inspect_architecture": "Analyze Architecture"
+  ,"skills.item.inspect_architecture_graph": "Map Architecture Dependencies"
+  ,"skills.item.inspect_graph": "Analyze Architecture"
+  ,"skills.item.analyze_readiness": "Assess Production Readiness"
+  ,"skills.item.analyze_risks": "Identify Delivery Risks"
+  ,"skills.item.recommend_framework": "Choose the Best Technology Path"
+  ,"skills.item.recommend_architecture": "Choose a Scalable Architecture"
+  ,"skills.item.estimate_team": "Plan the Required Team"
+  ,"skills.item.prepare_handoff": "Prepare Delivery Handoff"
+  ,"skills.item.generate_local_project": "Create Project Foundation"
+  ,"skills.item.inspect_generated_files": "Review Delivery Package"
+  ,"skills.item.prepare_download": "Prepare Secure Download"
+  ,"skills.item.diagnose_backend": "Restore Service Availability"
+  ,"skills.item.diagnose_frontend": "Review Experience Health"
+  ,"skills.item.inspect_templates": "Compare Available Templates"
+  ,"skills.item.review_blueprint.description": "Confirm that the product definition is complete and ready for the next decision."
+  ,"skills.item.inspect_architecture.description": "Understand architecture choices, ownership, and their business impact."
+  ,"skills.item.inspect_architecture_graph.description": "Reveal dependencies and ownership before delivery."
+  ,"skills.item.inspect_graph.description": "Understand architecture relationships before delivery."
+  ,"skills.item.analyze_readiness.description": "Evaluate whether the product is ready for production."
+  ,"skills.item.analyze_risks.description": "Identify risks and corrective actions before they affect delivery."
+  ,"skills.item.recommend_framework.description": "Compare technology paths using product needs."
+  ,"skills.item.recommend_architecture.description": "Select an architecture aligned with growth and operations."
+  ,"skills.item.estimate_team.description": "Estimate roles, capacity, and experience needed."
+  ,"skills.item.prepare_handoff.description": "Organize the approved project for a clear delivery."
+  ,"skills.item.generate_local_project.description": "Create the approved project foundation."
+  ,"skills.item.inspect_generated_files.description": "Review the delivery package before distribution."
+  ,"skills.item.prepare_download.description": "Prepare a secure delivery package."
+  ,"skills.item.diagnose_backend.description": "Understand service availability and recovery actions."
+  ,"skills.item.diagnose_frontend.description": "Review customer experience health."
+  ,"skills.item.inspect_templates.description": "Compare starting points by fit and maturity."
+  ,"wizard.businessFirst.continue": "Continue to technology recommendations"
+  ,"wizard.businessFirst.objective": "1. Objective"
+  ,"wizard.businessFirst.objective.description": "What do you want to build?"
+  ,"wizard.businessFirst.projectName": "Project name"
+  ,"wizard.businessFirst.goal.erp": "ERP"
+  ,"wizard.businessFirst.goal.crm": "CRM"
+  ,"wizard.businessFirst.goal.marketplace": "Marketplace"
+  ,"wizard.businessFirst.goal.saas": "SaaS"
+  ,"wizard.businessFirst.goal.internal": "Internal system"
+  ,"wizard.businessFirst.goal.education": "Education platform"
+  ,"wizard.businessFirst.goal.finance": "Financial system"
+  ,"wizard.businessFirst.goal.healthcare": "Healthcare system"
+  ,"wizard.businessFirst.goal.other": "Other"
+  ,"wizard.businessFirst.problem": "2. Problem"
+  ,"wizard.businessFirst.problem.description": "Describe the business problem before discussing implementation."
+  ,"wizard.businessFirst.problem.label": "What problem will be solved?"
+  ,"wizard.businessFirst.users": "3. Users"
+  ,"wizard.businessFirst.users.description": "Who will use the product? Select all that apply."
+  ,"wizard.businessFirst.user.administrator": "Administrator"
+  ,"wizard.businessFirst.user.customer": "Customer"
+  ,"wizard.businessFirst.user.operator": "Operator"
+  ,"wizard.businessFirst.user.partner": "Partner"
+  ,"wizard.businessFirst.user.manager": "Manager"
+  ,"wizard.businessFirst.rules": "4. Business rules"
+  ,"wizard.businessFirst.rules.description": "Define the decisions and constraints that govern the product."
+  ,"wizard.businessFirst.rules.label": "Primary business rules"
+  ,"wizard.businessFirst.workflows.label": "5. Operational workflows"
+  ,"wizard.businessFirst.onePerLine": "One item per line."
+  ,"wizard.businessFirst.data": "6. Data model"
+  ,"wizard.businessFirst.data.description": "Define entities, relationships, and constraints before selecting technology."
+  ,"wizard.businessFirst.entities": "Entities and relationships"
+  ,"wizard.businessFirst.entities.description": "Include key fields and relationships."
+  ,"wizard.businessFirst.constraints": "Constraints"
+  ,"wizard.businessFirst.constraints.description": "Operational, regulatory, security, or technical constraints."
+  ,"wizard.businessFirst.delivery": "Delivery preference"
+  ,"wizard.businessFirst.delivery.description": "Choose the preferred delivery channel."
+  ,"wizard.businessFirst.delivery.label": "Delivery target"
+  ,"wizard.businessFirst.delivery.select": "Select delivery method"
+  ,"wizard.businessFirst.delivery.zip": "Download ZIP"
+  ,"wizard.businessFirst.incomplete": "Complete the business definition before continuing."
+  ,"status.planned": "planned"
+  ,"status.draft": "draft"
+  ,"loading.preparingSurface": "Preparing operational surface"
+  ,"loading.foundationState": "Loading foundation state."
+  ,"loading.working": "Working"
+  ,"notifications.dismiss": "Dismiss notification"
+  ,"notifications.animatedStack": "Animated toast stack active"
+  ,"notifications.open": "Open notification center"
+  ,"notifications.center": "Notification center"
+  ,"notifications.title": "Notifications"
+  ,"notifications.description": "Foundation-only operational updates."
+  ,"notifications.close": "Close notification center"
+  ,"notifications.new": "new"
+  ,"notifications.markRead": "Mark read"
+  ,"notifications.empty": "No notifications"
+  ,"notifications.emptyDetail": "The center is ready for future backend events."
+  ,"ldcn.context.title": "Presence context"
+  ,"ldcn.context.route": "Route"
+  ,"ldcn.context.phase": "Phase"
+  ,"ldcn.context.pipeline": "Pipeline"
+  ,"ldcn.context.status": "Status"
+  ,"ldcn.context.suggestions": "Reserved suggestions"
+  ,"ldcn.presence.layer": "LDCN presence layer"
+  ,"ldcn.presence.reserve": "Operational reserve"
+  ,"ldcn.presence.description": "Reserved system presence for the engineering OS. No voice, no avatar, no generation, and no external AI calls."
+  ,"ldcn.presence.posture": "System posture"
+  ,"ldcn.presence.postureDetail": "The LDCN layer remains a visible operational band across the shell. It is intentionally passive and cannot block navigation."
+  ,"ldcn.command.title": "Command surface"
+  ,"ldcn.command.description": "Reserved future actions"
+  ,"ldcn.command.reserved": "Reserved"
+  ,"ldcn.command.future": "future"
+  ,"ldcn.command.action.explain_current_page.label": "Explain current page"
+  ,"ldcn.command.action.explain_current_page.description": "Reserved for contextual explanation of the current surface."
+  ,"ldcn.command.action.review_blueprint.label": "Review blueprint"
+  ,"ldcn.command.action.review_blueprint.description": "Reserved for blueprint analysis with no execution attached."
+  ,"ldcn.command.action.suggest_next_step.label": "Suggest next step"
+  ,"ldcn.command.action.suggest_next_step.description": "Reserved for future orchestration guidance."
+  ,"ldcn.command.action.inspect_gatekeeper.label": "Inspect gatekeeper"
+  ,"ldcn.command.action.inspect_gatekeeper.description": "Reserved for Gatekeeper insight without mutation."
+  ,"ldcn.command.action.prepare_generation.label": "Prepare generation"
+  ,"ldcn.command.action.prepare_generation.description": "Reserved for generation handoff state only."
+  ,"ldcn.command.action.open_command_palette.label": "Open command palette"
+  ,"ldcn.command.action.open_command_palette.description": "Reserved for command palette entry points."
+  ,"ldcn.avatar.title": "Avatar skeleton"
+  ,"ldcn.avatar.description": "Reserved presence node"
+  ,"ldcn.avatar.telemetry": "Telemetry"
+  ,"ldcn.avatar.observer": "Passive observer"
+  ,"ldcn.avatar.mode": "Mode"
+  ,"ldcn.avatar.style": "Style"
+  ,"ldcn.avatar.abstract": "abstract"
+  ,"activity.title": "Activity timeline"
+  ,"activity.shell.title": "Shell initialized"
+  ,"activity.shell.description": "Navigation, theme, overlays, and command surfaces loaded."
+  ,"activity.contracts.title": "Contracts ready"
+  ,"activity.contracts.description": "Frontend prepared to consume future shared contracts."
+  ,"activity.gates.title": "Quality gates pending"
+  ,"activity.gates.description": "Backend and AI phases remain blocked until frontend foundation validates."
+  ,"activity.future.title": "Future backend event"
+  ,"activity.future.description": "Reserved for real runtime events later."
+  ,"list.filterSurface": "Filter surface"
+  ,"list.foundationOnly": "Foundation only"
+  ,"list.openActions": "Open actions for {{title}}"
+  ,"graph.title": "Architecture Graph"
+  ,"graph.nodeDetails": "Node Details"
+  ,"graph.selectNode": "Select a node to inspect burden, ownership, risk and readiness."
+  ,"graph.readiness": "Readiness"
+  ,"graph.ownership": "Ownership"
+  ,"graph.risk": "Risk"
+  ,"graph.burden": "Burden"
+  ,"graph.synchronizing": "Synchronizing architectural graph."
+  ,"graph.selectArchitecture": "Select an architecture path to activate graph preview."
+  ,"graph.offline": "Architectural graph offline"
+  ,"graph.surface": "Architecture Graph Surface"
+  ,"graph.nodes": "{{count}} nodes"
+  ,"graph.edges": "{{count}} edges"
+  ,"graph.architecturalEdges": "Architectural edges"
+  ,"graph.toolbar": "Graph toolbar"
+  ,"graph.zoomOut": "Zoom out"
+  ,"graph.fit": "Fit graph"
+  ,"graph.zoomIn": "Zoom in"
+  ,"graph.legend": "Architectural graph legend"
+  ,"systemDesign.cockpit": "Architecture Cockpit"
+  ,"systemDesign.synchronizing": "Synchronizing system design topology."
+  ,"systemDesign.selectArchitecture": "Select an architecture path to activate topology visualization."
+  ,"systemDesign.offline": "Architecture cockpit offline"
+  ,"systemDesign.architecture.title": "Architecture topology"
+  ,"systemDesign.dependencies.title": "Dependency Propagation"
+  ,"systemDesign.dependencies.description": "Requires, recommendations, conflicts and burden chains."
+  ,"systemDesign.deployment.title": "Deployment Topology"
+  ,"systemDesign.mode": "Mode"
+  ,"systemDesign.burden": "Burden"
+  ,"systemDesign.infrastructure.title": "Infrastructure Topology"
+  ,"systemDesign.infrastructure.description": "Datastores, queues, observability and deployment ownership."
+  ,"systemDesign.readiness.title": "Readiness Zones"
+  ,"systemDesign.readiness.description": "MVP, production, enterprise, scalability and team posture."
+  ,"systemDesign.risk.title": "Risk Visualization"
+  ,"systemDesign.risk.description": "Complexity, security, scaling and operational risk zones."
+  ,"systemDesign.runtime.title": "Runtime Visualization"
+  ,"systemDesign.runtime.description": "Synchronized execution path with sync, async, queue and telemetry edges."
+  ,"systemDesign.team.title": "Team Topology"
+  ,"systemDesign.team.requiredMaturity": "Required maturity"
+  ,"drawer.ariaLabel": "Foundation details drawer"
+  ,"drawer.kind": "{{kind}} drawer"
+  ,"drawer.title": "Operational details panel"
+  ,"drawer.description": "A reusable right drawer for future project, template, download, and runtime details."
+  ,"drawer.close": "Close drawer"
+  ,"drawer.foundation": "Details foundation"
+  ,"drawer.foundationDetail": "Ready for future data binding."
+  ,"modal.confirmation.title": "Confirm foundation action"
+  ,"modal.confirmation.description": "This demonstrates a safe confirmation modal for future project and template actions."
+  ,"modal.confirmation.action": "Confirm"
+  ,"modal.information.title": "Information surface"
+  ,"modal.information.description": "This modal is frontend-only and exists to validate accessible overlay behavior."
+  ,"modal.information.action": "Acknowledge"
+  ,"modal.destructive.title": "Destructive action guard"
+  ,"modal.destructive.description": "Future destructive flows must use explicit confirmation and clear copy before execution."
+  ,"modal.destructive.action": "Understand risk"
+  ,"modal.close": "Close modal"
+  ,"modal.destructive.blocked": "Destructive actions are blocked in foundation mode."
+  ,"modal.cancel": "Cancel"
+  ,"modal.toast.title": "Modal action captured"
+  ,"modal.toast.description": "Foundation interaction completed without backend execution."
+  ,"search.ariaLabel": "Search LDCN OS"
+  ,"search.placeholder": "Search LDCN OS..."
+  ,"search.commandExecuted": "Command executed"
+  ,"search.empty": "No foundation command found."
+  ,"search.escape": "Esc"
+  ,"common.more": "more"
+  ,"common.recommended": "recommended"
+  ,"engineering.graphEngine": "Architecture graph engine"
+  ,"engineering.liveTopology": "Live topology"
+  ,"engineering.readinessSurface": "Operational readiness surface"
+  ,"engineering.percent": "percent"
+  ,"engineering.operations": "Operations"
+  ,"engineering.complexityDetail": "Complexity radar and operational burden are derived from the current architecture selection."
+  ,"engineering.score": "{{score}} score"
+  ,"engineering.operationalRail": "Operational intelligence rail with synchronized runtime signals."
+  ,"engineering.live": "Live"
+  ,"engineering.ecosystemDetail": "Connected ecosystem nodes describe how the current stack behaves at runtime."
+  ,"engineering.deploymentDetail": "Deployment flow visualization for blueprint, contract, validation, and registry phases."
+  ,"infrastructure.title": "Infrastructure recommendations"
+  ,"infrastructure.unavailable": "Infrastructure registry unavailable"
+  ,"infrastructure.requiredCount": "{{count}} required"
+  ,"infrastructure.foundationComponents": "Foundation components"
+  ,"infrastructure.description": "Select only the infrastructure foundation you want to keep in the blueprint preview. No generation is performed here."
+  ,"infrastructure.loading": "Loading infrastructure recommendations..."
+  ,"infrastructure.selectedCount": "Selected {{count}}"
+  ,"infrastructure.recommendedCount": "Recommended {{count}}"
+  ,"infrastructure.optionalCount": "Optional {{count}}"
+  ,"infrastructure.selectFoundation": "Select foundation only"
+  ,"infrastructure.clearSelection": "Clear infrastructure selection"
+  ,"infrastructure.category.database": "Database"
+  ,"infrastructure.category.cache": "Cache"
+  ,"infrastructure.category.queue": "Queue"
+  ,"infrastructure.category.object_storage": "Object Storage"
+  ,"infrastructure.category.auth_provider": "Auth Provider"
+  ,"infrastructure.category.observability": "Observability"
+  ,"infrastructure.category.deployment": "Deployment"
+  ,"infrastructure.category.containerization": "Containerization"
+  ,"infrastructure.category.api_gateway": "API Gateway"
+  ,"infrastructure.category.search": "Search"
+  ,"infrastructure.category.vector_database": "Vector Database"
+  ,"infrastructure.category.email_provider": "Email Provider"
+  ,"infrastructure.category.payment_provider": "Payment Provider"
+  ,"dependencyGraph.title": "Dependency graph"
+  ,"dependencyGraph.unavailable": "Dependency graph unavailable"
+  ,"dependencyGraph.requiredCount": "{{count}} required"
+  ,"dependencyGraph.surface": "Propagation and impact surface"
+  ,"dependencyGraph.description": "The engine propagates architectural dependencies, mutates recommendations, recalculates readiness and exposes risk before any generation step."
+  ,"dependencyGraph.nodeCount": "{{count}} nodes"
+  ,"dependencyGraph.loading": "Loading dependency propagation..."
+  ,"dependencyGraph.impact": "Impact"
+  ,"dependencyGraph.readiness": "Readiness"
+  ,"dependencyGraph.productionScore": "{{score}}/100 production"
+  ,"dependencyGraph.risk": "Risk"
+  ,"dependencyGraph.mutations": "Mutations"
+  ,"dependencyGraph.mutationFeed": "Architecture mutation feed"
+  ,"dependencyGraph.nodeGraph": "Node graph"
+  ,"dependencyGraph.nodeGraphDetail": "Topology relationships and propagated dependencies"
+  ,"dependencyGraph.recommendedCount": "{{count}} recommended"
+  ,"dependencyGraph.warningCount": "{{count}} warnings"
+  ,"dependencyGraph.graph": "Graph"
+  ,"dependencyGraph.propagated": "Propagated dependencies"
+  ,"dependencyGraph.rec": "Rec"
+  ,"dependencyGraph.conflict": "Conflict"
+  ,"dependencyGraph.readinessRadar": "Readiness radar"
+  ,"dependencyGraph.ready": "Ready"
+  ,"dependencyGraph.needsWork": "Needs work"
+  ,"dependencyGraph.readinessDetail": "Readiness changes as dependencies propagate."
+  ,"dependencyGraph.impactSurface": "Impact surface"
+  ,"dependencyGraph.infra": "Infra"
+  ,"dependencyGraph.deploy": "Deploy"
+  ,"dependencyGraph.opsBurden": "Ops burden"
+  ,"dependencyGraph.scale": "Scale"
+  ,"dependencyGraph.impactRadar": "Impact radar"
+  ,"dependencyGraph.infrastructure": "Infrastructure"
+  ,"dependencyGraph.deployment": "Deployment"
+  ,"dependencyGraph.ops": "Ops"
+  ,"dependencyGraph.security": "Security"
+  ,"dependencyGraph.riskSurface": "Risk surface"
+  ,"dependencyGraph.noCriticalRisks": "No critical risks were detected for the current dependency set."
+  ,"metaFactory.error.spec": "Failed to generate the specification."
+  ,"metaFactory.error.generationWarnings": "Generation completed with warnings: {{errors}}"
+  ,"metaFactory.error.generate": "Failed to generate the project."
+  ,"metaFactory.error.openFile": "Failed to open the file."
+  ,"metaFactory.error.download": "Failed to prepare the download."
+  ,"metaFactory.noPreview": "(no preview available)"
+  ,"metaFactory.title": "Software Meta-Factory"
+  ,"metaFactory.description": "Describe the idea, turn it into a specification, and let the agents generate Contract, Backend, Frontend, QA, DevOps, and Docs."
+  ,"metaFactory.idea": "The idea"
+  ,"metaFactory.intentPlaceholder": "Example: I want a scheduling SaaS for barbershops with professionals and availability."
+  ,"metaFactory.intentHelpBefore": "Write freely. Anything you do not define is filled with"
+  ,"metaFactory.smartDefaults": "smart defaults"
+  ,"metaFactory.intentHelpAfter": "and every assumption is recorded below."
+  ,"metaFactory.model": "Model"
+  ,"metaFactory.autoModel": "Auto (by role)"
+  ,"metaFactory.language": "Language"
+  ,"metaFactory.generateSpec": "Generate specification"
+  ,"metaFactory.specification": "Specification"
+  ,"metaFactory.localeLabel": "language"
+  ,"metaFactory.confidence": "Confidence"
+  ,"metaFactory.refinementQuestions": "Refinement questions (optional)"
+  ,"metaFactory.defaultAnswer": "Default: {{value}}"
+  ,"metaFactory.refineSpec": "Refine specification"
+  ,"metaFactory.summary": "Summary"
+  ,"metaFactory.targetUsers": "Target users"
+  ,"metaFactory.businessRules": "Business rules"
+  ,"metaFactory.entities": "Entities"
+  ,"metaFactory.workflows": "Workflows"
+  ,"metaFactory.suggestedStack": "Suggested stack"
+  ,"metaFactory.assumptions": "Recorded assumptions"
+  ,"metaFactory.projectName": "Project name"
+  ,"metaFactory.generateProject": "Generate project (6 agents)"
+  ,"metaFactory.result": "Result"
+  ,"metaFactory.runFiles": "{{model}} · {{count}} file(s)"
+  ,"metaFactory.project": "Project"
+  ,"metaFactory.fileCount": "{{count}} files"
+  ,"metaFactory.downloadZip": "Download .zip"
+  ,"metaFactory.loadingFile": "Loading..."
+  ,"metaFactory.selectFile": "Select a file to preview."
+  ,"metaFactory.role.contracts": "Contracts (API-First)"
+  ,"metaFactory.role.backend": "Backend"
+  ,"metaFactory.role.frontend": "Frontend"
+  ,"metaFactory.role.qa": "Security & QA"
+  ,"metaFactory.role.devops": "DevOps"
+  ,"metaFactory.role.docs": "Documentation"
+  ,"foundation.title": "UX system foundation"
+  ,"foundation.description": "Reusable operational UX primitives for future projects, templates, downloads, and LDCN workflows."
+  ,"foundation.feedback": "Feedback"
+  ,"foundation.feedbackTitle": "Toast, modal, drawer, loading, error, and notification systems are ready."
+  ,"foundation.feedbackDescription": "These surfaces execute local UI actions without backend, AI, agents, voice, avatar, or generation."
+  ,"foundation.toastTitle": "Toast system online"
+  ,"foundation.toastDescription": "Premium notification rendered with current theme tokens."
+  ,"foundation.openCenter": "Open center"
+  ,"foundation.showToast": "Show toast"
+  ,"foundation.openModal": "Open modal"
+  ,"foundation.openDrawer": "Open drawer"
+  ,"foundation.projectName": "Project name"
+  ,"foundation.projectNameDetail": "Validation-ready input surface."
+  ,"foundation.projectNamePlaceholder": "ldcn-enterprise-app"
+  ,"foundation.operationalBrief": "Operational brief"
+  ,"foundation.operationalBriefDetail": "Textarea foundation for future wizard prompts."
+  ,"foundation.operationalBriefPlaceholder": "Describe what the generated project should do."
+  ,"foundation.stack": "Stack"
+  ,"foundation.framework.fastapi": "FastAPI"
+  ,"foundation.framework.spring": "Spring Boot"
+  ,"foundation.framework.next": "Next.js"
+  ,"foundation.errorField": "Field with error"
+  ,"foundation.requiredValue": "Required value"
+  ,"foundation.validationMessage": "Foundation validation message."
+  ,"foundation.includeDocumentation": "Include documentation"
+  ,"foundation.generationOptions": "Ready for future generation options."
+  ,"foundation.localBuild": "Local Build 90%"
+  ,"foundation.localExecution": "Static local execution path."
+  ,"foundation.observableRuntime": "Observable runtime"
+  ,"foundation.telemetryPreference": "Future telemetry-ready preference."
+  ,"foundation.projectRow": "Project registry row"
+  ,"foundation.projectRowDetail": "Reusable list row for future projects."
+  ,"foundation.templateRow": "Template blueprint row"
+  ,"foundation.templateRowDetail": "Reusable list row for future templates."
+  ,"foundation.downloadRow": "Secure download row"
+  ,"foundation.downloadRowDetail": "Reserved for future download registry."
+  ,"foundation.loadingStates": "Loading states"
+  ,"foundation.buttonLoading": "Button loading"
+  ,"common.yes": "yes"
+  ,"common.no": "no"
+  ,"projectDetail.title": "Project Details"
+  ,"projectDetail.description": "Persisted registry view of the validated wizard selection, with blueprint, Prompt Master, and Gatekeeper snapshots attached."
+  ,"projectDetail.unavailable": "Project detail unavailable"
+  ,"projectDetail.unavailableDetail": "Unable to load the project detail view."
+  ,"projectDetail.blueprintLineage": "Blueprint lineage"
+  ,"projectDetail.technologyGraph": "Technology graph"
+  ,"projectDetail.language": "Language"
+  ,"projectDetail.ecosystem": "Ecosystem: {{value}}"
+  ,"projectDetail.runtime": "Runtime"
+  ,"projectDetail.runtimeSegment": "Runtime segment"
+  ,"projectDetail.framework": "Framework"
+  ,"projectDetail.frameworkTopology": "Framework topology"
+  ,"projectDetail.architecture": "Architecture"
+  ,"projectDetail.archetypeValue": "Archetype {{value}}"
+  ,"projectDetail.readinessRing": "Readiness ring"
+  ,"projectDetail.readinessDetail": "Readiness is derived from the persisted project status."
+  ,"projectDetail.snapshotSummary": "Snapshot summary"
+  ,"projectDetail.locale": "Locale"
+  ,"projectDetail.generationMode": "Generation mode"
+  ,"projectDetail.archetype": "Archetype"
+  ,"projectDetail.readiness": "Readiness"
+  ,"projectDetail.blueprintSummary": "Blueprint summary"
+  ,"projectDetail.complexity": "Complexity"
+  ,"projectDetail.risk": "Risk"
+  ,"projectDetail.recommendations": "Recommendations"
+  ,"projectDetail.errors": "Errors"
+  ,"projectDetail.promptMasterSummary": "Prompt Master summary"
+  ,"projectDetail.sections": "Sections"
+  ,"projectDetail.sourceValid": "Source valid"
+  ,"projectDetail.containsSecrets": "Contains secrets"
+  ,"projectDetail.compiled": "Compiled"
+  ,"projectDetail.persisted": "persisted"
+  ,"projectDetail.templateUsed": "Template Used"
+  ,"projectDetail.noTemplate": "No generated template recorded yet"
+  ,"projectDetail.templateDescription": "Template metadata appears after local generation resolves a local registry template. Code is not executed or previewed in an iframe."
+  ,"projectDetail.versionPending": "version pending"
+  ,"projectDetail.maturityPending": "maturity pending"
+  ,"projectDetail.templatePending": "template pending"
+  ,"projectDetail.templateUnavailable": "Template metadata unavailable"
+  ,"projectDetail.templateUnavailableDetail": "Template registry metadata could not be loaded for this generated project."
+  ,"projectDetail.category": "Category"
+  ,"projectDetail.capabilities": "Capabilities"
+  ,"projectDetail.frameworks": "Frameworks"
+  ,"projectDetail.changelog": "Changelog"
+  ,"projectDetail.runGenerationForTemplate": "Run local generation to record the template id, version, maturity, and changelog for this project."
+  ,"projectDetail.templateCompatibility": "Template compatibility validated"
+  ,"projectDetail.templateRecommended": "Recommended template detected"
+  ,"projectDetail.templateMaturity": "Template maturity verified"
+  ,"projectDetail.waiting": "waiting"
+  ,"projectDetail.availableSkills": "Available Skills"
+  ,"projectDetail.operationalSkills": "Operational skills for this project"
+  ,"projectDetail.skillsDescription": "Skills are read-only operational assists. They do not execute agents, AI, shell commands, deployments, or external integrations."
+  ,"projectDetail.unlockedCount": "{{count}} unlocked"
+  ,"projectDetail.skillsSynchronized": "Skill registry synchronized"
+  ,"projectDetail.skillsUnavailable": "Available skills unavailable"
+  ,"projectDetail.skillsUnavailableDetail": "Skill registry could not be loaded for this project."
+  ,"projectDetail.handoffTitle": "Generation Readiness Handoff"
+  ,"projectDetail.handoffPreview": "Final preparation preview"
+  ,"projectDetail.handoffDescription": "Packages saved snapshots, selected scope, infrastructure recommendations, dependency impact, and engineering readiness without generating code."
+  ,"projectDetail.notPrepared": "not prepared"
+  ,"projectDetail.generationDisabled": "generation disabled"
+  ,"projectDetail.preparingHandoff": "Preparing handoff"
+  ,"projectDetail.prepareHandoff": "Prepare Handoff"
+  ,"projectDetail.generateProject": "Generate Project"
+  ,"projectDetail.completeRequirements": "Complete the project requirements before generating."
+  ,"projectDetail.handoffUnavailable": "Generation handoff unavailable"
+  ,"projectDetail.handoffUnavailableDetail": "Backend handoff preview is offline. The project record remains unchanged."
+  ,"projectDetail.handoffReadiness": "Handoff readiness"
+  ,"projectDetail.handoffReadinessDetail": "Generation remains disabled until a future explicit generation flow exists."
+  ,"projectDetail.blockers": "Blockers"
+  ,"projectDetail.noBlockers": "No critical blockers."
+  ,"projectDetail.noWarnings": "No warnings returned."
+  ,"projectDetail.safeTrace": "Safe trace"
+  ,"projectDetail.artifactsIncluded": "Artifacts included"
+  ,"projectDetail.missingArtifact": "{{label}} missing"
+  ,"projectDetail.export.requirementsComplete": "Requirements complete"
+  ,"projectDetail.export.blueprintValid": "Blueprint valid"
+  ,"projectDetail.export.architectureValidated": "Architecture validated"
+  ,"projectDetail.export.generationComplete": "Generation complete"
+  ,"wizard.toast.blueprintReady.title": "Blueprint preview ready"
+  ,"wizard.toast.blueprintReady.description": "The backend resolved the blueprint with complexity, validation and recommendations."
+  ,"wizard.toast.blueprintIssues.title": "Blueprint preview returned issues"
+  ,"wizard.toast.blueprintIssues.description": "The backend returned explicit blueprint issues and recommendations."
+  ,"wizard.toast.promptMasterReady.title": "Prompt Master preview ready"
+  ,"wizard.toast.promptMasterReady.description": "The Prompt Master contract is ready for inspection and copy."
+  ,"wizard.toast.promptMasterIssues.title": "Prompt Master preview returned issues"
+  ,"wizard.toast.promptMasterIssues.description": "The Prompt Master preserved the blueprint issues and surfaced explicit constraints."
+  ,"wizard.toast.gatekeeperApproved.title": "Gatekeeper approved"
+  ,"wizard.toast.gatekeeperApprovedWithWarnings.title": "Gatekeeper approved with warnings"
+  ,"wizard.toast.gatekeeperBlocked.title": "Gatekeeper blocked progression"
+  ,"wizard.toast.requirementsIncomplete.title": "Requirements incomplete"
+  ,"wizard.toast.requirementsIncomplete.description": "Complete the project requirements before generating."
+  ,"wizard.toast.selectionIncomplete.title": "Selection incomplete"
+  ,"wizard.toast.selectionIncomplete.description": "Choose language, runtime, framework, architecture and archetype before previewing the blueprint."
+  ,"wizard.toast.blueprintPreviewRequired.title": "Blueprint preview required"
+  ,"wizard.toast.blueprintPreviewRequired.description": "Run the blueprint preview first so the Prompt Master can derive a validated technical contract."
+  ,"wizard.toast.previewChainIncomplete.title": "Preview chain incomplete"
+  ,"wizard.toast.previewChainIncomplete.description": "Build the blueprint and Prompt Master previews before running Gatekeeper."
+  ,"wizard.toast.validationChainIncomplete.title": "Validation chain incomplete"
+  ,"wizard.toast.validationChainIncomplete.description": "Build the blueprint, Prompt Master and Gatekeeper previews before saving the project."
+  ,"wizard.toast.projectSaved.title": "Project saved"
+  ,"wizard.toast.projectSaved.description": "{{projectName}} is now persisted in the backend registry."
+  ,"wizard.toast.projectSaveFailed.title": "Project save failed"
+  ,"wizard.toast.projectSaveFailedFallback": "Unable to persist the current wizard selection as a project record."
+  ,"wizard.toast.promptMasterUnavailable.title": "Prompt Master unavailable"
+  ,"wizard.toast.promptMasterUnavailable.description": "Build the Prompt Master preview before copying it."
+  ,"wizard.toast.promptMasterCopied.title": "Prompt Master copied"
+  ,"wizard.toast.promptMasterCopied.description": "The compiled technical prompt was copied to the clipboard."
+  ,"wizard.toast.copyFailed.title": "Copy failed"
+  ,"wizard.toast.copyFailed.description": "Clipboard access is unavailable in this environment."
+  ,"wizard.hero.badge": "Technology graph explorer"
+  ,"wizard.hero.title": "Design the system like a living architecture."
+  ,"wizard.hero.description": "Language, runtime, framework, architecture, and archetype now change the runtime surface of the Wizard so the user can see the system they are building."
+  ,"wizard.hero.badgeTechnologyGraph": "Technology graph"
+  ,"wizard.hero.badgeArchitectureProfile": "Architecture profile"
+  ,"wizard.hero.badgeComplexityProfile": "Complexity profile"
+  ,"wizard.hero.noLanguageSelected": "No language selected"
+  ,"wizard.hero.pendingRuntimeProfile": "Pending runtime profile"
+  ,"wizard.hero.frameworkTopology": "Framework topology"
+  ,"wizard.hero.architectureProfileDetail": "Architecture profile"
+  ,"wizard.hero.journeyIntelligence": "Journey intelligence"
+  ,"wizard.hero.journey": "Journey"
+  ,"wizard.hero.complexity": "Complexity"
+  ,"wizard.hero.ready": "Ready"
+  ,"wizard.hero.attention": "Attention"
+  ,"wizard.hero.blueprintPreviewSurface": "Blueprint preview surface"
+  ,"wizard.hero.governedProgression": "Governed progression"
+  ,"wizard.hero.approved": "Approved"
+  ,"wizard.hero.warnings": "Warnings"
+  ,"wizard.hero.blocked": "Blocked"
+  ,"wizard.hero.topologySurface": "Topology surface"
+  ,"wizard.hero.topologySubtitle": "Selecting Java, TypeScript, or Python reshapes the runtime ecosystem and architecture path immediately."
+  ,"wizard.hero.journeyReadiness": "Journey readiness"
+  ,"wizard.hero.journeyReadinessCaption": "Progress grows as the selected stack moves through the decision cockpit."
+  ,"wizard.hero.stackEcosystem": "Stack ecosystem"
+  ,"wizard.hero.archetypePreview": "Archetype preview"
+  ,"wizard.hero.businessModuleGrouping": "Business module grouping"
+  ,"wizard.hero.routeOwnershipSelection": "Route ownership and selection"
+  ,"wizard.hero.localeLabel": "Locale"
+  ,"wizard.hero.localeContractDetail": "Blueprint locale contract"
+  ,"wizard.presence.selectLanguageToBegin": "Select a language to begin"
+  ,"wizard.presence.ecosystemSuffix": "{{ecosystem}} ecosystem"
+  ,"wizard.presence.runtimeProfile": "runtime profile"
+  ,"wizard.presence.frameworkTopology": "framework topology"
+  ,"wizard.presence.architectureProfile": "architecture profile"
+  ,"wizard.presence.frameworkGuidanceReady": "{{language}} framework guidance ready"
+  ,"wizard.presence.reservedLayer": "Reserved presence layer watching the engineering shell without executing generation or voice."
+  ,"wizard.presence.springBootSpecialistLoaded": "Spring Boot specialist profile loaded"
+  ,"wizard.presence.nestjsArchitectureGuidance": "NestJS architecture guidance ready"
+  ,"wizard.presence.fastapiAiServiceReady": "FastAPI AI service profile ready"
+  ,"wizard.presence.specialistProfileReady": "{{framework}} specialist profile ready"
+  ,"wizard.presence.infrastructureProfileReady": "Infrastructure profile ready"
+  ,"wizard.presence.springBootEnterpriseBaseline": "Spring Boot enterprise baseline detected"
+  ,"wizard.presence.fastapiAiInfraAvailable": "FastAPI AI infra recommendations available"
+  ,"wizard.presence.dependencyPropagationActive": "Dependency propagation active"
+  ,"wizard.presence.aiInfrastructureMutation": "AI infrastructure mutation detected"
+  ,"wizard.presence.microservicesComplexityIncreased": "Microservices complexity increased"
+  ,"wizard.presence.readinessScoreRecalculated": "Readiness score recalculated"
+  ,"wizard.presence.operationalBurdenIncreased": "Operational burden increased"
+  ,"wizard.presence.enterpriseTeamProfileDetected": "Enterprise team profile detected"
+  ,"wizard.presence.microservicesRequirePlatformMaturity": "Microservices require platform maturity"
+  ,"wizard.presence.productionReadinessRecalculated": "Production readiness recalculated"
+  ,"wizard.presence.kafkaIncreasesOperationalBurden": "Kafka node increases operational burden"
+  ,"wizard.presence.kubernetesRequiresSre": "Kubernetes ownership requires SRE"
+  ,"wizard.presence.paymentEdgeRequiresAudit": "Payment edge requires audit trail"
+  ,"wizard.presence.riskZonesRecalculated": "Risk zones recalculated"
+  ,"wizard.presence.dependencyPropagationVisualized": "Dependency propagation visualized"
+  ,"wizard.presence.architecturalGraphSynchronized": "Architectural graph synchronized"
+  ,"wizard.presence.runtimeTopologySynchronized": "Runtime topology synchronized"
+  ,"wizard.presence.operationalTopologyActive": "Operational topology active"
+  ,"wizard.presence.architectureGraphUpdated": "Architecture graph updated"
+  ,"wizard.presence.domainJourney": "{{language}} domain journey"
+  ,"wizard.presence.architectureJourney": "Architecture Journey"
+  ,"wizard.presence.approvedWithWarnings": "Approved with warnings"
+  ,"wizard.presence.approvedAndReady": "Approved and ready"
+  ,"wizard.presence.observingEcosystem": "Observing {{language}} ecosystem"
+  ,"wizard.presence.topologyUnderObservation": "Wizard topology under observation"
+  ,"wizard.presence.pipelineDetail": "The wizard is shaping the blueprint, Prompt Master, and Gatekeeper flow."
+  ,"wizard.presence.infrastructureProfileInSideRail": "Infrastructure profile is ready in the side rail."
+  ,"wizard.presence.frameworkSpecialistGuidanceInSideRail": "Framework specialist guidance is available in the side rail."
+  ,"wizard.presence.frameworkRecommendationsInSideRail": "Framework recommendations are available in the side rail."
+  ,"wizard.presence.suggestionReviewBlueprint": "Review blueprint"
+  ,"wizard.presence.suggestionReviewBlueprintSummary": "Reserved for future blueprint explanation on the wizard surface."
+  ,"wizard.presence.suggestionInspectGatekeeper": "Inspect gatekeeper"
+  ,"wizard.presence.suggestionInspectGatekeeperSummary": "Reserved for future governed validation insight."
+  ,"wizard.presence.suggestionOpenCommandPalette": "Open command palette"
+  ,"wizard.presence.suggestionOpenCommandPaletteSummary": "Reserved for future command palette entry points."
+  ,"wizard.steps.back": "Back"
+  ,"wizard.steps.continueToProjectType": "Continue to Project Type"
+  ,"wizard.steps.continueToCapabilities": "Continue to Capabilities"
+  ,"wizard.steps.continueToBusinessModules": "Continue to Business Modules"
+  ,"wizard.steps.continueToEndpoints": "Continue to Endpoints"
+  ,"wizard.steps.architectureTitle": "Shape the system style"
+  ,"wizard.steps.architectureDescription": "Architecture opens only after the framework is chosen so complexity stays grounded in real framework support."
+  ,"wizard.steps.architectureLabel": "4. Architecture"
+  ,"wizard.steps.architectureFieldDescription": "Structural pattern."
+  ,"wizard.steps.architectureSelectPlaceholder": "Select an architecture"
+  ,"wizard.steps.architectureProfileTitle": "Architecture profile"
+  ,"wizard.steps.architectureProfilePlaceholder": "Select an architecture to inspect complexity, scalability, and deployment shape."
+  ,"wizard.steps.complexityLabel": "Complexity"
+  ,"wizard.steps.scalabilityLabel": "Scalability"
+  ,"wizard.steps.deploymentLabel": "Deployment"
+  ,"wizard.steps.projectTypeTitle": "Choose the project type"
+  ,"wizard.steps.projectTypeDescription": "Archetype comes after architecture so the product shape inherits real structural support."
+  ,"wizard.steps.archetypeLabel": "5. Archetype"
+  ,"wizard.steps.archetypeFieldDescription": "What kind of system you are building."
+  ,"wizard.steps.archetypeSelectPlaceholder": "Select an archetype"
+  ,"wizard.steps.archetypeProfileTitle": "Archetype profile"
+  ,"wizard.steps.archetypeProfilePlaceholder": "Select an archetype to see default capabilities, modules, and blueprint direction."
+  ,"wizard.steps.capabilitiesDescription": "Start from the archetype and architecture recommendations. Advanced capabilities stay collapsed until explicitly requested."
+  ,"wizard.steps.hideAdvancedCapabilities": "Hide advanced capabilities"
+  ,"wizard.steps.viewAdvancedCapabilities": "View advanced capabilities"
+  ,"wizard.steps.recommendedForBlueprint": "Recommended for this blueprint"
+  ,"wizard.steps.noRecommendedCapabilities": "No recommended capabilities were returned for this combination yet."
+  ,"wizard.steps.businessModulesTitle": "Business modules by domain"
+  ,"wizard.steps.businessModulesDescription": "Recommended modules for the chosen archetype rise to the top, while broader business domains remain grouped for controlled expansion."
+  ,"wizard.steps.recommendedBadge": "Recommended"
+  ,"wizard.steps.endpointsTitle": "Endpoints grouped by module"
+  ,"wizard.steps.endpointsDescription": "Endpoints are hidden until business modules exist. Each module opens as its own accordion and supports recommended or full-batch selection."
+  ,"wizard.steps.selectModuleFirst": "Select at least one business module to unlock endpoint groups."
+  ,"wizard.steps.selectRecommended": "Select recommended"
+  ,"wizard.steps.selectAllInModule": "Select all in module"
+  ,"wizard.button.previewBlueprint": "Preview blueprint"
+  ,"wizard.button.buildingBlueprintPreview": "Building blueprint preview"
+  ,"wizard.button.buildingPromptMaster": "Building Prompt Master"
+  ,"wizard.button.copyPromptMaster": "Copy Prompt Master"
+  ,"wizard.button.runningGatekeeper": "Running Gatekeeper"
+  ,"wizard.button.savingProject": "Saving project"
+  ,"wizard.button.saveProject": "Save Project"
+  ,"wizard.review.title": "Blueprint review"
+  ,"wizard.review.description": "Build a normalized backend preview with technology graph, complexity, validation and explicit recommendations before any future generation layer exists."
+  ,"wizard.review.projectNameLabel": "Project name"
+  ,"wizard.review.projectNameDescription": "Human-readable blueprint label."
+  ,"wizard.review.localeLabel": "Locale"
+  ,"wizard.review.localeDescription": "Output locale stored in the blueprint."
+  ,"wizard.review.generationModeLabel": "Generation mode"
+  ,"wizard.review.generationModeDescription": "Planning-only mode for future phases."
+  ,"wizard.review.complexityEstimateTitle": "Complexity estimate"
+  ,"wizard.review.architectureComplexity": "Architecture complexity:"
+  ,"wizard.review.validationStatusTitle": "Validation status"
+  ,"wizard.review.validationBuilding": "Building preview"
+  ,"wizard.review.validationHealthy": "Healthy"
+  ,"wizard.review.validationAttention": "Needs attention"
+  ,"wizard.review.validationFailed": "Preview failed"
+  ,"wizard.review.validationEmpty": "Empty"
+  ,"wizard.review.validationDescEmpty": "Run preview to inspect warnings, recommendations and the normalized technology graph."
+  ,"wizard.review.validationDescValid": "The backend returned a valid foundation blueprint."
+  ,"wizard.review.validationDescLoading": "The backend is resolving the blueprint now."
+  ,"wizard.review.validationDescError": "The backend returned explicit blueprint issues or failed to complete the preview."
+  ,"wizard.review.promptMasterStatusTitle": "Prompt Master status"
+  ,"wizard.review.promptMasterBuilding": "Building Prompt Master"
+  ,"wizard.review.promptMasterReady": "Ready"
+  ,"wizard.review.promptMasterAttention": "Needs attention"
+  ,"wizard.review.promptMasterFailed": "Preview failed"
+  ,"wizard.review.promptMasterStatusEmpty": "Empty"
+  ,"wizard.review.promptMasterDescEmpty": "Build the blueprint first, then transform it into a structured Prompt Master document."
+  ,"wizard.review.promptMasterDescLoading": "The backend is turning the blueprint into a technical contract now."
+  ,"wizard.review.promptMasterDescValid": "All mandatory Prompt Master sections are available."
+  ,"wizard.review.promptMasterDescInvalid": "The Prompt Master preserved blueprint issues and explicit constraints."
+  ,"wizard.review.promptMasterDescError": "The Prompt Master preview request failed."
+  ,"wizard.review.gatekeeperStatusTitle": "Gatekeeper status"
+  ,"wizard.review.gatekeeperRunning": "Running Gatekeeper"
+  ,"wizard.review.gatekeeperApproved": "Approved"
+  ,"wizard.review.gatekeeperApprovedWarnings": "Approved with warnings"
+  ,"wizard.review.gatekeeperBlocked": "Blocked"
+  ,"wizard.review.gatekeeperFailed": "Preview failed"
+  ,"wizard.review.gatekeeperStatusEmpty": "Empty"
+  ,"wizard.review.gatekeeperDescEmpty": "Run Gatekeeper after the Prompt Master preview to get a governed decision before any future generation phase."
+  ,"wizard.review.gatekeeperDescLoading": "The backend is validating the blueprint and Prompt Master pair now."
+  ,"wizard.review.gatekeeperDescValid": "All mandatory Gatekeeper checks passed."
+  ,"wizard.review.gatekeeperDescWarning": "The Gatekeeper found warnings but did not block progression."
+  ,"wizard.review.gatekeeperDescInvalid": "The Gatekeeper found critical blockers."
+  ,"wizard.review.gatekeeperDescError": "The Gatekeeper preview request failed."
+  ,"wizard.review.errorsHeading": "Errors"
+  ,"wizard.review.warningsHeading": "Warnings"
+  ,"wizard.review.suggestionsHeading": "Suggestions"
+  ,"wizard.review.technologyGraphSnapshotTitle": "Technology graph snapshot"
+  ,"wizard.review.technologyGraphSnapshotDesc": "Normalized stack path returned by the backend preview engine."
+  ,"wizard.review.architectureProfileSnapshotTitle": "Architecture profile snapshot"
+  ,"wizard.review.architectureProfileSnapshotDesc": "Operational complexity, infrastructure expectations and recommended patterns."
+  ,"wizard.review.complexityProfileSnapshotTitle": "Complexity profile snapshot"
+  ,"wizard.review.complexityProfileSnapshotDesc": "Explicit foundation scoring before any future generation phase."
+  ,"wizard.review.infrastructureProfileSnapshotTitle": "Infrastructure profile snapshot"
+  ,"wizard.review.infrastructureProfileSnapshotDesc": "Selected foundation components and recommendations stay visible in the blueprint preview."
+  ,"wizard.review.stackPathTitle": "Stack path preview"
+  ,"wizard.review.stackPathDesc": "Normalized stack path returned by the backend preview engine."
+  ,"wizard.review.architectureProfileDetailsTitle": "Architecture profile details"
+  ,"wizard.review.architectureProfileDetailsDesc": "Operational complexity, infrastructure expectations and recommended patterns."
+  ,"wizard.review.scalabilityProfile": "Scalability profile:"
+  ,"wizard.review.deploymentComplexity": "Deployment complexity:"
+  ,"wizard.review.requiredInfrastructure": "Required infrastructure:"
+  ,"wizard.review.recommendedPatterns": "Recommended patterns:"
+  ,"wizard.review.infrastructureProfileDetailsTitle": "Infrastructure profile details"
+  ,"wizard.review.infrastructureProfileDetailsDesc": "Foundation components selected in the wizard and the backend recommendations returned for this blueprint."
+  ,"wizard.review.selectedFoundation": "Selected foundation"
+  ,"wizard.review.noFoundationSelected": "No infrastructure foundation selected yet."
+  ,"wizard.review.requiredLabel": "Required"
+  ,"wizard.review.recommendedLabel": "Recommended"
+  ,"wizard.review.optionalLabel": "Optional"
+  ,"wizard.review.noRequiredItems": "No required foundation items."
+  ,"wizard.review.noRecommendedItems": "No recommended foundation items."
+  ,"wizard.review.noOptionalItems": "No optional foundation items."
+  ,"wizard.review.complexityProfileDetailsTitle": "Complexity profile details"
+  ,"wizard.review.complexityProfileDetailsDesc": "Explicit foundation scoring before any future generation phase."
+  ,"wizard.review.learningCurveLabel": "Learning curve:"
+  ,"wizard.review.implementationEffortLabel": "Implementation effort:"
+  ,"wizard.review.infrastructureCostLabel": "Infrastructure cost:"
+  ,"wizard.review.maintenanceCostLabel": "Maintenance cost:"
+  ,"wizard.review.teamRecommendationLabel": "Team recommendation:"
+  ,"wizard.review.riskLevelLabel": "Risk level:"
+  ,"wizard.review.modulesEndpointsTitle": "Modules and endpoints"
+  ,"wizard.review.modulesEndpointsDesc": "Selected operational domains and route ownership returned by the backend."
+  ,"wizard.review.businessModulesLabel": "Business modules"
+  ,"wizard.review.endpointsLabel": "Endpoints"
+  ,"wizard.review.recommendationsTitle": "Recommendations"
+  ,"wizard.review.recommendationsDesc": "Foundation recommendations returned by the backend engine."
+  ,"wizard.review.noRecommendations": "No additional recommendations were generated for this preview."
+  ,"wizard.review.validPromptMasterBadge": "Valid Prompt Master"
+  ,"wizard.review.promptMasterIssuesBadge": "Prompt Master returned issues"
+  ,"wizard.review.promptMasterPreviewTitle": "Prompt Master preview"
+  ,"wizard.review.promptMasterPreviewDesc": "A structured technical contract derived from the current Project Blueprint. This layer is preview-only and does not generate code."
+  ,"wizard.review.promptMasterErrorsHeading": "Prompt Master errors"
+  ,"wizard.review.promptMasterWarningsHeading": "Prompt Master warnings"
+  ,"wizard.review.constraintsHeading": "Constraints"
+  ,"wizard.review.promptMasterSectionsTitle": "Prompt Master sections"
+  ,"wizard.review.promptMasterSectionsDesc": "All mandatory sections are compiled from the validated blueprint without changing the chosen stack."
+  ,"wizard.review.promptMasterSectionsDetailsTitle": "Prompt Master sections details"
+  ,"wizard.review.promptMasterSectionsDetailsDesc": "All mandatory sections are compiled from the validated blueprint without changing the chosen stack."
+  ,"wizard.review.promptMasterTraceTitle": "Prompt Master trace"
+  ,"wizard.review.promptMasterTraceDesc": "Safe trace metadata keeps the Prompt Master auditable without carrying secrets."
+  ,"wizard.review.compiledPromptMasterTitle": "Compiled Prompt Master"
+  ,"wizard.review.compiledPromptMasterDesc": "Plain-text technical contract for later human-approved phases. Copy is enabled, generation is not."
+  ,"wizard.review.blueprintIdLabel": "Blueprint id:"
+  ,"wizard.review.includedSectionsLabel": "Included sections:"
+  ,"wizard.review.redactedFieldsLabel": "Redacted fields:"
+  ,"wizard.review.containsSecretsLabel": "Contains secrets:"
+  ,"wizard.review.yes": "yes"
+  ,"wizard.review.no": "no"
+  ,"wizard.review.promptMasterPreviewEmpty": "The Prompt Master preview will appear here once you transform a real blueprint preview."
+  ,"wizard.review.gatekeeperReportTitle": "Gatekeeper report"
+  ,"wizard.review.gatekeeperReportDesc": "Governed validation over the Project Blueprint and Prompt Master before any future generation phase."
+  ,"wizard.review.decisionSummary": "Decision summary"
+  ,"wizard.review.gatekeeperChecksTitle": "Gatekeeper checks"
+  ,"wizard.review.gatekeeperChecksDesc": "Each mandatory validation check is evaluated independently and surfaced with blockers or warnings."
+  ,"wizard.review.blockersHeading": "Blockers"
+  ,"wizard.review.blockerPrefix": "Blocker:"
+  ,"wizard.review.warningPrefix": "Warning:"
+  ,"wizard.review.gatekeeperChecksDetailsTitle": "Gatekeeper checks details"
+  ,"wizard.review.gatekeeperChecksDetailsDesc": "Each mandatory validation check is evaluated independently and surfaced with blockers or warnings."
+  ,"wizard.review.gatekeeperTraceTitle": "Gatekeeper trace"
+  ,"wizard.review.gatekeeperTraceDesc": "Safe trace metadata for the Gatekeeper execution without any secret exposure."
+  ,"wizard.review.promptMasterIdLabel": "Prompt Master id:"
+  ,"wizard.review.checksLabel": "Checks:"
+  ,"wizard.review.gatekeeperReportEmpty": "The Gatekeeper report will appear here once you validate the current blueprint and Prompt Master pair."
+  ,"wizard.review.projectSavedTitle": "Project saved"
+  ,"wizard.review.projectSavedDesc": "The validated wizard selection is now persisted as a Project Record in the backend registry."
+  ,"wizard.review.projectIdLabel": "Project id:"
+  ,"wizard.review.openProjectDetails": "Open project details"
+  ,"wizard.review.openProjectRegistry": "Open project registry"
+  ,"wizard.review.blueprintPreviewEmpty": "The backend blueprint preview will appear here once you run the preview action."
+  ,"wizard.review.blueprintPreviewFailedTitle": "Blueprint preview failed"
+  ,"wizard.review.blueprintPreviewFailedFallback": "Unable to build the current blueprint preview."
+  ,"wizard.review.promptMasterPreviewFailedTitle": "Prompt Master preview failed"
+  ,"wizard.review.promptMasterPreviewFailedFallback": "Unable to transform the current blueprint into a Prompt Master preview."
+  ,"wizard.review.gatekeeperPreviewFailedTitle": "Gatekeeper preview failed"
+  ,"wizard.review.gatekeeperPreviewFailedFallback": "Unable to validate the current blueprint and Prompt Master pair."
+  ,"wizard.review.projectSaveFailedTitle": "Project save failed"
+  ,"wizard.review.projectSaveFailedFallback": "Unable to persist the current wizard selection as a project record."
+  ,"wizard.review.dependencyGraphOffline": "Dependency graph services are offline, but the wizard keeps the current selection safe."
+  ,"wizard.review.architecturalGraphTitle": "Architecture Graph"
+  ,"wizard.review.architecturalGraphOffline": "Architectural graph services are offline, but the selected blueprint remains safe."
+  ,"wizard.review.visualizationOffline": "System design visualization services are offline, but the selected architecture path remains safe."
+  ,"wizard.review.engineeringReadinessOffline": "Engineering readiness services are offline, but the wizard keeps the selected team profile safe."
+  ,"wizard.rail.navLabel": "Wizard steps"
+  ,"wizard.rail.technologyGraphUnavailable": "Technology graph unavailable"
+  ,"wizard.rail.technologyGraphFallback": "Unable to load the language, runtime or framework registries needed by the wizard."
+  ,"wizard.rail.languageRecommendations": "{{language}} recommendations"
+  ,"wizard.rail.languageRecommendationsFallback": "Language recommendations"
+  ,"wizard.rail.loadingRecommendations": "Loading language recommendations..."
+  ,"wizard.rail.recommendationsFeedOffline": "The language recommendation feed is unavailable, but the wizard remains safe to use offline."
+  ,"wizard.rail.noRecommendations": "No recommendations were returned for this language."
+  ,"wizard.rail.compatibleTemplates": "Compatible templates"
+  ,"wizard.rail.validatingTemplates": "Validating template compatibility..."
+  ,"wizard.rail.templateRecommendationsOffline": "Template recommendations are offline. The wizard remains usable without external marketplace access."
+  ,"wizard.rail.noCompatibleTemplates": "No compatible local templates for the current selection. Incompatible templates are hidden."
+  ,"wizard.rail.templateCompatibilityValidated": "Template compatibility validated"
+  ,"wizard.rail.recommendedTemplateDetected": "Recommended template detected"
+  ,"wizard.rail.recommendedTemplatePending": "Recommended template pending"
+  ,"wizard.rail.templateMaturityVerified": "Template maturity verified"
+  ,"wizard.rail.skillsUnlocked": "Skills unlocked by this project"
+  ,"wizard.rail.syncingSkillRegistry": "Syncing skill registry..."
+  ,"wizard.rail.skillRegistryOffline": "Skill registry is offline. The wizard remains usable without skill execution."
+  ,"wizard.rail.validationBuildingNow": "Building the normalized blueprint now."
+  ,"wizard.rail.validationCurrentValid": "The current blueprint preview is valid."
+  ,"wizard.rail.validationWarningsFound": "Warnings or incompatibilities were found."
+  ,"wizard.rail.validationRequestFailed": "Validation request failed."
+  ,"wizard.rail.promptMasterBuildingNow": "Building the technical contract now."
+  ,"wizard.rail.promptMasterPreviewReady": "The Prompt Master preview is ready to inspect and copy."
+  ,"wizard.rail.promptMasterBlueprintIssues": "The Prompt Master captured unresolved blueprint issues."
+  ,"wizard.rail.promptMasterRequestFailed": "Prompt Master request failed."
+  ,"wizard.rail.gatekeeperRunningNow": "Running governed validation now."
+  ,"wizard.rail.gatekeeperApprovedPair": "The Gatekeeper approved the current pair."
+  ,"wizard.rail.gatekeeperApprovedWithWarnings": "The Gatekeeper approved with warnings."
+  ,"wizard.rail.gatekeeperBlockedProgression": "The Gatekeeper blocked progression."
+  ,"wizard.rail.gatekeeperRequestFailed": "Gatekeeper request failed."
+  ,"wizard.rail.matchedTemplate": "Matched {{matched}} from the local registry."
+  ,"wizard.generationMode.local_build_90": "Local build 90"
+  ,"wizard.generationMode.foundation_only": "Foundation only"
+  ,"wizard.generationMode.template_assisted": "Template assisted"
+  ,"wizard.generationMode.guided": "Guided"
+  ,"wizard.complexity.enterpriseHeavy": "Enterprise heavy"
+  ,"wizard.complexity.strategicBuild": "Strategic build"
+  ,"wizard.complexity.balancedFoundation": "Balanced foundation"
+  ,"wizard.complexity.leanBlueprint": "Lean blueprint"
+  ,"wizard.complexity.pending": "pending"
+  ,"wizard.category.capability.security": "Security"
+  ,"wizard.category.capability.platform": "Platform"
+  ,"wizard.category.capability.commerce": "Commerce"
+  ,"wizard.category.capability.communication": "Communication"
+  ,"wizard.category.capability.ai": "AI"
+  ,"wizard.category.capability.data": "Data"
+  ,"wizard.category.capability.quality": "Quality"
+  ,"wizard.category.capability.experience": "Experience"
+  ,"wizard.category.module.core": "Core"
+  ,"wizard.category.module.commerce": "Commerce"
+  ,"wizard.category.module.operations": "Operations"
+  ,"wizard.category.module.finance": "Finance"
+  ,"wizard.category.module.communication": "Communication"
+  ,"wizard.category.module.governance": "Governance"
+  ,"wizard.category.module.education": "Education"
+  ,"wizard.rail.complexityRadarTitle": "Complexity radar"
+  ,"wizard.rail.axisLearningCurve": "Learning curve"
+  ,"wizard.rail.axisImplementation": "Implementation"
+  ,"wizard.rail.axisInfrastructure": "Infrastructure"
+  ,"wizard.rail.axisMaintenance": "Maintenance"
+  ,"wizard.rail.axisRisk": "Risk"
+  ,"projectDetail.localGen.eyebrow": "Local Generation Engine V0"
+  ,"projectDetail.localGen.title": "Static foundation assembly"
+  ,"projectDetail.localGen.description": "Template-driven local generation for static foundations only. No AI, no agents, no installs, no shell execution."
+  ,"projectDetail.localGen.badge": "local static v0"
+  ,"projectDetail.localGen.outputPathLabel": "Local generation output path"
+  ,"projectDetail.localGen.generatingLocally": "Generating locally"
+  ,"projectDetail.localGen.generateLocally": "Generate Locally"
+  ,"projectDetail.localGen.unavailable": "Local generation unavailable"
+  ,"projectDetail.localGen.unavailableDetail": "Local generation failed safely. No project files were overwritten."
+  ,"projectDetail.localGen.pipelineTitle": "Generation Pipeline Surface"
+  ,"projectDetail.localGen.step.readinessHandoff": "Readiness handoff"
+  ,"projectDetail.localGen.step.awaitingRequest": "Awaiting local generation request."
+  ,"projectDetail.localGen.step.templateResolution": "Template Resolution Layer"
+  ,"projectDetail.localGen.step.templatePending": "Template will resolve after handoff validation."
+  ,"projectDetail.localGen.step.artifactAssembly": "Artifact Assembly Timeline"
+  ,"projectDetail.localGen.step.artifactsAssembled": "{{count}} artifacts assembled"
+  ,"projectDetail.localGen.step.noArtifacts": "No artifacts assembled yet."
+  ,"projectDetail.localGen.pathSurface": "Local path surface"
+  ,"projectDetail.localGen.noOutputPath": "No output path selected"
+  ,"projectDetail.localGen.existingDirWarning": "Existing directories are rejected by the backend before writing."
+  ,"projectDetail.localGen.safeFailures": "Safe failure handling"
+  ,"projectDetail.localGen.fileSystemSnapshot": "File System Snapshot"
+  ,"projectDetail.localGen.noFiles": "No files generated."
+  ,"projectDetail.localGen.artifacts": "Artifacts"
+  ,"projectDetail.localGen.noArtifactsBadge": "no artifacts"
+  ,"projectDetail.localGen.generationTrace": "Generation trace"
+  ,"projectDetail.backendGen.eyebrow": "Backend Generation Explorer"
+  ,"projectDetail.backendGen.title": "Backend project assembly"
+  ,"projectDetail.backendGen.description": "Deterministic backend generation for FastAPI, Spring Boot and NestJS. No AI, no agents, no installs, no deploy, no shell execution."
+  ,"projectDetail.backendGen.templatesPending": "templates pending"
+  ,"projectDetail.backendGen.outputPathLabel": "Backend generation output path"
+  ,"projectDetail.backendGen.previewing": "Previewing"
+  ,"projectDetail.backendGen.preview": "Preview"
+  ,"projectDetail.backendGen.generatingBackend": "Generating Backend"
+  ,"projectDetail.backendGen.generateBackend": "Generate Backend"
+  ,"projectDetail.backendGen.unavailable": "Backend generation unavailable"
+  ,"projectDetail.backendGen.unavailableDetail": "Backend generation failed safely. No project files were overwritten."
+  ,"projectDetail.backendGen.generationDisabled": "Generation Disabled"
+  ,"projectDetail.backendGen.generatedMetrics": "Generated Metrics"
+  ,"projectDetail.backendGen.frameworkUsed": "Framework Used"
+  ,"projectDetail.backendGen.templateUsed": "Template Used"
+  ,"projectDetail.backendGen.fileCount": "File Count"
+  ,"projectDetail.backendGen.projectSize": "Project Size"
+  ,"projectDetail.backendGen.securityGate": "Security Gate"
+  ,"projectDetail.backendGen.generatedStructure": "Generated Structure"
+  ,"projectDetail.backendGen.previewOnly": "Preview only"
+  ,"projectDetail.backendGen.templatesBadge": "{{count}} templates"
+  ,"projectDetail.backendGen.complexity": "Complexity"
+  ,"projectDetail.backendGen.handoffPending": "handoff pending"
+  ,"projectDetail.backendGen.noFilesYet": "No backend files previewed yet."
+  ,"projectDetail.backendGen.noManifestTitle": "No backend manifest yet"
+  ,"projectDetail.backendGen.noManifestDesc": "Run preview to inspect files, metrics, template and validation before writing anything."
+  ,"projectDetail.qualityGate.eyebrow": "Generated Project Quality Gate"
+  ,"projectDetail.qualityGate.title": "Static validation"
+  ,"projectDetail.qualityGate.description": "Validates structure, manifest, README, .env.example, ZIP safety and secret-free content without installing dependencies or executing generated code."
+  ,"projectDetail.qualityGate.scorePending": "score pending"
+  ,"projectDetail.qualityGate.running": "Running Quality Gate"
+  ,"projectDetail.qualityGate.run": "Run Quality Gate"
+  ,"projectDetail.qualityGate.unavailable": "Quality gate unavailable"
+  ,"projectDetail.qualityGate.unavailableDetail": "Generated project quality check failed safely."
+  ,"projectDetail.qualityGate.qualityScore": "Quality Score"
+  ,"projectDetail.qualityGate.scoreOutOf": "/ 100"
+  ,"projectDetail.qualityGate.warnings": "Warnings"
+  ,"projectDetail.qualityGate.missingFiles": "Missing files"
+  ,"projectDetail.qualityGate.securityFindings": "Security findings"
+  ,"projectDetail.qualityGate.checklist": "Checklist"
+  ,"projectDetail.qualityGate.noWarnings": "No warnings detected."
+  ,"projectDetail.qualityGate.missingAndSecurity": "Missing Files and Security Findings"
+  ,"projectDetail.qualityGate.missingFileDetected": "Missing file detected: {{path}}"
+  ,"projectDetail.qualityGate.securityFindingDetected": "Security finding detected: {{message}}"
+  ,"projectDetail.qualityGate.securityFindingPath": "Security finding detected: {{message}} ({{path}})"
+  ,"projectDetail.qualityGate.validated": "Generated project quality validated."
+  ,"projectDetail.qualityGate.notRunTitle": "Quality gate not run"
+  ,"projectDetail.qualityGate.notRunDesc": "Generate a project, then run the static quality gate before preparing download."
+  ,"projectDetail.fileExplorer.eyebrow": "Generated File Explorer"
+  ,"projectDetail.fileExplorer.title": "Local project inspection"
+  ,"projectDetail.fileExplorer.description": "Browse generated files and preview text content only. Project code is not executed, framed, installed, or opened in a runtime."
+  ,"projectDetail.fileExplorer.notIndexed": "not indexed"
+  ,"projectDetail.fileExplorer.safeState": "safe state"
+  ,"projectDetail.fileExplorer.filesBadge": "{{count}} files"
+  ,"projectDetail.fileExplorer.notGeneratedTitle": "Project not generated yet"
+  ,"projectDetail.fileExplorer.notGeneratedDesc": "Run local generation before indexing files, preparing a ZIP, or previewing generated content."
+  ,"projectDetail.fileExplorer.unavailable": "Generated files unavailable"
+  ,"projectDetail.fileExplorer.unavailableDetail": "Generated files cannot be indexed yet. Run local generation first or reconnect the backend."
+  ,"projectDetail.fileExplorer.fileTree": "File tree"
+  ,"projectDetail.fileExplorer.noFilesIndexed": "No generated files indexed."
+  ,"projectDetail.fileExplorer.previewState": "Preview State"
+  ,"projectDetail.fileExplorer.noFileSelected": "No file selected"
+  ,"projectDetail.fileExplorer.textOnly": "text only"
+  ,"projectDetail.fileExplorer.selectFile": "Select a generated file to inspect text preview."
+  ,"projectDetail.fileExplorer.selectFileAria": "Select generated file {{path}}"
+  ,"projectDetail.fileExplorer.previewUnavailable": "Preview unavailable"
+  ,"projectDetail.fileExplorer.previewUnavailableDetail": "Generated file preview failed safely."
+  ,"projectDetail.fileExplorer.unsupportedTitle": "Unsupported preview"
+  ,"projectDetail.fileExplorer.unsupportedDesc": "This generated file cannot be previewed as text."
+  ,"projectDetail.gitExport.eyebrow": "Repository Delivery"
+  ,"projectDetail.gitExport.title": "Create repository and export"
+  ,"projectDetail.gitExport.description": "GitHub and GitLab are the primary delivery paths. Every blocker includes a corrective action inside the platform."
+  ,"projectDetail.gitExport.exportReadiness": "Export Readiness"
+  ,"projectDetail.gitExport.exportReadinessDesc": "Export unlocks after every delivery requirement is complete."
+  ,"projectDetail.gitExport.ready": "Ready to export"
+  ,"projectDetail.gitExport.actionRequired": "Action required"
+  ,"projectDetail.gitExport.providerLabel": "Provider"
+  ,"projectDetail.gitExport.repositoryLabel": "Repository"
+  ,"projectDetail.gitExport.branchLabel": "Branch"
+  ,"projectDetail.gitExport.visibilityLabel": "Visibility"
+  ,"projectDetail.gitExport.statusLabel": "Status"
+  ,"projectDetail.gitExport.namespaceLabel": "Git namespace"
+  ,"projectDetail.gitExport.namespacePlaceholder": "Organization or username"
+  ,"projectDetail.gitExport.repoNameLabel": "Repository name"
+  ,"projectDetail.gitExport.repoNamePlaceholder": "Repository name"
+  ,"projectDetail.gitExport.private": "Private"
+  ,"projectDetail.gitExport.public": "Public"
+  ,"projectDetail.gitExport.connected": "Connected"
+  ,"projectDetail.gitExport.connectionRequired": "Connection required"
+  ,"projectDetail.gitExport.createRepository": "Create Repository"
+  ,"projectDetail.gitExport.connectProvider": "Connect {{provider}}"
+  ,"projectDetail.gitExport.exportToProvider": "Export to {{provider}}"
+  ,"projectDetail.gitExport.repoCreated": "Repository created:"
+  ,"projectDetail.gitExport.repositoryCreationFailed": "Repository creation failed"
+  ,"projectDetail.gitExport.repositoryCreationFailedDetail": "Repository could not be created."
+  ,"projectDetail.gitExport.exportStatus": "Export status:"
+  ,"projectDetail.gitExport.exportUnavailable": "Git export unavailable"
+  ,"projectDetail.gitExport.exportUnavailableDetail": "Git export failed safely."
+  ,"projectDetail.download.eyebrow": "Fallback Delivery"
+  ,"projectDetail.download.title": "Download ZIP"
+  ,"projectDetail.download.description": "Prepares a ZIP from the generated project directory only, filtering secret-like files and never packaging the LDCN OS root."
+  ,"projectDetail.download.noZip": "no zip"
+  ,"projectDetail.download.safeState": "safe state"
+  ,"projectDetail.download.filesBadge": "{{count}} files"
+  ,"projectDetail.download.notPrepared": "not prepared"
+  ,"projectDetail.download.preparing": "Preparing Download"
+  ,"projectDetail.download.prepare": "Prepare Download"
+  ,"projectDetail.download.downloadZip": "Download ZIP"
+  ,"projectDetail.download.unavailable": "Download preparation unavailable"
+  ,"projectDetail.download.unavailableDetail": "Secure ZIP preparation failed safely."
+  ,"projectDetail.download.filesIndexed": "Generated files indexed"
+  ,"projectDetail.download.zipPrepared": "Secure ZIP prepared"
+  ,"projectDetail.download.downloadReady": "Download ready"
+  ,"projectDetail.download.previewBlocked": "Preview blocked for binary/large file"
+  ,"projectDetail.download.ready": "ready"
+  ,"projectDetail.download.waiting": "waiting"
+  ,"projectDetail.visualization.offlineMessage": "System design visualization is offline for this persisted project snapshot."
+  ,"projectDetail.graph.title": "Graph Snapshot"
+  ,"projectDetail.graph.offlineMessage": "Architectural graph preview is offline for this persisted project snapshot."
+  ,"projectDetail.engineeringReadiness.offlineMessage": "Engineering readiness services are offline for this persisted project snapshot."
+  ,"projectDetail.complexityRadar.title": "Architecture burden"
+  ,"projectDetail.complexityRadar.axisLearningCurve": "Learning curve"
+  ,"projectDetail.complexityRadar.axisEffort": "Effort"
+  ,"projectDetail.complexityRadar.axisInfrastructure": "Infrastructure"
+  ,"projectDetail.complexityRadar.axisMaintenance": "Maintenance"
+  ,"projectDetail.complexityRadar.axisRisk": "Risk"
+  ,"projectDetail.gatekeeperSurface.title": "Gatekeeper result"
+  ,"projectDetail.gatekeeperSurface.decisionStep": "Decision"
+  ,"projectDetail.gatekeeperSurface.checksStep": "Checks"
+  ,"projectDetail.gatekeeperSurface.blockersAndWarnings": "Blockers and warnings"
+  ,"projectDetail.gatekeeperSurface.checksEvaluated": "{{count}} checks evaluated"
+  ,"projectDetail.gatekeeperSurface.blockersWarningsSummary": "{{blockers}} blockers / {{warnings}} warnings"
+  ,"projectDetail.selectedModules": "Selected modules"
+  ,"projectDetail.selectedEndpoints": "Selected endpoints"
+  ,"projectDetail.selectedCapabilities": "Selected capabilities"
+  ,"projectDetail.none": "None"
+  ,"projectDetail.backToProjects": "Back to projects"
+}

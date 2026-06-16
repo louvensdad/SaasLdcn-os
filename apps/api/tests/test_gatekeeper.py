@@ -30,6 +30,16 @@ def _build_blueprint(client, *, valid: bool = True, insecure: bool = False):
             "endpoint_ids": endpoint_ids,
             "locale": "pt-BR",
             "generation_mode": "local_build_90",
+            "project_requirements": {
+                "project_goal": "Deliver a governed SaaS application.",
+                "business_context": "Commercial SaaS operation.",
+                "target_users": ["operators", "customers"],
+                "business_rules": ["Authorized users manage records."],
+                "entities": ["User", "Account"],
+                "workflows": ["Customer request is reviewed by an operator."],
+                "constraints": ["Protect personal data."],
+                "delivery_target": "github",
+            },
         },
     )
     assert response.status_code == 200
@@ -54,7 +64,7 @@ def test_gatekeeper_preview_approved(client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["decision"] == "approved"
-    assert len(payload["checks"]) == 13
+    assert len(payload["checks"]) == 17
     assert all(check["status"] == "passed" for check in payload["checks"])
 
 
@@ -144,6 +154,16 @@ def test_gatekeeper_microservices_without_observability_blocks(client):
             "endpoint_ids": ["auth.login"],
             "locale": "pt-BR",
             "generation_mode": "local_build_90",
+            "project_requirements": {
+                "project_goal": "Deliver a governed service.",
+                "business_context": "Commercial service operation.",
+                "target_users": ["operators"],
+                "business_rules": ["Authorized users manage records."],
+                "entities": ["User"],
+                "workflows": ["Operator handles requests."],
+                "constraints": ["Protect personal data."],
+                "delivery_target": "github",
+            },
         },
     )
     assert response.status_code == 200

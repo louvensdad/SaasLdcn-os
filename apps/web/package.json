@@ -8,7 +8,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit:i18n": "node scripts/audit-hardcoded-i18n.mjs",
+    "audit:i18n:check": "node scripts/audit-hardcoded-i18n.mjs --check",
+    "test:responsive-visibility": "playwright test -c playwright.responsive-visibility.config.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.0.0",

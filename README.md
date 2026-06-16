@@ -22,27 +22,21 @@ V1 Foundation does not run real AI agents, does not call model providers, does n
 - `future`: reserved future service/engine boundaries
 - `reports`: validation, governance, and architecture reports
 
-## Run Backend
+## Run Locally
 
 ```powershell
 python -m pip install -r apps\api\requirements.txt
-cd apps\api
-python -m uvicorn app.main:app --reload --port 8001
-```
-
-Backend URL: `http://127.0.0.1:8001`
-
-## Run Frontend
-
-```powershell
 cd apps\web
-npm install
-npm run dev
+npm.cmd install
+cd ..\..
+.\dev.cmd
 ```
 
-Frontend URL: `http://localhost:3000`
+The root `.\dev.cmd` command starts both applications. Press `Ctrl+C` to stop them together.
 
-The frontend defaults to `http://127.0.0.1:8001` for API calls. Override with `NEXT_PUBLIC_API_URL` if needed.
+- Backend URL: `http://127.0.0.1:8001`
+- Frontend URL: `http://localhost:3000`
+- The frontend defaults to `http://127.0.0.1:8001` for API calls. Override with `NEXT_PUBLIC_API_URL` if needed.
 
 ## Test
 

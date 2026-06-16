@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useArchitecturalGraph } from '@/hooks/use-architectural-graph';
+import { useLocale } from '@/hooks/use-locale';
 import type { ArchitecturalGraphPayload, ArchitecturalGraphSnapshot, ArchitecturalNode } from '@/lib/api/types';
 import { GraphEdge } from './graph-edge';
 import { GraphLegend } from './graph-legend';
@@ -17,7 +18,7 @@ export function ArchitecturalGraphCanvas({
   payload,
   snapshot,
   offlineMessage,
-  title = 'Architecture Graph',
+  title,
 }: {
   readonly payload: ArchitecturalGraphPayload | null;
   readonly snapshot?: ArchitecturalGraphSnapshot | null;
@@ -25,6 +26,8 @@ export function ArchitecturalGraphCanvas({
   readonly title?: string;
 }) {
   const query = useArchitecturalGraph(snapshot ? null : payload);
+  const { t } = useLocale();
+  const resolvedTitle = title ?? t('graph.title');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const graph = snapshot?.graph ?? query.data ?? null;
@@ -42,8 +45,8 @@ export function ArchitecturalGraphCanvas({
   if (!snapshot && (!payload || query.isLoading)) {
     return (
       <Card className="grid gap-3 p-5" data-testid="architectural-graph-canvas">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{title}</p>
-        <p className="text-sm text-[color:var(--muted)]">{payload ? 'Synchronizing architectural graph.' : 'Select an architecture path to activate graph preview.'}</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{resolvedTitle}</p>
+        <p className="text-sm text-[color:var(--muted)]">{payload ? t('graph.synchronizing') : t('graph.selectArchitecture')}</p>
       </Card>
     );
   }
@@ -53,7 +56,7 @@ export function ArchitecturalGraphCanvas({
       <Card className="grid gap-3 p-5" data-testid="architectural-graph-canvas">
         <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text)]">
           <Activity className="h-4 w-4 text-[color:var(--warning)]" />
-          Architectural graph offline
+          {t('graph.offline')}
         </div>
         <p className="text-sm text-[color:var(--muted)]">{offlineMessage}</p>
       </Card>
@@ -70,8 +73,8 @@ export function ArchitecturalGraphCanvas({
       <div className="relative grid gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Architecture Graph Surface</p>
-            <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{title}</h3>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('graph.surface')}</p>
+            <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{resolvedTitle}</h3>
           </div>
           <GraphToolbar
             zoom={zoom}
@@ -81,8 +84,8 @@ export function ArchitecturalGraphCanvas({
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge>{graph.nodes.length} nodes</Badge>
-          <Badge>{graph.edges.length} edges</Badge>
+          <Badge>{t('graph.nodes', { count: graph.nodes.length })}</Badge>
+          <Badge>{t('graph.edges', { count: graph.edges.length })}</Badge>
           <Badge>{graph.architecture_id}</Badge>
         </div>
         <GraphLegend />
@@ -110,7 +113,7 @@ export function ArchitecturalGraphCanvas({
               className="relative origin-top-left transition-transform"
               style={{ width: graph.layout.width, height: graph.layout.height, transform: zoom === 1 ? undefined : `scale(${zoom})` }}
             >
-              <svg viewBox={`0 0 ${graph.layout.width} ${graph.layout.height}`} className="absolute inset-0 z-0 h-full w-full text-[color-mix(in_srgb,var(--accent)_42%,white_10%)]" aria-label="Architectural edges">
+              <svg viewBox={`0 0 ${graph.layout.width} ${graph.layout.height}`} className="absolute inset-0 z-0 h-full w-full text-[color-mix(in_srgb,var(--accent)_42%,white_10%)]" aria-label={t('graph.architecturalEdges')}>
                 {graph.edges.map((edge) => <GraphEdge key={edge.id} edge={edge} layout={graph.layout} />)}
               </svg>
               {graph.nodes.map((node) => (

@@ -125,6 +125,18 @@ class GeneratedProjectService:
             "security": self._security(blocked),
         }
 
+    def export_files(self, project: dict[str, Any]) -> list[dict[str, Any]]:
+        root = self._project_root(project)
+        entries, _ = self._safe_entries(root)
+        return [
+            {
+                "relative_path": entry["relative_path"],
+                "content": self._resolve_inside(root, entry["relative_path"]).read_bytes(),
+            }
+            for entry in entries
+            if entry["kind"] == "file"
+        ]
+
     def download_path(self, project: dict[str, Any]) -> Path:
         self._project_root(project)
         zip_path = self._zip_path(project["project_id"])
@@ -204,6 +216,8 @@ class GeneratedProjectService:
 
     def _is_secret_candidate(self, root: Path, path: Path) -> bool:
         relative_path = path.relative_to(root).as_posix()
+        if relative_path == ".env.example":
+            return False
         return bool(SECRET_NAME_PATTERN.search(relative_path))
 
     def _contains_secret_value(self, content: str) -> bool:

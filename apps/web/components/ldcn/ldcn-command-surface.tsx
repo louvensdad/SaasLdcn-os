@@ -6,31 +6,15 @@ import type { LdcnAction } from '@contracts/ldcn.contract';
 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
-
-const ACTION_LABELS: Record<LdcnAction, string> = {
-  explain_current_page: 'Explain current page',
-  review_blueprint: 'Review blueprint',
-  suggest_next_step: 'Suggest next step',
-  inspect_gatekeeper: 'Inspect gatekeeper',
-  prepare_generation: 'Prepare generation',
-  open_command_palette: 'Open command palette',
-};
-
-const ACTION_DESCRIPTIONS: Record<LdcnAction, string> = {
-  explain_current_page: 'Reserved for contextual explanation of the current surface.',
-  review_blueprint: 'Reserved for blueprint analysis with no execution attached.',
-  suggest_next_step: 'Reserved for future orchestration guidance.',
-  inspect_gatekeeper: 'Reserved for Gatekeeper insight without mutation.',
-  prepare_generation: 'Reserved for generation handoff state only.',
-  open_command_palette: 'Reserved for command palette entry points.',
-};
 
 interface LDCNCommandSurfaceProps extends HTMLAttributes<HTMLDivElement> {
   readonly actions?: readonly LdcnAction[];
 }
 
 export function LDCNCommandSurface({ className, actions, ...props }: LDCNCommandSurfaceProps) {
+  const { t } = useLocale();
   const resolvedActions = actions ?? [
     'explain_current_page',
     'review_blueprint',
@@ -46,10 +30,10 @@ export function LDCNCommandSurface({ className, actions, ...props }: LDCNCommand
       <div className="relative space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">Command surface</p>
-            <p className="mt-2 text-lg font-semibold text-[color:var(--text)]">Reserved future actions</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('ldcn.command.title')}</p>
+            <p className="mt-2 text-lg font-semibold text-[color:var(--text)]">{t('ldcn.command.description')}</p>
           </div>
-          <Badge className="border-white/10 text-[color:var(--muted)]">Reserved</Badge>
+          <Badge className="border-white/10 text-[color:var(--muted)]">{t('ldcn.command.reserved')}</Badge>
         </div>
 
         <div className="grid gap-2">
@@ -62,10 +46,10 @@ export function LDCNCommandSurface({ className, actions, ...props }: LDCNCommand
               aria-disabled="true"
             >
               <span className="min-w-0">
-                <span className="block text-sm font-semibold text-[color:var(--text)]">{ACTION_LABELS[action]}</span>
-                <span className="mt-1 block text-xs leading-5 text-[color:var(--muted)]">{ACTION_DESCRIPTIONS[action]}</span>
+                <span className="block text-sm font-semibold text-[color:var(--text)]">{t(`ldcn.command.action.${action}.label`)}</span>
+                <span className="mt-1 block text-xs leading-5 text-[color:var(--muted)]">{t(`ldcn.command.action.${action}.description`)}</span>
               </span>
-              <Badge className="shrink-0 border-white/10 text-[color:var(--muted)]">future</Badge>
+              <Badge className="shrink-0 border-white/10 text-[color:var(--muted)]">{t('ldcn.command.future')}</Badge>
             </button>
           ))}
         </div>

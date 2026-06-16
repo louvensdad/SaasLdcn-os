@@ -10,7 +10,12 @@ cd apps\api
 python -m uvicorn app.main:app --reload --port 8001
 ```
 
-Open `http://127.0.0.1:8001/api/health`.
+Open `http://localhost:8001/api/health`.
+
+> The frontend defaults to `NEXT_PUBLIC_API_URL=http://localhost:8001`. Keep the
+> backend reachable via `localhost` (not `127.0.0.1`) in dev — browsers treat
+> them as different sites, so a `127.0.0.1` API origin would not receive the
+> `SameSite=Lax` refresh-token cookie set for `localhost:3000`.
 
 ## Frontend
 
@@ -49,7 +54,7 @@ npm run build
 
 ## Troubleshooting
 
-- Backend offline in the frontend: confirm the API is running on `http://127.0.0.1:8001` or set `NEXT_PUBLIC_API_URL`.
+- Backend offline in the frontend: confirm the API is running on `http://localhost:8001` or set `NEXT_PUBLIC_API_URL`.
 - Port already in use: run Uvicorn or Next.js on another port and update the frontend API URL if the backend port changes.
 - Pytest cache warnings on Windows: cache write warnings do not affect test results if tests pass.
 - Placeholder endpoints return `501`: this is expected for User Key Boost, Git Export, and PDF Contract Input in V1 Foundation.

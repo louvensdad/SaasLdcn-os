@@ -5,6 +5,7 @@ import type { HTMLAttributes } from 'react';
 import type { LdcnAction, LdcnContext } from '@contracts/ldcn.contract';
 
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 
 import { LDCNAvatarSkeleton } from './ldcn-avatar-skeleton';
@@ -18,6 +19,8 @@ interface LDCNPresenceCoreProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 export function LDCNPresenceCore({ className, context, actions, ...props }: LDCNPresenceCoreProps) {
+  const { t } = useLocale();
+
   return (
     <Card className={cn('relative overflow-hidden p-4 md:p-5', className)} {...props}>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,color-mix(in_srgb,var(--accent)_8%,transparent),transparent_32%)]" />
@@ -27,11 +30,11 @@ export function LDCNPresenceCore({ className, context, actions, ...props }: LDCN
             <LDCNOrb state={context.status} variant="ambient" className="h-10 w-10 shrink-0 md:h-12 md:w-12" />
             <div className="min-w-0 space-y-2">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">LDCN presence layer</p>
-                <h3 className="mt-1 text-xl font-semibold text-[color:var(--text)] md:text-2xl">Operational reserve</h3>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('ldcn.presence.layer')}</p>
+                <h3 className="mt-1 text-xl font-semibold text-[color:var(--text)] md:text-2xl">{t('ldcn.presence.reserve')}</h3>
               </div>
               <p className="max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
-                Reserved system presence for the engineering OS. No voice, no avatar, no generation, and no external AI calls.
+                {t('ldcn.presence.description')}
               </p>
             </div>
           </div>
@@ -45,9 +48,9 @@ export function LDCNPresenceCore({ className, context, actions, ...props }: LDCN
             <LDCNCommandSurface actions={actions} />
           </div>
           <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">System posture</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('ldcn.presence.posture')}</p>
             <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">
-              The LDCN layer remains a visible operational band across the shell. It is intentionally passive and cannot block navigation.
+              {t('ldcn.presence.postureDetail')}
             </p>
           </div>
         </div>

@@ -1,9 +1,29 @@
-const DEFAULT_API_URL = 'http://127.0.0.1:8001';
+// NOTE: must share a "site" (registrable domain) with the frontend origin
+// (e.g. http://localhost:3000) so the SameSite=Lax refresh-token cookie set
+// by the API is actually sent back on subsequent requests. 127.0.0.1 and
+// localhost are treated as different sites by browsers.
+const DEFAULT_API_URL = 'http://localhost:8001';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL;
 
 export const apiEndpoints = {
   health: `${API_BASE_URL}/api/health`,
+  auth: {
+    register: `${API_BASE_URL}/api/auth/register`,
+    login: `${API_BASE_URL}/api/auth/login`,
+    refresh: `${API_BASE_URL}/api/auth/refresh`,
+    logout: `${API_BASE_URL}/api/auth/logout`,
+    me: `${API_BASE_URL}/api/auth/me`,
+    changePassword: `${API_BASE_URL}/api/auth/me/password`,
+    consent: `${API_BASE_URL}/api/auth/me/consent`,
+    exportData: `${API_BASE_URL}/api/auth/me/export`,
+  },
+  localization: {
+    locales: `${API_BASE_URL}/api/localization/locales`,
+    dictionary: (locale: string) => `${API_BASE_URL}/api/localization/dictionary/${locale}`,
+    preview: `${API_BASE_URL}/api/localization/preview`,
+    validate: `${API_BASE_URL}/api/localization/validate`,
+  },
   stacks: `${API_BASE_URL}/api/stacks`,
   templates: `${API_BASE_URL}/api/templates`,
   skills: `${API_BASE_URL}/api/skills`,
@@ -34,6 +54,12 @@ export const apiEndpoints = {
   generationHandoff: {
     preview: `${API_BASE_URL}/api/generation/handoff-preview`,
   },
+  backendGeneration: {
+    preview: `${API_BASE_URL}/api/backend-generation/preview`,
+    run: `${API_BASE_URL}/api/backend-generation/run`,
+    templates: `${API_BASE_URL}/api/backend-generation/templates`,
+    status: (generationId: string) => `${API_BASE_URL}/api/backend-generation/status/${generationId}`,
+  },
   localGeneration: {
     run: `${API_BASE_URL}/api/generation/local-run`,
     files: (projectId: string) => `${API_BASE_URL}/api/generation/${projectId}/files`,
@@ -41,6 +67,21 @@ export const apiEndpoints = {
       `${API_BASE_URL}/api/generation/${projectId}/file-content?path=${encodeURIComponent(path)}`,
     prepareDownload: (projectId: string) => `${API_BASE_URL}/api/generation/${projectId}/prepare-download`,
     download: (projectId: string) => `${API_BASE_URL}/api/generation/${projectId}/download`,
+  },
+  generatedProjectQuality: {
+    run: (projectId: string) => `${API_BASE_URL}/api/generated-projects/${projectId}/quality-check`,
+  },
+  gitExport: {
+    preview: `${API_BASE_URL}/api/git/export/preview`,
+    github: `${API_BASE_URL}/api/git/export/github`,
+    gitlab: `${API_BASE_URL}/api/git/export/gitlab`,
+    status: (exportId: string) => `${API_BASE_URL}/api/git/export/status/${exportId}`,
+  },
+  gitProviders: {
+    connection: (provider: 'github' | 'gitlab') => `${API_BASE_URL}/api/integrations/git/${provider}`,
+    connect: (provider: 'github' | 'gitlab') => `${API_BASE_URL}/api/integrations/git/${provider}/connect`,
+    validate: (provider: 'github' | 'gitlab') => `${API_BASE_URL}/api/integrations/git/${provider}/validate`,
+    repositories: `${API_BASE_URL}/api/repositories`,
   },
   projectRegistry: {
     saveFromWizard: `${API_BASE_URL}/api/projects/save-from-wizard`,

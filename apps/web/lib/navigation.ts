@@ -2,6 +2,7 @@ import {
   BarChart3,
   BookOpen,
   BrainCircuit,
+  Factory,
   GitBranch,
   LayoutDashboard,
   Map,
@@ -12,71 +13,77 @@ import {
 } from 'lucide-react';
 
 export interface NavigationItem {
-  readonly label: string;
+  readonly labelKey: string;
   readonly href: string;
   readonly icon: typeof LayoutDashboard;
-  readonly description: string;
+  readonly descriptionKey: string;
 }
 
 export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
   {
-    label: 'Dashboard',
+    labelKey: 'navigation.dashboard.label',
     href: '/dashboard',
     icon: LayoutDashboard,
-    description: 'Operational overview and system pulse.',
+    descriptionKey: 'navigation.dashboard.description',
   },
   {
-    label: 'Projects',
+    labelKey: 'navigation.projects.label',
     href: '/projects',
     icon: BarChart3,
-    description: 'Project registry and delivery state.',
+    descriptionKey: 'navigation.projects.description',
   },
   {
-    label: 'Templates',
+    labelKey: 'navigation.templates.label',
     href: '/templates',
     icon: SquareStack,
-    description: 'Blueprint-driven starting points.',
+    descriptionKey: 'navigation.templates.description',
   },
   {
-    label: 'Skills',
+    labelKey: 'navigation.skills.label',
     href: '/skills',
     icon: BrainCircuit,
-    description: 'Operational skills registry.',
+    descriptionKey: 'navigation.skills.description',
   },
   {
-    label: 'Wizard',
+    labelKey: 'navigation.wizard.label',
     href: '/wizard',
     icon: WandSparkles,
-    description: 'Stack-specific setup journeys.',
+    descriptionKey: 'navigation.wizard.description',
   },
   {
-    label: 'System Status',
+    labelKey: 'navigation.metaFactory.label',
+    href: '/meta-factory',
+    icon: Factory,
+    descriptionKey: 'navigation.metaFactory.description',
+  },
+  {
+    labelKey: 'navigation.systemStatus.label',
     href: '/system-status',
     icon: MonitorCog,
-    description: 'Internal platform health.',
+    descriptionKey: 'navigation.systemStatus.description',
   },
   {
-    label: 'Architecture',
+    labelKey: 'navigation.architecture.label',
     href: '/architecture',
     icon: GitBranch,
-    description: 'Runtime and module map.',
+    descriptionKey: 'navigation.architecture.description',
   },
   {
-    label: 'Roadmap',
+    labelKey: 'navigation.roadmap.label',
     href: '/roadmap',
     icon: Map,
-    description: 'Governed platform plan.',
+    descriptionKey: 'navigation.roadmap.description',
   },
   {
-    label: 'Documentation',
+    labelKey: 'navigation.documentation.label',
     href: '/documentation',
     icon: BookOpen,
-    description: 'Platform memory and standards.',
+    descriptionKey: 'navigation.documentation.description',
   },
   {
-    label: 'Settings',
+    labelKey: 'navigation.settings.label',
     href: '/settings',
     icon: Settings2,
-    description: 'Theme and runtime preferences.',
+    descriptionKey: 'navigation.settings.description',
   },
 ] as const;

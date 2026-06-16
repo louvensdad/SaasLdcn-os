@@ -16,6 +16,16 @@ def test_preview_blueprint_valid_payload(client):
             "endpoint_ids": ["auth.login", "auth.register", "auth.me", "analytics.overview"],
             "locale": "pt-BR",
             "generation_mode": "local_build_90",
+            "project_requirements": {
+                "project_goal": "Deliver a governed enterprise application.",
+                "business_context": "Commercial SaaS operation.",
+                "target_users": ["operators", "customers"],
+                "business_rules": ["Authorized users manage records."],
+                "entities": ["User", "Subscription"],
+                "workflows": ["Customer request is reviewed by an operator."],
+                "constraints": ["Protect personal data."],
+                "delivery_target": "github",
+            },
         },
     )
 

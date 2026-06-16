@@ -29,14 +29,15 @@ def test_user_key_boost_placeholder_does_not_echo_api_key(client):
     assert "api_key" not in response.text
 
 
-def test_git_export_placeholder_endpoints_return_501(client):
-    assert_placeholder(client.post("/api/git/export/github", json={"token": "ghp-secret-value-that-must-not-return"}))
-    assert_placeholder(client.post("/api/git/export/gitlab", json={"token": "glpat-secret-value-that-must-not-return"}))
-    assert_placeholder(client.get("/api/git/export/status/export-123"))
-    assert "ghp-secret-value-that-must-not-return" not in client.post(
+def test_git_export_endpoints_validate_requests_without_echoing_tokens(client):
+    response = client.post(
         "/api/git/export/github",
         json={"token": "ghp-secret-value-that-must-not-return"},
-    ).text
+    )
+
+    assert response.status_code == 422
+    assert "ghp-secret-value-that-must-not-return" not in response.text
+    assert client.get("/api/git/export/status/export-123").status_code == 404
 
 
 def test_pdf_contract_placeholder_endpoints_return_501(client):
@@ -50,9 +51,10 @@ def test_roadmap_marks_secure_extensions_planned(client):
 
     assert response.status_code == 200
     items = {item["id"]: item for item in response.json()["items"]}
-    for extension_id in ("user_key_boost", "git_export", "pdf_contract_input"):
+    for extension_id in ("user_key_boost", "pdf_contract_input"):
         assert items[extension_id]["category"] == "extension"
         assert items[extension_id]["status"] == "PLANNED"
+    assert items["git_export"]["status"] == "IMPLEMENTED"
 
 
 def test_system_status_marks_secure_extensions_inactive_planned(client):
@@ -60,6 +62,7 @@ def test_system_status_marks_secure_extensions_inactive_planned(client):
 
     assert response.status_code == 200
     extensions = {item["id"]: item for item in response.json()["planned_extensions"]}
-    for extension_id in ("user_key_boost", "git_export", "pdf_contract_input"):
+    for extension_id in ("user_key_boost", "pdf_contract_input"):
         assert extensions[extension_id]["status"] == "inactive"
         assert extensions[extension_id]["lifecycle"] == "planned"
+    assert "git_export" not in extensions

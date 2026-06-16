@@ -2,15 +2,15 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function selectLanguage(page: Page, languageId: string, runtimeId: string) {
   await page.goto('http://127.0.0.1:3000/wizard');
-  const languageSelect = page.locator('select').first();
+  const languageSelect = page.getByLabel('1. Language');
   await expect(languageSelect).toBeVisible({ timeout: 15000 });
   await languageSelect.selectOption(languageId);
 
-  const runtimeSelect = page.locator('select').nth(1);
+  const runtimeSelect = page.getByLabel('2. Runtime');
   await expect(runtimeSelect).toBeVisible({ timeout: 15000 });
   await runtimeSelect.selectOption(runtimeId);
 
-  const frameworkSelect = page.locator('select').nth(2);
+  const frameworkSelect = page.getByLabel('3. Framework');
   await expect(frameworkSelect).toBeVisible({ timeout: 15000 });
 }
 
@@ -20,7 +20,7 @@ test('Java language domain loads Spring Boot and related recommendations', async
   const frameworkOptions = page.getByLabel('3. Framework').locator('option');
   await expect(frameworkOptions).toContainText(['Spring Boot', 'Quarkus', 'Micronaut']);
   await expect(page.getByText('Java recommendations')).toBeVisible();
-  await expect(page.getByText('Observing Java ecosystem')).toBeVisible();
+  await expect(page.getByText('Use Spring Boot for enterprise APIs')).toBeVisible();
 });
 
 test('TypeScript language domain loads Node-focused framework choices', async ({ page }) => {
@@ -45,7 +45,7 @@ test('wizard shows a safe offline state when the language domain profile endpoin
   });
 
   await page.goto('http://127.0.0.1:3000/wizard');
-  await page.locator('select').first().selectOption('java');
+  await page.getByLabel('1. Language').selectOption('java');
 
   await expect(page.getByText('Technology graph unavailable')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Backend is offline or unreachable.')).toBeVisible({ timeout: 15000 });

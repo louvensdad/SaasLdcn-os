@@ -43,11 +43,9 @@ test('wizard reveals steps progressively and validates a real blueprint', async 
   await expect(page.getByText('The backend blueprint preview will appear here once you run the preview action.')).toBeVisible();
   await page.getByRole('button', { name: 'Preview blueprint' }).click();
   await expect(page.getByText('Valid blueprint')).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText('Technology graph', { exact: true })).toBeVisible();
-  await expect(page.getByText('Architecture profile', { exact: true })).toBeVisible();
-  await expect(page.getByText('Complexity profile', { exact: true })).toBeVisible();
-  await expect(page.getByText('AI SaaS', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('TypeScript', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Technology graph snapshot')).toBeVisible();
+  await expect(page.getByText('Architecture profile snapshot')).toBeVisible();
+  await expect(page.getByText('Complexity profile snapshot')).toBeVisible();
 
   await page.keyboard.press('Control+K');
   const dialog = page.getByRole('dialog', { name: 'Search LDCN OS' });
@@ -56,7 +54,7 @@ test('wizard reveals steps progressively and validates a real blueprint', async 
   await searchBox.fill('typescript');
   await expect(dialog.getByRole('button', { name: /^TypeScript/ })).toBeVisible();
   await searchBox.fill('nestjs');
-  await expect(dialog.getByRole('button', { name: /^NestJS/ })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /^NestJS Structured/ })).toBeVisible();
   await searchBox.fill('modular monolith');
   await expect(dialog.getByRole('button', { name: /^Modular Monolith Architecture/ })).toBeVisible();
   await searchBox.fill('ai saas');

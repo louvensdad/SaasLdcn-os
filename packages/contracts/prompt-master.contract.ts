@@ -1,5 +1,5 @@
 import type { BlueprintGenerationMode, ProjectBlueprint } from './blueprint.contract';
-import type { LocaleCode } from './locale.contract';
+import type { GeneratedProjectLocaleProfile, LocaleCode } from './locale.contract';
 import type { ContractId, ContractMetadata } from './shared.contract';
 
 export type PromptMasterSectionId =
@@ -69,6 +69,7 @@ export interface PromptMasterDocument extends ContractMetadata {
   readonly blueprint_id: ProjectBlueprint['blueprint_id'] | string;
   readonly project_name: string;
   readonly locale: LocaleCode;
+  readonly locale_profile: GeneratedProjectLocaleProfile;
   readonly generation_mode: BlueprintGenerationMode;
   readonly source_blueprint_valid: boolean;
   readonly version: PromptMasterVersion;

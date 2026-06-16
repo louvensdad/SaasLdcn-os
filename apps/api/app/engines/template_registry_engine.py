@@ -120,6 +120,8 @@ class TemplateRegistryEngine:
             "supported_frameworks": profile.get("supported_frameworks", [manifest.get("metadata", {}).get("framework", "vanilla")]),
             "supported_architectures": profile.get("supported_architectures", ["modular_monolith"]),
             "supported_archetypes": profile.get("supported_archetypes", []),
+            "supported_locales": manifest.get("supported_locales", ["en-US"]),
+            "fallback_locale": manifest.get("fallback_locale", "en-US"),
             "capabilities": capabilities,
             "complexity": profile.get("complexity", "low"),
             "maturity": profile.get("maturity", "stable"),

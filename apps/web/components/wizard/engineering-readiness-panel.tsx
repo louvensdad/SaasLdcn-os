@@ -5,6 +5,7 @@ import { AlertTriangle, Boxes, Gauge, UsersRound } from 'lucide-react';
 import { ComplexityRadar, ReadinessRing } from '@/components/visual/engineering-surface';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import type {
   DeliveryEstimate,
   EngineeringReadinessProfile,
@@ -54,12 +55,14 @@ export function EngineeringReadinessPanel({
   readonly isLoading?: boolean;
   readonly errorMessage?: string | null;
 }) {
+  const { t } = useLocale();
+
   if (errorMessage) {
     return (
       <Card className="grid gap-3 p-5" data-testid="engineering-readiness-panel">
         <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text)]">
           <AlertTriangle className="h-4 w-4 text-[color:var(--warning)]" />
-          Engineering readiness offline
+          {t('wizard.engineeringReadinessOffline')}
         </div>
         <p className="text-sm leading-6 text-[color:var(--muted)]">{errorMessage}</p>
       </Card>
@@ -69,9 +72,9 @@ export function EngineeringReadinessPanel({
   if (!readiness || isLoading) {
     return (
       <Card className="grid gap-3 p-5" data-testid="engineering-readiness-panel">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Engineering readiness</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.engineeringReadiness')}</p>
         <p className="text-sm leading-6 text-[color:var(--muted)]">
-          {isLoading ? 'Calculating team and production posture.' : 'Select a stack path to calculate team intelligence.'}
+          {isLoading ? t('wizard.calculatingTeamPosture') : t('wizard.selectStackForTeam')}
         </p>
       </Card>
     );
@@ -82,40 +85,40 @@ export function EngineeringReadinessPanel({
   const burden = readiness.operational_burden;
 
   return (
-    <div className="grid gap-4" data-testid="engineering-readiness-panel">
-      <Card className="relative overflow-hidden p-5">
+    <div className="grid min-w-0 gap-4" data-testid="engineering-readiness-panel" data-visibility-audit="engineering-readiness-panel">
+      <Card className="relative min-w-0 p-5">
         <div className="ambient-grid pointer-events-none absolute inset-0 opacity-20" />
         <div className="relative grid gap-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Team Intelligence Panel</p>
-              <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">Engineering readiness</h3>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.teamIntelligencePanel')}</p>
+              <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{t('wizard.engineeringReadiness')}</h3>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge>{readiness.overall_readiness} readiness</Badge>
-              <Badge>{effectiveTeam.team_size} people</Badge>
+              <Badge>{t('wizard.readinessValue', { value: readiness.overall_readiness })}</Badge>
+              <Badge>{t('wizard.peopleCount', { count: effectiveTeam.team_size })}</Badge>
               <Badge>{readiness.required_seniority.replaceAll('_', ' ')}</Badge>
             </div>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[0.7fr_1.3fr]">
             <ReadinessRing
-              title="Production Readiness Surface"
+              title={t('wizard.productionReadinessSurface')}
               value={readiness.production_readiness.score}
               label={readiness.production_readiness.readiness.replaceAll('_', ' ')}
-              caption="Production readiness recalculated from delivery, operations, and team maturity."
+              caption={t('wizard.productionReadinessCaption')}
               tone={readiness.production_readiness.production_ready ? 'success' : readiness.production_readiness.score >= 45 ? 'warning' : 'danger'}
               className="bg-black/10"
             />
             <ComplexityRadar
-              title="Delivery Complexity Radar"
+              title={t('wizard.deliveryComplexityRadar')}
               score={readiness.delivery_complexity.score}
               axes={[
-                { label: 'Delivery', value: readiness.delivery_complexity.score },
-                { label: 'Onboarding', value: bandScore(readiness.delivery_complexity.onboarding_effort) },
-                { label: 'Deployment', value: bandScore(readiness.delivery_complexity.deployment_burden) },
-                { label: 'Maintenance', value: bandScore(readiness.delivery_complexity.maintenance_effort) },
-                { label: 'Learning', value: readiness.learning_curve.score },
+                { label: t('wizard.delivery'), value: readiness.delivery_complexity.score },
+                { label: t('wizard.onboarding'), value: bandScore(readiness.delivery_complexity.onboarding_effort) },
+                { label: t('wizard.deployment'), value: bandScore(readiness.delivery_complexity.deployment_burden) },
+                { label: t('wizard.maintenance'), value: bandScore(readiness.delivery_complexity.maintenance_effort) },
+                { label: t('wizard.learning'), value: readiness.learning_curve.score },
               ]}
             />
           </div>
@@ -125,13 +128,13 @@ export function EngineeringReadinessPanel({
       <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
         <Card className="grid gap-4 p-5">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Operational Burden Surface</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.operationalBurdenSurface')}</p>
             <Badge>{burden.level}</Badge>
           </div>
-          <BurdenBar label="Service ownership" value={burden.service_ownership} />
-          <BurdenBar label="Deployment burden" value={burden.deployment_burden} />
-          <BurdenBar label="Observability burden" value={burden.observability_burden} />
-          <BurdenBar label="Incident burden" value={burden.incident_burden} />
+          <BurdenBar label={t('wizard.serviceOwnership')} value={burden.service_ownership} />
+          <BurdenBar label={t('wizard.deploymentBurden')} value={burden.deployment_burden} />
+          <BurdenBar label={t('wizard.observabilityBurden')} value={burden.observability_burden} />
+          <BurdenBar label={t('wizard.incidentBurden')} value={burden.incident_burden} />
           <div className="grid gap-2">
             {burden.signals.map((signal) => (
               <p key={signal} className="text-sm leading-6 text-[color:var(--muted)]">{signal}</p>
@@ -143,9 +146,9 @@ export function EngineeringReadinessPanel({
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
               <UsersRound className="h-4 w-4 text-[color:var(--accent)]" />
-              Team topology visualization
+              {t('wizard.teamTopologyVisualization')}
             </div>
-            <Badge>{effectiveDelivery.estimated_weeks} weeks</Badge>
+            <Badge>{t('wizard.weeksCount', { count: effectiveDelivery.estimated_weeks })}</Badge>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {effectiveTeam.roles.map((role) => (
@@ -167,19 +170,19 @@ export function EngineeringReadinessPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
             <Boxes className="h-4 w-4 text-[color:var(--accent-2)]" />
-            Engineering maturity rings
+            {t('wizard.engineeringMaturityRings')}
           </div>
           <div className="flex items-center gap-2 text-sm text-[color:var(--muted)]">
             <Gauge className="h-4 w-4 text-[color:var(--success)]" />
-            {readiness.learning_curve.ramp_up_weeks} week ramp-up
+            {t('wizard.weekRampUp', { count: readiness.learning_curve.ramp_up_weeks })}
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-4">
           {[
-            ['Deployment', readiness.deployment_readiness],
-            ['Enterprise', readiness.enterprise_readiness],
-            ['Team', readiness.production_readiness.team_readiness],
-            ['Operations', readiness.production_readiness.operational_readiness],
+            [t('wizard.deployment'), readiness.deployment_readiness],
+            [t('wizard.enterprise'), readiness.enterprise_readiness],
+            [t('wizard.team'), readiness.production_readiness.team_readiness],
+            [t('wizard.operations'), readiness.production_readiness.operational_readiness],
           ].map(([label, score]) => (
             <div key={String(label)} className="grid place-items-center gap-2 rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
               <div

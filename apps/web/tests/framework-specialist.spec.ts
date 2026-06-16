@@ -20,7 +20,7 @@ test('wizard shows the Spring Boot specialist panel', async ({ page }) => {
   await selectFramework(page, 'java', 'jvm', 'spring_boot');
 
   await expect(page.getByText('Framework specialist', { exact: true })).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText('Spring Boot specialist profile loaded')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Spring Boot', exact: true })).toBeVisible();
   await expect(page.getByText('Enterprise ready', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Recommended capabilities', { exact: true })).toBeVisible();
 });
@@ -28,7 +28,7 @@ test('wizard shows the Spring Boot specialist panel', async ({ page }) => {
 test('wizard shows NestJS specialist guidance and recommendations', async ({ page }) => {
   await selectFramework(page, 'typescript', 'nodejs', 'nestjs');
 
-  await expect(page.getByText('NestJS architecture guidance ready')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { name: 'NestJS', exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Architecture guidance', { exact: true })).toBeVisible();
   await expect(page.getByText('Endpoint guidance', { exact: true })).toBeVisible();
 });

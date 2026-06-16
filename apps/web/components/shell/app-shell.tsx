@@ -1,7 +1,7 @@
 'use client';
 
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { CommandPalette } from '@/components/search/command-palette';
@@ -11,65 +11,57 @@ import { ModalSystem } from '@/components/overlays/modal-system';
 import { Sidebar } from '@/components/shell/sidebar';
 import { Topbar } from '@/components/shell/topbar';
 import { cn } from '@/lib/cn';
+import { useLocale } from '@/hooks/use-locale';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
 import { useShellStore } from '@/stores/use-shell-store';
 import { useUiStore } from '@/stores/use-ui-store';
+import { useAuthStore } from '@/stores/use-auth-store';
 
 interface ShellCopy {
-  readonly title: string;
-  readonly subtitle: string;
+  readonly titleKey: string;
+  readonly subtitleKey: string;
 }
 
 const shellCopy: Record<string, ShellCopy> = {
   '/dashboard': {
-    title: 'Engineering Runtime Command Center',
-    subtitle:
-      'Cinematic cockpit for runtime topology, architecture awareness, and operational control.',
+    titleKey: 'shell.dashboard.title',
+    subtitleKey: 'shell.dashboard.subtitle',
   },
   '/projects': {
-    title: 'Project Intelligence Registry',
-    subtitle:
-      'Persisted project records with architectural identity, readiness, and lineage visibility.',
+    titleKey: 'shell.projects.title',
+    subtitleKey: 'shell.projects.subtitle',
   },
   '/templates': {
-    title: 'Template Architecture Atlas',
-    subtitle:
-      'Production-oriented templates with stack, complexity, and deployment awareness.',
+    titleKey: 'shell.templates.title',
+    subtitleKey: 'shell.templates.subtitle',
   },
   '/wizard': {
-    title: 'Architecture Journey',
-    subtitle:
-      'Technology graph exploration and governed blueprint assembly without generation.',
+    titleKey: 'shell.wizard.title',
+    subtitleKey: 'shell.wizard.subtitle',
   },
   '/skills': {
-    title: 'Skill Registry',
-    subtitle:
-      'Read-only operational skills catalog for architecture, planning, generation and support.',
+    titleKey: 'shell.skills.title',
+    subtitleKey: 'shell.skills.subtitle',
   },
   '/system-status': {
-    title: 'System Status Center',
-    subtitle:
-      'Internal runtime, validation, registry and build health for LDCN OS.',
+    titleKey: 'shell.systemStatus.title',
+    subtitleKey: 'shell.systemStatus.subtitle',
   },
   '/architecture': {
-    title: 'Architecture Center',
-    subtitle:
-      'Current platform map separating active runtime, registries, engines and future modules.',
+    titleKey: 'shell.architecture.title',
+    subtitleKey: 'shell.architecture.subtitle',
   },
   '/roadmap': {
-    title: 'Roadmap Center',
-    subtitle:
-      'Governed platform roadmap across implemented, planned, future and archived work.',
+    titleKey: 'shell.roadmap.title',
+    subtitleKey: 'shell.roadmap.subtitle',
   },
   '/documentation': {
-    title: 'Architecture Knowledge System',
-    subtitle:
-      'Living reference surface for blueprint lifecycle, standards, and quality gates.',
+    titleKey: 'shell.documentation.title',
+    subtitleKey: 'shell.documentation.subtitle',
   },
   '/settings': {
-    title: 'Foundation Operations',
-    subtitle:
-      'Runtime health, registry visibility, and contract synchronization controls.',
+    titleKey: 'shell.settings.title',
+    subtitleKey: 'shell.settings.subtitle',
   },
 };
 
@@ -89,8 +81,12 @@ function SectionGlow() {
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { t } = useLocale();
   const shouldReduceMotion = useReducedMotion();
-  const copy = resolveShellCopy(pathname);
+  const copyKeys = resolveShellCopy(pathname);
+  const copy = { title: t(copyKeys.titleKey), subtitle: t(copyKeys.subtitleKey) };
+  const runtimeObservingLabel = t('shell.runtimeObserving');
   const setPresenceState = useLDCNStore((state) => state.setPresenceState);
   const setContext = useLDCNStore((state) => state.setContext);
   const sidebarOpen = useShellStore((state) => state.sidebarOpen);
@@ -99,6 +95,16 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const closeDrawer = useUiStore((state) => state.closeDrawer);
   const closeNotificationCenter = useUiStore((state) => state.closeNotificationCenter);
   const [searchOpen, setSearchOpen] = useState(false);
+  const authStatus = useAuthStore((state) => state.status);
+  const initializeAuth = useAuthStore((state) => state.initialize);
+
+  useEffect(() => {
+    void initializeAuth();
+  }, [initializeAuth]);
+
+  useEffect(() => {
+    if (authStatus === 'unauthenticated') router.replace('/login');
+  }, [authStatus, router]);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -114,14 +120,14 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         route: pathname,
         phase: copy.title,
         status: 'previewing',
-        readiness_label: 'Observing runtime surfaces',
+        readiness_label: runtimeObservingLabel,
         detail: copy.subtitle,
       },
       status: 'observing',
       summary: copy.subtitle,
       suggestions: [],
     });
-  }, [copy.subtitle, copy.title, pathname, setContext, setPresenceState]);
+  }, [copy.subtitle, copy.title, pathname, runtimeObservingLabel, setContext, setPresenceState]);
 
   useEffect(() => {
     function onGlobalSearchKeyDown(event: globalThis.KeyboardEvent) {
@@ -161,6 +167,14 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
     };
   }, [closeDrawer, closeModal, closeNotificationCenter]);
 
+  if (authStatus !== 'authenticated') {
+    return (
+      <div className="grid min-h-screen place-items-center text-sm text-[color:var(--muted)]">
+        {t('auth.session.loading')}
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen overflow-x-hidden">
       <SectionGlow />
@@ -187,8 +201,8 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
 
       <div
         className={cn(
-          'relative min-h-screen transition-[padding] duration-300 xl:pl-[22rem]',
-          'xl:pl-[22rem]',
+          'relative min-h-screen transition-[padding] duration-300 xl:pl-72',
+          'xl:pl-72',
         )}
       >
         <Topbar

@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/cn';
 import { NAVIGATION_ITEMS } from '@/lib/navigation';
+import { useLocale } from '@/hooks/use-locale';
 import { useShellStore } from '@/stores/use-shell-store';
 
 interface SidebarProps {
@@ -18,6 +19,7 @@ interface SidebarProps {
 
 export function Sidebar({ compact = false }: SidebarProps) {
   const pathname = usePathname();
+  const { t } = useLocale();
   const sidebarOpen = useShellStore((state) => state.sidebarOpen);
   const setSidebarOpen = useShellStore((state) => state.setSidebarOpen);
 
@@ -29,7 +31,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
       }}
       transition={{ type: 'spring', stiffness: 170, damping: 22 }}
       className={cn(
-        'glass-panel-strong fixed inset-y-0 left-0 z-50 flex w-80 flex-col overflow-hidden border-r border-[color:var(--border)] p-4 will-change-transform',
+        'surface-secondary fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-hidden border-r border-[color:var(--border)] p-4 will-change-transform',
         compact
           ? sidebarOpen
             ? 'translate-x-0'
@@ -40,15 +42,15 @@ export function Sidebar({ compact = false }: SidebarProps) {
     >
       <div className="relative flex items-center justify-between gap-3 px-1 pb-4">
         <div className="flex items-center gap-3">
-          <div className="ai-orb relative flex h-12 w-12 items-center justify-center rounded-2xl">
+          <div className="surface-tertiary relative flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)]">
             <Sparkles className="h-5 w-5 text-[color:var(--text)]" />
           </div>
           <div>
-            <p className="text-sm font-semibold tracking-[0.24em] text-[color:var(--muted)] uppercase">
-              LDCN OS
+            <p className="type-label text-[color:var(--muted)]">
+              {t('product.name')}
             </p>
-            <p className="text-lg font-semibold text-[color:var(--text)]">
-              Foundation
+            <p className="type-card text-[color:var(--text)]">
+              {t('sidebar.foundation')}
             </p>
           </div>
         </div>
@@ -59,7 +61,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
             variant="ghost"
             className="h-10 w-10 rounded-2xl p-0 xl:hidden"
             onClick={() => setSidebarOpen(false)}
-            aria-label="Close sidebar"
+            aria-label={t('sidebar.close')}
           >
             <PanelLeftClose className="h-4 w-4" />
           </Button>
@@ -67,7 +69,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
       </div>
 
       <Badge className="mb-4 w-fit bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[color:var(--text)]">
-        Enterprise cinematic intelligence
+        {t('sidebar.badge')}
       </Badge>
 
       <Separator className="mb-4 opacity-60" />
@@ -82,7 +84,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
               key={item.href}
               href={item.href}
               className={cn(
-                'group micro-interaction relative flex items-center gap-3 overflow-hidden rounded-2xl border px-4 py-3 focus-ring',
+                'group micro-interaction relative flex items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border px-3 py-2.5 focus-ring',
                 active
                   ? 'border-[color-mix(in_srgb,var(--accent)_44%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_42px_rgba(0,0,0,0.24)]'
                   : 'border-transparent bg-transparent hover:border-[color-mix(in_srgb,var(--accent)_20%,var(--border))] hover:bg-white/5 hover:shadow-[0_16px_38px_rgba(0,0,0,0.22)]',
@@ -111,10 +113,10 @@ export function Sidebar({ compact = false }: SidebarProps) {
               </span>
               <span className="relative min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-[color:var(--text)]">
-                  {item.label}
+                  {t(item.labelKey)}
                 </span>
                 <span className="block text-xs text-[color:var(--muted)]">
-                  {item.description}
+                  {t(item.descriptionKey)}
                 </span>
               </span>
               <ChevronRight className={cn('relative h-4 w-4 transition duration-300', active ? 'translate-x-0 opacity-100' : '-translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100')} />
@@ -123,13 +125,13 @@ export function Sidebar({ compact = false }: SidebarProps) {
         })}
       </nav>
 
-      <div className="depth-card mt-4 rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-white/5 p-4">
-        <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+      <div className="surface-tertiary mt-4 rounded-[var(--radius-xl)] p-4">
+        <div className="type-label mb-2 flex items-center gap-2 text-[color:var(--muted)]">
           <Shield className="h-4 w-4" />
-          Foundation rules
+          {t('sidebar.rules')}
         </div>
         <p className="text-sm leading-6 text-[color:var(--text)]/85">
-          No IA, no voz, no avatar yet. Pure visual architecture, navigation and motion foundations.
+          {t('sidebar.rulesDescription')}
         </p>
       </div>
     </motion.aside>

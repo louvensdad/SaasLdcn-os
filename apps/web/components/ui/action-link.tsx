@@ -11,7 +11,7 @@ interface ActionLinkProps extends ComponentPropsWithoutRef<typeof Link> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-[color:var(--accent)] text-black shadow-[0_18px_34px_var(--glow)] hover:brightness-110',
+    'bg-[linear-gradient(120deg,var(--accent),color-mix(in_srgb,var(--accent-2)_70%,var(--accent)))] text-black shadow-[0_18px_34px_var(--glow)] hover:shadow-[0_22px_48px_var(--glow)] hover:brightness-[1.08]',
   secondary:
     'bg-white/5 text-[color:var(--text)] border border-[color:var(--border)] hover:bg-white/10',
   ghost:

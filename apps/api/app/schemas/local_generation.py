@@ -5,11 +5,13 @@ from typing import Any, Literal
 from pydantic import Field
 
 from app.schemas.common import ApiModel
+from app.schemas.localization import GeneratedProjectLocaleProfile
 
 
 class LocalGenerationRequest(ApiModel):
     project_id: str = Field(min_length=1)
     output_path: str = Field(min_length=1)
+    locale_profile: GeneratedProjectLocaleProfile | None = None
 
 
 class GeneratedArtifact(ApiModel):

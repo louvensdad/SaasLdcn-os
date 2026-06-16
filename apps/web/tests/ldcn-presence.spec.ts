@@ -8,6 +8,6 @@ test('ldcn presence layer stays visible and does not block navigation', async ({
 
   await page.getByRole('link', { name: 'Enter architecture journey' }).click();
   await expect(page).toHaveURL(/\/wizard$/);
-  await expect(page.getByText('LDCN context rail')).toBeVisible();
+  await expect(page.getByText('LDCN context')).toBeVisible();
   await expect(page.getByLabel('1. Language')).toBeVisible({ timeout: 15000 });
 });

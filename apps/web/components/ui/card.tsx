@@ -2,13 +2,28 @@ import type { HTMLAttributes } from 'react';
 
 import { cn } from '@/lib/cn';
 
-interface CardProps extends HTMLAttributes<HTMLDivElement> {}
+type CardSurface = 'primary' | 'secondary' | 'tertiary' | 'accent';
 
-export function Card({ className, ...props }: CardProps) {
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
+  readonly surface?: CardSurface;
+  /** Adds a hover lift (scale + glow) for clickable/feature cards. */
+  readonly interactive?: boolean;
+}
+
+const surfaceClasses: Record<CardSurface, string> = {
+  primary: 'surface-primary',
+  secondary: 'surface-secondary',
+  tertiary: 'surface-tertiary',
+  accent: 'surface-accent',
+};
+
+export function Card({ className, surface = 'secondary', interactive = false, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        'glass-panel depth-card rounded-[var(--radius-xl)] p-5',
+        'depth-card min-w-0 rounded-[var(--radius-xl)] p-6 [overflow-wrap:anywhere]',
+        surfaceClasses[surface],
+        interactive && 'card-interactive',
         className,
       )}
       {...props}

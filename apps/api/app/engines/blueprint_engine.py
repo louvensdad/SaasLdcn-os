@@ -8,8 +8,10 @@ from uuid import uuid4
 
 from app.data.foundation import CONTRACT_VERSION, LOCALES
 from app.engines.dependency_graph_engine import generate_dependency_snapshot
+from app.engines.project_requirements_engine import normalize_project_requirements, requirements_missing_fields
 from app.repositories.registry_repository import RegistryRepository
 from app.services.infrastructure_registry_service import InfrastructureRegistryService
+from app.services.localization_service import LocalizationService
 
 
 ALLOWED_GENERATION_MODES = {
@@ -36,7 +38,7 @@ ARCHITECTURE_PATTERNS: dict[str, list[str]] = {
 
 def normalize_selection(selection: dict[str, Any]) -> dict[str, Any]:
     normalized = deepcopy(selection)
-    normalized["project_name"] = (normalized.get("project_name") or "ldcn-blueprint").strip() or "ldcn-blueprint"
+    normalized["project_name"] = str(normalized.get("project_name") or "").strip()
     normalized["locale"] = (normalized.get("locale") or "pt-BR").strip()
     normalized["generation_mode"] = (normalized.get("generation_mode") or "local_build_90").strip()
 
@@ -47,6 +49,7 @@ def normalize_selection(selection: dict[str, Any]) -> dict[str, Any]:
     for field in ("language_id", "runtime_id", "framework_id", "architecture_id", "archetype_id"):
         normalized[field] = str(normalized.get(field) or "").strip()
 
+    normalized["project_requirements"] = normalize_project_requirements(normalized.get("project_requirements"))
     return normalized
 
 
@@ -198,6 +201,21 @@ def validate_blueprint(selection: dict[str, Any], resolved: dict[str, Any]) -> d
 
     capability_ids = set(selection["capability_ids"])
     module_ids = set(selection["business_module_ids"])
+
+    if not selection["project_name"]:
+        errors.append(_issue("project_name_missing", "Project name is required before generation.", []))
+    for field in requirements_missing_fields(selection["project_requirements"]):
+        errors.append(
+            _issue(
+                f"requirements_{field}_missing",
+                f"Project requirement '{field}' is required before generation.",
+                [field],
+            )
+        )
+    if not modules:
+        errors.append(_issue("requirements_business_modules_missing", "At least one business module is required before generation.", []))
+    if not endpoints:
+        errors.append(_issue("requirements_endpoints_missing", "At least one endpoint is required before generation.", []))
 
     for field_name, label in (
         ("language_id", "language"),
@@ -486,6 +504,7 @@ def generate_recommendations(selection: dict[str, Any], resolved: dict[str, Any]
 
 def build_blueprint(selection: dict[str, Any], repository: RegistryRepository | None = None) -> dict[str, Any]:
     normalized = normalize_selection(selection)
+    locale_profile = LocalizationService().profile(normalized["locale"])
     resolved = resolve_profiles(normalized, repository=repository)
     validation = validate_blueprint(normalized, resolved)
     complexity_profile = calculate_complexity(normalized, resolved)
@@ -596,7 +615,9 @@ def build_blueprint(selection: dict[str, Any], repository: RegistryRepository | 
         "blueprint_id": str(uuid4()),
         "project_name": normalized["project_name"],
         "locale": normalized["locale"],
+        "locale_profile": locale_profile,
         "generation_mode": normalized["generation_mode"],
+        "project_requirements": normalized["project_requirements"],
         "technology_graph": {
             "language": language,
             "runtime": runtime,

@@ -4,6 +4,7 @@ import { Boxes } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { ArchitectureTopology, ServiceNode } from '@/lib/api/types';
+import { useLocale } from '@/hooks/use-locale';
 
 function NodeCell({ node }: { readonly node: ServiceNode }) {
   return (
@@ -18,14 +19,16 @@ function NodeCell({ node }: { readonly node: ServiceNode }) {
 }
 
 export function ArchitectureTopologySurface({ topology }: { readonly topology: ArchitectureTopology }) {
+  const { t } = useLocale();
+
   return (
     <Card className="relative overflow-hidden p-5" data-testid="architecture-topology-surface">
       <div className="ambient-grid pointer-events-none absolute inset-0 opacity-15" />
       <div className="relative grid gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Architecture Cockpit</p>
-            <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">Architecture topology</h3>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('systemDesign.cockpit')}</p>
+            <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{t('systemDesign.architecture.title')}</h3>
           </div>
           <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
             <Boxes className="h-4 w-4 text-[color:var(--accent)]" />

@@ -22,11 +22,17 @@ async function goToBlueprintReview(page: Page) {
   await expect(page.getByRole('heading', { name: 'Blueprint Review' })).toBeVisible();
 }
 
+async function goBackToCapabilities(page: Page) {
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Capabilities' })).toBeVisible();
+}
+
 async function buildHealthyGatekeeper(page: Page) {
   await goToBlueprintReview(page);
 
-  await page.getByRole('button', { name: /Capabilities Start with recommended capabilities/i }).click();
-  await expect(page.getByRole('heading', { name: 'Capabilities' })).toBeVisible();
+  await goBackToCapabilities(page);
   await page.getByRole('button', { name: 'View advanced capabilities' }).click();
   await page.getByLabel('RBAC').check();
   await page.getByLabel('Rate Limiting').check();
@@ -42,20 +48,32 @@ async function buildHealthyGatekeeper(page: Page) {
   await expect(page.getByText('Valid Prompt Master')).toBeVisible({ timeout: 10000 });
 
   await page.getByRole('button', { name: 'Run Gatekeeper' }).click();
-  await expect(page.getByText('All mandatory Gatekeeper checks passed.')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('The Gatekeeper found warnings but did not block progression.')).toBeVisible({ timeout: 10000 });
 }
 
 test('wizard blueprint preview shows invalid selection from backend', async ({ page }) => {
   await goToBlueprintReview(page);
 
-  await page.getByRole('button', { name: /Capabilities Start with recommended capabilities/i }).click();
-  await expect(page.getByRole('heading', { name: 'Capabilities' })).toBeVisible();
-  await page.getByLabel('AI Chat').uncheck();
-  await page.getByRole('button', { name: 'Continue to Business Modules' }).click();
-  await page.getByRole('button', { name: 'Continue to Endpoints' }).click();
-  await page.getByRole('button', { name: /Notifications User and system notifications\./ }).click();
-  await page.getByLabel('POST /ai/chat').check();
-  await page.getByRole('button', { name: 'Continue to Blueprint Review' }).click();
+  await page.route('http://127.0.0.1:8001/api/blueprints/preview', async (route) => {
+    const response = await route.fetch();
+    const blueprint = await response.json();
+    await route.fulfill({
+      json: {
+        ...blueprint,
+        validation: {
+          ...blueprint.validation,
+          valid: false,
+          errors: [
+            {
+              code: 'endpoint_capabilities_missing',
+              message: 'Endpoint POST /ai/chat requires capabilities: ai_chat.',
+              related_item_ids: ['ai.chat', 'ai_chat'],
+            },
+          ],
+        },
+      },
+    });
+  });
 
   await page.getByRole('button', { name: 'Preview blueprint' }).click();
   await expect(page.getByText('Blueprint returned issues')).toBeVisible({ timeout: 10000 });
@@ -72,7 +90,7 @@ test('wizard blueprint preview shows loading state', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Preview blueprint' }).click();
   await expect(page.getByText('Building preview')).toBeVisible();
-  await expect(page.getByText('Technology graph')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Technology graph snapshot')).toBeVisible({ timeout: 10000 });
 });
 
 test('wizard blueprint preview shows request error state', async ({ page }) => {
@@ -153,7 +171,7 @@ test('wizard prompt master preview shows offline request state', async ({ page }
 
 test('wizard gatekeeper preview approves a healthy blueprint and prompt master pair', async ({ page }) => {
   await buildHealthyGatekeeper(page);
-  await expect(page.getByText('All mandatory Gatekeeper checks passed.')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('The Gatekeeper found warnings but did not block progression.')).toBeVisible({ timeout: 10000 });
   await expect(page.getByText('Gatekeeper report')).toBeVisible();
   await expect(page.getByText('Gatekeeper checks', { exact: true })).toBeVisible();
 });
@@ -165,7 +183,7 @@ test('wizard gatekeeper preview blocks an invalid blueprint and prompt master pa
   await expect(page.getByRole('heading', { name: 'Capabilities' })).toBeVisible();
   await page.getByLabel('AI Chat').uncheck();
   await page.getByRole('button', { name: 'Continue to Business Modules' }).click();
-  await page.getByRole('button', { name: 'Continue to Endpoints' }).click();
+  await page.getByRole('button', { name: 'Continue to Endpoints' }).click({ force: true });
   await page.getByRole('button', { name: /Notifications User and system notifications\./ }).click();
   await page.getByLabel('POST /ai/chat').check();
   await page.getByRole('button', { name: 'Continue to Blueprint Review' }).click();

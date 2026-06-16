@@ -14,6 +14,7 @@ from app.core.config import BASE_DIR
 from app.data.foundation import CONTRACT_VERSION
 from app.engines.generation_handoff_engine import build_generation_handoff_package
 from app.services.template_render_service import TemplateRenderService
+from app.services.localization_service import LocalizationService
 
 ALLOWED_ARCHETYPES = {
     "landing_page": "landing-page",
@@ -137,17 +138,22 @@ class LocalGenerationEngine:
         capabilities = project.get("selected_capabilities") or []
         modules = project.get("selected_business_modules") or []
         endpoints = project.get("selected_endpoints") or []
+        locale_profile = project.get("locale_profile") or blueprint.get("locale_profile") or {}
+        selected_locale = locale_profile.get("selected_locale") or project.get("locale") or "pt-BR"
+        fallback_locale = locale_profile.get("fallback_locale") or "pt-BR"
+        translations = LocalizationService().dictionary(selected_locale, fallback_locale)["entries"]
+        requirements = blueprint.get("project_requirements") or {}
         return {
             "project": {
                 "id": project["project_id"],
                 "name": project["project_name"],
                 "slug": self._slug(project["project_name"]),
-                "locale": project["locale"],
+                "locale": selected_locale,
                 "archetype": project.get("archetype_id") or "",
                 "architecture": project.get("architecture_id") or "",
                 "language": (tech.get("language") or {}).get("name") or "",
                 "framework": (tech.get("framework") or {}).get("name") or "",
-                "summary": f"{project['project_name']} generated from deterministic LDCN OS static foundations.",
+                "summary": translations["generation.summary"].replace("{{project}}", project["project_name"]),
             },
             "template": {
                 "id": manifest.get("id") or "",
@@ -162,6 +168,16 @@ class LocalGenerationEngine:
                 "module_list": "\n".join(f"- {item}" for item in modules) or "- content",
                 "endpoint_list": "\n".join(f"- {item}" for item in endpoints) or "- none",
             },
+            "requirements": {
+                "project_goal": requirements.get("project_goal") or "Not provided",
+                "business_context": requirements.get("business_context") or "Not provided",
+                "target_users": ", ".join(requirements.get("target_users") or []) or "Not provided",
+                "business_rule_list": "\n".join(f"- {item}" for item in requirements.get("business_rules") or []) or "- Not provided",
+                "entity_list": "\n".join(f"- {item}" for item in requirements.get("entities") or []) or "- Not provided",
+                "workflow_list": "\n".join(f"- {item}" for item in requirements.get("workflows") or []) or "- Not provided",
+                "constraint_list": "\n".join(f"- {item}" for item in requirements.get("constraints") or []) or "- Not provided",
+                "delivery_target": requirements.get("delivery_target") or "Not provided",
+            },
             "blueprint": {
                 "generated_at": blueprint.get("generated_at") or "",
                 "risk": ((blueprint.get("complexity_profile") or {}).get("risk_level")) or "low",
@@ -170,6 +186,14 @@ class LocalGenerationEngine:
             "handoff": {
                 "id": handoff["handoff_id"],
                 "readiness": handoff["handoff_readiness"],
+            },
+            "i18n": translations,
+            "locale_profile": {
+                "selected_locale": selected_locale,
+                "fallback_locale": fallback_locale,
+                "generated_docs_locale": locale_profile.get("generated_docs_locale") or selected_locale,
+                "generated_readme_locale": locale_profile.get("generated_readme_locale") or selected_locale,
+                "generated_comments_locale": locale_profile.get("generated_comments_locale") or selected_locale,
             },
         }
 
@@ -192,6 +216,7 @@ class LocalGenerationEngine:
                     "runtime": "local_static_v0",
                     "template": self._metadata(manifest),
                     "project": variables["project"],
+                    "locale_profile": variables["locale_profile"],
                     "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
                     "offline_first": True,
                     "no_ai": True,

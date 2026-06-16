@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 
 test('wizard shows explicit offline state when backend is unavailable', async ({ page }) => {
+  await page.route('http://127.0.0.1:8001/api/**', async (route) => {
+    await route.abort('failed');
+  });
   await page.goto('http://127.0.0.1:3000/wizard');
 
   await expect(page.getByText('Technology graph unavailable')).toBeVisible({ timeout: 15000 });

@@ -45,3 +45,9 @@ reports/cdp-search-profile*/
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated project output (deterministic + meta-factory output areas)
+generated-projects/
+
+# Next.js alternate build cache
+.next-responsive/

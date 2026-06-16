@@ -44,7 +44,11 @@ def configure_exception_handlers(app: FastAPI) -> None:
             code=f"http_{exc.status_code}",
             message=detail,
         )
-        return JSONResponse(status_code=exc.status_code, content=payload)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=payload,
+            headers=exc.headers,
+        )
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(
@@ -62,7 +66,11 @@ def configure_exception_handlers(app: FastAPI) -> None:
             code=f"http_{exc.status_code}",
             message=detail,
         )
-        return JSONResponse(status_code=exc.status_code, content=payload)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=payload,
+            headers=exc.headers,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(

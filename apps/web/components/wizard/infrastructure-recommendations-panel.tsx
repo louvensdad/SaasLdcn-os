@@ -6,6 +6,7 @@ import { ChevronDown, Layers3, ShieldAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 import type { InfrastructureComponent, InfrastructureRecommendation } from '@/lib/api/types';
 
@@ -25,25 +26,9 @@ interface InfrastructureRecommendationsPanelProps {
   readonly onClearSelection: () => void;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  database: 'Database',
-  cache: 'Cache',
-  queue: 'Queue',
-  object_storage: 'Object Storage',
-  auth_provider: 'Auth Provider',
-  observability: 'Observability',
-  deployment: 'Deployment',
-  containerization: 'Containerization',
-  api_gateway: 'API Gateway',
-  search: 'Search',
-  vector_database: 'Vector Database',
-  email_provider: 'Email Provider',
-  payment_provider: 'Payment Provider',
-};
-
-function compact(items: readonly string[], limit = 3) {
+function compact(items: readonly string[], overflowLabel: string, limit = 3) {
   if (items.length <= limit) return items;
-  return [...items.slice(0, limit), `+${items.length - limit} more`];
+  return [...items.slice(0, limit), `+${items.length - limit} ${overflowLabel}`];
 }
 
 export function InfrastructureRecommendationsPanel({
@@ -56,6 +41,7 @@ export function InfrastructureRecommendationsPanel({
   onSelectFoundation,
   onClearSelection,
 }: InfrastructureRecommendationsPanelProps) {
+  const { t } = useLocale();
   const [isOpen, setIsOpen] = useState(true);
 
   useEffect(() => {
@@ -72,8 +58,8 @@ export function InfrastructureRecommendationsPanel({
               <ShieldAlert className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">Infrastructure recommendations</p>
-              <h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">Infrastructure registry unavailable</h3>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('infrastructure.title')}</p>
+              <h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{t('infrastructure.unavailable')}</h3>
             </div>
           </div>
           <div className="rounded-[var(--radius-xl)] border border-rose-500/20 bg-rose-500/5 p-4 text-sm leading-6 text-rose-100">
@@ -99,14 +85,14 @@ export function InfrastructureRecommendationsPanel({
             </div>
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">Infrastructure recommendations</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('infrastructure.title')}</p>
                 <Badge className="border-white/10 text-[color:var(--muted)]">
-                  {recommendation?.required.length ?? 0} required
+                  {t('infrastructure.requiredCount', { count: recommendation?.required.length ?? 0 })}
                 </Badge>
               </div>
-              <h3 className="text-xl font-semibold text-[color:var(--text)]">Foundation components</h3>
+              <h3 className="text-xl font-semibold text-[color:var(--text)]">{t('infrastructure.foundationComponents')}</h3>
               <p className="max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
-                Select only the infrastructure foundation you want to keep in the blueprint preview. No generation is performed here.
+                {t('infrastructure.description')}
               </p>
             </div>
           </div>
@@ -115,31 +101,31 @@ export function InfrastructureRecommendationsPanel({
 
         {isLoading && !recommendation ? (
           <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4 text-sm text-[color:var(--muted)]">
-            Loading infrastructure recommendations...
+            {t('infrastructure.loading')}
           </div>
         ) : null}
 
         {isOpen ? (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Badge className="border-white/10 text-[color:var(--muted)]">Selected {selectedComponentIds.length}</Badge>
-              <Badge className="border-white/10 text-[color:var(--muted)]">Recommended {recommendation?.recommended.length ?? 0}</Badge>
-              <Badge className="border-white/10 text-[color:var(--muted)]">Optional {recommendation?.optional.length ?? 0}</Badge>
+              <Badge className="border-white/10 text-[color:var(--muted)]">{t('infrastructure.selectedCount', { count: selectedComponentIds.length })}</Badge>
+              <Badge className="border-white/10 text-[color:var(--muted)]">{t('infrastructure.recommendedCount', { count: recommendation?.recommended.length ?? 0 })}</Badge>
+              <Badge className="border-white/10 text-[color:var(--muted)]">{t('infrastructure.optionalCount', { count: recommendation?.optional.length ?? 0 })}</Badge>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="secondary" onClick={onSelectFoundation}>
-                Select foundation only
+                {t('infrastructure.selectFoundation')}
               </Button>
               <Button type="button" variant="soft" onClick={onClearSelection}>
-                Clear infra selection
+                {t('infrastructure.clearSelection')}
               </Button>
             </div>
 
             {recommendation?.warnings.length ? (
               <div className="space-y-2 rounded-[var(--radius-xl)] border border-amber-500/20 bg-amber-500/5 p-4">
-                <p className="text-sm font-semibold text-[color:var(--text)]">Warnings</p>
-                {compact(recommendation.warnings, 3).map((warning) => (
+                <p className="text-sm font-semibold text-[color:var(--text)]">{t('common.warnings')}</p>
+                {compact(recommendation.warnings, t('common.more'), 3).map((warning) => (
                   <div key={warning} className="flex items-start gap-2 text-sm leading-6 text-[color:var(--muted)]">
                     <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
                     <span>{warning}</span>
@@ -150,7 +136,7 @@ export function InfrastructureRecommendationsPanel({
 
             {recommendation?.rationale.length ? (
               <div className="flex flex-wrap gap-2">
-                {compact(recommendation.rationale, 4).map((item) => (
+                {compact(recommendation.rationale, t('common.more'), 4).map((item) => (
                   <Badge key={item} className="border-white/10 bg-white/[0.04] text-[color:var(--text)]">
                     {item}
                   </Badge>
@@ -178,7 +164,7 @@ export function InfrastructureRecommendationsPanel({
                   <div key={group.category} className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-semibold text-[color:var(--text)]">
-                        {CATEGORY_LABELS[group.category] ?? group.category}
+                        {t(`infrastructure.category.${group.category}`)}
                       </p>
                       <Badge className="border-white/10 text-[color:var(--muted)]">{visibleComponents.length}</Badge>
                     </div>
@@ -204,14 +190,14 @@ export function InfrastructureRecommendationsPanel({
                             <div className="flex items-center justify-between gap-2">
                               <p className="text-sm font-semibold text-[color:var(--text)]">{component.name}</p>
                               <div className="flex flex-wrap gap-1">
-                                {isRequired ? <Badge className="border-white/10 text-[color:var(--text)]">Required</Badge> : null}
-                                {isRecommended ? <Badge className="border-white/10 text-[color:var(--text)]">Recommended</Badge> : null}
-                                {isOptional ? <Badge className="border-white/10 text-[color:var(--muted)]">Optional</Badge> : null}
+                                {isRequired ? <Badge className="border-white/10 text-[color:var(--text)]">{t('common.required')}</Badge> : null}
+                                {isRecommended ? <Badge className="border-white/10 text-[color:var(--text)]">{t('common.recommended')}</Badge> : null}
+                                {isOptional ? <Badge className="border-white/10 text-[color:var(--muted)]">{t('common.optional')}</Badge> : null}
                               </div>
                             </div>
                             <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">{component.summary}</p>
                             <div className="mt-2 flex flex-wrap gap-2">
-                              {compact(component.best_for, 2).map((item) => (
+                              {compact(component.best_for, t('common.more'), 2).map((item) => (
                                 <Badge key={item} className="border-white/10 bg-white/[0.04] text-[color:var(--muted)]">
                                   {item}
                                 </Badge>

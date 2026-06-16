@@ -19,9 +19,11 @@ import { FeatureCard } from '@/components/shell/feature-card';
 import { SectionHeader } from '@/components/shell/section-header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import { useUiStore } from '@/stores/use-ui-store';
 
 export function UxFoundationDemo() {
+  const { t } = useLocale();
   const addToast = useUiStore((state) => state.addToast);
   const openModal = useUiStore((state) => state.openModal);
   const openDrawer = useUiStore((state) => state.openDrawer);
@@ -30,15 +32,15 @@ export function UxFoundationDemo() {
   return (
     <section className="space-y-5">
       <SectionHeader
-        title="UX system foundation"
-        description="Reusable operational UX primitives for future projects, templates, downloads, and LDCN workflows."
+        title={t('foundation.title')}
+        description={t('foundation.description')}
       />
 
       <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
         <FeatureCard
-          eyebrow="Feedback"
-          title="Toast, modal, drawer, loading, error, and notification systems are ready."
-          description="These surfaces are foundation-only and execute local UI actions without backend, AI, agents, voice, avatar, or generation."
+          eyebrow={t('foundation.feedback')}
+          title={t('foundation.feedbackTitle')}
+          description={t('foundation.feedbackDescription')}
           footer={
             <div className="flex flex-wrap gap-2">
               <Button
@@ -47,29 +49,29 @@ export function UxFoundationDemo() {
                 onClick={() =>
                   addToast({
                     tone: 'success',
-                    title: 'Toast system online',
-                    description: 'Premium notification rendered with current theme tokens.',
+                    title: t('foundation.toastTitle'),
+                    description: t('foundation.toastDescription'),
                     action: {
-                      label: 'Open center',
+                      label: t('foundation.openCenter'),
                       onSelect: openNotificationCenter,
                     },
                   })
                 }
               >
                 <Sparkles className="h-4 w-4" />
-                Show toast
+                {t('foundation.showToast')}
               </Button>
               <Button type="button" variant="secondary" onClick={() => openModal('confirmation')}>
                 <ShieldAlert className="h-4 w-4" />
-                Open modal
+                {t('foundation.openModal')}
               </Button>
               <Button type="button" variant="secondary" onClick={() => openDrawer('details')}>
                 <PanelRightOpen className="h-4 w-4" />
-                Open drawer
+                {t('foundation.openDrawer')}
               </Button>
               <Button type="button" variant="soft" onClick={openNotificationCenter}>
                 <Bell className="h-4 w-4" />
-                Notifications
+                {t('notifications.title')}
               </Button>
             </div>
           }
@@ -77,32 +79,32 @@ export function UxFoundationDemo() {
 
         <Card className="space-y-4">
           <TextField
-            label="Project name"
-            description="Validation-ready input surface."
-            placeholder="ldcn-enterprise-app"
+            label={t('foundation.projectName')}
+            description={t('foundation.projectNameDetail')}
+            placeholder={t('foundation.projectNamePlaceholder')}
           />
           <TextareaField
-            label="Operational brief"
-            description="Textarea foundation for future wizard prompts."
-            placeholder="Describe what the generated project should do."
+            label={t('foundation.operationalBrief')}
+            description={t('foundation.operationalBriefDetail')}
+            placeholder={t('foundation.operationalBriefPlaceholder')}
           />
           <div className="grid gap-3 sm:grid-cols-2">
-            <SelectField label="Stack" defaultValue="fastapi">
-              <option value="fastapi">FastAPI</option>
-              <option value="spring">Spring Boot</option>
-              <option value="next">Next.js</option>
+            <SelectField label={t('foundation.stack')} defaultValue="fastapi">
+              <option value="fastapi">{t('foundation.framework.fastapi')}</option>
+              <option value="spring">{t('foundation.framework.spring')}</option>
+              <option value="next">{t('foundation.framework.next')}</option>
             </SelectField>
             <TextField
-              label="Field with error"
-              placeholder="Required value"
-              error="Foundation validation message."
+              label={t('foundation.errorField')}
+              placeholder={t('foundation.requiredValue')}
+              error={t('foundation.validationMessage')}
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <CheckboxField label="Include documentation" description="Ready for future generation options." defaultChecked />
-            <RadioField label="Local Build 90%" description="Static local execution path." name="build-mode-demo" defaultChecked />
+            <CheckboxField label={t('foundation.includeDocumentation')} description={t('foundation.generationOptions')} defaultChecked />
+            <RadioField label={t('foundation.localBuild')} description={t('foundation.localExecution')} name="build-mode-demo" defaultChecked />
           </div>
-          <SwitchField label="Observable runtime" description="Future telemetry-ready preference." checked />
+          <SwitchField label={t('foundation.observableRuntime')} description={t('foundation.telemetryPreference')} checked />
         </Card>
       </div>
 
@@ -111,18 +113,18 @@ export function UxFoundationDemo() {
           <FilterBar />
           <Card className="space-y-3">
             <ListRow
-              title="Project registry row"
-              description="Reusable list row for future projects."
+              title={t('foundation.projectRow')}
+              description={t('foundation.projectRowDetail')}
               status="ready"
             />
             <ListRow
-              title="Template blueprint row"
-              description="Reusable list row for future templates."
+              title={t('foundation.templateRow')}
+              description={t('foundation.templateRowDetail')}
               status="planned"
             />
             <ListRow
-              title="Secure download row"
-              description="Reserved for future download registry."
+              title={t('foundation.downloadRow')}
+              description={t('foundation.downloadRowDetail')}
               status="draft"
             />
           </Card>
@@ -139,9 +141,9 @@ export function UxFoundationDemo() {
       <div className="grid gap-4 xl:grid-cols-2">
         <PageError />
         <Card className="space-y-4">
-          <p className="text-sm font-semibold text-[color:var(--text)]">Loading states</p>
+          <p className="text-sm font-semibold text-[color:var(--text)]">{t('foundation.loadingStates')}</p>
           <Button type="button" variant="secondary">
-            <ButtonLoading label="Button loading" />
+            <ButtonLoading label={t('foundation.buttonLoading')} />
           </Button>
           <CardLoading className="shadow-none" />
         </Card>

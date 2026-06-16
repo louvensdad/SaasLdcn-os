@@ -25,6 +25,7 @@ import { useArchetypes } from '@/hooks/use-archetypes';
 import { useCapabilities } from '@/hooks/use-capabilities';
 import { useFrameworks } from '@/hooks/use-frameworks';
 import { useLanguages } from '@/hooks/use-languages';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 import {
   createArchetypeSearchItems,
@@ -53,6 +54,7 @@ function itemIcon(kind: SearchItem['kind']) {
 }
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
+  const { t } = useLocale();
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -155,7 +157,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     if (item.actionId) {
       addToast({
         tone: 'info',
-        title: 'Command executed',
+        title: t('search.commandExecuted'),
         description: item.title,
       });
     }
@@ -225,7 +227,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
-            aria-label="Search LDCN OS"
+            aria-label={t('search.ariaLabel')}
             className="glass-panel-strong cinematic-surface w-full max-w-2xl overflow-hidden rounded-[var(--radius-xl)] shadow-[var(--shadow-cinematic)]"
             initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -246,11 +248,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 className="h-11 min-w-0 flex-1 bg-transparent text-base text-[color:var(--text)] outline-none placeholder:text-[color:var(--muted)]"
-                placeholder="Search LDCN OS..."
-                aria-label="Search LDCN OS"
+                placeholder={t('search.placeholder')}
+                aria-label={t('search.ariaLabel')}
               />
               <span className="ai-orb ai-orb-compact hidden h-5 w-5 rounded-full sm:inline-block" aria-hidden />
-              <Badge>Esc</Badge>
+              <Badge>{t('search.escape')}</Badge>
             </div>
 
             <div className="relative max-h-[60vh] overflow-y-auto p-2">
@@ -291,7 +293,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 })
               ) : (
                 <div className="px-4 py-8 text-center text-sm text-[color:var(--muted)]">
-                  No foundation command found.
+                  {t('search.empty')}
                 </div>
               )}
             </div>

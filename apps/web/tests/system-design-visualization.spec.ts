@@ -1,17 +1,18 @@
 import { expect, test, type Page } from '@playwright/test';
+import { webUrl } from './test-urls';
 
-const WIZARD_URL = 'http://127.0.0.1:3003/wizard';
+const WIZARD_URL = webUrl('/wizard');
 
 async function openVisualizationReview(page: Page) {
   await page.goto(WIZARD_URL);
   await page.getByRole('button', { name: '1 Technology Path Choose language, runtime, and framework.' }).click();
-  await page.locator('select').nth(0).selectOption('java');
-  await page.locator('select').nth(1).selectOption('jvm');
-  await page.locator('select').nth(2).selectOption('spring_boot');
+  await page.getByLabel('1. Language').selectOption('java');
+  await page.getByLabel('2. Runtime').selectOption('jvm');
+  await page.getByLabel('3. Framework').selectOption('spring_boot');
   await page.getByRole('button', { name: 'Continue to Architecture' }).click();
-  await page.locator('select').nth(0).selectOption('microservices');
+  await page.getByLabel('4. Architecture').selectOption('microservices');
   await page.getByRole('button', { name: 'Continue to Project Type' }).click();
-  await page.locator('select').nth(0).selectOption('microservice_api');
+  await page.getByLabel('5. Archetype').selectOption('microservice_api');
   await page.getByRole('button', { name: 'Continue to Capabilities' }).click();
   await page.getByRole('button', { name: 'View advanced capabilities' }).click();
   for (const label of ['Observability', 'Queue']) {

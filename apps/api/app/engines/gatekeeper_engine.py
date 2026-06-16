@@ -6,11 +6,16 @@ from uuid import uuid4
 
 from app.data.foundation import CONTRACT_VERSION
 from app.engines.engineering_readiness_engine import calculate_engineering_readiness
+from app.engines.project_requirements_engine import requirements_missing_fields
 
 
 TRACE_REDACTIONS = ["sensitive_fields", "protected_values", "hidden_runtime_material"]
 CHECK_DEFINITIONS = [
     ("technology_graph_check", "Technology Graph Check"),
+    ("requirements_completeness_check", "Requirements Completeness Check"),
+    ("business_rules_check", "Business Rules Check"),
+    ("entity_model_check", "Entity Model Check"),
+    ("delivery_target_check", "Delivery Target Check"),
     ("architecture_compatibility_check", "Architecture Compatibility Check"),
     ("business_module_check", "Business Module Check"),
     ("endpoint_plan_check", "Endpoint Plan Check"),
@@ -38,6 +43,7 @@ def build_gatekeeper_report(blueprint: dict[str, Any], prompt_master: dict[str, 
         "blueprint_id": blueprint["blueprint_id"],
         "prompt_master_id": prompt_master["prompt_master_id"],
         "decision": decision,
+        "locale_profile": blueprint.get("locale_profile") or prompt_master.get("locale_profile"),
         "summary": _build_summary(decision, checks),
         "blockers": blockers,
         "warnings": warnings,
@@ -57,6 +63,10 @@ def build_gatekeeper_report(blueprint: dict[str, Any], prompt_master: dict[str, 
 def run_gatekeeper_checks(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         _technology_graph_check(blueprint, prompt_master),
+        _requirements_completeness_check(blueprint, prompt_master),
+        _business_rules_check(blueprint, prompt_master),
+        _entity_model_check(blueprint, prompt_master),
+        _delivery_target_check(blueprint, prompt_master),
         _architecture_compatibility_check(blueprint, prompt_master),
         _business_module_check(blueprint, prompt_master),
         _endpoint_plan_check(blueprint, prompt_master),
@@ -70,6 +80,78 @@ def run_gatekeeper_checks(blueprint: dict[str, Any], prompt_master: dict[str, An
         _secret_exposure_check(blueprint, prompt_master),
         _trace_safety_check(blueprint, prompt_master),
     ]
+
+
+def _requirements_completeness_check(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> dict[str, Any]:
+    del prompt_master
+    missing = requirements_missing_fields(blueprint.get("project_requirements"))
+    if not blueprint.get("business_modules"):
+        missing.append("business_modules")
+    if not blueprint.get("endpoints"):
+        missing.append("endpoints")
+    blockers = [f"Project requirement '{field}' must be completed before generation." for field in missing]
+    return _build_check(
+        "requirements_completeness_check",
+        "Requirements Completeness Check",
+        blockers,
+        [],
+        missing,
+        "Verifies that project intent, operational context, scope, data, and delivery requirements are complete.",
+    )
+
+
+def _business_rules_check(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> dict[str, Any]:
+    requirements = blueprint.get("project_requirements") or {}
+    rules = requirements.get("business_rules") or []
+    workflows = requirements.get("workflows") or []
+    section = _find_section(prompt_master, "business_modules")
+    blockers = []
+    if not rules:
+        blockers.append("At least one primary business rule is required.")
+    if not workflows:
+        blockers.append("At least one operational workflow is required.")
+    if section is None:
+        blockers.append("Prompt Master is missing the Business Modules section that carries business rules.")
+    return _build_check(
+        "business_rules_check",
+        "Business Rules Check",
+        blockers,
+        [],
+        [*rules, *workflows],
+        "Verifies that explicit business rules and operational workflows drive generation.",
+    )
+
+
+def _entity_model_check(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> dict[str, Any]:
+    entities = (blueprint.get("project_requirements") or {}).get("entities") or []
+    section = _find_section(prompt_master, "data_model_hints")
+    blockers = []
+    if not entities:
+        blockers.append("At least one primary entity or data concept is required.")
+    if section is None:
+        blockers.append("Prompt Master is missing the Data Model Hints section.")
+    return _build_check(
+        "entity_model_check",
+        "Entity Model Check",
+        blockers,
+        [],
+        entities,
+        "Verifies that generation has an explicit user-defined data model intent.",
+    )
+
+
+def _delivery_target_check(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> dict[str, Any]:
+    del prompt_master
+    target = (blueprint.get("project_requirements") or {}).get("delivery_target")
+    blockers = [] if target in {"zip", "github", "gitlab", "both"} else ["A valid delivery target is required."]
+    return _build_check(
+        "delivery_target_check",
+        "Delivery Target Check",
+        blockers,
+        [],
+        [target] if target else [],
+        "Verifies that generation has an explicit delivery destination.",
+    )
 
 
 def _technology_graph_check(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> dict[str, Any]:
