@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Map,
   MonitorCog,
+  RefreshCw,
   Settings2,
   SquareStack,
   WandSparkles,
@@ -55,6 +56,12 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
     href: '/meta-factory',
     icon: Factory,
     descriptionKey: 'navigation.metaFactory.description',
+  },
+  {
+    labelKey: 'navigation.modernize.label',
+    href: '/modernize',
+    icon: RefreshCw,
+    descriptionKey: 'navigation.modernize.description',
   },
   {
     labelKey: 'navigation.systemStatus.label',

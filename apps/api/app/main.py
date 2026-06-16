@@ -32,6 +32,7 @@ from app.routes import (
     local_generation,
     localization,
     meta_factory,
+    modernize,
     projects,
     prompt_master,
     registry,
@@ -104,6 +105,7 @@ def create_application() -> FastAPI:
     app.include_router(git_providers.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(contracts.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(meta_factory.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(modernize.router, prefix=settings.api_prefix, dependencies=protected)
     return app
 
 

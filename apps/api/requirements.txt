@@ -3,6 +3,8 @@ uvicorn==0.47.0
 pydantic==2.13.4
 pytest==9.0.3
 httpx==0.28.1
+# Multipart form parsing for brownfield ZIP uploads (POST /modernize/ingest/zip).
+python-multipart>=0.0.9
 
 # Auth / security (Fase B): JWT access+refresh tokens and password hashing.
 pyjwt>=2.8.0
