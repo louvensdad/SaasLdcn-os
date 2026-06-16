@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.data.agent_territories import path_in_territory, territory_violations
 from app.data.model_registry import resolve_model
 from app.engines.factory_pipeline import run_factory_pipeline
@@ -266,11 +268,32 @@ def test_google_build_config():
     assert cfg["max_output_tokens"] == 16000
     assert "response_mime_type" not in cfg
 
-    cfg_json = adapter._build_config(_req(json_schema={"type": "object"}))
+    cfg_json = adapter._build_config(_req(json_schema={"type": "object", "title": "X"}))
     assert cfg_json["response_mime_type"] == "application/json"
-    # No response_schema: the raw Pydantic schema (additionalProperties/$ref) is
-    # rejected by the Gemini Developer API; we use JSON mode + Pydantic validation.
-    assert "response_schema" not in cfg_json
+    # response_schema is sanitized for the Gemini Developer API: unsupported
+    # keywords (here `title`) are stripped.
+    assert cfg_json["response_schema"] == {"type": "object"}
+
+
+def test_gemini_schema_sanitizer_strips_unsupported_keywords():
+    from app.engines.llm.google_adapter import _to_gemini_schema
+    from app.schemas.orchestrator import ProjectSpec
+
+    sanitized = _to_gemini_schema(ProjectSpec.model_json_schema())
+    text = json.dumps(sanitized)
+    # None of the Gemini-incompatible keywords survive as JSON keys anywhere in
+    # the tree (checked as quoted keys so legit field names like
+    # `default_if_skipped` are not false positives).
+    for banned in ('"$ref"', '"$defs"', '"additionalProperties"', '"title":', '"default":'):
+        assert banned not in text
+    # Required string field and numeric confidence are preserved with correct types.
+    assert sanitized["properties"]["raw_intent"]["type"] == "string"
+    assert sanitized["properties"]["confidence"]["type"] == "number"
+    assert sanitized["required"] == ["raw_intent"]
+    # Nested model ref was inlined into a real object.
+    assert sanitized["properties"]["suggested_stack"]["type"] == "object"
+    # The free-form dict[str,str] field was dropped (Gemini can't represent it).
+    assert "non_functional" not in sanitized["properties"]
 
 
 def test_router_dispatches_by_provider():
