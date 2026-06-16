@@ -25,6 +25,7 @@ class AgentRun:
 class PipelineResult:
     runs: list[AgentRun] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -32,7 +33,12 @@ class PipelineResult:
 
 
 def _agent_request(system: str, user: str) -> LLMRequest:
-    return LLMRequest(system=system, user=user, reasoning=ReasoningLevel.high, cache_prefix=True)
+    # A full backend/frontend easily exceeds the neutral 16k default and gets
+    # truncated (lost MANIFEST / partial files). 32k stays under every model cap
+    # in the registry (sonnet/haiku 64k, opus 128k, gemini flash 65k).
+    return LLMRequest(
+        system=system, user=user, reasoning=ReasoningLevel.high, cache_prefix=True, max_output_tokens=32000
+    )
 
 
 _LANG_BY_EXT = {
@@ -109,20 +115,28 @@ def iter_factory_pipeline(
 
         # The protocol+territory validation IS the pipeline's security/lint gate;
         # surface it as a gate_check so the UI can show per-agent check status.
+        if parsed.errors:
+            detail = "; ".join(parsed.errors)
+        elif parsed.warnings:
+            detail = f"{len(parsed.files)} arquivo(s) · " + "; ".join(parsed.warnings)
+        else:
+            detail = f"{len(parsed.files)} arquivos válidos no território do agente."
         yield {
             "type": "gate_check",
             "role": role,
             "check": "protocol_and_territory",
             "status": "passed" if parsed.ok else "failed",
-            "detail": "; ".join(parsed.errors)
-            if parsed.errors
-            else f"{len(parsed.files)} arquivos válidos no território do agente.",
+            "detail": detail,
         }
 
-        if not parsed.ok:
+        if parsed.errors:
             result.errors.extend(f"[{role}] {e}" for e in parsed.errors)
+        result.warnings.extend(f"[{role}] {w}" for w in parsed.warnings)
 
-        if role == "contracts" and parsed.ok:
+        # Contract is the source of truth for later agents. Prefer a clean parse,
+        # but accept one with only warnings (territory/manifest) so the chain still
+        # builds against a real contract.
+        if role == "contracts" and parsed.ok and parsed.files:
             contract_text = response.text
         emitted_so_far.extend(f.path for f in parsed.files)
 
@@ -134,6 +148,7 @@ def iter_factory_pipeline(
             "degraded": response.served_by_fallback,
             "file_count": len(parsed.files),
             "errors": list(parsed.errors),
+            "warnings": list(parsed.warnings),
         }
 
     yield {"type": "result", "result": result}

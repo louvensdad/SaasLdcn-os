@@ -33,22 +33,40 @@ def test_parse_valid_output():
     assert parsed.manifest["entrypoint"] == "openapi.yaml"
 
 
-def test_parse_detects_missing_manifest_and_no_files():
+def test_parse_detects_no_files():
+    # A genuinely empty / non-protocol reply is the only hard error.
     parsed = parse_agent_output("no blocks here", agent_role="contracts")
     assert not parsed.ok
     assert any("No FILE blocks" in e for e in parsed.errors)
-    assert any("Missing MANIFEST" in e for e in parsed.errors)
 
 
-def test_parse_flags_territory_violation():
+def test_parse_synthesizes_missing_manifest_without_failing():
+    # Files present but no MANIFEST: synthesize it (warning), do not discard files.
+    out = '<<<FILE path="openapi.yaml">>>\nopenapi: 3.0.3\n<<<END>>>'
+    parsed = parse_agent_output(out, agent_role="contracts")
+    assert parsed.ok
+    assert [f.path for f in parsed.files] == ["openapi.yaml"]
+    assert parsed.manifest["files"] == ["openapi.yaml"]
+    assert any("Missing MANIFEST" in w for w in parsed.warnings)
+
+
+def test_parse_treats_territory_drift_as_warning_not_discard():
     out = (
         '<<<FILE path="apps/api/src/main.py">>>\nx = 1\n<<<END>>>\n'
         '<<<MANIFEST>>>\n{"files": ["apps/api/src/main.py"]}\n<<<END>>>'
     )
-    # frontend may not write into apps/api/
+    # frontend wrote into apps/api/: governance warning, but the file is kept so a
+    # correctly-generated standalone project is never thrown away.
     parsed = parse_agent_output(out, agent_role="frontend")
-    assert not parsed.ok
-    assert any("outside its territory" in e for e in parsed.errors)
+    assert parsed.ok
+    assert [f.path for f in parsed.files] == ["apps/api/src/main.py"]
+    assert any("outside its territory" in w for w in parsed.warnings)
+
+
+def test_parse_strips_outer_code_fence():
+    out = '```xml\n<<<FILE path="a.txt">>>\nhi\n<<<END>>>\n```'
+    parsed = parse_agent_output(out, agent_role="docs")
+    assert [f.path for f in parsed.files] == ["a.txt"]
 
 
 # --- territories ----------------------------------------------------------

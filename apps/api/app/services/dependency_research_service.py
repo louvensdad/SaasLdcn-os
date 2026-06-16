@@ -1,0 +1,291 @@
+from __future__ import annotations
+
+import json
+import re
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+
+from app.core.config import get_settings
+from app.schemas.generation_validation import DependencyAuditReport, DependencyFinding
+
+
+_REQ_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*(?:==|~=|>=|<=|>|<)?\s*([^#;\s]+)?")
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.@/+:-]+$")
+
+
+@dataclass(frozen=True)
+class VersionLookup:
+    ecosystem: str
+    name: str
+    latest_version: str | None
+    skipped_reason: str | None = None
+
+
+class DependencyResearchService:
+    def __init__(self, timeout: float = 2.5) -> None:
+        self.timeout = timeout
+        self._cache: dict[tuple[str, str], VersionLookup] = {}
+
+    def latest_pypi(self, package: str) -> VersionLookup:
+        if get_settings().force_mock:
+            return VersionLookup("pypi", package, None, "dependency research skipped in mock mode")
+        return self._cached("pypi", package, lambda: self._latest_pypi(package))
+
+    def latest_npm(self, package: str) -> VersionLookup:
+        if get_settings().force_mock:
+            return VersionLookup("npm", package, None, "dependency research skipped in mock mode")
+        return self._cached("npm", package, lambda: self._latest_npm(package))
+
+    def latest_maven(self, group: str, artifact: str) -> VersionLookup:
+        name = f"{group}:{artifact}"
+        if get_settings().force_mock:
+            return VersionLookup("maven", name, None, "dependency research skipped in mock mode")
+        return self._cached("maven", name, lambda: self._latest_maven(group, artifact))
+
+    def core_versions(self, stack: Any) -> str:
+        framework = str(getattr(stack, "framework", "") or "").lower()
+        runtime = str(getattr(stack, "runtime", "") or "").lower()
+        language = str(getattr(stack, "language", "") or "").lower()
+
+        lookups: list[VersionLookup] = []
+        if "fastapi" in framework or "python" in language:
+            for package in ["fastapi", "uvicorn", "pydantic"]:
+                lookups.append(self.latest_pypi(package))
+        elif "next" in framework or "react" in framework:
+            for package in ["next", "react", "react-dom", "typescript"]:
+                lookups.append(self.latest_npm(package))
+        elif "nest" in framework:
+            for package in ["@nestjs/core", "@nestjs/common", "typescript"]:
+                lookups.append(self.latest_npm(package))
+        elif "spring" in framework or "java" in language or "maven" in runtime:
+            lookups.append(self.latest_maven("org.springframework.boot", "spring-boot-starter-web"))
+            lookups.append(self.latest_maven("org.springframework.boot", "spring-boot-starter-test"))
+
+        lines = ["## Verified current dependency versions"]
+        if not lookups:
+            lines.append("- skipped: no supported core dependency set was mapped for the selected stack.")
+            return "\n".join(lines)
+
+        for item in lookups:
+            if item.latest_version:
+                lines.append(f"- {item.ecosystem}:{item.name} latest={item.latest_version}")
+            else:
+                lines.append(f"- {item.ecosystem}:{item.name} skipped ({item.skipped_reason or 'lookup failed'})")
+        lines.append("Use these verified versions where direct dependency versions are needed; do not invent package names or versions.")
+        return "\n".join(lines)
+
+    def audit_manifest(self, files: list[dict[str, Any]]) -> DependencyAuditReport:
+        findings: list[DependencyFinding] = []
+        saw_manifest = False
+        skipped_reasons: list[str] = []
+
+        for item in files:
+            path = str(item.get("relative_path") or "")
+            content = item.get("content")
+            if isinstance(content, bytes):
+                text = content.decode("utf-8", errors="ignore")
+            else:
+                text = str(content or "")
+            lower = path.lower()
+            if lower.endswith("requirements.txt"):
+                saw_manifest = True
+                findings.extend(self._audit_requirements(path, text, skipped_reasons))
+            elif lower.endswith("package.json"):
+                saw_manifest = True
+                findings.extend(self._audit_package_json(path, text, skipped_reasons))
+            elif lower.endswith("pom.xml"):
+                saw_manifest = True
+                findings.extend(self._audit_pom(path, text, skipped_reasons))
+
+        if not saw_manifest:
+            return DependencyAuditReport(status="skipped", skipped_reason="No supported dependency manifest was emitted.")
+        if skipped_reasons and not findings:
+            return DependencyAuditReport(status="skipped", skipped_reason="; ".join(sorted(set(skipped_reasons))))
+        failed = any(f.status in {"missing", "outdated"} for f in findings)
+        return DependencyAuditReport(status="failed" if failed else "passed", findings=findings)
+
+    def _audit_requirements(self, path: str, text: str, skipped: list[str]) -> list[DependencyFinding]:
+        findings: list[DependencyFinding] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or stripped.startswith("-"):
+                continue
+            match = _REQ_RE.match(stripped)
+            if not match:
+                continue
+            name, requested = match.group(1), match.group(2)
+            if not _SAFE_NAME_RE.match(name):
+                continue
+            lookup = self.latest_pypi(name)
+            findings.append(self._finding("pypi", name, requested, lookup, path, skipped))
+        return findings
+
+    def _audit_package_json(self, path: str, text: str, skipped: list[str]) -> list[DependencyFinding]:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return [
+                DependencyFinding(
+                    ecosystem="npm",
+                    name="package.json",
+                    requested_version=None,
+                    latest_version=None,
+                    status="missing",
+                    message="package.json is not valid JSON.",
+                    manifest_path=path,
+                )
+            ]
+        findings: list[DependencyFinding] = []
+        for section in ["dependencies", "devDependencies", "peerDependencies"]:
+            deps = data.get(section) or {}
+            if not isinstance(deps, dict):
+                continue
+            for name, requested in deps.items():
+                if not isinstance(name, str) or not _SAFE_NAME_RE.match(name):
+                    continue
+                lookup = self.latest_npm(name)
+                findings.append(self._finding("npm", name, str(requested), lookup, path, skipped))
+        return findings
+
+    def _audit_pom(self, path: str, text: str, skipped: list[str]) -> list[DependencyFinding]:
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError:
+            return [
+                DependencyFinding(
+                    ecosystem="maven",
+                    name="pom.xml",
+                    requested_version=None,
+                    latest_version=None,
+                    status="missing",
+                    message="pom.xml is not valid XML.",
+                    manifest_path=path,
+                )
+            ]
+
+        findings: list[DependencyFinding] = []
+        for dep in root.findall(".//{*}dependency"):
+            group = self._xml_text(dep, "groupId")
+            artifact = self._xml_text(dep, "artifactId")
+            version = self._xml_text(dep, "version")
+            if not group or not artifact:
+                continue
+            if not version:
+                findings.append(
+                    DependencyFinding(
+                        ecosystem="maven",
+                        name=f"{group}:{artifact}",
+                        requested_version=None,
+                        latest_version=None,
+                        status="managed",
+                        message="Dependency version is managed by the Maven parent or dependencyManagement.",
+                        manifest_path=path,
+                    )
+                )
+                continue
+            lookup = self.latest_maven(group, artifact)
+            findings.append(self._finding("maven", f"{group}:{artifact}", version, lookup, path, skipped))
+        return findings
+
+    def _finding(
+        self,
+        ecosystem: str,
+        name: str,
+        requested: str | None,
+        lookup: VersionLookup,
+        path: str,
+        skipped: list[str],
+    ) -> DependencyFinding:
+        if lookup.skipped_reason:
+            skipped.append(lookup.skipped_reason)
+            return DependencyFinding(
+                ecosystem=ecosystem, name=name, requested_version=requested,
+                latest_version=None, status="skipped",
+                message=f"Registry lookup skipped: {lookup.skipped_reason}.",
+                manifest_path=path,
+            )
+        if not lookup.latest_version:
+            return DependencyFinding(
+                ecosystem=ecosystem, name=name, requested_version=requested,
+                latest_version=None, status="missing",
+                message="Dependency was not found in the registry.",
+                manifest_path=path,
+            )
+        normalized = self._normalize_requested(requested)
+        status = "current" if normalized == lookup.latest_version else "outdated"
+        return DependencyFinding(
+            ecosystem=ecosystem,
+            name=name,
+            requested_version=requested,
+            latest_version=lookup.latest_version,
+            status=status,
+            message=(
+                "Dependency is current."
+                if status == "current"
+                else f"Dependency version differs from latest registry version {lookup.latest_version}."
+            ),
+            manifest_path=path,
+        )
+
+    def _cached(self, ecosystem: str, name: str, fn) -> VersionLookup:
+        key = (ecosystem, name.lower())
+        if key not in self._cache:
+            self._cache[key] = fn()
+        return self._cache[key]
+
+    def _latest_pypi(self, package: str) -> VersionLookup:
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"https://pypi.org/pypi/{package}/json")
+                if response.status_code == 404:
+                    return VersionLookup("pypi", package, None)
+                response.raise_for_status()
+                return VersionLookup("pypi", package, response.json().get("info", {}).get("version"))
+        except httpx.HTTPError as exc:
+            return VersionLookup("pypi", package, None, str(exc))
+
+    def _latest_npm(self, package: str) -> VersionLookup:
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"https://registry.npmjs.org/{package}")
+                if response.status_code == 404:
+                    return VersionLookup("npm", package, None)
+                response.raise_for_status()
+                latest = response.json().get("dist-tags", {}).get("latest")
+                return VersionLookup("npm", package, latest)
+        except httpx.HTTPError as exc:
+            return VersionLookup("npm", package, None, str(exc))
+
+    def _latest_maven(self, group: str, artifact: str) -> VersionLookup:
+        name = f"{group}:{artifact}"
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(
+                    "https://search.maven.org/solrsearch/select",
+                    params={"q": f'g:"{group}" AND a:"{artifact}"', "rows": 1, "wt": "json"},
+                )
+                response.raise_for_status()
+                docs = response.json().get("response", {}).get("docs", [])
+                latest = docs[0].get("latestVersion") if docs else None
+                return VersionLookup("maven", name, latest)
+        except httpx.HTTPError as exc:
+            return VersionLookup("maven", name, None, str(exc))
+
+    @staticmethod
+    def _xml_text(node: ET.Element, child: str) -> str | None:
+        found = node.find(f"{{*}}{child}")
+        if found is None or found.text is None:
+            return None
+        return found.text.strip() or None
+
+    @staticmethod
+    def _normalize_requested(version: str | None) -> str | None:
+        if not version:
+            return None
+        return version.strip().lstrip("^~=> <")
+
+
+dependency_research_service = DependencyResearchService()

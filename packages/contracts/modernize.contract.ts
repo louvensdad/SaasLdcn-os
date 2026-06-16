@@ -1,6 +1,8 @@
 // Shared contract for the brownfield modernization feature (PASSO 3).
 // Mirrors apps/api/app/schemas/modernize.py.
 
+import type { GenerationValidationReport } from './generation-validation.contract';
+
 export type IngestSource = 'zip' | 'git';
 export type MigrationAction = 'migrate' | 'adapt' | 'encapsulate' | 'keep';
 export type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
@@ -71,4 +73,5 @@ export interface ModernizeGenerateResponse {
   written: boolean;
   degraded: boolean;
   errors: string[];
+  validation_report?: GenerationValidationReport | null;
 }

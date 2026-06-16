@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field
 
 from app.schemas.common import ApiModel
+from app.schemas.generation_validation import GenerationValidationReport
 
 IngestSource = Literal["zip", "git"]
 MigrationAction = Literal["migrate", "adapt", "encapsulate", "keep"]
@@ -89,3 +90,5 @@ class ModernizeGenerateResponse(ApiModel):
     written: bool = False
     degraded: bool = False
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    validation_report: GenerationValidationReport | None = None

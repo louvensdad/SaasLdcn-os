@@ -11,6 +11,7 @@ from app.schemas.modernize import (
     MigrationPlan,
 )
 from app.services.codebase_ingest_service import CodebaseIngestService
+from app.services.dependency_research_service import dependency_research_service
 
 # Architectural refactor (PASSO 3): produce a migration plan that maps every legacy
 # file into a clean-architecture target WITHOUT discarding the user's business
@@ -107,6 +108,11 @@ def compile_modernization_prompt(
         + "\n".join(f"- [{f.severity}] {f.path}:{f.line} {f.code}" for f in diagnosis.security_findings[:50]),
         "## Migration map (legacy -> target)\n"
         + "\n".join(f"- {m.legacy_path} -> {m.target_path} ({m.action})" for m in plan.mappings[:200]),
+        dependency_research_service.core_versions(type("DetectedStack", (), {
+            "framework": diagnosis.detected_stack,
+            "runtime": diagnosis.detected_stack,
+            "language": diagnosis.primary_language,
+        })()),
         localization_rules(locale),
         "## Legacy source (truncated)\n" + _legacy_snapshot(ingest_id, service, max_chars),
     ]

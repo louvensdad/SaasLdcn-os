@@ -4,6 +4,7 @@ from app.engines.agent_prompts import ORCHESTRATOR_SYSTEM_PROMPT
 from app.engines.llm.router import LLMRouter
 from app.schemas.llm import LLMRequest, ReasoningLevel
 from app.schemas.orchestrator import OrchestratorResult, ProjectSpec
+from app.services.dependency_research_service import dependency_research_service
 
 ORCHESTRATOR_ENGINE_VERSION = "0.1.0"
 CONFIDENCE_GATE = 0.85
@@ -98,6 +99,7 @@ def compile_mega_prompt(spec: ProjectSpec) -> str:
         f"- runtime: {stack.runtime}\n"
         f"- framework: {stack.framework}\n"
         f"- architecture: {stack.architecture}",
+        dependency_research_service.core_versions(stack),
         localization_rules(spec.locale),
         "## Assumptions (resolved silently-missing fields)\n"
         + "\n".join(f"- {a.field}: {a.assumed_value} ({a.reason})" for a in spec.assumptions),

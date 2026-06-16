@@ -3,6 +3,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from app.schemas.common import ApiModel
+from app.schemas.generation_validation import GenerationValidationReport
 from app.schemas.orchestrator import ClarifyingQuestion, ProjectSpec
 
 
@@ -47,5 +48,8 @@ class GenerateResponse(ApiModel):
     written: bool = False
     runs: list[AgentRunSummary] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    # Recoverable issues (territory drift, synthesized manifest) — files still written.
+    warnings: list[str] = Field(default_factory=list)
     # True when one or more agents were served by the deterministic MockAdapter.
     degraded: bool = False
+    validation_report: GenerationValidationReport | None = None

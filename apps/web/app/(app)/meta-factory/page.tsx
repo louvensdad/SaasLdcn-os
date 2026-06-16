@@ -20,6 +20,10 @@ import {
   type PriorAnswer,
   type ProjectSpec,
 } from '@/lib/api/meta-factory';
+import { ApiTestPanel } from '@/components/generation/api-test-panel';
+import { ExportPanel } from '@/components/generation/export-panel';
+import { ValidationReportPanel } from '@/components/generation/validation-report-panel';
+import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
 
 const PIPELINE_ROLES = ['contracts', 'backend', 'frontend', 'qa', 'devops', 'docs'] as const;
 import { useLocale } from '@/hooks/use-locale';
@@ -53,6 +57,7 @@ export default function MetaFactoryPage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [files, setFiles] = useState<GeneratedFile[]>([]);
   const [activeFile, setActiveFile] = useState<{ path: string; content: string } | null>(null);
+  const [validationReport, setValidationReport] = useState<GenerationValidationReport | null>(null);
 
   const [busy, setBusy] = useState<null | 'spec' | 'generate' | 'download' | 'file'>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +97,7 @@ export default function MetaFactoryPage() {
     setRuns([]);
     setFiles([]);
     setActiveFile(null);
+    setValidationReport(null);
     setStreamEvents([]);
     setEmittedPaths([]);
     setDegraded(false);
@@ -123,6 +129,8 @@ export default function MetaFactoryPage() {
           } else if (event.type === 'written') {
             writtenId = event.project_id;
             setProjectId(event.project_id);
+          } else if (event.type === 'validation_report') {
+            setValidationReport(event.report);
           } else if (event.type === 'done') {
             if (event.degraded) setDegraded(true);
             if (!event.ok && event.errors.length > 0) {
@@ -489,6 +497,23 @@ export default function MetaFactoryPage() {
                 {busy === 'download' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 {t('metaFactory.downloadZip')}
               </button>
+            </div>
+          )}
+
+          {projectId && validationReport && (
+            <div className="mt-6">
+              <ValidationReportPanel report={validationReport} />
+            </div>
+          )}
+
+          {projectId && (
+            <div className="mt-6 grid gap-4">
+              <ExportPanel
+                surface="meta-factory"
+                projectId={projectId}
+                defaultRepoName={(projectName.trim() || 'meta-factory-project').toLowerCase().replace(/[^a-z0-9_.-]+/g, '-')}
+              />
+              <ApiTestPanel surface="meta-factory" projectId={projectId} />
             </div>
           )}
 

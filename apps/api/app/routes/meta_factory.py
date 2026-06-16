@@ -8,9 +8,13 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.core.deps import CurrentUser
 from app.engines.factory_pipeline import iter_factory_pipeline, run_factory_pipeline
+from app.engines.generation_validation_engine import generation_validation_engine
+from app.engines.generated_project_quality_engine import GeneratedProjectQualityEngine
 from app.engines.llm.base import LLMError
 from app.services.user_key_session_service import user_key_session
 from app.engines.orchestrator_engine import compile_mega_prompt, run_orchestrator
+from app.schemas.api_collection import ApiCollectionResponse, GeneratedEndpointsResponse
+from app.schemas.generated_export import GeneratedProjectExportRequest, GeneratedProjectExportResponse, GitProvider
 from app.schemas.local_generation import (
     GeneratedFileContentResponse,
     GeneratedProjectFilesResponse,
@@ -23,12 +27,15 @@ from app.schemas.meta_factory import (
     OrchestrateRequest,
     OrchestrateResponse,
 )
+from app.services.api_collection_service import api_collection_service
 from app.services.generated_project_service import GeneratedProjectService
+from app.services.git_provider_service import git_provider_service
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter, ProjectWriteError
 
 router = APIRouter(tags=["meta-factory"])
 
 _generated_project_service = GeneratedProjectService()
+_quality_engine = GeneratedProjectQualityEngine()
 _SAFE_PROJECT_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
@@ -105,10 +112,14 @@ def generate(payload: GenerateRequest, user: CurrentUser) -> GenerateResponse:
     ]
 
     degraded = any(run.response.served_by_fallback for run in pipeline.runs)
-    response = GenerateResponse(ok=pipeline.ok, runs=runs, errors=pipeline.errors, degraded=degraded)
+    response = GenerateResponse(
+        ok=pipeline.ok, runs=runs, errors=pipeline.errors, warnings=pipeline.warnings, degraded=degraded
+    )
 
-    if payload.persist and pipeline.ok:
-        files = [f for run in pipeline.runs for f in run.parsed.files]
+    # Persist whatever was produced: a single failing agent must not discard the
+    # files the others generated correctly. ok still reflects per-agent failures.
+    files = [f for run in pipeline.runs for f in run.parsed.files]
+    if payload.persist and files:
         try:
             write_result = ProjectWriter().write(
                 files,
@@ -121,6 +132,7 @@ def generate(payload: GenerateRequest, user: CurrentUser) -> GenerateResponse:
         response.root_path = write_result.root_path
         response.file_count = write_result.file_count
         response.written = True
+        response.validation_report = generation_validation_engine.validate(_meta_project(write_result.project_id))
 
     return response
 
@@ -171,6 +183,11 @@ def generate_stream(payload: GenerateRequest, user: CurrentUser) -> StreamingRes
                 "root_path": write_result.root_path,
                 "file_count": write_result.file_count,
             })
+            validation = generation_validation_engine.validate(_meta_project(write_result.project_id))
+            yield _sse({
+                "type": "validation_report",
+                "report": validation.model_dump(mode="json"),
+            })
 
         yield _sse({
             "type": "done",
@@ -211,3 +228,78 @@ def prepare_meta_factory_download(project_id: str) -> PreparedDownloadResponse:
 def download_meta_factory_project(project_id: str) -> FileResponse:
     zip_path = _generated_project_service.download_path(_meta_project(project_id))
     return FileResponse(zip_path, media_type="application/zip", filename=f"{project_id}.zip")
+
+
+@router.post("/meta-factory/{project_id}/export/{provider}", response_model=GeneratedProjectExportResponse)
+def export_meta_factory_project(
+    project_id: str,
+    provider: GitProvider,
+    payload: GeneratedProjectExportRequest,
+    user: CurrentUser,
+) -> GeneratedProjectExportResponse:
+    return _export_generated_project(_meta_project(project_id), provider, payload)
+
+
+@router.get("/meta-factory/{project_id}/endpoints", response_model=GeneratedEndpointsResponse)
+def list_meta_factory_endpoints(project_id: str) -> GeneratedEndpointsResponse:
+    return api_collection_service.list_endpoints(_meta_project(project_id))
+
+
+@router.get("/meta-factory/{project_id}/api-collection", response_model=ApiCollectionResponse)
+def get_meta_factory_api_collection(
+    project_id: str,
+    format: str = Query("postman", pattern="^(postman|insomnia)$"),
+) -> ApiCollectionResponse:
+    return api_collection_service.collection(_meta_project(project_id), format)  # type: ignore[arg-type]
+
+
+def _export_generated_project(
+    project: dict,
+    provider: GitProvider,
+    payload: GeneratedProjectExportRequest,
+) -> GeneratedProjectExportResponse:
+    status_info = git_provider_service.status(provider)
+    if status_info.get("status") != "connected":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{provider} is not connected. Connect the provider in /settings#integrations before exporting.",
+        )
+
+    quality = _quality_engine.quality_check(project)
+    blockers = [
+        finding for finding in quality.get("security_findings", [])
+        if finding.get("severity") in {"high", "critical"}
+    ]
+    if blockers:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Export blocked by high or critical generated-project security findings.",
+        )
+
+    files = _generated_project_service.export_files(project)
+    repository = git_provider_service.create_repository(
+        provider,
+        namespace=payload.namespace,
+        repo_name=payload.repo_name,
+        visibility=payload.visibility,
+        branch=payload.branch,
+    )
+    repository = git_provider_service.push_initial_commit(
+        provider,
+        namespace=payload.namespace,
+        repo_name=payload.repo_name,
+        branch=payload.branch,
+        commit_message=payload.commit_message,
+        files=files,
+    )
+    return GeneratedProjectExportResponse(
+        provider=provider,
+        namespace=payload.namespace,
+        repo_name=payload.repo_name,
+        branch=payload.branch,
+        visibility=payload.visibility,
+        status=repository.get("status", "ready"),
+        repo_url=repository.get("repo_url"),
+        file_count=len(files),
+        message="Generated project exported successfully.",
+    )

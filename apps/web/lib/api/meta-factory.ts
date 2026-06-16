@@ -4,6 +4,7 @@ import {
   getAccessToken,
   refreshAccessToken,
 } from '@/lib/api/client';
+import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
 
 // Self-contained client for the meta-factory feature. It does NOT reuse the
 // global apiRequest because that has a 5s timeout — the generate call runs 6 LLM
@@ -68,6 +69,7 @@ export type FactoryEvent =
       errors: string[];
     }
   | { type: 'written'; project_id: string; root_path: string; file_count: number }
+  | { type: 'validation_report'; report: GenerationValidationReport }
   | { type: 'done'; ok: boolean; degraded: boolean; errors: string[] }
   | { type: 'error'; detail: string };
 
@@ -88,6 +90,7 @@ export interface GenerateResponse {
   runs: AgentRunSummary[];
   errors: string[];
   degraded: boolean;
+  validation_report?: GenerationValidationReport | null;
 }
 
 export interface GeneratedFile {

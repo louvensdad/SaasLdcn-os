@@ -18,6 +18,10 @@ import {
 } from '@/lib/api/modernize';
 import { useLocale } from '@/hooks/use-locale';
 import { UserKeyPanel } from '@/components/llm/user-key-panel';
+import { ApiTestPanel } from '@/components/generation/api-test-panel';
+import { ExportPanel } from '@/components/generation/export-panel';
+import { ValidationReportPanel } from '@/components/generation/validation-report-panel';
+import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
 
 type Tab = 'zip' | 'git';
 
@@ -41,6 +45,7 @@ export default function ModernizePage() {
   const [error, setError] = useState<string | null>(null);
   const [degraded, setDegraded] = useState(false);
   const [generated, setGenerated] = useState<{ project: string; count: number } | null>(null);
+  const [validationReport, setValidationReport] = useState<GenerationValidationReport | null>(null);
   const [useUserKey, setUseUserKey] = useState(false);
 
   async function ingest(promise: Promise<ModernizeResponse>) {
@@ -48,6 +53,7 @@ export default function ModernizePage() {
     setError(null);
     setResult(null);
     setGenerated(null);
+    setValidationReport(null);
     setDegraded(false);
     try {
       setResult(await promise);
@@ -74,6 +80,7 @@ export default function ModernizePage() {
         useUserKey,
       );
       setDegraded(res.degraded);
+      setValidationReport(res.validation_report ?? null);
       if (res.ok && res.project_id) {
         setGenerated({ project: res.project_id, count: res.file_count });
       } else if (res.errors.length > 0) {
@@ -262,10 +269,19 @@ export default function ModernizePage() {
           </div>
 
           {generated && (
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
-              <CheckCircle2 className="h-4 w-4" />
-              {t('modernize.generatedOk', { project: generated.project, count: generated.count })}
-            </div>
+            <>
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
+                <CheckCircle2 className="h-4 w-4" />
+                {t('modernize.generatedOk', { project: generated.project, count: generated.count })}
+              </div>
+              {validationReport && <ValidationReportPanel report={validationReport} />}
+              <ExportPanel
+                surface="modernize"
+                projectId={generated.project}
+                defaultRepoName={(projectName.trim() || 'modernized-project').toLowerCase().replace(/[^a-z0-9_.-]+/g, '-')}
+              />
+              <ApiTestPanel surface="modernize" projectId={generated.project} />
+            </>
           )}
         </section>
       )}
