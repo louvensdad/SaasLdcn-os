@@ -79,6 +79,7 @@ class ModernizeGenerateRequest(ApiModel):
     project_name: str = "modernized-project"
     user_model_choice: str | None = None
     persist: bool = True
+    use_user_key: bool = False
 
 
 class ModernizeGenerateResponse(ApiModel):

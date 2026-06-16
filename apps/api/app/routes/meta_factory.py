@@ -6,8 +6,10 @@ import re
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import FileResponse, StreamingResponse
 
+from app.core.deps import CurrentUser
 from app.engines.factory_pipeline import iter_factory_pipeline, run_factory_pipeline
 from app.engines.llm.base import LLMError
+from app.services.user_key_session_service import user_key_session
 from app.engines.orchestrator_engine import compile_mega_prompt, run_orchestrator
 from app.schemas.local_generation import (
     GeneratedFileContentResponse,
@@ -30,6 +32,21 @@ _generated_project_service = GeneratedProjectService()
 _SAFE_PROJECT_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
+def _resolve_api_key(user: dict, *, use_user_key: bool, user_model_choice: str | None) -> str | None:
+    """Resolve the caller's own LLM key when they opted in. Errors clearly if they
+    asked to use their key but none is in the session (never silently uses the
+    server key in that case)."""
+    if not use_user_key:
+        return None
+    key = user_key_session.resolve_for_model_choice(user["user_id"], user_model_choice)
+    if key is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No user API key in session for the selected provider. Add one in 'Use my own key' first.",
+        )
+    return key
+
+
 def _meta_project(project_id: str) -> dict:
     """Resolve a generated meta-factory project to the dict shape that
     GeneratedProjectService expects. Stateless: the directory name IS the
@@ -43,10 +60,11 @@ def _meta_project(project_id: str) -> dict:
 
 
 @router.post("/meta-factory/orchestrate", response_model=OrchestrateResponse)
-def orchestrate(payload: OrchestrateRequest) -> OrchestrateResponse:
+def orchestrate(payload: OrchestrateRequest, user: CurrentUser) -> OrchestrateResponse:
     """Intent -> ProjectSpec (PASSO 2). May return open questions to refine."""
+    api_key = _resolve_api_key(user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice)
     try:
-        result = run_orchestrator(payload.raw_intent, payload.prior_answers)
+        result = run_orchestrator(payload.raw_intent, payload.prior_answers, api_key=api_key)
     except LLMError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except ValueError as exc:
@@ -60,12 +78,13 @@ def orchestrate(payload: OrchestrateRequest) -> OrchestrateResponse:
 
 
 @router.post("/meta-factory/generate", response_model=GenerateResponse)
-def generate(payload: GenerateRequest) -> GenerateResponse:
+def generate(payload: GenerateRequest, user: CurrentUser) -> GenerateResponse:
     """Compile the Mega-Prompt and run the API-First agent pipeline (PASSO 4),
     then optionally write the result to generated-projects (PASSO 5)."""
+    api_key = _resolve_api_key(user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice)
     mega = compile_mega_prompt(payload.spec)
     try:
-        pipeline = run_factory_pipeline(mega, user_model_choice=payload.user_model_choice)
+        pipeline = run_factory_pipeline(mega, user_model_choice=payload.user_model_choice, api_key=api_key)
     except LLMError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -106,7 +125,7 @@ def _sse(event: dict) -> str:
 
 
 @router.post("/meta-factory/generate/stream")
-def generate_stream(payload: GenerateRequest) -> StreamingResponse:
+def generate_stream(payload: GenerateRequest, user: CurrentUser) -> StreamingResponse:
     """Stream the API-First pipeline as Server-Sent Events so the UI can render a
     real-time progress panel (directory tree, code, security/lint gate checks).
 
@@ -114,12 +133,13 @@ def generate_stream(payload: GenerateRequest) -> StreamingResponse:
     the frontend consumes the stream via fetch + ReadableStream. Events match
     iter_factory_pipeline, plus a terminal `written` (when persisted) and `done`.
     """
+    api_key = _resolve_api_key(user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice)
     mega = compile_mega_prompt(payload.spec)
 
     def event_source():
         result = None
         try:
-            for event in iter_factory_pipeline(mega, user_model_choice=payload.user_model_choice):
+            for event in iter_factory_pipeline(mega, user_model_choice=payload.user_model_choice, api_key=api_key):
                 if event.get("type") == "result":
                     result = event["result"]
                     continue

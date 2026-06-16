@@ -77,23 +77,28 @@ def configure_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
+        # Build the safe detail shape once and reuse it for BOTH the log and the
+        # response. Never log exc.errors() directly: its `input` field echoes the
+        # raw request value, which would leak secrets (API keys, passwords, tokens)
+        # into server logs.
+        safe_details = [
+            {
+                "location": list(error["loc"]),
+                "message": error["msg"],
+                "type": error["type"],
+            }
+            for error in exc.errors()
+        ]
         logger.warning(
             "Validation error on %s %s: %s",
             request.method,
             request.url.path,
-            exc.errors(),
+            safe_details,
         )
         payload = _build_error_payload(
             code="validation_error",
             message="Request validation failed.",
-            details=[
-                {
-                    "location": list(error["loc"]),
-                    "message": error["msg"],
-                    "type": error["type"],
-                }
-                for error in exc.errors()
-            ],
+            details=safe_details,
         )
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -32,7 +32,10 @@ MOCK_STOPPED_BY = "mock_fallback"
 class MockAdapter(LLMAdapter):
     """Deterministic offline generator used as the graceful LLM fallback."""
 
-    def complete(self, model: str, req: LLMRequest) -> LLMResponse:
+    def complete(self, model: str, req: LLMRequest, *, api_key: str | None = None) -> LLMResponse:
+        # api_key is accepted for interface parity but ignored: the mock never
+        # calls a provider, so a user key is neither used nor retained here.
+        del api_key
         provider = Provider(MODEL_REGISTRY.get(model, {}).get("provider", "anthropic"))
 
         if req.json_schema is not None:

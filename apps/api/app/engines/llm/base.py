@@ -19,4 +19,8 @@ class LLMAdapter(ABC):
     """
 
     @abstractmethod
-    def complete(self, model: str, req: LLMRequest) -> LLMResponse: ...
+    def complete(self, model: str, req: LLMRequest, *, api_key: str | None = None) -> LLMResponse:
+        """Run the request. When `api_key` is given (a user-owned key), the adapter
+        builds an EPHEMERAL client from it and must not cache it on the instance;
+        otherwise it uses the shared, env-configured client."""
+        ...

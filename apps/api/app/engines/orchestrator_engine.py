@@ -26,6 +26,7 @@ def run_orchestrator(
     prior_answers: list[dict] | None = None,
     *,
     router: LLMRouter | None = None,
+    api_key: str | None = None,
 ) -> OrchestratorResult:
     """Stage 1: intent -> ProjectSpec via the orchestrator system prompt.
 
@@ -44,6 +45,7 @@ def run_orchestrator(
             json_schema=ProjectSpec.model_json_schema(),
         ),
         agent_role="orchestrator",
+        api_key=api_key,
     )
 
     if response.parsed is None:

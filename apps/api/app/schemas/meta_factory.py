@@ -10,6 +10,9 @@ class OrchestrateRequest(ApiModel):
     raw_intent: str
     prior_answers: list[dict] = Field(default_factory=list)
     user_model_choice: str | None = None
+    # When true, use the caller's own LLM key (from the ephemeral vault) instead
+    # of the server's. A user-key run never silently falls back to the mock.
+    use_user_key: bool = False
 
 
 class OrchestrateResponse(ApiModel):
@@ -25,6 +28,7 @@ class GenerateRequest(ApiModel):
     project_name: str = "meta-factory-project"
     user_model_choice: str | None = None
     persist: bool = True
+    use_user_key: bool = False
 
 
 class AgentRunSummary(ApiModel):

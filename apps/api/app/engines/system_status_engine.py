@@ -53,7 +53,6 @@ class SystemStatusEngine:
             "active_templates": templates,
             "active_skills": skills,
             "planned_extensions": [
-                _planned_extension("user_key_boost", "User Key Boost", "Placeholder endpoints return 501; no user key storage is active."),
                 _planned_extension("pdf_contract_input", "PDF Contract Input", "Placeholder upload/report endpoints return 501; no PDF processing is active."),
             ],
             "registry_health": [

@@ -43,11 +43,20 @@ class LLMRouter:
         *,
         user_choice: str | None = None,
         agent_role: str | None = None,
+        api_key: str | None = None,
     ) -> LLMResponse:
         model = resolve_model(user_choice=user_choice, agent_role=agent_role)
         meta = MODEL_REGISTRY[model]
         provider = meta["provider"]
         settings = get_settings()
+
+        # A user-owned key forces a real run with that key: never silently mock,
+        # so the user learns if their own key is invalid / out of credit.
+        if api_key:
+            adapter = self._adapters.get(provider)
+            if adapter is None:
+                raise LLMError(f"No adapter registered for provider '{provider}' (model {model}).")
+            return adapter.complete(model, req, api_key=api_key)
 
         if settings.force_mock:
             return self._mock.complete(model, req)

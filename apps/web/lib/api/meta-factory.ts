@@ -177,16 +177,16 @@ function extractError(body: unknown, status: number): string {
 }
 
 export const metaFactoryClient = {
-  orchestrate: (raw_intent: string, prior_answers: PriorAnswer[] = [], user_model_choice?: string) =>
+  orchestrate: (raw_intent: string, prior_answers: PriorAnswer[] = [], user_model_choice?: string, use_user_key = false) =>
     request<OrchestrateResponse>(
       '/api/meta-factory/orchestrate',
-      { method: 'POST', body: JSON.stringify({ raw_intent, prior_answers, user_model_choice }) },
+      { method: 'POST', body: JSON.stringify({ raw_intent, prior_answers, user_model_choice, use_user_key }) },
       FIVE_MIN,
     ),
-  generate: (spec: ProjectSpec, project_name: string, user_model_choice?: string) =>
+  generate: (spec: ProjectSpec, project_name: string, user_model_choice?: string, use_user_key = false) =>
     request<GenerateResponse>(
       '/api/meta-factory/generate',
-      { method: 'POST', body: JSON.stringify({ spec, project_name, user_model_choice, persist: true }) },
+      { method: 'POST', body: JSON.stringify({ spec, project_name, user_model_choice, persist: true, use_user_key }) },
       TEN_MIN,
     ),
   // Real-time generation: streams the API-First pipeline as Server-Sent Events.
@@ -196,6 +196,7 @@ export const metaFactoryClient = {
     project_name: string,
     onEvent: (event: FactoryEvent) => void,
     user_model_choice?: string,
+    use_user_key = false,
   ): Promise<void> => {
     const run = async (allowRefresh: boolean): Promise<void> => {
       const accessToken = getAccessToken();
@@ -207,7 +208,7 @@ export const metaFactoryClient = {
         },
         credentials: 'include',
         cache: 'no-store',
-        body: JSON.stringify({ spec, project_name, user_model_choice, persist: true }),
+        body: JSON.stringify({ spec, project_name, user_model_choice, persist: true, use_user_key }),
       });
       if (res.status === 401 && allowRefresh && (await refreshAccessToken())) {
         return run(false);

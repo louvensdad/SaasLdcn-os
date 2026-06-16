@@ -139,8 +139,9 @@ def modernize_with_factory(
     *,
     locale: str = "pt-BR",
     user_model_choice: str | None = None,
+    api_key: str | None = None,
 ):
     """Run the API-First factory over the modernization Mega-Prompt. Falls back to
     the deterministic mock when no LLM is available (same as greenfield)."""
     mega = compile_modernization_prompt(ingest_id, inventory, diagnosis, plan, service, locale=locale)
-    return run_factory_pipeline(mega, user_model_choice=user_model_choice)
+    return run_factory_pipeline(mega, user_model_choice=user_model_choice, api_key=api_key)

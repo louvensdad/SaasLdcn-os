@@ -65,13 +65,13 @@ export const modernizeClient = {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ git_url }) },
       FIVE_MIN,
     ),
-  generate: (ingest_id: string, project_name: string, user_model_choice?: string) =>
+  generate: (ingest_id: string, project_name: string, user_model_choice?: string, use_user_key = false) =>
     send<ModernizeGenerateResponse>(
       '/api/modernize/generate',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ingest_id, project_name, user_model_choice, persist: true }),
+        body: JSON.stringify({ ingest_id, project_name, user_model_choice, persist: true, use_user_key }),
       },
       TEN_MIN,
     ),

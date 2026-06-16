@@ -22,9 +22,7 @@ class OpenAIAdapter(LLMAdapter):
     def __init__(self, client=None):
         self._client = client
 
-    def _get_client(self):
-        if self._client is not None:
-            return self._client
+    def _import_sdk(self):
         try:
             import openai  # lazy: optional dependency
         except ImportError as exc:  # pragma: no cover - environment dependent
@@ -32,7 +30,15 @@ class OpenAIAdapter(LLMAdapter):
                 "The 'openai' package is required for OpenAIAdapter. "
                 "Install it (pip install openai) and set OPENAI_API_KEY."
             ) from exc
-        self._client = openai.OpenAI()
+        return openai
+
+    def _get_client(self, api_key: str | None = None):
+        if api_key:
+            # User-owned key: ephemeral client, never cached on the shared adapter.
+            return self._import_sdk().OpenAI(api_key=api_key)
+        if self._client is not None:
+            return self._client
+        self._client = self._import_sdk().OpenAI()
         return self._client
 
     def _build_params(self, model: str, req: LLMRequest, *, supports_temperature: bool) -> dict:
@@ -56,9 +62,9 @@ class OpenAIAdapter(LLMAdapter):
             }
         return params
 
-    def complete(self, model: str, req: LLMRequest) -> LLMResponse:
+    def complete(self, model: str, req: LLMRequest, *, api_key: str | None = None) -> LLMResponse:
         meta = MODEL_REGISTRY.get(model, {})
-        client = self._get_client()
+        client = self._get_client(api_key)
         params = self._build_params(model, req, supports_temperature=meta.get("supports_temperature", True))
 
         try:

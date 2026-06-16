@@ -14,7 +14,7 @@ ITEMS: list[dict[str, Any]] = [
     ("architecture_center", "Architecture Center", "visualization", "IMPLEMENTED", "Current platform architecture overview from local knowledge."),
     ("roadmap_center", "Roadmap Center", "module", "IMPLEMENTED", "Governed roadmap grouped by lifecycle status."),
     ("local_generation", "Local Generation Download Preview", "engine", "IMPLEMENTED", "Safe local generation inspection and ZIP preparation."),
-    ("user_key_boost", "User Key Boost", "extension", "PLANNED", "Temporary user-owned AI key boost is planned with no key material active in V1 Foundation."),
+    ("user_key_boost", "User Key Boost", "extension", "IMPLEMENTED", "Bring-your-own LLM key per session, held only in encrypted RAM (never persisted/logged) and cleared on logout."),
     ("git_export", "Git Provider Export", "extension", "IMPLEMENTED", "Self-service GitHub and GitLab connection, repository creation, initial commit, and push."),
     ("pdf_contract_input", "PDF Contract Input", "extension", "PLANNED", "PDF contract context upload and embedded text extraction are planned without OCR or auto-generation."),
     ("agent_runtime", "Agent Runtime", "module", "FUTURE", "Agents remain explicitly out of scope."),

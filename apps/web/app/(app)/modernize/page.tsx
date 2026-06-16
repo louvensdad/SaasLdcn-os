@@ -17,6 +17,7 @@ import {
   type ModernizeResponse,
 } from '@/lib/api/modernize';
 import { useLocale } from '@/hooks/use-locale';
+import { UserKeyPanel } from '@/components/llm/user-key-panel';
 
 type Tab = 'zip' | 'git';
 
@@ -40,6 +41,7 @@ export default function ModernizePage() {
   const [error, setError] = useState<string | null>(null);
   const [degraded, setDegraded] = useState(false);
   const [generated, setGenerated] = useState<{ project: string; count: number } | null>(null);
+  const [useUserKey, setUseUserKey] = useState(false);
 
   async function ingest(promise: Promise<ModernizeResponse>) {
     setBusy('ingest');
@@ -68,6 +70,8 @@ export default function ModernizePage() {
       const res = await modernizeClient.generate(
         result.inventory.ingest_id,
         projectName.trim() || 'modernized-project',
+        undefined,
+        useUserKey,
       );
       setDegraded(res.degraded);
       if (res.ok && res.project_id) {
@@ -228,6 +232,8 @@ export default function ModernizePage() {
               ))}
             </ul>
           </details>
+
+          <UserKeyPanel enabled={useUserKey} onEnabledChange={setUseUserKey} />
 
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm text-muted-foreground">

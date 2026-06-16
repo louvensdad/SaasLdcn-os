@@ -57,6 +57,7 @@ def iter_factory_pipeline(
     *,
     router: LLMRouter | None = None,
     user_model_choice: str | None = None,
+    api_key: str | None = None,
 ) -> Iterator[dict]:
     """Run the API-First agent chain, yielding progress events as they happen.
 
@@ -91,6 +92,7 @@ def iter_factory_pipeline(
             _agent_request(AGENT_PROMPTS[role], context),
             user_choice=user_model_choice,
             agent_role=role,
+            api_key=api_key,
         )
         parsed = parse_agent_output(response.text, agent_role=role)
         result.runs.append(
@@ -142,6 +144,7 @@ def run_factory_pipeline(
     *,
     router: LLMRouter | None = None,
     user_model_choice: str | None = None,
+    api_key: str | None = None,
     on_event: Callable[[dict], None] | None = None,
 ) -> PipelineResult:
     """Run the API-First agent chain to completion.
@@ -152,7 +155,7 @@ def run_factory_pipeline(
     """
     result = PipelineResult()
     for event in iter_factory_pipeline(
-        mega_prompt, router=router, user_model_choice=user_model_choice
+        mega_prompt, router=router, user_model_choice=user_model_choice, api_key=api_key
     ):
         if event.get("type") == "result":
             result = event["result"]

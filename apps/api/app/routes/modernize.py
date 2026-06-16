@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
+from app.core.deps import CurrentUser
 from app.engines.codebase_analysis_engine import analyze, build_inventory
 from app.engines.modernization_engine import build_migration_plan, modernize_with_factory
 from app.schemas.modernize import (
@@ -17,6 +18,7 @@ from app.services.codebase_ingest_service import (
     codebase_ingest_service,
 )
 from app.services.project_writer import ProjectWriter, ProjectWriteError
+from app.services.user_key_session_service import user_key_session
 
 router = APIRouter(tags=["modernize"])
 service = codebase_ingest_service
@@ -58,10 +60,19 @@ def ingest_git(payload: IngestGitRequest) -> ModernizeResponse:
 
 
 @router.post("/modernize/generate", response_model=ModernizeGenerateResponse)
-def modernize_generate(payload: ModernizeGenerateRequest) -> ModernizeGenerateResponse:
+def modernize_generate(payload: ModernizeGenerateRequest, user: CurrentUser) -> ModernizeGenerateResponse:
     meta = _INGESTS.get(payload.ingest_id)
     if meta is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown ingest id.")
+
+    api_key = None
+    if payload.use_user_key:
+        api_key = user_key_session.resolve_for_model_choice(user["user_id"], payload.user_model_choice)
+        if api_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No user API key in session for the selected provider. Add one in 'Use my own key' first.",
+            )
 
     try:
         inventory = build_inventory(payload.ingest_id, meta["source"], meta["skipped"], service)
@@ -71,7 +82,8 @@ def modernize_generate(payload: ModernizeGenerateRequest) -> ModernizeGenerateRe
     diagnosis = analyze(payload.ingest_id, inventory, service)
     plan = build_migration_plan(inventory, diagnosis)
     pipeline = modernize_with_factory(
-        payload.ingest_id, inventory, diagnosis, plan, service, user_model_choice=payload.user_model_choice
+        payload.ingest_id, inventory, diagnosis, plan, service,
+        user_model_choice=payload.user_model_choice, api_key=api_key,
     )
     degraded = any(run.response.served_by_fallback for run in pipeline.runs)
 

@@ -26,9 +26,7 @@ class AnthropicAdapter(LLMAdapter):
     def __init__(self, client=None):
         self._client = client
 
-    def _get_client(self):
-        if self._client is not None:
-            return self._client
+    def _import_sdk(self):
         try:
             import anthropic  # lazy: optional dependency
         except ImportError as exc:  # pragma: no cover - environment dependent
@@ -36,7 +34,15 @@ class AnthropicAdapter(LLMAdapter):
                 "The 'anthropic' package is required for AnthropicAdapter. "
                 "Install it (pip install anthropic) and set ANTHROPIC_API_KEY."
             ) from exc
-        self._client = anthropic.Anthropic()
+        return anthropic
+
+    def _get_client(self, api_key: str | None = None):
+        if api_key:
+            # User-owned key: ephemeral client, never cached on the shared adapter.
+            return self._import_sdk().Anthropic(api_key=api_key)
+        if self._client is not None:
+            return self._client
+        self._client = self._import_sdk().Anthropic()
         return self._client
 
     def _wrap_xml(self, req: LLMRequest) -> str:
@@ -66,8 +72,8 @@ class AnthropicAdapter(LLMAdapter):
             "messages": [{"role": "user", "content": self._wrap_xml(req)}],
         }
 
-    def complete(self, model: str, req: LLMRequest) -> LLMResponse:
-        client = self._get_client()
+    def complete(self, model: str, req: LLMRequest, *, api_key: str | None = None) -> LLMResponse:
+        client = self._get_client(api_key)
         params = self._build_params(model, req)
 
         use_beta = model == "claude-fable-5"

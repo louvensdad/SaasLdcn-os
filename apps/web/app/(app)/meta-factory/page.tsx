@@ -24,6 +24,7 @@ import {
 const PIPELINE_ROLES = ['contracts', 'backend', 'frontend', 'qa', 'devops', 'docs'] as const;
 import { useLocale } from '@/hooks/use-locale';
 import { LOCALES as AVAILABLE_LOCALES } from '@/lib/i18n';
+import { UserKeyPanel } from '@/components/llm/user-key-panel';
 
 const MODELS: ReadonlyArray<{ id: string; label: string }> = [
   { id: '', label: 'Auto (por papel)' },
@@ -60,12 +61,13 @@ export default function MetaFactoryPage() {
   const [streamEvents, setStreamEvents] = useState<FactoryEvent[]>([]);
   const [emittedPaths, setEmittedPaths] = useState<string[]>([]);
   const [degraded, setDegraded] = useState(false);
+  const [useUserKey, setUseUserKey] = useState(false);
 
   async function handleOrchestrate(priorAnswers: PriorAnswer[] = []) {
     setBusy('spec');
     setError(null);
     try {
-      const result = await metaFactoryClient.orchestrate(intent, priorAnswers, model || undefined);
+      const result = await metaFactoryClient.orchestrate(intent, priorAnswers, model || undefined, useUserKey);
       setSpec(result.spec);
       setQuestions(result.open_questions);
     } catch (err) {
@@ -131,6 +133,7 @@ export default function MetaFactoryPage() {
           }
         },
         model || undefined,
+        useUserKey,
       );
       if (writtenId) {
         const listing = await metaFactoryClient.listFiles(writtenId);
@@ -258,6 +261,9 @@ export default function MetaFactoryPage() {
             {busy === 'spec' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {t('metaFactory.generateSpec')}
           </button>
+        </div>
+        <div className="mt-4">
+          <UserKeyPanel enabled={useUserKey} onEnabledChange={setUseUserKey} />
         </div>
       </section>
 
