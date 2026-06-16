@@ -15,10 +15,13 @@ import {
   metaFactoryClient,
   type AgentRunSummary,
   type ClarifyingQuestion,
+  type FactoryEvent,
   type GeneratedFile,
   type PriorAnswer,
   type ProjectSpec,
 } from '@/lib/api/meta-factory';
+
+const PIPELINE_ROLES = ['contracts', 'backend', 'frontend', 'qa', 'devops', 'docs'] as const;
 import { useLocale } from '@/hooks/use-locale';
 import { LOCALES as AVAILABLE_LOCALES } from '@/lib/i18n';
 
@@ -53,6 +56,11 @@ export default function MetaFactoryPage() {
   const [busy, setBusy] = useState<null | 'spec' | 'generate' | 'download' | 'file'>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Real-time generation state (Pillar 3).
+  const [streamEvents, setStreamEvents] = useState<FactoryEvent[]>([]);
+  const [emittedPaths, setEmittedPaths] = useState<string[]>([]);
+  const [degraded, setDegraded] = useState(false);
+
   async function handleOrchestrate(priorAnswers: PriorAnswer[] = []) {
     setBusy('spec');
     setError(null);
@@ -82,18 +90,50 @@ export default function MetaFactoryPage() {
     setRuns([]);
     setFiles([]);
     setActiveFile(null);
+    setStreamEvents([]);
+    setEmittedPaths([]);
+    setDegraded(false);
+
+    // User-chosen language wins over whatever the orchestrator inferred — this
+    // drives the non-negotiable localization rules injected into the Mega-Prompt.
+    const localizedSpec = { ...spec, locale };
+    const liveRuns = new Map<string, AgentRunSummary>();
+    let writtenId: string | null = null;
+
     try {
-      // User-chosen language wins over whatever the orchestrator inferred — this
-      // drives the non-negotiable localization rules injected into the Mega-Prompt.
-      const localizedSpec = { ...spec, locale };
-      const result = await metaFactoryClient.generate(localizedSpec, projectName.trim() || 'meta-factory-project', model || undefined);
-      setRuns(result.runs);
-      if (result.errors.length > 0) {
-        setError(t('metaFactory.error.generationWarnings', { errors: result.errors.slice(0, 3).join(' · ') }));
-      }
-      if (result.project_id) {
-        setProjectId(result.project_id);
-        const listing = await metaFactoryClient.listFiles(result.project_id);
+      await metaFactoryClient.generateStream(
+        localizedSpec,
+        projectName.trim() || 'meta-factory-project',
+        (event) => {
+          setStreamEvents((prev) => [...prev, event]);
+          if (event.type === 'file_emitted') {
+            setEmittedPaths((prev) => (prev.includes(event.path) ? prev : [...prev, event.path]));
+          } else if (event.type === 'agent_finished') {
+            liveRuns.set(event.role, {
+              role: event.role,
+              model: event.model,
+              file_count: event.file_count,
+              stopped_by: event.stopped_by,
+              errors: event.errors,
+            });
+            setRuns(Array.from(liveRuns.values()));
+            if (event.degraded) setDegraded(true);
+          } else if (event.type === 'written') {
+            writtenId = event.project_id;
+            setProjectId(event.project_id);
+          } else if (event.type === 'done') {
+            if (event.degraded) setDegraded(true);
+            if (!event.ok && event.errors.length > 0) {
+              setError(t('metaFactory.error.generationWarnings', { errors: event.errors.slice(0, 3).join(' · ') }));
+            }
+          } else if (event.type === 'error') {
+            setError(event.detail);
+          }
+        },
+        model || undefined,
+      );
+      if (writtenId) {
+        const listing = await metaFactoryClient.listFiles(writtenId);
         setFiles(listing.files);
       }
     } catch (err) {
@@ -101,6 +141,17 @@ export default function MetaFactoryPage() {
     } finally {
       setBusy(null);
     }
+  }
+
+  function roleState(role: string): 'pending' | 'running' | 'passed' | 'failed' {
+    let state: 'pending' | 'running' | 'passed' | 'failed' = 'pending';
+    for (const event of streamEvents) {
+      if ('role' in event && event.role === role) {
+        if (event.type === 'agent_started') state = 'running';
+        if (event.type === 'gate_check') state = event.status === 'passed' ? 'passed' : 'failed';
+      }
+    }
+    return state;
   }
 
   async function handleOpenFile(path: string) {
@@ -301,6 +352,90 @@ export default function MetaFactoryPage() {
               {busy === 'generate' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
               {t('metaFactory.generateProject')}
             </button>
+          </div>
+        </section>
+      )}
+
+      {/* Live progress — real-time pipeline (Pillar 3) */}
+      {(busy === 'generate' || streamEvents.length > 0) && (
+        <section className="rounded-2xl border border-border/60 bg-card/60 p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              {busy === 'generate' ? (
+                <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              )}
+              {t('metaFactory.liveProgress')}
+            </h2>
+            {degraded && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-600 dark:text-amber-300">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {t('metaFactory.degradedMode')}
+              </span>
+            )}
+          </div>
+
+          {/* Agent pipeline status */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            {PIPELINE_ROLES.map((role) => {
+              const state = roleState(role);
+              const styles = {
+                pending: 'border-border/60 text-muted-foreground',
+                running: 'border-indigo-500/40 bg-indigo-500/10 text-indigo-500',
+                passed: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                failed: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+              }[state];
+              return (
+                <span key={role} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${styles}`}>
+                  {state === 'running' && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {state === 'passed' && <CheckCircle2 className="h-3 w-3" />}
+                  {state === 'failed' && <AlertTriangle className="h-3 w-3" />}
+                  {t(`metaFactory.role.${role}`)}
+                </span>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
+            {/* Directory tree growing live */}
+            <div className="max-h-72 overflow-auto rounded-xl border border-border/60 bg-background/40 p-3 text-xs leading-relaxed">
+              <p className="mb-2 font-semibold uppercase tracking-wide text-muted-foreground">{t('metaFactory.directoryTree')}</p>
+              {emittedPaths.length === 0 ? (
+                <p className="text-muted-foreground">{t('metaFactory.waitingFiles')}</p>
+              ) : (
+                <ul className="flex flex-col gap-0.5 font-mono">
+                  {[...emittedPaths].sort().map((path) => (
+                    <li key={path} className="flex items-center gap-1.5 truncate">
+                      <FileCode2 className="h-3 w-3 shrink-0 opacity-50" />
+                      <span className="truncate">{path}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Gate checks (security/lint) */}
+            <div className="max-h-72 overflow-auto rounded-xl border border-border/60 bg-background/40 p-3 text-xs leading-relaxed">
+              <p className="mb-2 font-semibold uppercase tracking-wide text-muted-foreground">{t('metaFactory.gateChecks')}</p>
+              <ul className="flex flex-col gap-1">
+                {streamEvents
+                  .filter((e): e is Extract<FactoryEvent, { type: 'gate_check' }> => e.type === 'gate_check')
+                  .map((e, i) => (
+                    <li key={`${e.role}-${i}`} className="flex items-start gap-1.5">
+                      {e.status === 'passed' ? (
+                        <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
+                      ) : (
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                      )}
+                      <span>
+                        <span className="font-medium">{t(`metaFactory.role.${e.role}`)}</span>{' '}
+                        <span className="text-muted-foreground">{e.detail}</span>
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
           </div>
         </section>
       )}

@@ -108,6 +108,49 @@ def test_orchestrate_endpoint_degraded_with_force_mock(client):
         settings.force_mock = previous
 
 
+def _parse_sse(text: str) -> list[dict]:
+    import json as _json
+    return [
+        _json.loads(line[len("data: "):])
+        for line in text.splitlines()
+        if line.startswith("data: ")
+    ]
+
+
+def test_generate_stream_emits_progress_events(client):
+    settings = get_settings()
+    previous = settings.force_mock
+    settings.force_mock = True
+    try:
+        orchestrate = client.post(
+            "/api/meta-factory/orchestrate",
+            json={"raw_intent": "API de catálogo em FastAPI."},
+        ).json()
+        response = client.post(
+            "/api/meta-factory/generate/stream",
+            json={"spec": orchestrate["spec"], "project_name": "stream-demo", "persist": True},
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse(response.text)
+        types = {e["type"] for e in events}
+        assert {"agent_started", "file_emitted", "gate_check", "agent_finished", "written", "done"} <= types
+
+        # Each pipeline role announces a start.
+        started = {e["role"] for e in events if e["type"] == "agent_started"}
+        assert set(PIPELINE_ORDER) <= started
+
+        done = next(e for e in events if e["type"] == "done")
+        assert done["ok"] is True
+        assert done["degraded"] is True
+
+        written = next(e for e in events if e["type"] == "written")
+        assert written["project_id"]
+        assert written["file_count"] > 0
+    finally:
+        settings.force_mock = previous
+
+
 def test_generate_endpoint_writes_project_in_mock_mode(client):
     settings = get_settings()
     previous = settings.force_mock

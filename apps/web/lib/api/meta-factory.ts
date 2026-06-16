@@ -51,7 +51,25 @@ export interface OrchestrateResponse {
   stage: string;
   spec: ProjectSpec;
   open_questions: ClarifyingQuestion[];
+  degraded: boolean;
 }
+
+export type FactoryEvent =
+  | { type: 'agent_started'; role: string }
+  | { type: 'file_emitted'; role: string; path: string; language: string }
+  | { type: 'gate_check'; role: string; check: string; status: 'passed' | 'failed'; detail: string }
+  | {
+      type: 'agent_finished';
+      role: string;
+      model: string;
+      stopped_by: string;
+      degraded: boolean;
+      file_count: number;
+      errors: string[];
+    }
+  | { type: 'written'; project_id: string; root_path: string; file_count: number }
+  | { type: 'done'; ok: boolean; degraded: boolean; errors: string[] }
+  | { type: 'error'; detail: string };
 
 export interface AgentRunSummary {
   role: string;
@@ -69,6 +87,7 @@ export interface GenerateResponse {
   written: boolean;
   runs: AgentRunSummary[];
   errors: string[];
+  degraded: boolean;
 }
 
 export interface GeneratedFile {
@@ -170,6 +189,50 @@ export const metaFactoryClient = {
       { method: 'POST', body: JSON.stringify({ spec, project_name, user_model_choice, persist: true }) },
       TEN_MIN,
     ),
+  // Real-time generation: streams the API-First pipeline as Server-Sent Events.
+  // Consumed via fetch + ReadableStream (POST carries the full spec in the body).
+  generateStream: async (
+    spec: ProjectSpec,
+    project_name: string,
+    onEvent: (event: FactoryEvent) => void,
+    user_model_choice?: string,
+  ): Promise<void> => {
+    const run = async (allowRefresh: boolean): Promise<void> => {
+      const accessToken = getAccessToken();
+      const res = await fetch(`${API_BASE_URL}/api/meta-factory/generate/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ spec, project_name, user_model_choice, persist: true }),
+      });
+      if (res.status === 401 && allowRefresh && (await refreshAccessToken())) {
+        return run(false);
+      }
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const dataLine = frame.split('\n').find((line) => line.startsWith('data: '));
+          if (dataLine) onEvent(JSON.parse(dataLine.slice(6)) as FactoryEvent);
+        }
+      }
+    };
+    await run(true);
+  },
   listFiles: (projectId: string) =>
     request<GeneratedFilesResponse>(`/api/meta-factory/${projectId}/files`, undefined, 30_000),
   fileContent: (projectId: string, path: string) =>
