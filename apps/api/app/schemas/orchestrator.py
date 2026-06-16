@@ -61,3 +61,5 @@ class OrchestratorResult(BaseModel):
     stage: str  # "CLARIFY" | "READY_TO_COMPILE"
     spec: ProjectSpec
     open_questions: list[ClarifyingQuestion] = Field(default_factory=list)
+    # True when the deterministic MockAdapter served this turn (LLM unavailable).
+    degraded: bool = False

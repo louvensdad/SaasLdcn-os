@@ -16,6 +16,8 @@ class OrchestrateResponse(ApiModel):
     stage: str
     spec: ProjectSpec
     open_questions: list[ClarifyingQuestion] = Field(default_factory=list)
+    # True when the deterministic MockAdapter served this turn (LLM unavailable).
+    degraded: bool = False
 
 
 class GenerateRequest(ApiModel):
@@ -41,3 +43,5 @@ class GenerateResponse(ApiModel):
     written: bool = False
     runs: list[AgentRunSummary] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    # True when one or more agents were served by the deterministic MockAdapter.
+    degraded: bool = False

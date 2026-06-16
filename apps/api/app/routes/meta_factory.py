@@ -54,6 +54,7 @@ def orchestrate(payload: OrchestrateRequest) -> OrchestrateResponse:
         stage=result.stage,
         spec=result.spec,
         open_questions=result.open_questions,
+        degraded=result.degraded,
     )
 
 
@@ -78,7 +79,8 @@ def generate(payload: GenerateRequest) -> GenerateResponse:
         for run in pipeline.runs
     ]
 
-    response = GenerateResponse(ok=pipeline.ok, runs=runs, errors=pipeline.errors)
+    degraded = any(run.response.served_by_fallback for run in pipeline.runs)
+    response = GenerateResponse(ok=pipeline.ok, runs=runs, errors=pipeline.errors, degraded=degraded)
 
     if payload.persist and pipeline.ok:
         files = [f for run in pipeline.runs for f in run.parsed.files]

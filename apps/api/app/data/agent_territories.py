@@ -22,7 +22,13 @@ AGENT_TERRITORIES: dict[str, list[str]] = {
 
 def path_in_territory(agent_role: str, path: str) -> bool:
     """True if `path` is allowed for `agent_role`. Unknown roles allow nothing."""
-    normalized = path.replace("\\", "/").lstrip("./")
+    # Strip a leading "./" prefix and any leading slashes WITHOUT mangling
+    # dotfiles: a blanket lstrip("./") would turn ".github/..." into "github/...",
+    # breaking the devops territory (.github/workflows/) for a legitimate path.
+    normalized = path.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    normalized = normalized.lstrip("/")
     for prefix in AGENT_TERRITORIES.get(agent_role, []):
         if prefix.endswith("/"):
             if normalized.startswith(prefix):

@@ -63,6 +63,7 @@ def run_orchestrator(
         stage="CLARIFY" if needs_more else "READY_TO_COMPILE",
         spec=spec,
         open_questions=spec.open_questions if needs_more else [],
+        degraded=response.served_by_fallback,
     )
 
 

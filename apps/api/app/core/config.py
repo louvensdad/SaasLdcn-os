@@ -78,6 +78,16 @@ class Settings(BaseModel):
     privacy_policy_version: str = "2026-06-15"
     audit_log_retention_days: int = 730
 
+    # --- Meta-factory LLM fallback ---
+    # When a provider adapter is unavailable (missing SDK / API key / capability),
+    # the router degrades to the deterministic high-fidelity MockAdapter instead of
+    # failing the request. The degrade is always signalled (served_by_fallback /
+    # degraded), never disguised as a real model run.
+    mock_fallback_enabled: bool = True
+    # Force the MockAdapter even when a real provider could be reached. Useful for
+    # fully offline demos and the test suite.
+    force_mock: bool = Field(default_factory=lambda: os.environ.get("LDCN_FORCE_MOCK", "") == "1")
+
 
 @lru_cache
 def get_settings() -> Settings:
