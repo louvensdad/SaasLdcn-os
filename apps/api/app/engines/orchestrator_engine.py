@@ -27,12 +27,17 @@ def run_orchestrator(
     *,
     router: LLMRouter | None = None,
     api_key: str | None = None,
+    user_model_choice: str | None = None,
 ) -> OrchestratorResult:
     """Stage 1: intent -> ProjectSpec via the orchestrator system prompt.
 
     If confidence is below the gate and clarify rounds remain, return the open
     questions for the UI. Otherwise the spec is ready to compile. Assumptions are
     materialized by the model itself (no silent invention — error #1).
+
+    The user's model choice wins here too: it decides the provider, which must
+    match the provider of any user-supplied api_key (otherwise we'd hand, say, a
+    Google key to the Anthropic adapter).
     """
     prior_answers = prior_answers or []
     router = router or LLMRouter()
@@ -44,6 +49,7 @@ def run_orchestrator(
             reasoning=ReasoningLevel.high,
             json_schema=ProjectSpec.model_json_schema(),
         ),
+        user_choice=user_model_choice,
         agent_role="orchestrator",
         api_key=api_key,
     )

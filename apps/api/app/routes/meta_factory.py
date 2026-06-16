@@ -64,7 +64,12 @@ def orchestrate(payload: OrchestrateRequest, user: CurrentUser) -> OrchestrateRe
     """Intent -> ProjectSpec (PASSO 2). May return open questions to refine."""
     api_key = _resolve_api_key(user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice)
     try:
-        result = run_orchestrator(payload.raw_intent, payload.prior_answers, api_key=api_key)
+        result = run_orchestrator(
+            payload.raw_intent,
+            payload.prior_answers,
+            api_key=api_key,
+            user_model_choice=payload.user_model_choice,
+        )
     except LLMError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except ValueError as exc:

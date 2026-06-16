@@ -56,6 +56,35 @@ def test_router_passes_user_key_to_adapter():
     assert adapter.received_key == RAW_KEY
 
 
+class _SpecRecordingAdapter(LLMAdapter):
+    def __init__(self):
+        self.received_model: str | None = None
+        self.received_key: str | None = "UNSET"
+
+    def complete(self, model, req, *, api_key=None):  # noqa: ANN001
+        self.received_model = model
+        self.received_key = api_key
+        return LLMResponse(
+            provider=Provider.google, model=model, text="{}",
+            parsed={"raw_intent": "x", "confidence": 0.95},
+        )
+
+
+def test_orchestrator_routes_user_key_to_chosen_provider():
+    # Regression: choosing Gemini must route the orchestrator stage to Google and
+    # use the Google key — not the default anthropic role hint (which previously
+    # handed a Google key to the Anthropic adapter -> 401).
+    from app.engines.orchestrator_engine import run_orchestrator
+
+    google_adapter = _SpecRecordingAdapter()
+    router = LLMRouter(
+        adapters={"anthropic": _BadKeyAdapter(), "openai": _BadKeyAdapter(), "google": google_adapter}
+    )
+    run_orchestrator("ideia", router=router, user_model_choice="gemini-2.5-pro", api_key="gkey")
+    assert google_adapter.received_model == "gemini-2.5-pro"
+    assert google_adapter.received_key == "gkey"
+
+
 def test_router_user_key_failure_is_not_silently_mocked():
     router = LLMRouter(
         adapters={"anthropic": _BadKeyAdapter(), "openai": _BadKeyAdapter(), "google": _BadKeyAdapter()}
