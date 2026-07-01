@@ -184,6 +184,17 @@ class TokenUsageRepository:
 
 **Prioridade:** P1
 
+**✅ RESOLVIDO (2026-07-01):** captura + agregação implementadas. A usage por job já é
+acumulada atomicamente durante a geração (`GenerationJobRepository.add_usage` ←
+`_usage_totals`, colunas `input_tokens_total`/`output_tokens_total`; migração
+`20260701_b4_normalize_generation_jobs.py`). Agora há **agregação por usuário**:
+`GenerationJobRepository.usage_summary_for_owner(owner, since)` (totais + `by_model` +
+`job_count`, owner-scoped, janela por `created_at`), exposto em
+**`GET /api/meta-factory/jobs/usage?period_days=N`** (`GenerationUsageSummary`). São
+tokens REAIS medidos (sem custo em $ fabricado — billing aplica a tarifa por modelo sobre
+esses números). Testes em `tests/test_generation_job_pipeline.py` (agregação por
+usuário/modelo, janela `since`, endpoint owner-scoped).
+
 ---
 
 ### B5 — ThreadPoolExecutor sem bound global [MÉDIO]

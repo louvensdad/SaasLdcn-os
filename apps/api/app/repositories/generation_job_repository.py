@@ -100,6 +100,47 @@ class GenerationJobRepository:
             ).one()
             return int(totals[0]), int(totals[1])
 
+    def usage_summary_for_owner(self, owner_user_id: str, since: str | None = None) -> dict[str, Any]:
+        """Aggregate real, measured token usage for the owner across all jobs — the
+        source of truth for per-user cost attribution / billing (audit B4/AI2). No
+        estimate: totals come from the per-job usage accumulated during generation.
+        `since` is an ISO-8601 UTC timestamp; created_at uses the same format so the
+        lexicographic comparison is chronological."""
+        totals_stmt = select(
+            func.coalesce(func.sum(GenerationJob.input_tokens_total), 0),
+            func.coalesce(func.sum(GenerationJob.output_tokens_total), 0),
+            func.count(),
+        ).where(GenerationJob.owner_user_id == owner_user_id)
+        by_model_stmt = select(
+            GenerationJob.model,
+            func.coalesce(func.sum(GenerationJob.input_tokens_total), 0),
+            func.coalesce(func.sum(GenerationJob.output_tokens_total), 0),
+            func.count(),
+        ).where(GenerationJob.owner_user_id == owner_user_id).group_by(GenerationJob.model)
+        if since:
+            totals_stmt = totals_stmt.where(GenerationJob.created_at >= since)
+            by_model_stmt = by_model_stmt.where(GenerationJob.created_at >= since)
+
+        with self._sessions() as session:
+            total_in, total_out, job_count = session.execute(totals_stmt).one()
+            model_rows = session.execute(by_model_stmt.order_by(func.count().desc())).all()
+
+        return {
+            "input_tokens": int(total_in or 0),
+            "output_tokens": int(total_out or 0),
+            "total_tokens": int(total_in or 0) + int(total_out or 0),
+            "job_count": int(job_count or 0),
+            "by_model": [
+                {
+                    "model": row[0],
+                    "input_tokens": int(row[1] or 0),
+                    "output_tokens": int(row[2] or 0),
+                    "job_count": int(row[3] or 0),
+                }
+                for row in model_rows
+            ],
+        }
+
     def inputs(self, job_id: str, owner_user_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
         with self._sessions() as session:
             row = session.execute(select(GenerationJob.spec_json, GenerationJob.blueprint_json).where(GenerationJob.id == job_id, GenerationJob.owner_user_id == owner_user_id)).first()

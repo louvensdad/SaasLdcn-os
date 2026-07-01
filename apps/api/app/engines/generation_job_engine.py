@@ -340,6 +340,11 @@ class GenerationJobEngine:
         concurrent generations a single user can start (audit MF3)."""
         return self.repository.count_active_for_owner(owner_user_id, TERMINAL_STATUSES)
 
+    def usage_summary(self, owner_user_id: str, since: str | None = None) -> dict[str, Any]:
+        """Measured per-user token usage (totals + per-model), for cost attribution
+        / billing (audit B4/AI2)."""
+        return self.repository.usage_summary_for_owner(owner_user_id, since)
+
     def _execute_step(self, job: dict[str, Any], owner: str, step: PipelineStep, spec: ProjectSpec, blueprint: dict[str, Any], mega: str, api_key: str | None, model: str | None, mode: str) -> None:
         if step.action == "prepare":
             self._write_json_artifact(job, owner, step, "product-spec.normalized.json", spec.model_dump(mode="json"), "normalized_spec")

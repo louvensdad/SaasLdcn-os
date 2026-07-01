@@ -152,6 +152,26 @@ class GenerationJob(ApiModel):
     updatedAt: str
 
 
+class UsageByModel(ApiModel):
+    model: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    job_count: int = 0
+
+
+class GenerationUsageSummary(ApiModel):
+    """Measured token usage for one user over a period, for cost attribution /
+    billing (audit B4/AI2). Real totals accumulated per job during generation."""
+
+    period_days: int
+    since: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    job_count: int = 0
+    by_model: list[UsageByModel] = Field(default_factory=list)
+
+
 class CreateGenerationJobRequest(ApiModel):
     projectId: str
     workspaceId: str | None = None

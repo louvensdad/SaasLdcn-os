@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import tempfile
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -439,6 +440,57 @@ def test_create_generation_job_caps_concurrency_per_user(client, isolated_engine
     assert third.status_code == 429
     assert third.json()["detail"]["code"] == "TOO_MANY_CONCURRENT_GENERATIONS"
     assert third.json()["detail"]["limit"] == 2
+
+
+def test_usage_summary_aggregates_per_user_and_model(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)  # model claude-sonnet-4
+    repository.add_usage(job["id"], "user-1", 100, 40)
+    repository.add_usage(job["id"], "user-1", 50, 10)
+
+    summary = engine.usage_summary("user-1")
+    assert summary["input_tokens"] == 150
+    assert summary["output_tokens"] == 50
+    assert summary["total_tokens"] == 200
+    assert summary["job_count"] == 1
+    assert summary["by_model"][0]["model"] == "claude-sonnet-4"
+    assert summary["by_model"][0]["input_tokens"] == 150
+    # Owner-scoped: another user sees nothing.
+    assert engine.usage_summary("other-user")["total_tokens"] == 0
+
+
+def test_usage_summary_respects_since_window(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    repository.add_usage(job["id"], "user-1", 10, 5)
+
+    future = (datetime.now(UTC) + timedelta(days=1)).replace(microsecond=0).isoformat()
+    past = (datetime.now(UTC) - timedelta(days=1)).replace(microsecond=0).isoformat()
+    assert engine.usage_summary("user-1", since=future)["total_tokens"] == 0
+    assert engine.usage_summary("user-1", since=past)["total_tokens"] == 15
+
+
+def test_usage_endpoint_returns_measured_owner_summary(client, isolated_engine, monkeypatch):
+    from app.routes import meta_factory as route
+
+    engine, repository, _ = isolated_engine
+    monkeypatch.setattr(route, "generation_job_engine", engine)
+    monkeypatch.setattr(engine, "start", lambda *args, **kwargs: None)
+
+    created = client.post("/api/meta-factory/jobs", json={
+        "projectId": "room-usage", "projectName": "Usage Job",
+        "spec": _spec().model_dump(mode="json"), "blueprint": {"decisions": []},
+        "blueprintVersion": 1, "mode": "deterministic",
+    })
+    assert created.status_code == 202
+    user_id = client.get("/api/auth/me").json()["user_id"]
+    repository.add_usage(created.json()["id"], user_id, 120, 30)
+
+    usage = client.get("/api/meta-factory/jobs/usage", params={"period_days": 30})
+    assert usage.status_code == 200, usage.text
+    body = usage.json()
+    assert body["input_tokens"] == 120 and body["output_tokens"] == 30
+    assert body["total_tokens"] == 150 and body["job_count"] == 1
 
 
 def test_llm_job_never_falls_back_silently_without_provider(client, isolated_engine, monkeypatch):

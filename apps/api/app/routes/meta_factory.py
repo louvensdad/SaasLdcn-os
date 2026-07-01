@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -51,6 +52,7 @@ from app.schemas.meta_factory import (
 from app.schemas.generation_job import (
     CreateGenerationJobRequest,
     GenerationJob,
+    GenerationUsageSummary,
     RetryGenerationStageRequest,
 )
 from app.services.api_collection_service import api_collection_service
@@ -194,6 +196,16 @@ def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser
 def latest_generation_job(user: CurrentUser, projectId: str = Query(min_length=1)) -> GenerationJob | None:
     job = generation_job_engine.latest(projectId, user["user_id"])
     return GenerationJob.model_validate(job) if job else None
+
+
+@router.get("/meta-factory/jobs/usage", response_model=GenerationUsageSummary)
+def generation_usage(user: CurrentUser, period_days: int = Query(30, ge=1, le=365)) -> GenerationUsageSummary:
+    """Measured token usage for the current user over the last `period_days` — real
+    per-job totals aggregated by owner and model, for cost attribution / billing
+    (audit B4/AI2). Declared before /jobs/{job_id} so 'usage' is not read as an id."""
+    since = (datetime.now(UTC) - timedelta(days=period_days)).replace(microsecond=0).isoformat()
+    summary = generation_job_engine.usage_summary(user["user_id"], since)
+    return GenerationUsageSummary(period_days=period_days, since=since, **summary)
 
 
 @router.get("/meta-factory/jobs/{job_id}", response_model=GenerationJob)
