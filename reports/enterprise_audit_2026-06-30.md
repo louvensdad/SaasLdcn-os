@@ -459,6 +459,13 @@ docs_enabled = settings.environment == "local"
 
 **Prioridade:** P1
 
+**✅ N/A — VERIFICADO (2026-07-01):** a premissa ("inferido da estrutura") está incorreta para
+este código. `skill_execution_engine.execute` NÃO executa código arbitrário — não há
+`exec`/`eval`/`subprocess`/`os.system`/`importlib`/`compile`. Ele despacha para um conjunto
+FIXO de handlers determinísticos (`_run`: inspecionar blueprint/grafo/readiness, preparar ZIP)
+sobre dados conhecidos; skill não suportada retorna `{"status":"blocked"}`. Não há superfície de
+execução de código de terceiros para isolar. Sem mudança necessária.
+
 ---
 
 ## PARTE 4 — PERFORMANCE
@@ -847,6 +854,13 @@ pool compartilhado (B5).
 Um dashboard Enterprise sem drill-down é um dashboard de demonstração, não de produção.
 
 **Prioridade:** P1
+
+**⏳ PARCIAL (2026-07-01):** o coletor `analytics_service.collect_llm_metrics` deixou de ser
+só contagem de eventos — agora inclui **consumo real de tokens** (entrada/saída/total +
+gerações medidas + breakdown por modelo) vindo dos `generation_jobs` (dados do B4/AI2),
+owner-scoped e recortado pelo período (`cutoff`). Isso entrega custo/uso reais no
+`/analytics/overview`. Endpoints dedicados de drill-down (`/llm/cost-by-period`,
+`/quality/trend`, export) e WebSocket permanecem como follow-up. Testes: `tests/test_analytics.py`.
 
 ---
 

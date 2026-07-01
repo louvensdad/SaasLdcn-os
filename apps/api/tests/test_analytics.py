@@ -161,3 +161,33 @@ def test_service_unit_isolation_returns_overview():
     overview = service.overview("u-1", AnalyticsFilters())
     assert overview.generated_at
     assert isinstance(overview.sections, list)
+
+
+def test_llm_collector_surfaces_measured_token_usage():
+    from app.schemas.llm_settings import ActiveLlmSettings
+    from app.services.analytics_service import _Context, collect_llm_metrics
+
+    ctx = _Context(
+        user_id="u", filters=None, cutoff=None, rooms=[], audit=[], projects=[],
+        active_llm=ActiveLlmSettings(reason="x"),
+        usage={
+            "input_tokens": 100, "output_tokens": 40, "total_tokens": 140, "job_count": 2,
+            "by_model": [{"model": "claude-sonnet-4", "input_tokens": 100, "output_tokens": 40, "job_count": 2}],
+        },
+    )
+    section = collect_llm_metrics(ctx)
+    values = {m.id: m.value for m in section.metrics}
+    assert values["llm_total_tokens"] == 140
+    assert values["llm_input_tokens"] == 100
+    assert values["llm_generations"] == 2
+    assert section.status == "available"  # real token data makes the section non-empty
+    assert any(r.get("model") == "claude-sonnet-4" for r in section.records)
+
+
+def test_llm_collector_empty_without_events_or_usage():
+    from app.schemas.llm_settings import ActiveLlmSettings
+    from app.services.analytics_service import _Context, collect_llm_metrics
+
+    ctx = _Context(user_id="u", filters=None, cutoff=None, rooms=[], audit=[], projects=[],
+                   active_llm=ActiveLlmSettings(reason="x"), usage=None)
+    assert collect_llm_metrics(ctx).status == "empty"

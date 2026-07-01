@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 from app.core.config import get_settings
 from app.engines.factory_pipeline import PIPELINE_ORDER
+from app.repositories.generation_job_repository import GenerationJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
 from app.repositories.redaction import redact_text, redact_value
 from app.repositories.user_repository import AuditLogRepository
@@ -220,17 +221,28 @@ def collect_llm_metrics(ctx: "_Context") -> AnalyticsSection:
 
     # Active provider LABEL only — the key never leaves the TTL vault.
     provider_label = active.providerLabel or "Nenhum"
+
+    # Real, measured token consumption from persisted generation jobs (audit B4/AI2):
+    # turns this section from event-counting into actual usage/cost attribution.
+    usage = ctx.usage or {}
+    input_tokens = int(usage.get("input_tokens", 0) or 0)
+    output_tokens = int(usage.get("output_tokens", 0) or 0)
+    total_tokens = int(usage.get("total_tokens", 0) or 0)
+    gen_jobs = int(usage.get("job_count", 0) or 0)
+    by_model = usage.get("by_model") or []
+
     records = [
         {"id": e.get("id"), "event": e.get("event_code"), "at": e.get("created_at")}
         for e in events[:50]
     ]
+    has_data = bool(events or active.provider or total_tokens)
 
     return AnalyticsSection(
         id="llm",
         title="LLM",
-        description="Uso real de LLM a partir do audit log (sem expor chaves).",
-        status="available" if (events or active.provider) else "empty",
-        reason=None if (events or active.provider) else "no_data_source",
+        description="Uso real de LLM: eventos do audit log + tokens medidos por geração (sem expor chaves).",
+        status="available" if has_data else "empty",
+        reason=None if has_data else "no_data_source",
         metrics=[
             _metric("llm_active_provider", f"Provider ativo: {provider_label}", 1 if active.provider else 0,
                     source="llm", severity="positive" if active.mode == "llm" else "neutral"),
@@ -242,10 +254,18 @@ def collect_llm_metrics(ctx: "_Context") -> AnalyticsSection:
             _metric("llm_provider_failures", "Falhas de provider", failures, source="llm",
                     severity="critical" if failures else "neutral"),
             _metric("llm_confirmations", "Confirmações", confirmations, source="llm"),
+            _metric("llm_input_tokens", "Tokens de entrada", input_tokens, source="llm"),
+            _metric("llm_output_tokens", "Tokens de saída", output_tokens, source="llm"),
+            _metric("llm_total_tokens", "Tokens totais", total_tokens, source="llm"),
+            _metric("llm_generations", "Gerações medidas", gen_jobs, source="llm"),
         ],
         series=_series(counts, series="event"),
-        records=records,
-        columns=["event", "at"],
+        records=records or [
+            {"model": row.get("model") or "desconhecido", "input": row.get("input_tokens", 0),
+             "output": row.get("output_tokens", 0), "jobs": row.get("job_count", 0)}
+            for row in by_model[:20]
+        ],
+        columns=["event", "at"] if records else ["model", "input", "output", "jobs"],
     )
 
 
@@ -417,6 +437,7 @@ class _Context:
     audit: list[dict[str, Any]]
     projects: list[dict[str, Any]]
     active_llm: Any
+    usage: dict[str, Any] | None = None
 
 
 _COLLECTORS: dict[str, Callable[["_Context"], AnalyticsSection]] = {
@@ -529,8 +550,13 @@ class AnalyticsService:
     def overview(self, user_id: str, filters: AnalyticsFilters) -> AnalyticsOverviewResponse:
         cutoff = _period_cutoff(filters.period)
         rooms, audit, projects, active = self._load(user_id)
+        since = cutoff.replace(microsecond=0).isoformat() if cutoff else None
+        try:
+            usage = GenerationJobRepository(get_settings().sqlite_path).usage_summary_for_owner(user_id, since)
+        except Exception:  # noqa: BLE001 — usage is best-effort; the report never 500s
+            usage = None
         ctx = _Context(user_id=user_id, filters=filters, cutoff=cutoff,
-                       rooms=rooms, audit=audit, projects=projects, active_llm=active)
+                       rooms=rooms, audit=audit, projects=projects, active_llm=active, usage=usage)
 
         # A `module` filter narrows the report to one section but never errors.
         wanted = [filters.module] if filters.module in _COLLECTORS else _SECTION_IDS
