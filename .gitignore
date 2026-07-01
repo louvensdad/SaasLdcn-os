@@ -49,5 +49,8 @@ Thumbs.db
 # Generated project output (deterministic + meta-factory output areas)
 generated-projects/
 
+# Generated OpenAPI spec artifact (build output of scripts/generate_openapi.py)
+apps/api/openapi.json
+
 # Next.js alternate build cache
 .next-responsive/

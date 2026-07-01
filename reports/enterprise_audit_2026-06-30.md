@@ -885,6 +885,13 @@ python -c "from app.main import app; import json; print(json.dumps(app.openapi()
 
 **Prioridade:** P2
 
+**✅ RESOLVIDO (2026-07-01):** adicionado `apps/api/scripts/generate_openapi.py` —
+`export_openapi(dest)` (importável) + `python -m scripts.generate_openapi [path]` gera o
+spec estático a partir do app FastAPI (sem subir o servidor). Complementa o S4: como os docs
+ficam desabilitados fora de local, este artefato de build é como parceiros/integradores
+inspecionam a API em staging/produção. Artefato `apps/api/openapi.json` no `.gitignore`.
+Testes: `tests/test_openapi_export.py`.
+
 ---
 
 ## PROBLEMAS CRÍTICOS (impedem deploy Enterprise)
