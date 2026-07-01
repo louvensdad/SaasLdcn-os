@@ -33,6 +33,7 @@ import { CompletenessPanel } from '@/components/generation/completeness-panel';
 import { ExportPanel } from '@/components/generation/export-panel';
 import { ValidationReportPanel } from '@/components/generation/validation-report-panel';
 import { ResilientPipeline } from '@/components/generation/resilient-pipeline';
+import { AiUsageCard } from '@/components/generation/ai-usage-card';
 import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
 
 const PIPELINE_ROLES = ['contracts', 'backend', 'frontend', 'qa', 'devops', 'docs'] as const;
@@ -553,6 +554,8 @@ function MetaFactoryInner() {
       </header>
 
       {sourceRoom ? <WorkflowContextHeader room={sourceRoom} stage={busy === 'generate' ? 'Generation' : verifyStatus === 'running' ? 'Validation' : 'Meta Factory'} /> : null}
+
+      <AiUsageCard />
 
       {error && (
         <div className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">

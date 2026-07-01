@@ -195,6 +195,11 @@ tokens REAIS medidos (sem custo em $ fabricado — billing aplica a tarifa por m
 esses números). Testes em `tests/test_generation_job_pipeline.py` (agregação por
 usuário/modelo, janela `since`, endpoint owner-scoped).
 
+**Frontend (2026-07-01):** surfaced na UI via `metaFactoryClient.getUsage()` + componente
+autocontido `components/generation/ai-usage-card.tsx` (`<AiUsageCard>`: tokens
+entrada/saída/total + nº de gerações + breakdown por modelo), renderizado na Meta-Fábrica.
+`tsc` limpo; spec `tests/meta-factory-usage.spec.ts`. Fecha B4/AI2 ponta a ponta (backend + UI).
+
 ---
 
 ### B5 — ThreadPoolExecutor sem bound global [MÉDIO]

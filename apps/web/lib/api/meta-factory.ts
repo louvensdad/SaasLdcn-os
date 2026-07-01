@@ -138,6 +138,23 @@ export interface AgentRunSummary {
   errors: string[];
 }
 
+export interface UsageByModel {
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  job_count: number;
+}
+
+export interface GenerationUsageSummary {
+  period_days: number;
+  since: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  job_count: number;
+  by_model: UsageByModel[];
+}
+
 export interface GenerateResponse {
   ok: boolean;
   project_id: string | null;
@@ -290,6 +307,11 @@ export const metaFactoryClient = {
   ),
   getJob: (jobId: string) => request<ResilientGenerationJob>(
     `/api/meta-factory/jobs/${encodeURIComponent(jobId)}`,
+    undefined,
+    30_000,
+  ),
+  getUsage: (periodDays = 30) => request<GenerationUsageSummary>(
+    `/api/meta-factory/jobs/usage?period_days=${encodeURIComponent(String(periodDays))}`,
     undefined,
     30_000,
   ),
