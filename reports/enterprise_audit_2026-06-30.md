@@ -420,6 +420,11 @@ docs_enabled = settings.environment == "local"
 
 **Prioridade:** P2
 
+**✅ RESOLVIDO (2026-07-01):** `main.create_application` mudou de
+`docs_enabled = settings.environment != "production"` para `== "local"`, então Swagger/ReDoc/
+`openapi.json` ficam desabilitados em **staging e produção** (só local expõe para DX). Testes:
+`tests/test_app_docs.py` (local habilita; staging e production desabilitam os três).
+
 ---
 
 ### S5 — CSP bloqueia SSE do frontend em modo híbrido [BAIXO]

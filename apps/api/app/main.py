@@ -62,10 +62,11 @@ async def lifespan(_: FastAPI):
 
 def create_application() -> FastAPI:
     settings = get_settings()
-    # Disable the interactive API docs (Swagger UI / ReDoc / openapi.json) in
-    # production: they are unauthenticated and would leak the full API surface
-    # (diagnosis M4). They remain available in local/dev for developer ergonomics.
-    docs_enabled = settings.environment != "production"
+    # Disable the interactive API docs (Swagger UI / ReDoc / openapi.json) anywhere
+    # that is not local dev: they are unauthenticated and would leak the full API
+    # surface. Staging is often externally reachable, so it must NOT expose docs
+    # either (audit S4/M9) — only local/dev keeps them for developer ergonomics.
+    docs_enabled = settings.environment == "local"
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
