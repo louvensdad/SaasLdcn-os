@@ -3,25 +3,31 @@
 :root {
   color-scheme: dark;
   --font-sans: "Inter", "SF Pro Display", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", monospace;
-  --bg: #05070d;
-  --bg-2: #09111f;
-  --surface: rgba(15, 22, 38, 0.88);
-  --surface-2: rgba(19, 28, 48, 0.92);
-  --surface-3: rgba(27, 38, 64, 0.9);
-  --border: rgba(129, 160, 255, 0.16);
-  --text: #edf3ff;
-  --muted: #a9bbdc;
-  --accent: #7ba7ff;
-  --accent-2: #65d6ff;
-  --glow: rgba(98, 159, 255, 0.3);
-  --success: #45d19a;
-  --warning: #f0c86d;
-  --danger: #fb7c7c;
-  --control-bg: #131c30;
-  --control-hover: #1b2a48;
-  --control-selected: #7ba7ff;
-  --control-selected-text: #05070d;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", monospace;
+  /* Default identity: Engineering Runtime — near-black navy with a cyan→electric
+     blue accent and emerald for positive states. Mirrored in
+     [data-theme="engineering-runtime"] so the first SSR paint matches (no flash). */
+  --bg: #0a0e17;
+  --bg-2: #111827;
+  --surface: rgba(17, 24, 39, 0.72);
+  --surface-2: rgba(17, 24, 39, 0.86);
+  --surface-3: rgba(31, 41, 55, 0.6);
+  --border: rgba(31, 41, 55, 0.9);
+  --border-strong: rgba(55, 65, 81, 0.95);
+  --text: #f9fafb;
+  --muted: #9ca3af;
+  --muted-2: #6b7280;
+  --accent: #06b6d4;
+  --accent-2: #3b82f6;
+  --accent-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+  --glow: rgba(6, 182, 212, 0.18);
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --control-bg: #111827;
+  --control-hover: #1f2937;
+  --control-selected: #06b6d4;
+  --control-selected-text: #0a0e17;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 0.875rem;
@@ -32,6 +38,51 @@
   --transition-fast: 150ms;
   --transition-normal: 200ms;
   --transition-slow: 250ms;
+}
+
+[data-theme="engineering-runtime"] {
+  --bg: #0a0e17;
+  --bg-2: #111827;
+  --surface: rgba(17, 24, 39, 0.72);
+  --surface-2: rgba(17, 24, 39, 0.86);
+  --surface-3: rgba(31, 41, 55, 0.6);
+  --border: rgba(31, 41, 55, 0.9);
+  --border-strong: rgba(55, 65, 81, 0.95);
+  --text: #f9fafb;
+  --muted: #9ca3af;
+  --muted-2: #6b7280;
+  --accent: #06b6d4;
+  --accent-2: #3b82f6;
+  --accent-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+  --glow: rgba(6, 182, 212, 0.18);
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --control-bg: #111827;
+  --control-hover: #1f2937;
+  --control-selected: #06b6d4;
+  --control-selected-text: #0a0e17;
+}
+
+[data-theme="assembly-line"] {
+  --bg: #07120d;
+  --bg-2: #0a1a13;
+  --surface: rgba(13, 28, 22, 0.9);
+  --surface-2: rgba(16, 33, 26, 0.94);
+  --surface-3: rgba(22, 42, 34, 0.92);
+  --border: rgba(52, 229, 160, 0.16);
+  --text: #e9f6ef;
+  --muted: #9fb3ad;
+  --accent: #34e5a0;
+  --accent-2: #57d6c8;
+  --glow: rgba(52, 229, 160, 0.22);
+  --success: #34e5a0;
+  --warning: #e8b24c;
+  --danger: #ff6b6b;
+  --control-bg: #0e1f18;
+  --control-hover: #163126;
+  --control-selected: #34e5a0;
+  --control-selected-text: #07120d;
 }
 
 [data-theme="obsidian-blue"] {
@@ -757,3 +808,335 @@ body {
     background-color 0.3s ease,
     color 0.3s ease;
 }
+
+/* ============================================================= */
+/* Assembly line / PCB — signature system                        */
+/* The traces ARE the layout skeleton: they connect the pipeline  */
+/* stages and carry a live signal, so the board reads as a real   */
+/* fabrication line rather than decoration.                       */
+/* ============================================================= */
+
+/* Mono "data face": every machine-readable value (indices, counts,
+   stage ids, statuses) is set in mono with tabular figures, so data
+   is visually distinct from prose. */
+.type-data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.type-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--accent) 78%, var(--muted));
+}
+
+/* The board surface: a faint copper-trace grid with via dots, masked
+   so it fades at the edges. Used behind the hero assembly line. */
+.pcb-board {
+  position: relative;
+  isolation: isolate;
+  background-image:
+    radial-gradient(circle at 10% -10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 42%),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 6%, transparent) 0 1px, transparent 1px 30px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 6%, transparent) 0 1px, transparent 1px 30px);
+  background-size: 100% 100%, 100% 30px, 30px 100%;
+}
+
+.pcb-board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-image: radial-gradient(color-mix(in srgb, var(--accent) 22%, transparent) 1px, transparent 1.4px);
+  background-size: 30px 30px;
+  background-position: 15px 15px;
+  opacity: 0.5;
+  mask-image: radial-gradient(circle at 50% 0%, black, transparent 78%);
+}
+
+/* A horizontal trace between two stages, carrying a moving signal. */
+.pcb-trace {
+  position: relative;
+  height: 2px;
+  min-width: 1.5rem;
+  flex: 1;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  overflow: hidden;
+}
+
+.pcb-trace::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 70%, transparent));
+  transform: translateX(-140%);
+  animation: trace-signal 2.8s linear infinite;
+}
+
+.pcb-trace[data-idle="true"] {
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.pcb-trace[data-idle="true"]::after {
+  animation: none;
+  opacity: 0;
+}
+
+/* A solder pad / pin: the node where a stage sits on the line. */
+.signal-node {
+  position: relative;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: radial-gradient(circle at 40% 35%, color-mix(in srgb, white 60%, var(--accent)), var(--accent) 60%, color-mix(in srgb, var(--accent) 30%, transparent));
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 0 14px color-mix(in srgb, var(--glow) 90%, transparent);
+}
+
+.signal-node[data-state="idle"] {
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 8%, transparent);
+}
+
+.signal-node[data-state="active"]::after {
+  content: "";
+  position: absolute;
+  inset: -0.45rem;
+  border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  animation: operational-pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes trace-signal {
+  0% {
+    transform: translateX(-140%);
+  }
+
+  100% {
+    transform: translateX(360%);
+  }
+}
+
+/* ============================================================= */
+/* Engineering Runtime — premium design system                   */
+/* Palette/typography/effects per brief. GPU-only animations      */
+/* (transform/opacity); all reduced-motion-safe via the global    */
+/* prefers-reduced-motion rule above.                             */
+/* ============================================================= */
+
+/* --- Typography scale (H1 28 / H2 22 / H3 18 / Body 14 / Caption 12) --- */
+.t-h1 { font-size: 1.75rem; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; }
+.t-h2 { font-size: 1.375rem; font-weight: 650; line-height: 1.2; letter-spacing: -0.02em; }
+.t-h3 { font-size: 1.125rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+.t-body { font-size: 0.875rem; font-weight: 400; line-height: 1.6; }
+.t-caption { font-size: 0.75rem; font-weight: 500; line-height: 1.45; color: var(--muted); }
+.t-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.t-overline {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.text-gradient {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* --- Glassmorphism surfaces --- */
+.glass {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.glass-strong {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Subtle premium noise texture (2%), as a layer behind content. */
+.noise { position: relative; isolation: isolate; }
+.noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0.025;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --- Interaction: lift + accent glow on hover (200ms) --- */
+.lift {
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.lift:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    0 0 20px var(--glow);
+}
+
+/* --- Gradient accent fill (buttons / highlights) --- */
+.accent-fill {
+  background: var(--accent-gradient);
+  color: #04121a;
+  box-shadow: 0 2px 14px color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, filter 0.2s ease;
+}
+.accent-fill:hover { transform: scale(1.02); filter: saturate(1.08) brightness(1.03); box-shadow: 0 4px 22px color-mix(in srgb, var(--accent) 42%, transparent); }
+.accent-fill:active { transform: scale(0.97); }
+
+/* --- Animated underline for inline links (grows L→R) --- */
+.link-underline { position: relative; }
+.link-underline::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: -2px;
+  height: 1px; width: 100%;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.link-underline:hover::after { transform: scaleX(1); }
+
+/* --- Gauge / ring stroke-draw on load (set --dash to circumference) --- */
+@keyframes ring-draw {
+  from { stroke-dashoffset: var(--dash, 999); }
+  to { stroke-dashoffset: var(--dash-offset, 0); }
+}
+.ring-draw { animation: ring-draw 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+/* --- Pipeline connector: signal that flows when active --- */
+.flow-line { position: relative; overflow: hidden; background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.flow-line::after {
+  content: "";
+  position: absolute; inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform: translateX(-150%);
+  animation: trace-signal 2.6s linear infinite;
+}
+.flow-line[data-active="false"]::after { animation: none; opacity: 0; }
+
+/* --- Micro feedback: input shake (error), success check draw --- */
+@keyframes shake-x {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+.shake { animation: shake-x 0.3s ease-in-out 2; }
+
+@keyframes check-draw { to { stroke-dashoffset: 0; } }
+.check-draw { stroke-dasharray: 24; stroke-dashoffset: 24; animation: check-draw 0.35s ease-out 0.05s forwards; }
+
+/* --- Live status dot pulse (reuses --accent) --- */
+.live-dot { position: relative; display: inline-flex; width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--success); }
+.live-dot::after {
+  content: ""; position: absolute; inset: -3px; border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--success) 50%, transparent);
+  animation: operational-pulse 2.4s ease-in-out infinite;
+}
+
+/* --- Scroll progress bar (width driven by JS via --progress) --- */
+.scroll-progress {
+  position: fixed; left: 0; top: 0; z-index: 60;
+  height: 2px; width: 100%;
+  transform: scaleX(var(--progress, 0)); transform-origin: left;
+  background: var(--accent-gradient);
+  transition: transform 0.1s linear;
+}
+
+/* --- Sparkline baseline --- */
+.sparkline path { vector-effect: non-scaling-stroke; }
+
+/* --- Modernize cockpit: graph + entrance animations --- */
+@keyframes ldcn-graph-node-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.graph-node { animation: ldcn-graph-node-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes ldcn-graph-edge-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+.graph-edge { animation: ldcn-graph-edge-pulse 3.2s ease-in-out infinite; }
+
+@keyframes ldcn-rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-rise { animation: ldcn-rise-in 0.4s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-node, .graph-edge, .animate-rise { animation: none; }
+}
+
+/* ============================================================= */
+/* LDCN Engineering Design System — official typography scale.    */
+/* Single source of truth. Use the .ds-* utilities (or the        */
+/* Engineering* React components) instead of inline font-size.    */
+/* ============================================================= */
+
+:root, .theme-default, [data-theme] {
+  /* Text levels — never use arbitrary greys. */
+  --info: #38bdf8;
+  --text-secondary: #c3cad6;
+}
+
+/* --- Scale (px shown for reference; rem keeps it zoom-friendly) --- */
+.ds-display    { font-family: var(--font-sans); font-size: clamp(2.5rem, 4.5vw, 3rem);   font-weight: 680; line-height: 1.1;  letter-spacing: -0.035em; color: var(--text); }
+.ds-page-title { font-family: var(--font-sans); font-size: clamp(1.875rem, 3vw, 2.125rem); font-weight: 660; line-height: 1.2;  letter-spacing: -0.03em;  color: var(--text); }
+.ds-section    { font-family: var(--font-sans); font-size: clamp(1.375rem, 2vw, 1.625rem); font-weight: 640; line-height: 1.2;  letter-spacing: -0.025em; color: var(--text); }
+.ds-card-title { font-family: var(--font-sans); font-size: 1.25rem;   font-weight: 620; line-height: 1.2;  letter-spacing: -0.018em; color: var(--text); }
+.ds-subsection { font-family: var(--font-sans); font-size: 1.125rem;  font-weight: 600; line-height: 1.2;  letter-spacing: -0.012em; color: var(--text); }
+.ds-body-lg    { font-family: var(--font-sans); font-size: 1rem;      font-weight: 400; line-height: 1.65; color: var(--text); }
+.ds-body       { font-family: var(--font-sans); font-size: 0.9375rem; font-weight: 400; line-height: 1.65; color: var(--text); }
+.ds-body-sm    { font-family: var(--font-sans); font-size: 0.875rem;  font-weight: 400; line-height: 1.65; color: var(--text-secondary); }
+.ds-caption    { font-family: var(--font-sans); font-size: 0.8125rem; font-weight: 500; line-height: 1.5;  color: var(--muted); }
+.ds-label      { font-family: var(--font-sans); font-size: 0.75rem;   font-weight: 600; line-height: 1.4;  letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
+.ds-code       { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.5; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.ds-badge      { font-family: var(--font-sans); font-size: 0.75rem;   font-weight: 600; line-height: 1;    letter-spacing: 0.01em; }
+.ds-metadata   { font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 500; line-height: 1.45; letter-spacing: 0.02em; color: var(--muted-2); font-variant-numeric: tabular-nums; }
+
+/* --- Text color levels --- */
+.ds-text-primary   { color: var(--text); }
+.ds-text-secondary { color: var(--text-secondary); }
+.ds-text-muted     { color: var(--muted); }
+.ds-text-success   { color: var(--success); }
+.ds-text-warning   { color: var(--warning); }
+.ds-text-danger    { color: var(--danger); }
+.ds-text-info      { color: var(--info); }
+
+/* --- Comfortable reading measure for long paragraphs --- */
+.ds-prose { max-width: 72ch; }
+.ds-prose > * + * { margin-top: 0.85rem; }

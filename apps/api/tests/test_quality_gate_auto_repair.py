@@ -1,0 +1,197 @@
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+import pytest
+
+from app.core.config import get_settings
+from app.engines import quality_gate_engine as gate_module
+from app.engines.auto_repair_engine import AutoRepairEngine
+from app.engines.quality_gate_engine import QualityGateEngine
+from app.repositories.user_repository import AuditLogRepository
+from app.routes import meta_factory
+from app.schemas.generation_validation import (
+    BuildValidationReport,
+    DependencyAuditReport,
+    GenerationValidationReport,
+)
+from app.services.file_protocol import EmittedFile
+from app.services.project_writer import ProjectWriteError, ProjectWriter
+
+# Projects must live inside the workspace root (the quality engine enforces it),
+# so we create them under the real DEFAULT_OUTPUT_ROOT and clean up afterwards.
+
+
+@pytest.fixture
+def make_project():
+    created: list[Path] = []
+    writer = ProjectWriter()
+
+    def _make(files: list[tuple[str, str]], name: str = "gate-test") -> dict:
+        result = writer.write(
+            [EmittedFile(path=path, content=content) for path, content in files],
+            project_name=name,
+        )
+        created.append(Path(result.root_path))
+        return {
+            "project_id": result.project_id,
+            "project_name": name,
+            "generated_project_path": result.root_path,
+        }
+
+    yield _make
+    for root in created:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def _ids(report) -> set[str]:
+    return {issue.id for issue in report.issues}
+
+
+def test_quality_gate_fails_with_blockers_and_marks_auto_fixable(make_project) -> None:
+    project = _make_min_backend(make_project)
+    report = QualityGateEngine().evaluate(project, run_build=False)
+
+    assert report.passed is False
+    assert report.blocker_count > 0
+    readme = next((i for i in report.issues if i.id == "readme_missing"), None)
+    assert readme is not None and readme.severity == "BLOCKER" and readme.auto_fixable is True
+    assert any(i.id == "env_example_missing" and i.auto_fixable for i in report.issues)
+
+
+def test_repair_creates_missing_readme_and_env_example(make_project) -> None:
+    project = _make_min_backend(make_project)
+    report = QualityGateEngine().evaluate(project, run_build=False)
+    result = AutoRepairEngine().repair(project, report)
+
+    root = Path(project["generated_project_path"])
+    assert (root / "README.md").is_file()
+    assert (root / ".env.example").is_file()
+    assert result.applied_count >= 2
+    assert any(action.issue_id == "readme_missing" and action.status == "applied" for action in result.actions)
+
+
+def test_repair_removes_real_env_file(make_project) -> None:
+    project = _make_min_backend(make_project, extra=[(".env", "JWT_SECRET=supersecretvalue1234567890\n")])
+    root = Path(project["generated_project_path"])
+    assert (root / ".env").is_file()
+
+    report = QualityGateEngine().evaluate(project, run_build=False)
+    assert any(i.id.startswith("real_env_file") and i.auto_fixable for i in report.issues)
+
+    AutoRepairEngine().repair(project, report)
+    assert not (root / ".env").is_file()
+
+
+def test_repair_refuses_path_traversal(make_project) -> None:
+    project = _make_min_backend(make_project)
+    writer = ProjectWriter()
+    with pytest.raises(ProjectWriteError):
+        writer.delete(project["project_id"], "../escape.txt")
+    with pytest.raises(ProjectWriteError):
+        writer.delete(project["project_id"], "/etc/passwd")
+
+
+def test_revalidation_clears_fixed_issues(make_project) -> None:
+    project = _make_min_backend(make_project)
+    first = QualityGateEngine().evaluate(project, run_build=False)
+    assert "readme_missing" in _ids(first) and "env_example_missing" in _ids(first)
+
+    AutoRepairEngine().repair(project, first)
+    second = QualityGateEngine().evaluate(project, run_build=False)
+
+    assert "readme_missing" not in _ids(second)
+    assert "env_example_missing" not in _ids(second)
+
+
+def test_build_failure_maps_to_blocker(make_project, monkeypatch) -> None:
+    project = _make_min_backend(make_project)
+    synthetic = GenerationValidationReport(
+        project_id=project["project_id"],
+        score=10,
+        passed=False,
+        quality={"checks": [], "warnings": [], "missing_files": [], "security_findings": [], "score": 10},
+        security_findings=[],
+        dependency_audit=DependencyAuditReport(status="skipped"),
+        build=BuildValidationReport(installed="failed", built="failed", ok=False, logs_tail="boom"),
+    )
+    monkeypatch.setattr(gate_module.generation_validation_engine, "validate", lambda _project: synthetic)
+
+    report = QualityGateEngine().evaluate(project, run_build=True)
+    build_issue = next((i for i in report.issues if i.id == "build_failed"), None)
+    assert build_issue is not None and build_issue.severity == "BLOCKER"
+    assert report.built is True
+
+
+def test_export_gate_blocks_on_blockers_and_allows_after_force_release(make_project) -> None:
+    project = _make_min_backend(make_project)
+    project_id = project["project_id"]
+
+    with pytest.raises(Exception) as blocked:
+        meta_factory._require_verified(project_id, force=False, user_id="user-x")
+    assert getattr(blocked.value, "status_code", None) == 409
+
+    ProjectWriter().set_release_override(project_id, by_user="user-x", reason="test")
+    # Conscious override -> the gate no longer blocks.
+    meta_factory._require_verified(project_id, force=False, user_id="user-x")
+
+
+def test_validate_endpoint_and_audit(client, make_project) -> None:
+    project = _make_min_backend(make_project)
+    project_id = project["project_id"]
+    user_id = client.get("/api/auth/me").json()["user_id"]
+
+    response = client.post(f"/api/meta-factory/{project_id}/validate?build=false")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["passed"] is False
+    assert body["blocker_count"] >= 1
+
+    events = {row["event_code"] for row in AuditLogRepository(get_settings().sqlite_path).list_for_user(user_id)}
+    assert "quality_gate_run" in events
+    assert "quality_gate_failed" in events
+
+
+def test_force_release_requires_exact_phrase(client, make_project) -> None:
+    project = _make_min_backend(make_project)
+    project_id = project["project_id"]
+    user_id = client.get("/api/auth/me").json()["user_id"]
+
+    wrong = client.post(f"/api/meta-factory/{project_id}/force-release", json={"confirmation": "liberar"})
+    assert wrong.status_code == 400
+
+    ok = client.post(
+        f"/api/meta-factory/{project_id}/force-release",
+        json={"confirmation": "LIBERAR COM RISCO"},
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["release_override"] is True
+
+    events = {row["event_code"] for row in AuditLogRepository(get_settings().sqlite_path).list_for_user(user_id)}
+    assert "force_release_requested" in events
+    assert "force_release_confirmed" in events
+
+
+def test_repair_endpoint_applies_and_audits(client, make_project) -> None:
+    project = _make_min_backend(make_project)
+    project_id = project["project_id"]
+    user_id = client.get("/api/auth/me").json()["user_id"]
+
+    response = client.post(f"/api/meta-factory/{project_id}/repair")
+    assert response.status_code == 200, response.text
+    assert response.json()["applied_count"] >= 1
+
+    events = {row["event_code"] for row in AuditLogRepository(get_settings().sqlite_path).list_for_user(user_id)}
+    assert "auto_repair_started" in events
+    assert "auto_repair_completed" in events
+
+
+def _make_min_backend(make_project, *, extra: list[tuple[str, str]] | None = None) -> dict:
+    """A minimal project that is missing README.md and .env.example (BLOCKERS)."""
+    files = [
+        ("app/main.py", "from fastapi import FastAPI\napp = FastAPI()\n"),
+        ("requirements.txt", "fastapi==0.115.0\n"),
+    ]
+    files += extra or []
+    return make_project(files, name="gate-test")

@@ -61,7 +61,10 @@ def test_protected_routes_require_bearer_token(client):
     assert response.json()["error"]["code"] == "http_401"
 
 
-def test_regular_user_cannot_access_shared_git_credentials(client):
+def test_git_integration_is_self_service_per_user(client):
+    # Git connections are now per-user (not a shared, admin-only credential), so a
+    # regular authenticated user reaches their OWN connection — and sees it empty
+    # until they connect. Cross-user isolation is covered in test_git_providers.py.
     registration = client.post("/api/auth/register", json=_registration_payload())
     token = registration.json()["tokens"]["access_token"]
 
@@ -70,7 +73,9 @@ def test_regular_user_cannot_access_shared_git_credentials(client):
         headers={"Authorization": f"Bearer {token}"},
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert response.json()["status"] == "disconnected"
+    assert "token" not in response.text
 
 
 def test_lgpd_export_contains_profile_and_safe_audit_events(client):

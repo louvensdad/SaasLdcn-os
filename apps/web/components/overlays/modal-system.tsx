@@ -100,7 +100,7 @@ export function ModalSystem() {
     <AnimatePresence initial={false}>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/62 px-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/65 px-4 backdrop-blur-md"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -116,9 +116,9 @@ export function ModalSystem() {
               'glass-panel-strong cinematic-surface w-full max-w-lg rounded-[var(--radius-xl)] p-5 shadow-[var(--shadow-cinematic)]',
               kind === 'destructive' && 'border-[color-mix(in_srgb,var(--danger)_42%,var(--border))]',
             )}
-            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 14, scale: 0.98 }}
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 10, scale: shouldReduceMotion ? 1 : 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: shouldReduceMotion ? 0 : 8, scale: 0.98 }}
+            exit={{ opacity: 0, y: shouldReduceMotion ? 0 : 6, scale: shouldReduceMotion ? 1 : 0.95 }}
             transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 220, damping: 28 }}
             onMouseDown={(event) => event.stopPropagation()}
             onKeyDown={onKeyDown}

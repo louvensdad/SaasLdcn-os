@@ -1,9 +1,23 @@
 from __future__ import annotations
 
+import concurrent.futures as cf
+import logging
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
+logger = logging.getLogger("ldcn.meta_factory")
+
 from app.engines.agent_prompts import AGENT_PROMPTS
+from app.engines.context_pack_builder import (
+    budget_for,
+    build_agent_context,
+    compress_to_budget,
+    estimate_tokens,
+    is_payload_too_large,
+    summarize_contract,
+)
+from app.engines.llm.base import LLMError
 from app.engines.llm.router import LLMRouter
 from app.schemas.llm import LLMRequest, LLMResponse, ReasoningLevel
 from app.schemas.orchestrator import ProjectSpec
@@ -11,6 +25,14 @@ from app.services.file_protocol import ParsedAgentOutput, parse_agent_output
 
 # API-First execution order. Backend and frontend both consume the contract.
 PIPELINE_ORDER = ["contracts", "backend", "frontend", "qa", "devops", "docs"]
+
+# Each agent is a single blocking LLM call that emits nothing until it returns.
+# We run it on a worker thread and emit a heartbeat every few seconds so the SSE
+# stream keeps producing bytes — that is the ONLY true "backend is alive" signal
+# the UI has during a multi-minute generation. A per-agent hard timeout bounds a
+# genuine hang so the worker thread can never block the pipeline forever.
+HEARTBEAT_EVERY_S = 8.0
+AGENT_TIMEOUT_MS = 360_000  # 6 min — deep agents are slow, but never infinite
 
 
 @dataclass
@@ -32,13 +54,173 @@ class PipelineResult:
         return not self.errors
 
 
-def _agent_request(system: str, user: str) -> LLMRequest:
-    # A full backend/frontend easily exceeds the neutral 16k default and gets
-    # truncated (lost MANIFEST / partial files). 32k stays under every model cap
-    # in the registry (sonnet/haiku 64k, opus 128k, gemini flash 65k).
+# Per-role reasoning depth and output budget. Backend and frontend carry the most
+# code, so they get the deepest reasoning and the largest budgets; backend goes
+# "max" (ultra-deep) because Clean Architecture + traceability + OWASP is the
+# hardest single agent. 48k stays under every model cap in the registry
+# (sonnet/haiku 64k, opus 128k, gemini flash ~65k) while leaving room for thinking.
+_ROLE_EFFORT: dict[str, tuple[ReasoningLevel, int]] = {
+    "contracts": (ReasoningLevel.high, 24_000),
+    "backend": (ReasoningLevel.max, 48_000),
+    "frontend": (ReasoningLevel.max, 40_000),
+    "qa": (ReasoningLevel.high, 32_000),
+    "devops": (ReasoningLevel.medium, 20_000),
+    "docs": (ReasoningLevel.high, 20_000),
+    "repair": (ReasoningLevel.max, 48_000),
+}
+
+
+def _agent_request(system: str, user: str, role: str) -> LLMRequest:
+    effort, max_tokens = _ROLE_EFFORT.get(role, (ReasoningLevel.high, 32_000))
     return LLMRequest(
-        system=system, user=user, reasoning=ReasoningLevel.high, cache_prefix=True, max_output_tokens=32000
+        system=system,
+        user=user,
+        reasoning=effort,
+        cache_prefix=True,
+        max_output_tokens=max_tokens,
+        timeout_ms=AGENT_TIMEOUT_MS,
     )
+
+
+_MAX_AGENT_ATTEMPTS = 3
+
+# Appended to the context on a retry when the previous reply produced no files,
+# nudging the model back onto the exact protocol. The tolerant parser already
+# recovers markdown/JSON/XML, so this is a last resort, not the first line.
+_CORRECTION_SUFFIX = (
+    "\n\n[CORRECAO DE FORMATO] A resposta anterior nao pode ser convertida em arquivos. "
+    "Reenvie EXCLUSIVAMENTE no protocolo, repetindo para CADA arquivo:\n"
+    '<<<FILE path="caminho/relativo.ext">>>\n'
+    "<conteudo integral do arquivo>\n"
+    "<<<END>>>\n"
+    "Sem markdown e sem explicacoes — apenas os blocos FILE."
+)
+
+
+_MINIMAL_OUTPUT_SUFFIX = (
+    "\n\n[MODO PARTICIONADO MINIMO] Gere somente o menor conjunto de arquivos desta parte. "
+    "Nao repita contexto, justificativas ou arquivos anteriores. Use apenas blocos <<<FILE>>> validos."
+)
+
+
+def _run_agent(
+    router: LLMRouter,
+    role: str,
+    context: str,
+    user_model_choice: str | None,
+    api_key: str | None,
+) -> tuple[LLMResponse, ParsedAgentOutput]:
+    """Route one agent call and parse it with the tolerant parser.
+
+    Resilience layers (every attempt logged with measured payload size):
+    - **Budget guard**: the context is compressed to the role budget BEFORE the
+      first send, so an Enterprise project can never push a giant single request.
+    - **413 / partitioned retry**: if the provider still says "payload too large",
+      the context is compressed harder and the call re-tried — the pipeline never
+      dies on a 413.
+    - **Format retry**: an empty/unparseable reply is re-prompted with a format
+      correction (up to 3 attempts total).
+    Runs on a worker thread so the pipeline can emit heartbeats while it blocks."""
+    attempts: list[dict] = []
+    response: LLMResponse | None = None
+    parsed = ParsedAgentOutput()
+
+    budget = budget_for(role)
+    working, guard_steps = compress_to_budget(context, budget)
+    partitioned = False
+    if guard_steps:
+        attempts.append({
+            "attempt": 0, "model": user_model_choice or "—", "latency_ms": 0,
+            "payload_chars": len(context), "estimated_tokens": estimate_tokens(context),
+            "ok": True, "event": "budget_guard",
+            "reason": f"Contexto comprimido de {len(context)} para {len(working)} chars (budget {budget}); passos: {', '.join(guard_steps)}.",
+        })
+
+    correction = False
+    attempt = 0
+    while attempt < _MAX_AGENT_ATTEMPTS:
+        attempt += 1
+        if attempt == 2:
+            working, _ = compress_to_budget(working, max(3_000, int(budget * 0.72)))
+            correction = True
+        elif attempt == 3:
+            working, _ = compress_to_budget(working, max(2_000, int(budget * 0.45)))
+            correction = True
+            partitioned = True
+        prompt_context = working + (_CORRECTION_SUFFIX if correction else "")
+        if attempt == 3:
+            prompt_context += _MINIMAL_OUTPUT_SUFFIX
+        payload_chars = len(prompt_context)
+        started = time.perf_counter()
+        try:
+            response = router.route(
+                _agent_request(AGENT_PROMPTS[role], prompt_context, role),
+                user_choice=user_model_choice,
+                agent_role=role,
+                api_key=api_key,
+            )
+        except Exception as exc:  # noqa: BLE001 — never lose the reason
+            if isinstance(exc, LLMError) and is_payload_too_large(exc):
+                # 413 → partitioned fallback: shrink hard and retry (does not count
+                # as a "no-files" attempt failure; it is a payload problem).
+                partitioned = True
+                tighter = max(2_000, int(len(working) * 0.55))
+                working, steps = compress_to_budget(working, tighter)
+                attempts.append({
+                    "attempt": attempt, "model": user_model_choice or "—",
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                    "payload_chars": payload_chars, "estimated_tokens": estimate_tokens(prompt_context),
+                    "ok": False, "partitioned": True, "event": "payload_too_large",
+                    "reason": f"413 payload grande demais; recomprimido para {len(working)} chars ({', '.join(steps) or 'truncate'}).",
+                })
+                continue
+            # A real provider/agent error (timeout, auth, 4xx/5xx, schema, …).
+            # RECORD it (attempt + reason) instead of re-raising and losing the
+            # diagnostics — the stage still fails, but now with a visible cause.
+            reason = f"{type(exc).__name__}: {exc}"
+            attempts.append({
+                "attempt": attempt, "model": user_model_choice or "—",
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "payload_chars": payload_chars, "estimated_tokens": estimate_tokens(prompt_context),
+                "ok": False, "event": "llm_error", "reason": reason[:400],
+            })
+            if attempt < _MAX_AGENT_ATTEMPTS:
+                correction = True
+                continue
+            parsed = ParsedAgentOutput()
+            parsed.attempts = attempts
+            parsed.partitioned = partitioned
+            parsed.errors.append(f"{role} falhou: {reason[:300]}")
+            return None, parsed  # type: ignore[return-value]
+        parsed = parse_agent_output(response.text, agent_role=role)
+        attempts.append({
+            "attempt": attempt,
+            "model": response.model,
+            "latency_ms": int((time.perf_counter() - started) * 1000),
+            "payload_chars": payload_chars,
+            "estimated_tokens": estimate_tokens(prompt_context),
+            "tokens": dict(response.usage),
+            "parser_strategy": parsed.parser_strategy,
+            "parser_confidence": round(parsed.parser_confidence, 2),
+            "file_count": len(parsed.files),
+            "ok": bool(parsed.files),
+            "partitioned": partitioned,
+            "stopped_by": response.stopped_by,
+            "reason": "" if parsed.files else (parsed.errors[0] if parsed.errors else "sem arquivos extraidos"),
+        })
+        if parsed.files:
+            if attempt > 1 or partitioned:
+                parsed.warnings.append(
+                    f"Recuperado na tentativa {attempt}/{_MAX_AGENT_ATTEMPTS}"
+                    + (" (modo particionado por payload)" if partitioned else "")
+                    + "."
+                )
+            break
+        correction = True
+
+    parsed.attempts = attempts
+    parsed.partitioned = partitioned
+    return response, parsed  # type: ignore[return-value]
 
 
 _LANG_BY_EXT = {
@@ -56,6 +238,119 @@ def _language_for(path: str) -> str:
         if lower.endswith(ext):
             return lang
     return "text"
+
+
+def iter_single_agent(
+    router: LLMRouter | None,
+    role: str,
+    context: str,
+    *,
+    user_model_choice: str | None = None,
+    api_key: str | None = None,
+    pack_diagnostics: dict | None = None,
+) -> Iterator[dict]:
+    """Run one factory agent and yield progress events plus a result sentinel."""
+    router = router or LLMRouter()
+    yield {"type": "agent_started", "role": role}
+
+    response: LLMResponse | None = None
+    pool = cf.ThreadPoolExecutor(max_workers=1)
+    try:
+        future = pool.submit(_run_agent, router, role, context, user_model_choice, api_key)
+        started = time.monotonic()
+        deadline = started + AGENT_TIMEOUT_MS / 1000
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                # Hard timeout actually enforced: stop waiting so the pipeline can
+                # never block (or heartbeat) forever. The worker thread cannot be
+                # force-killed, but the adapter's own per-request timeout bounds it,
+                # and the pool is shut down WITHOUT waiting so this generator returns
+                # immediately instead of hanging on executor teardown.
+                future.cancel()
+                parsed = ParsedAgentOutput()
+                parsed.errors.append(
+                    f"{role} excedeu o tempo limite de {AGENT_TIMEOUT_MS // 1000}s e foi abortado."
+                )
+                break
+            try:
+                response, parsed = future.result(timeout=min(HEARTBEAT_EVERY_S, remaining))
+                break
+            except cf.TimeoutError:
+                yield {
+                    "type": "heartbeat",
+                    "role": role,
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                }
+            except Exception as exc:  # agent failed: provider error, timeout, ...
+                parsed = ParsedAgentOutput()
+                parsed.errors.append(f"{role} falhou: {exc}")
+                break
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    for emitted in parsed.files:
+        yield {
+            "type": "file_emitted",
+            "role": role,
+            "path": emitted.path,
+            "language": _language_for(emitted.path),
+        }
+
+    if parsed.errors:
+        detail = "; ".join(parsed.errors)
+    elif parsed.warnings:
+        detail = f"{len(parsed.files)} arquivo(s) · " + "; ".join(parsed.warnings)
+    else:
+        detail = f"{len(parsed.files)} arquivos válidos no território do agente."
+    yield {
+        "type": "gate_check",
+        "role": role,
+        "check": "protocol_and_territory",
+        "status": "passed" if parsed.ok else "failed",
+        "detail": detail,
+    }
+
+    last = parsed.attempts[-1] if parsed.attempts else {}
+    # When run standalone (no upstream pack diagnostics), synthesize a minimal one
+    # from the measured send so the payload size/budget are always observable.
+    context_pack = pack_diagnostics or {
+        "role": role,
+        "chars": last.get("payload_chars", len(context)),
+        "estimated_tokens": last.get("estimated_tokens", estimate_tokens(context)),
+        "budget_chars": budget_for(role),
+    }
+    yield {
+        "type": "agent_finished",
+        "role": role,
+        "model": response.model if response is not None else (user_model_choice or "—"),
+        "stopped_by": response.stopped_by if response is not None else "error",
+        "degraded": response.served_by_fallback if response is not None else False,
+        "file_count": len(parsed.files),
+        "errors": list(parsed.errors),
+        "warnings": list(parsed.warnings),
+        # Resilience diagnostics: which parser strategy won, its confidence, and
+        # the full per-attempt log — so a format difference is transparent.
+        "parser_strategy": parsed.parser_strategy,
+        "parser_confidence": round(parsed.parser_confidence, 2),
+        "attempts": list(parsed.attempts),
+        "diagnostics": parsed.diagnostics(),
+        # Payload / context-pack diagnostics (413 resilience): size, budget,
+        # sections kept, whether a partitioned retry happened.
+        "partitioned": parsed.partitioned,
+        "context_pack": context_pack,
+    }
+    # Server-side log: agent, payload size/tokens, pack, attempts, retry, fallback,
+    # and — crucially — the failure reason when a stage produced no files.
+    fail_reason = "" if parsed.files else (last.get("reason") or (parsed.errors[0] if parsed.errors else ""))
+    logger.info(
+        "meta_factory.agent role=%s files=%d payload_chars=%s est_tokens=%s pack_chars=%s "
+        "attempts=%d partitioned=%s parser=%s reason=%r",
+        role, len(parsed.files), last.get("payload_chars"), last.get("estimated_tokens"),
+        context_pack.get("chars"), len(parsed.attempts), parsed.partitioned,
+        parsed.parser_strategy, fail_reason,
+    )
+    yield {"type": "result", "role": role, "parsed": parsed, "response": response}
 
 
 def iter_factory_pipeline(
@@ -81,75 +376,52 @@ def iter_factory_pipeline(
     """
     router = router or LLMRouter()
     result = PipelineResult()
-
-    contract_text = ""
+    contract_summary = ""
     emitted_so_far: list[str] = []
 
     for role in PIPELINE_ORDER:
-        yield {"type": "agent_started", "role": role}
+        # Per-agent Context Pack: only the role's sections + relevant blueprint
+        # areas + a SUMMARY of the contract (never the full raw bodies) + the
+        # emitted-file list. Built within the role's budget so a complex project
+        # can never push a giant single request → no more HTTP 413.
+        context, pack_diag = build_agent_context(
+            role,
+            mega_prompt,
+            contract_summary=contract_summary,
+            emitted_files=tuple(emitted_so_far),
+        )
 
-        context = mega_prompt
-        if contract_text:
-            context += f"\n\n<contract>\n{contract_text}\n</contract>"
-        if role in {"qa", "devops", "docs"} and emitted_so_far:
-            context += "\n\n<emitted_files>\n" + "\n".join(emitted_so_far) + "\n</emitted_files>"
-
-        response = router.route(
-            _agent_request(AGENT_PROMPTS[role], context),
-            user_choice=user_model_choice,
-            agent_role=role,
+        parsed: ParsedAgentOutput | None = None
+        response: LLMResponse | None = None
+        for event in iter_single_agent(
+            router,
+            role,
+            context,
+            user_model_choice=user_model_choice,
             api_key=api_key,
-        )
-        parsed = parse_agent_output(response.text, agent_role=role)
-        result.runs.append(
-            AgentRun(role=role, model=response.model, response=response, parsed=parsed)
-        )
+            pack_diagnostics=pack_diag.as_dict(),
+        ):
+            if event.get("type") == "result":
+                parsed = event["parsed"]
+                response = event["response"]
+                continue
+            yield event
 
-        for emitted in parsed.files:
-            yield {
-                "type": "file_emitted",
-                "role": role,
-                "path": emitted.path,
-                "language": _language_for(emitted.path),
-            }
-
-        # The protocol+territory validation IS the pipeline's security/lint gate;
-        # surface it as a gate_check so the UI can show per-agent check status.
-        if parsed.errors:
-            detail = "; ".join(parsed.errors)
-        elif parsed.warnings:
-            detail = f"{len(parsed.files)} arquivo(s) · " + "; ".join(parsed.warnings)
-        else:
-            detail = f"{len(parsed.files)} arquivos válidos no território do agente."
-        yield {
-            "type": "gate_check",
-            "role": role,
-            "check": "protocol_and_territory",
-            "status": "passed" if parsed.ok else "failed",
-            "detail": detail,
-        }
+        if parsed is None:
+            parsed = ParsedAgentOutput()
+            parsed.errors.append(f"{role} falhou: pipeline produced no result")
+        if response is not None:
+            result.runs.append(AgentRun(role=role, model=response.model, response=response, parsed=parsed))
 
         if parsed.errors:
             result.errors.extend(f"[{role}] {e}" for e in parsed.errors)
         result.warnings.extend(f"[{role}] {w}" for w in parsed.warnings)
 
-        # Contract is the source of truth for later agents. Prefer a clean parse,
-        # but accept one with only warnings (territory/manifest) so the chain still
-        # builds against a real contract.
-        if role == "contracts" and parsed.ok and parsed.files:
-            contract_text = response.text
+        if role == "contracts" and parsed.ok and parsed.files and response is not None:
+            # Store a COMPACT summary (endpoints + schema names), never the full
+            # raw response — this is what used to balloon the Backend payload to 413.
+            contract_summary = summarize_contract(response.text)
         emitted_so_far.extend(f.path for f in parsed.files)
-
-        yield {
-            "type": "agent_finished",
-            "role": role,
-            "model": response.model,
-            "stopped_by": response.stopped_by,
-            "degraded": response.served_by_fallback,
-            "file_count": len(parsed.files),
-            "errors": list(parsed.errors),
-            "warnings": list(parsed.warnings),
-        }
 
     yield {"type": "result", "result": result}
 

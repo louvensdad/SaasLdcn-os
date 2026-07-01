@@ -134,3 +134,20 @@ def _clear_global_vault():
     yield
     # Keep the process-global vault clean between HTTP tests.
     user_key_session._vault.clear()  # type: ignore[attr-defined]
+
+
+def test_test_key_endpoint_validates_without_persisting_or_echoing(client, monkeypatch):
+    from app.engines.llm.router import LLMRouter
+
+    def fake_route(self, req, *, user_choice=None, agent_role=None, api_key=None):  # noqa: ANN001
+        assert api_key == RAW_KEY
+        return LLMResponse(provider=Provider.anthropic, model=user_choice or "claude-haiku-4-5", text="ok")
+
+    monkeypatch.setattr(LLMRouter, "route", fake_route)
+    resp = client.post("/api/user-ai-keys/test", json={"provider": "anthropic", "api_key": RAW_KEY})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["http_status"] == 200
+    assert RAW_KEY not in resp.text
+    assert client.get("/api/user-ai-keys/status").json()["sessions"] == []

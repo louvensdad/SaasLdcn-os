@@ -13,16 +13,16 @@ class _GitService:
     def __init__(self) -> None:
         self.pushed = False
 
-    def status(self, provider):
+    def status(self, user_id, provider):
         return {"status": "connected", "username": "octo", "namespaces": []}
 
-    def create_repository(self, provider, *, namespace, repo_name, visibility, branch):
+    def create_repository(self, user_id, provider, *, namespace, repo_name, visibility, branch):
         return {
             "status": "created",
             "repo_url": f"https://example.com/{namespace}/{repo_name}",
         }
 
-    def push_initial_commit(self, provider, *, namespace, repo_name, branch, commit_message, files):
+    def push_initial_commit(self, user_id, provider, *, namespace, repo_name, branch, commit_message, files):
         self.pushed = True
         assert files
         return {
@@ -48,9 +48,10 @@ def test_generated_export_pushes_generated_folder(monkeypatch):
         )
 
         response = meta_factory._export_generated_project(
+            "user-1",
             {"project_id": result.project_id, "generated_project_path": result.root_path},
             "github",
-            GeneratedProjectExportRequest(namespace="octo", repo_name="generated", branch="main"),
+            GeneratedProjectExportRequest(namespace="octo", repo_name="generated", branch="main", force=True),
         )
 
         assert response.status == "ready"

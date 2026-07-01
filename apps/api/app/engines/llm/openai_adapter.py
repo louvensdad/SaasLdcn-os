@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 
 from app.data.model_registry import MODEL_REGISTRY
-from app.engines.llm.base import LLMAdapter, LLMError
+from app.engines.llm.base import (
+    LLMAdapter,
+    LLMError,
+    is_transient_provider_error,
+    timeout_seconds,
+)
 from app.schemas.llm import LLMRequest, LLMResponse, Provider
 
 
@@ -49,6 +54,8 @@ class OpenAIAdapter(LLMAdapter):
                 {"role": "user", "content": req.user},
             ],
             "max_completion_tokens": req.max_output_tokens,
+            # Per-request hard timeout (seconds) — a hung call must fail fast (H1/H2).
+            "timeout": timeout_seconds(req),
         }
         if supports_temperature:
             params["temperature"] = req.creativity
@@ -70,7 +77,10 @@ class OpenAIAdapter(LLMAdapter):
         try:
             resp = client.chat.completions.create(**params)
         except Exception as exc:
-            raise LLMError(f"OpenAI request failed for {model}: {exc}") from exc
+            raise LLMError(
+                f"OpenAI request failed for {model}: {exc}",
+                transient=is_transient_provider_error(exc),
+            ) from exc
 
         choice = resp.choices[0]
         text = getattr(choice.message, "content", "") or ""

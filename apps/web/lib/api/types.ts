@@ -115,6 +115,18 @@ import type {
 } from '@contracts/local-generation.contract';
 import type { GeneratedProjectQualityResponse as GeneratedProjectQualityResponseContract } from '@contracts/generated-project-quality.contract';
 import type {
+  DocumentationDoc as DocumentationDocContract,
+  DocumentationCheck as DocumentationCheckContract,
+  DocumentationFinding as DocumentationFindingContract,
+  DocumentationLibraryResponse as DocumentationLibraryResponseContract,
+  DocumentationExportResponse as DocumentationExportResponseContract,
+  GeneratedDoc as GeneratedDocContract,
+  DocumentationGenerateRequest as DocumentationGenerateRequestContract,
+  DocumentationGenerateResponse as DocumentationGenerateResponseContract,
+  DocumentationSaveRequest as DocumentationSaveRequestContract,
+  DocumentationSaveResponse as DocumentationSaveResponseContract,
+} from '@contracts/documentation.contract';
+import type {
   GitExportJob as GitExportJobContract,
   GitExportRequest as GitExportRequestContract,
   GitExportStatusResponse as GitExportStatusResponseContract,
@@ -298,6 +310,17 @@ export type ContractUnderstandingReport = ContractUnderstandingReportContract;
 export type Project = ProjectRecordContract;
 export type SaveProjectFromWizardPayload = SaveProjectFromWizardPayloadContract;
 export type UpdateProjectPayload = UpdateProjectPayloadContract;
+
+export type DocumentationDoc = DocumentationDocContract;
+export type DocumentationCheck = DocumentationCheckContract;
+export type DocumentationFinding = DocumentationFindingContract;
+export type DocumentationLibraryResponse = DocumentationLibraryResponseContract;
+export type DocumentationExportResponse = DocumentationExportResponseContract;
+export type GeneratedDoc = GeneratedDocContract;
+export type DocumentationGenerateRequest = DocumentationGenerateRequestContract;
+export type DocumentationGenerateResponse = DocumentationGenerateResponseContract;
+export type DocumentationSaveRequest = DocumentationSaveRequestContract;
+export type DocumentationSaveResponse = DocumentationSaveResponseContract;
 
 export interface DownloadRecord {
   readonly downloadId: string;

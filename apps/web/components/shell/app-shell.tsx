@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 
+import { AmbientBackdrop } from '@/components/three/ambient-backdrop';
 import { CommandPalette } from '@/components/search/command-palette';
 import { ToastProvider } from '@/components/feedback/toast-provider';
 import { DrawerSystem } from '@/components/overlays/drawer-system';
@@ -23,9 +24,33 @@ interface ShellCopy {
 }
 
 const shellCopy: Record<string, ShellCopy> = {
+  '/platform': {
+    titleKey: 'shell.platform.title',
+    subtitleKey: 'shell.platform.subtitle',
+  },
   '/dashboard': {
     titleKey: 'shell.dashboard.title',
     subtitleKey: 'shell.dashboard.subtitle',
+  },
+  '/analytics': {
+    titleKey: 'shell.analytics.title',
+    subtitleKey: 'shell.analytics.subtitle',
+  },
+  '/architect': {
+    titleKey: 'shell.architect.title',
+    subtitleKey: 'shell.architect.subtitle',
+  },
+  '/engineering-review': {
+    titleKey: 'shell.review.title',
+    subtitleKey: 'shell.review.subtitle',
+  },
+  '/engineering-laboratory': {
+    titleKey: 'shell.engineeringLaboratory.title',
+    subtitleKey: 'shell.engineeringLaboratory.subtitle',
+  },
+  '/auto-fix': {
+    titleKey: 'shell.autoFix.title',
+    subtitleKey: 'shell.autoFix.subtitle',
   },
   '/projects': {
     titleKey: 'shell.projects.title',
@@ -71,7 +96,8 @@ function resolveShellCopy(pathname: string): ShellCopy {
 
 function SectionGlow() {
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div className="pointer-events-none fixed inset-0 overflow-hidden">
+      <AmbientBackdrop count={180} opacity={0.32} radius={8} />
       <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[color-mix(in_srgb,var(--accent)_12%,transparent)] to-transparent opacity-70" />
       <div className="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-[color:var(--border)] to-transparent opacity-60" />
       <div className="grid-pattern absolute inset-0 opacity-[0.06]" />
@@ -97,6 +123,8 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const authStatus = useAuthStore((state) => state.status);
   const initializeAuth = useAuthStore((state) => state.initialize);
+  const retryAuth = useAuthStore((state) => state.retry);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
 
   useEffect(() => {
     void initializeAuth();
@@ -105,6 +133,20 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     if (authStatus === 'unauthenticated') router.replace('/login');
   }, [authStatus, router]);
+
+  // Fail-safe: the whole app is gated on an authenticated session, so a session
+  // bootstrap that never reaches a terminal state would leave every page on an
+  // endless spinner. After a grace period in a non-terminal state, surface an
+  // actionable error (retry / sign in) instead of spinning forever.
+  useEffect(() => {
+    if (authStatus === 'idle' || authStatus === 'loading') {
+      setAuthTimedOut(false);
+      const timer = window.setTimeout(() => setAuthTimedOut(true), 12_000);
+      return () => window.clearTimeout(timer);
+    }
+    setAuthTimedOut(false);
+    return undefined;
+  }, [authStatus]);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -168,8 +210,34 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   }, [closeDrawer, closeModal, closeNotificationCenter]);
 
   if (authStatus !== 'authenticated') {
+    if (authTimedOut) {
+      return (
+        <div className="grid min-h-screen place-items-center px-6">
+          <div className="w-full max-w-md space-y-4 rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color:var(--control-bg)] p-8 text-center">
+            <h1 className="text-lg font-semibold text-[color:var(--text)]">{t('auth.session.stuck.title')}</h1>
+            <p className="text-sm leading-6 text-[color:var(--muted)]">{t('auth.session.stuck.description')}</p>
+            <div className="flex flex-wrap justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => void retryAuth()}
+                className="focus-ring rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-foreground,#0b0b0f)]"
+              >
+                {t('auth.session.retry')}
+              </button>
+              <button
+                type="button"
+                onClick={() => router.replace('/login')}
+                className="focus-ring rounded-full border border-[color:var(--border)] px-4 py-2 text-sm font-semibold text-[color:var(--text)]"
+              >
+                {t('auth.session.login')}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="grid min-h-screen place-items-center text-sm text-[color:var(--muted)]">
+      <div className="grid min-h-screen place-items-center text-sm text-[color:var(--muted)]" role="status" aria-live="polite">
         {t('auth.session.loading')}
       </div>
     );

@@ -69,6 +69,19 @@ def test_parse_strips_outer_code_fence():
     assert [f.path for f in parsed.files] == ["a.txt"]
 
 
+def test_manifest_integrity_prunes_phantom_files():
+    # REGRA 0: a manifest must not claim files that were never emitted. Phantom
+    # entries are pruned (so file_count matches disk) and surfaced as a warning.
+    out = (
+        '<<<FILE path="a.txt">>>\nhi\n<<<END>>>\n'
+        '<<<MANIFEST>>>\n{"files": ["a.txt", "ghost.txt"], "entrypoint": "a.txt"}\n<<<END>>>'
+    )
+    parsed = parse_agent_output(out, agent_role="backend")
+    assert parsed.ok  # phantom manifest entries are recoverable, not a hard error
+    assert parsed.manifest["files"] == ["a.txt"]  # ghost.txt pruned
+    assert any("pruned to match disk" in w for w in parsed.warnings)
+
+
 # --- territories ----------------------------------------------------------
 
 def test_territory_rules():
@@ -187,11 +200,13 @@ def test_pipeline_runs_all_agents_and_threads_contract():
     roles = [r.role for r in result.runs]
     assert roles == ["contracts", "backend", "frontend", "qa", "devops", "docs"]
 
-    # the contract text must be threaded into later agents' context
+    # The contract must be threaded into later agents — now as a COMPACT summary
+    # (endpoints + schema names + file path), never the full raw body, so the
+    # Backend payload can never balloon into an HTTP 413.
     backend_ctx = next(req.user for model, req in stub.seen
                        if "Agente Backend" in req.system)
-    assert "<contract>" in backend_ctx
-    assert "openapi: 3.1.0" in backend_ctx
+    assert "Contract summary" in backend_ctx
+    assert "openapi.yaml" in backend_ctx  # traceability to the contract is preserved
 
 
 # --- project writer -------------------------------------------------------

@@ -1,8 +1,36 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 
+from app.engines.generated_project_quality_engine import GeneratedProjectQualityEngine
 from test_backend_generation import _create_backend_project, _request
+
+
+def test_env_template_in_subdir_is_not_flagged_as_real_secret_file():
+    # Regression: generated projects place .env.example in subdirs (backend/, frontend/).
+    # Those are mandatory templates, not real secret files, so they must NOT trip the
+    # critical real_env_or_secret_file finding (which would block git export with 409).
+    engine = GeneratedProjectQualityEngine()
+    root = Path(tempfile.mkdtemp())
+    try:
+        (root / "backend").mkdir()
+        (root / "backend" / ".env.example").write_text(
+            "DB_PASSWORD=change-me\nJWT_SECRET=placeholder\n", encoding="utf-8"
+        )
+        findings: list[dict] = []
+        engine._scan_secret_file(root, root / "backend" / ".env.example", findings)
+        engine._scan_secret_content(root, root / "backend" / ".env.example", findings)
+        assert findings == []
+
+        # A REAL .env (not a template) in a subdir is still a critical finding.
+        (root / "backend" / ".env").write_text("X=y", encoding="utf-8")
+        real: list[dict] = []
+        engine._scan_secret_file(root, root / "backend" / ".env", real)
+        assert any(f["code"] == "real_env_or_secret_file" and f["severity"] == "critical" for f in real)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def _generate_backend(client, framework_id: str, *, profile_id: str | None = None) -> tuple[dict, Path]:

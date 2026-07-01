@@ -25,6 +25,11 @@ TEXT_EXTENSIONS = {
     ".yml",
 }
 SECRET_FILE_PATTERN = re.compile(r"(^|/)(\.env($|\.)|id_rsa|.*\.(pem|p12|pfx)$)", re.IGNORECASE)
+# Env *templates* are mandatory in generated projects and live in any directory
+# (root, backend/, frontend/, …). They are not real secret files, so they are
+# exempt from the "real .env" critical finding — their CONTENT is still scanned for
+# real hardcoded secrets, so a template that ships a real value is still flagged.
+ENV_TEMPLATE_NAMES = {".env.example", ".env.sample", ".env.template", ".env.dist"}
 SECRET_ASSIGNMENT_PATTERN = re.compile(
     r"\b(secret|token|password|api[_-]?key|private[_-]?key|credential|access[_-]?token)\b\s*[:=]\s*['\"]?([^'\"\s,;}{]{12,})",
     re.IGNORECASE,
@@ -332,17 +337,19 @@ class GeneratedProjectQualityEngine:
 
     def _scan_secret_file(self, root: Path, path: Path, security_findings: list[dict[str, Any]]) -> None:
         relative_path = path.relative_to(root).as_posix()
-        if relative_path == ".env.example":
+        # Env templates (in ANY directory) are expected, not real secret files.
+        if path.name.lower() in ENV_TEMPLATE_NAMES:
             return
         if SECRET_FILE_PATTERN.search(relative_path):
             self._finding(security_findings, "real_env_or_secret_file", "critical", "Real .env or secret-like file is not allowed in generated projects.", relative_path)
 
     def _scan_secret_content(self, root: Path, path: Path, security_findings: list[dict[str, Any]]) -> None:
-        if path.suffix.lower() not in TEXT_EXTENSIONS and path.name not in {".gitignore", ".env.example"}:
+        is_env_template = path.name.lower() in ENV_TEMPLATE_NAMES
+        if path.suffix.lower() not in TEXT_EXTENSIONS and path.name not in {".gitignore"} and not is_env_template:
             return
         relative_path = path.relative_to(root).as_posix()
         content = path.read_text(encoding="utf-8", errors="ignore")
-        if relative_path == ".env.example" and self._is_safe_env_example(content):
+        if is_env_template and self._is_safe_env_example(content):
             return
         for match in SECRET_ASSIGNMENT_PATTERN.finditer(content):
             value = match.group(2).strip().strip("'\"")

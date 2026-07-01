@@ -17,14 +17,27 @@ def _build_error_payload(
     code: str,
     message: str,
     details: list[dict[str, Any]] | None = None,
+    detail: Any | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "error": {
             "code": code,
             "message": message,
             "details": details or [],
         }
     }
+    if detail is not None:
+        payload["detail"] = detail
+    return payload
+
+
+def _http_message_and_detail(raw_detail: Any) -> tuple[str, Any | None]:
+    if isinstance(raw_detail, str):
+        return raw_detail, None
+    if isinstance(raw_detail, dict):
+        message = raw_detail.get("backend_message")
+        return str(message) if message else "Request failed.", raw_detail
+    return "Request failed.", raw_detail
 
 
 def configure_exception_handlers(app: FastAPI) -> None:
@@ -39,10 +52,11 @@ def configure_exception_handlers(app: FastAPI) -> None:
             request.url.path,
             exc.detail,
         )
-        detail = exc.detail if isinstance(exc.detail, str) else "Request failed."
+        message, detail = _http_message_and_detail(exc.detail)
         payload = _build_error_payload(
             code=f"http_{exc.status_code}",
-            message=detail,
+            message=message,
+            detail=detail,
         )
         return JSONResponse(
             status_code=exc.status_code,
@@ -61,10 +75,11 @@ def configure_exception_handlers(app: FastAPI) -> None:
             request.url.path,
             exc.detail,
         )
-        detail = exc.detail if isinstance(exc.detail, str) else "Request failed."
+        message, detail = _http_message_and_detail(exc.detail)
         payload = _build_error_payload(
             code=f"http_{exc.status_code}",
-            message=detail,
+            message=message,
+            detail=detail,
         )
         return JSONResponse(
             status_code=exc.status_code,

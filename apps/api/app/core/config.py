@@ -11,6 +11,17 @@ from pydantic import BaseModel, Field
 BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = BASE_DIR / "app" / "data"
 
+# Load apps/api/.env into the process environment before any Settings default
+# factory reads os.environ. Real environment variables always win (override=False),
+# so .env is a local-dev convenience, not an override of deployed config. The
+# import is optional: without python-dotenv, plain environment variables still work.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    pass
+
 _DEV_DEFAULT_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -58,6 +69,12 @@ class Settings(BaseModel):
 
     # --- Auth (Fase B) ---
     secret_key: str = Field(default_factory=_default_secret_key)
+    # Dedicated key for encrypting secrets at rest (git provider tokens, user LLM
+    # keys), kept SEPARATE from the JWT signing secret so the two can be rotated
+    # independently and a leak of one does not compromise the other (diagnosis M3).
+    # When empty, the crypto layer falls back to a legacy key derived from
+    # ``secret_key`` so existing encrypted data keeps decrypting.
+    token_encryption_key: str = Field(default_factory=lambda: os.environ.get("LDCN_TOKEN_ENC_KEY", ""))
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
@@ -73,6 +90,16 @@ class Settings(BaseModel):
     rate_limit_enabled: bool = Field(default_factory=lambda: os.environ.get("LDCN_ENVIRONMENT", "local") == "production")
     rate_limit_auth_per_minute: int = 20
     rate_limit_default_per_minute: int = 240
+    # Generation endpoints each trigger multiple multi-minute (paid) LLM calls, so
+    # they get a much tighter, per-user bucket to prevent cost-DoS (diagnosis M5).
+    rate_limit_generation_per_minute: int = 12
+    # Trust the first hop of X-Forwarded-For for client identification (correct ONLY
+    # behind a trusted reverse proxy / load balancer). Off by default; enable in any
+    # deployment that terminates TLS at a proxy so the limiter keys on the real
+    # client, not the proxy's single socket IP (diagnosis M5).
+    trust_proxy_headers: bool = Field(
+        default_factory=lambda: os.environ.get("LDCN_TRUST_PROXY_HEADERS", "") == "1"
+    )
 
     # --- LGPD ---
     privacy_policy_version: str = "2026-06-15"
@@ -87,6 +114,72 @@ class Settings(BaseModel):
     # Force the MockAdapter even when a real provider could be reached. Useful for
     # fully offline demos and the test suite.
     force_mock: bool = Field(default_factory=lambda: os.environ.get("LDCN_FORCE_MOCK", "") == "1")
+
+    # --- Local LLM (Ollama) ---
+    # The "no API key" path: real generation via an open-source model running on
+    # the user's own machine. Ollama exposes an OpenAI-compatible endpoint, so the
+    # OllamaAdapter reuses the openai SDK pointed here. No key required.
+    ollama_base_url: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    )
+
+    # --- OpenRouter ---
+    # Online aggregator that exposes many models (OpenAI, Anthropic, Google,
+    # DeepSeek, Llama, Qwen, incl. free tiers) behind one OpenAI-compatible API and
+    # one key. The user supplies their OpenRouter key via "Use my own key".
+    openrouter_base_url: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    )
+
+    # --- DeepSeek ---
+    # First-class DeepSeek API (deepseek-chat / deepseek-reasoner), OpenAI-compatible.
+    # The user supplies their DeepSeek key via "Use my own key", or the server sets
+    # DEEPSEEK_API_KEY. Base URL is overridable for proxies/mirrors.
+    deepseek_base_url: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    )
+
+    # --- Custom OpenAI-compatible endpoint ---
+    # Plug ANY server speaking the OpenAI Chat Completions API (vLLM, LM Studio,
+    # Together, Groq, Fireworks, etc.). Set the base URL and the exact model id the
+    # server expects; the key is optional (many local servers ignore it) and can
+    # come from this env var or the per-user vault (provider "custom").
+    custom_base_url: str = Field(default_factory=lambda: os.environ.get("LDCN_CUSTOM_BASE_URL", ""))
+    custom_model: str = Field(default_factory=lambda: os.environ.get("LDCN_CUSTOM_MODEL", ""))
+
+    # --- User LLM key vault TTL ---
+    # User-owned keys are session-scoped: they expire from the in-memory vault after
+    # this many seconds (defence in depth on top of "RAM only, lost on restart").
+    user_key_ttl_seconds: int = 3600
+
+    # --- Modernize feature flags ---
+    # When a flag is off, the corresponding action is hidden/blocked. Default on in
+    # dev; gate per environment as needed.
+    modernize_enabled: bool = True
+    modernize_git_import: bool = True
+    modernize_zip_upload: bool = True
+    modernize_auto_refactor: bool = True
+    modernize_user_llm_key: bool = True
+    modernize_export: bool = True
+
+    # --- Modernize ingestion resource limits (Enterprise) ---
+    # The ingestion pipeline is NOT capped by file count: a monorepo with hundreds
+    # of thousands of files (node_modules/.git/build) is fully supported because
+    # those directories are ignored before anything is read. Limits are based on
+    # real resources only — the effective *analyzable* code size, a per-file cap,
+    # the compressed upload size, and a decompression-bomb ratio guard.
+    modernize_max_analyzable_bytes: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ANALYZABLE_BYTES", str(2 * 1024 * 1024 * 1024)))
+    )  # 2 GB of effective code
+    modernize_max_file_bytes: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_FILE_BYTES", str(5 * 1024 * 1024)))
+    )  # 5 MB per file (skips minified bundles / generated blobs)
+    modernize_max_upload_bytes: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_UPLOAD_BYTES", str(4 * 1024 * 1024 * 1024)))
+    )  # 4 GB compressed archive
+    modernize_zip_bomb_ratio: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_ZIP_BOMB_RATIO", "1000"))
+    )  # reject the archive if total uncompressed / compressed exceeds this
 
 
 @lru_cache

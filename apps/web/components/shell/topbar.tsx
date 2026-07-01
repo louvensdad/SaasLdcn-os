@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { Menu, Settings2 } from 'lucide-react';
 
+import { AiModeBadge } from '@/components/shell/ai-mode-badge';
 import { LDCNStatusPill } from '@/components/ldcn/ldcn-status-pill';
 import { ActionLink } from '@/components/ui/action-link';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ export function Topbar({ title, subtitle, onOpenSearch }: TopbarProps) {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <AiModeBadge />
           <div className="hidden lg:flex">
             <LDCNStatusPill state={presenceState} />
           </div>

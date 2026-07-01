@@ -43,6 +43,7 @@ class ProjectSpec(BaseModel):
 
     raw_intent: str  # original user text, preserved verbatim
     product_summary: str = ""
+    system_type: str = ""  # the inferred vertical (SaaS de saúde, Marketplace, E-commerce, …)
     target_users: list[str] = Field(default_factory=list)
     business_rules: list[str] = Field(default_factory=list)  # feeds the traceability matrix
     entities: list[str] = Field(default_factory=list)

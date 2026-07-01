@@ -43,7 +43,11 @@ export function ValidationReportPanel({ report }: ValidationReportPanelProps) {
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <Hammer className="h-3.5 w-3.5" /> {t('generationValidation.build')}
           </p>
-          <p className="mt-1 text-sm">install {report.build.installed} · build {report.build.built}</p>
+          <p className="mt-1 text-sm">
+            {t('generationValidation.installStatus', { value: String(report.build.installed) })}{' '}
+            {t('generationValidation.separator')}{' '}
+            {t('generationValidation.buildStatus', { value: String(report.build.built) })}
+          </p>
         </div>
       </div>
 

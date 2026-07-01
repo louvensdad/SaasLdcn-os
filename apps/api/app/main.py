@@ -12,13 +12,18 @@ from app.core.logging import RequestLoggingMiddleware, logger
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.routes import (
+    ai_status,
+    analytics,
     architectural_graph,
     auth,
     backend_generation,
     blueprints,
     contracts,
+    deep_engineering,
     dependency_graph,
+    documentation,
     downloads,
+    engineering_lab,
     engineering_readiness,
     generation_handoff,
     generated_project_quality,
@@ -30,9 +35,11 @@ from app.routes import (
     health,
     language_domains,
     local_generation,
+    llm_settings,
     localization,
     meta_factory,
     modernize,
+    project_rooms,
     projects,
     prompt_master,
     registry,
@@ -50,17 +57,26 @@ from app.routes import (
 async def lifespan(_: FastAPI):
     projects.service.initialize()
     auth.service.initialize()
+    project_rooms.service.repository.initialize()
+    modernize._jobs_repo.initialize()
     logger.info("Project repository initialized at %s", get_settings().sqlite_path)
     yield
 
 
 def create_application() -> FastAPI:
     settings = get_settings()
+    # Disable the interactive API docs (Swagger UI / ReDoc / openapi.json) in
+    # production: they are unauthenticated and would leak the full API surface
+    # (diagnosis M4). They remain available in local/dev for developer ergonomics.
+    docs_enabled = settings.environment != "production"
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         debug=settings.debug,
         lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
     )
     configure_cors(app)
     configure_exception_handlers(app)
@@ -89,6 +105,7 @@ def create_application() -> FastAPI:
     app.include_router(roadmap.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(projects.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(downloads.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(engineering_lab.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(blueprints.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(architectural_graph.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(dependency_graph.router, prefix=settings.api_prefix, dependencies=protected)
@@ -101,12 +118,20 @@ def create_application() -> FastAPI:
     app.include_router(prompt_master.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(gatekeeper.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(user_ai_keys.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(llm_settings.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(git_export.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(git_providers.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(contracts.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(meta_factory.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(modernize.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(project_rooms.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(ai_status.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(analytics.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(documentation.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(deep_engineering.router, prefix=settings.api_prefix, dependencies=protected)
     return app
 
 
 app = create_application()
+
+

@@ -1,16 +1,28 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException, status
 
 from app.core.config import BASE_DIR, get_settings
-from app.schemas.generation_validation import BuildValidationReport
+from app.schemas.generation_validation import BuildRuntimeMetrics, BuildValidationReport
+
+# Receives partial execution-event dicts (type/command/cwd/stream/stdout/...). The
+# caller (job engine) enriches them with id/jobId/timestamp/stage. None = no console.
+EventSink = Callable[[dict[str, Any]], None]
+
+try:  # Optional: enables peak-memory / CPU measurement of the build subprocess tree.
+    import psutil
+except ImportError:  # pragma: no cover - psutil is an optional dependency
+    psutil = None  # type: ignore[assignment]
 
 
 SECRET_LOG_RE = re.compile(
@@ -18,67 +30,116 @@ SECRET_LOG_RE = re.compile(
 )
 
 
+class _MetricsCollector:
+    """Accumulates REAL build-resource measurements across the install/build phases."""
+
+    def __init__(self) -> None:
+        self.install_ms = 0
+        self.build_ms = 0
+        self.total_ms = 0
+        self.peak_mb = 0.0
+        self.cpu_s = 0.0
+        self.ran = False
+        self.mem_measured = False
+        self.sampler = "wallclock"
+
+    def add(self, phase: str, ms: int, peak_mb: float | None, cpu_s: float | None, sampler: str) -> None:
+        self.ran = True
+        self.total_ms += ms
+        if phase == "install":
+            self.install_ms += ms
+        elif phase == "build":
+            self.build_ms += ms
+        if sampler == "psutil":
+            self.sampler = "psutil"
+        if peak_mb is not None:
+            self.peak_mb = max(self.peak_mb, peak_mb)
+            self.mem_measured = True
+        if cpu_s is not None:
+            self.cpu_s = max(self.cpu_s, cpu_s)
+
+    def finalize(self) -> BuildRuntimeMetrics | None:
+        if not self.ran:
+            return None
+        return BuildRuntimeMetrics(
+            install_ms=self.install_ms,
+            build_ms=self.build_ms,
+            total_ms=self.total_ms,
+            peak_memory_mb=round(self.peak_mb, 1) if self.mem_measured else None,
+            cpu_seconds=round(self.cpu_s, 2) if self.mem_measured else None,
+            sampler=self.sampler,  # type: ignore[arg-type]
+        )
+
+
 class BuildValidationService:
     def __init__(self, timeout_seconds: int = 180) -> None:
         self.timeout_seconds = timeout_seconds
         self.workspace_root = BASE_DIR.parents[1].resolve()
 
-    def validate(self, project: dict[str, Any]) -> BuildValidationReport:
+    def validate(self, project: dict[str, Any], *, event_sink: EventSink | None = None) -> BuildValidationReport:
         root = self._project_root(project)
         if get_settings().force_mock:
             return self._skipped("Build validation skipped in mock mode.")
+        collector = _MetricsCollector()
         try:
-            python_root = self._manifest_parent(root, "requirements.txt", ["", "apps/api", "backend"])
-            if python_root is not None:
-                return self._python(python_root)
-            node_root = self._manifest_parent(root, "package.json", ["", "apps/api", "apps/web", "frontend", "backend"])
-            if node_root is not None:
-                return self._node(node_root)
-            maven_root = self._manifest_parent(root, "pom.xml", ["", "apps/api", "backend"])
-            if maven_root is not None:
-                return self._maven(maven_root)
-            return BuildValidationReport(
-                installed="skipped",
-                built="skipped",
-                ok=True,
-                skipped_reason="No supported build manifest was emitted.",
-            )
+            report = self._dispatch(root, collector, event_sink)
         except subprocess.TimeoutExpired as exc:
-            return BuildValidationReport(
+            report = BuildValidationReport(
                 installed="failed",
                 built="skipped",
                 ok=False,
                 skipped_reason=f"Build validation timed out after {self.timeout_seconds}s.",
                 logs_tail=self._tail((exc.stdout or "") + "\n" + (exc.stderr or "")),
             )
+        report.metrics = collector.finalize()
+        return report
 
-    def _python(self, root: Path) -> BuildValidationReport:
+    def _dispatch(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+        python_root = self._manifest_parent(root, "requirements.txt", ["", "apps/api", "backend"])
+        if python_root is not None:
+            return self._python(python_root, collector, sink)
+        node_root = self._manifest_parent(root, "package.json", ["", "apps/api", "apps/web", "frontend", "backend"])
+        if node_root is not None:
+            return self._node(node_root, collector, sink)
+        maven_root = self._manifest_parent(root, "pom.xml", ["", "apps/api", "backend"])
+        if maven_root is not None:
+            return self._maven(maven_root, collector, sink)
+        return BuildValidationReport(
+            installed="skipped",
+            built="skipped",
+            ok=True,
+            skipped_reason="No supported build manifest was emitted.",
+        )
+
+    def _python(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
         if shutil.which(sys.executable) is None:
             return self._skipped("Python executable is unavailable.")
         venv = root / ".ldcn-venv"
-        create = self._run([sys.executable, "-m", "venv", str(venv)], root)
+        create = self._run([sys.executable, "-m", "venv", str(venv)], root, collector, "install", sink)
         if create.returncode != 0:
             return self._failed_install(create)
         pip = venv / ("Scripts/pip.exe" if sys.platform.startswith("win") else "bin/pip")
-        install = self._run([str(pip), "install", "-r", "requirements.txt"], root)
+        install = self._run([str(pip), "install", "-r", "requirements.txt"], root, collector, "install", sink)
         if install.returncode != 0:
             return self._failed_install(install)
         return BuildValidationReport(installed="passed", built="skipped", ok=True, logs_tail=self._tail(install.stdout + install.stderr))
 
-    def _node(self, root: Path) -> BuildValidationReport:
+    def _node(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
         if not shutil.which("npm"):
+            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": "npm install",
+                              "cwd": str(root), "message": "npm nao esta disponivel no servidor; build pulado.", "exitCode": 127})
             return self._skipped("npm is unavailable on the server.")
-        install = self._run(["npm", "install"], root)
+        install = self._run(["npm", "install"], root, collector, "install", sink)
         if install.returncode != 0:
             return self._failed_install(install)
         build_status = "skipped"
         build_result = None
         package = (root / "package.json").read_text(encoding="utf-8", errors="ignore")
         if '"build"' in package:
-            build_result = self._run(["npm", "run", "build"], root)
+            build_result = self._run(["npm", "run", "build"], root, collector, "build", sink)
             build_status = "passed" if build_result.returncode == 0 else "failed"
         elif (root / "tsconfig.json").is_file():
-            build_result = self._run(["npm", "exec", "tsc", "--", "--noEmit"], root)
+            build_result = self._run(["npm", "exec", "tsc", "--", "--noEmit"], root, collector, "build", sink)
             build_status = "passed" if build_result.returncode == 0 else "failed"
         logs = install.stdout + install.stderr
         if build_result is not None:
@@ -91,23 +152,153 @@ class BuildValidationService:
             logs_tail=self._tail(logs),
         )
 
-    def _maven(self, root: Path) -> BuildValidationReport:
+    def _maven(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
         if not shutil.which("mvn"):
+            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": "mvn compile",
+                              "cwd": str(root), "message": "mvn nao esta disponivel no servidor; build pulado.", "exitCode": 127})
             return self._skipped("mvn is unavailable on the server.")
-        result = self._run(["mvn", "-q", "-DskipTests", "compile"], root)
+        result = self._run(["mvn", "-q", "-DskipTests", "compile"], root, collector, "build", sink)
         if result.returncode != 0:
             return BuildValidationReport(installed="failed", built="failed", ok=False, logs_tail=self._tail(result.stdout + result.stderr))
         return BuildValidationReport(installed="passed", built="passed", ok=True, logs_tail=self._tail(result.stdout + result.stderr))
 
-    def _run(self, command: list[str], root: Path) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            command,
-            cwd=root,
-            text=True,
-            capture_output=True,
-            timeout=self.timeout_seconds,
-            check=False,
-        )
+    def _run(
+        self,
+        command: list[str],
+        root: Path,
+        collector: _MetricsCollector | None = None,
+        phase: str = "build",
+        sink: EventSink | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a build subprocess, STREAMING its stdout/stderr line-by-line to the
+        live console while measuring real wall-clock duration (always) plus peak
+        memory / CPU of the process tree when psutil is available.
+
+        Resolves the executable via shutil.which so Windows launchers (npm.cmd /
+        mvn.cmd) run instead of raising WinError 2. A genuinely missing binary emits
+        a clear command_skipped event and returns a synthetic failed result rather
+        than crashing the pipeline thread."""
+        display = subprocess.list2cmdline(command)
+        cwd = str(root)
+        exe = command[0]
+        resolved = exe if os.path.isabs(exe) else (shutil.which(exe) or exe)
+        full = [resolved, *command[1:]]
+
+        self._emit(sink, {"type": "command_started", "command": display, "cwd": cwd, "message": f"$ {display}"})
+        start = time.monotonic()
+        try:
+            popen = psutil.Popen if psutil is not None else subprocess.Popen
+            proc = popen(full, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
+        except FileNotFoundError:
+            message = f"Executavel '{exe}' nao encontrado no PATH do servidor."
+            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": display,
+                              "cwd": cwd, "message": message, "exitCode": 127})
+            return subprocess.CompletedProcess(command, 127, "", message)
+
+        out_lines: list[str] = []
+        err_lines: list[str] = []
+
+        def pump(pipe: Any, bucket: list[str], stream_name: str) -> None:
+            try:
+                for line in iter(pipe.readline, ""):
+                    text = line.rstrip("\n")
+                    bucket.append(text)
+                    self._emit(sink, {"type": "command_output", "stream": stream_name,
+                                      "level": "error" if stream_name == "stderr" else "info",
+                                      "message": self._redact(text)})
+            finally:
+                try:
+                    pipe.close()
+                except OSError:
+                    pass
+
+        pumps = [
+            threading.Thread(target=pump, args=(proc.stdout, out_lines, "stdout"), daemon=True),
+            threading.Thread(target=pump, args=(proc.stderr, err_lines, "stderr"), daemon=True),
+        ]
+        for thread in pumps:
+            thread.start()
+
+        peak_bytes = 0
+        cpu_seconds = 0.0
+        stop = threading.Event()
+        sampler = "wallclock"
+        sample_thread: threading.Thread | None = None
+        if psutil is not None:
+            sampler = "psutil"
+
+            def sample() -> None:
+                nonlocal peak_bytes, cpu_seconds
+                while not stop.is_set():
+                    try:
+                        procs = [proc, *proc.children(recursive=True)]
+                        rss = 0
+                        cpu = 0.0
+                        for p in procs:
+                            try:
+                                rss += p.memory_info().rss
+                                times = p.cpu_times()
+                                cpu += times.user + times.system
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                continue
+                        peak_bytes = max(peak_bytes, rss)
+                        cpu_seconds = max(cpu_seconds, cpu)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                    stop.wait(0.1)
+
+            sample_thread = threading.Thread(target=sample, daemon=True)
+            sample_thread.start()
+
+        timed_out = False
+        try:
+            proc.wait(timeout=self.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.kill()
+        finally:
+            stop.set()
+            for thread in pumps:
+                thread.join(timeout=2.0)
+            if sample_thread is not None:
+                sample_thread.join(timeout=1.0)
+
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        if collector is not None:
+            collector.add(
+                phase, elapsed_ms,
+                peak_bytes / (1024 * 1024) if psutil is not None else None,
+                cpu_seconds if psutil is not None else None,
+                sampler,
+            )
+        stdout = "\n".join(out_lines)
+        stderr = "\n".join(err_lines)
+
+        if timed_out:
+            self._emit(sink, {"type": "command_finished", "level": "error", "command": display, "cwd": cwd,
+                              "durationMs": elapsed_ms, "exitCode": None,
+                              "message": f"Comando excedeu {self.timeout_seconds}s e foi encerrado.",
+                              "stdout": self._tail(stdout), "stderr": self._tail(stderr)})
+            raise subprocess.TimeoutExpired(command, self.timeout_seconds, output=stdout, stderr=stderr)
+
+        self._emit(sink, {"type": "command_finished",
+                          "level": "error" if proc.returncode != 0 else "info",
+                          "command": display, "cwd": cwd, "durationMs": elapsed_ms, "exitCode": proc.returncode,
+                          "message": f"Comando finalizado (exit {proc.returncode}) em {elapsed_ms} ms.",
+                          "stdout": self._tail(stdout), "stderr": self._tail(stderr)})
+        return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+
+    @staticmethod
+    def _emit(sink: EventSink | None, payload: dict[str, Any]) -> None:
+        if sink is None:
+            return
+        try:
+            sink(payload)
+        except Exception:  # noqa: BLE001 — the console must never break the build
+            pass
+
+    def _redact(self, line: str) -> str:
+        return SECRET_LOG_RE.sub(r"\1\2[redacted]", line)
 
     def _manifest_parent(self, root: Path, manifest: str, candidates: list[str]) -> Path | None:
         for relative in candidates:

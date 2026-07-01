@@ -16,6 +16,8 @@ class GeneratedProjectExportRequest(ApiModel):
     branch: str = "main"
     commit_message: str = "Initial generated project export"
     visibility: GitVisibility = "private"
+    # Override the release gate: export an unverified project anyway ("exportar mesmo assim").
+    force: bool = False
 
 
 class GeneratedProjectExportResponse(ApiModel):

@@ -19,12 +19,12 @@ class GitExportEngine:
         self.quality = GeneratedProjectQualityEngine()
         self._jobs: dict[str, dict[str, Any]] = {}
 
-    def preview(self, project: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
-        return self._build_job(project, request, execute=False)
+    def preview(self, user_id: str, project: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+        return self._build_job(user_id, project, request, execute=False)
 
-    def export(self, project: dict[str, Any], request: dict[str, Any], provider: str) -> dict[str, Any]:
+    def export(self, user_id: str, project: dict[str, Any], request: dict[str, Any], provider: str) -> dict[str, Any]:
         payload = {**request, "provider": provider}
-        return self._build_job(project, payload, execute=True)
+        return self._build_job(user_id, project, payload, execute=True)
 
     def status(self, export_id: str) -> dict[str, Any]:
         job = self._jobs.get(export_id)
@@ -36,7 +36,7 @@ class GitExportEngine:
             if key in {"contractVersion", "export_id", "status", "repo_url", "security_validation", "files_included", "failure_reason", "blockers"}
         }
 
-    def _build_job(self, project: dict[str, Any], request: dict[str, Any], *, execute: bool) -> dict[str, Any]:
+    def _build_job(self, user_id: str, project: dict[str, Any], request: dict[str, Any], *, execute: bool) -> dict[str, Any]:
         export_id = f"gitexport_{uuid4().hex[:12]}"
         requested_at = datetime.now(UTC).replace(microsecond=0).isoformat()
         blockers: list[dict[str, str]] = []
@@ -46,7 +46,7 @@ class GitExportEngine:
         if not requirements_complete((project.get("blueprint_snapshot") or {}).get("project_requirements")):
             blockers.append(self._blocker("handoff_incomplete", "Generation Handoff incomplete", "Complete project requirements before repository delivery.", "Open checklist", f"/projects/{project['project_id']}"))
 
-        connection = git_provider_service.status(request["provider"])
+        connection = git_provider_service.status(user_id, request["provider"])
         if connection["status"] != "connected":
             provider_label = "GitHub" if request["provider"] == "github" else "GitLab"
             blockers.append(self._blocker("connection_missing", f"{provider_label} account not connected", "A connected provider account is required before exporting.", f"Connect {provider_label}", "/settings#integrations"))
@@ -78,6 +78,7 @@ class GitExportEngine:
         if execute and not blockers:
             try:
                 repository = git_provider_service.push_initial_commit(
+                    user_id,
                     request["provider"],
                     namespace=request["namespace"],
                     repo_name=request["repo_name"],

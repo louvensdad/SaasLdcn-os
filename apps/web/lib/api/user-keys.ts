@@ -1,11 +1,12 @@
-import { API_BASE_URL } from '@/lib/api/endpoints';
+﻿import { API_BASE_URL } from '@/lib/api/endpoints';
 import { getAccessToken, refreshAccessToken } from '@/lib/api/client';
 import type {
   KeyProvider,
   KeySessionStatusResponse,
+  TestKeyResponse,
 } from '@contracts/user-ai-key.contract';
 
-export type { KeyProvider, KeySessionStatus, KeySessionStatusResponse } from '@contracts/user-ai-key.contract';
+export type { KeyProvider, KeySessionStatus, KeySessionStatusResponse, TestKeyResponse } from '@contracts/user-ai-key.contract';
 
 const TIMEOUT = 15_000;
 
@@ -41,8 +42,11 @@ async function send<T>(path: string, init: RequestInit, allowRefresh = true): Pr
 
 export const userKeysClient = {
   status: () => send<KeySessionStatusResponse>('/api/user-ai-keys/status', { method: 'GET' }),
-  // The raw key leaves the browser only on this call (over the API), is never
-  // persisted client-side, and is never returned in any response.
+  testKey: (provider: KeyProvider, api_key: string) =>
+    send<TestKeyResponse>('/api/user-ai-keys/test', {
+      method: 'POST',
+      body: JSON.stringify({ provider, api_key }),
+    }),
   setKey: (provider: KeyProvider, api_key: string) =>
     send<KeySessionStatusResponse>('/api/user-ai-keys/session', {
       method: 'POST',

@@ -8,6 +8,8 @@ from uuid import uuid4
 
 import jwt
 from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
@@ -31,14 +33,29 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def _fernet_key() -> bytes:
-    """Derive a 32-byte urlsafe-base64 Fernet key from the app secret key.
+    """Derive a 32-byte urlsafe-base64 Fernet key for encrypting secrets at rest.
 
-    Reuses ``settings.secret_key`` so no extra secret needs to be provisioned.
-    As with JWTs signed by the same secret, data encrypted while running on an
-    ephemeral (auto-generated) secret key cannot be decrypted after a restart
-    unless LDCN_SECRET_KEY is set to a stable value.
+    Key separation (diagnosis M3): when ``settings.token_encryption_key`` is set
+    (LDCN_TOKEN_ENC_KEY), the Fernet key is derived from it via HKDF with a fixed
+    context label — independent of the JWT signing secret, so the two can be
+    rotated separately and a leak of one does not expose the other.
+
+    Backward compatibility: when no dedicated key is configured, we fall back to the
+    legacy derivation (SHA-256 of ``settings.secret_key``) so data encrypted before
+    this change still decrypts. As with JWTs, data encrypted under an ephemeral
+    (auto-generated) secret cannot be decrypted after a restart unless a stable key
+    is configured.
     """
     settings = get_settings()
+    dedicated = settings.token_encryption_key
+    if dedicated:
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b"ldcn-token-encryption-v1",
+        )
+        return base64.urlsafe_b64encode(hkdf.derive(dedicated.encode("utf-8")))
     digest = hashlib.sha256(settings.secret_key.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest)
 

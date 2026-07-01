@@ -42,6 +42,12 @@ import type {
   GeneratedFileContentResponse,
   GeneratedProjectFilesResponse,
   GeneratedProjectQualityResponse,
+  DocumentationLibraryResponse,
+  DocumentationExportResponse,
+  DocumentationGenerateRequest,
+  DocumentationGenerateResponse,
+  DocumentationSaveRequest,
+  DocumentationSaveResponse,
   GitExportJob,
   GitExportRequest,
   GitExportStatusResponse,
@@ -553,6 +559,23 @@ export const apiClient = {
   runGeneratedProjectQualityCheck: (projectId: string) =>
     apiRequest<GeneratedProjectQualityResponse>(apiEndpoints.generatedProjectQuality.run(projectId), {
       method: 'POST',
+    }),
+  getProjectDocumentation: (projectId: string) =>
+    apiRequest<DocumentationLibraryResponse>(apiEndpoints.documentation.library(projectId)),
+  exportProjectDocumentation: (projectId: string, organize = false) =>
+    apiRequest<DocumentationExportResponse>(apiEndpoints.documentation.export(projectId), {
+      method: 'POST',
+      body: JSON.stringify({ organize }),
+    }),
+  generateProjectDocumentation: (projectId: string, body: DocumentationGenerateRequest = {}) =>
+    apiRequest<DocumentationGenerateResponse>(apiEndpoints.documentation.generate(projectId), {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  saveProjectDocumentation: (projectId: string, body: DocumentationSaveRequest) =>
+    apiRequest<DocumentationSaveResponse>(apiEndpoints.documentation.save(projectId), {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
   previewGitExport: (body: GitExportRequest) =>
     apiRequest<GitExportJob>(apiEndpoints.gitExport.preview, {

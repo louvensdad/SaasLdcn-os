@@ -57,17 +57,17 @@ export function ApiTestPanel({ surface, projectId }: ApiTestPanelProps) {
     <section className="rounded-2xl border border-border/60 bg-card/60 p-5 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
-          <Server className="h-4 w-4 text-indigo-500" />
+          <Server className="h-4 w-4 text-[color:var(--accent)]" />
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t('apiTest.title')}</h3>
         </div>
         <div className="ml-auto flex gap-2">
           <Button type="button" onClick={() => void download('postman')} disabled={busy !== null} className="rounded-xl">
             {busy === 'postman' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Postman
+            {t('apiTest.postman')}
           </Button>
           <Button type="button" onClick={() => void download('insomnia')} disabled={busy !== null} className="rounded-xl">
             {busy === 'insomnia' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileJson className="h-4 w-4" />}
-            Insomnia
+            {t('apiTest.insomnia')}
           </Button>
         </div>
       </div>

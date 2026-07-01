@@ -5,6 +5,7 @@ import {
   refreshAccessToken,
 } from '@/lib/api/client';
 import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
+import type { GenerationExecutionEvent, ResilientGenerationJob } from '@contracts/generation-job.contract';
 
 // Self-contained client for the meta-factory feature. It does NOT reuse the
 // global apiRequest because that has a 5s timeout — the generate call runs 6 LLM
@@ -57,6 +58,7 @@ export interface OrchestrateResponse {
 
 export type FactoryEvent =
   | { type: 'agent_started'; role: string }
+  | { type: 'heartbeat'; role: string; elapsed_ms: number }
   | { type: 'file_emitted'; role: string; path: string; language: string }
   | { type: 'gate_check'; role: string; check: string; status: 'passed' | 'failed'; detail: string }
   | {
@@ -67,11 +69,66 @@ export type FactoryEvent =
       degraded: boolean;
       file_count: number;
       errors: string[];
+      warnings?: string[];
     }
   | { type: 'written'; project_id: string; root_path: string; file_count: number }
   | { type: 'validation_report'; report: GenerationValidationReport }
+  | {
+      type: 'stage_done';
+      role: string;
+      file_count: number;
+      errors: string[];
+      warnings: string[];
+      degraded: boolean;
+      model: string;
+      project_id?: string | null;
+    }
   | { type: 'done'; ok: boolean; degraded: boolean; errors: string[] }
+  | { type: 'verify_started'; project_id: string }
+  | { type: 'repair_started'; round: number; issues: string[] }
+  | { type: 'repair_finished'; round: number; applied: number; detail?: string }
+  | { type: 'verify_done'; passed: boolean; score: number; report: GenerationValidationReport | null }
   | { type: 'error'; detail: string };
+
+export interface DeepStage {
+  id: string;
+  title: string;
+  summary: string;
+  details: string[];
+  metrics: Record<string, number>;
+  status: 'passed' | 'attention';
+}
+
+export interface DeepDecision {
+  decision: string;
+  rationale: string;
+  alternatives: string[];
+  trade_offs: string;
+}
+
+export interface DeepEngineeringAnalysis {
+  title: string;
+  product_summary: string;
+  entity_count: number;
+  endpoint_count: number;
+  workflow_count: number;
+  rule_count: number;
+  component_count: number;
+  complexity: string;
+  risk_level: 'low' | 'medium' | 'high';
+  effort_estimate: string;
+  confidence: number;
+  decisions: DeepDecision[];
+  stages: DeepStage[];
+  security_considerations: string[];
+  validation_criteria: string[];
+}
+
+export type DeepEvent =
+  | { type: 'deep_stage_started'; index: number; total: number; id: string; title: string }
+  | { type: 'deep_stage_completed'; index: number; total: number; stage: DeepStage }
+  | { type: 'deep_analysis'; analysis: DeepEngineeringAnalysis }
+  | { type: 'done' };
 
 export interface AgentRunSummary {
   role: string;
@@ -116,6 +173,26 @@ export interface PreparedDownloadResponse {
   download_url: string;
   zip_size_bytes: number;
   file_count: number;
+}
+
+export type CoverageKind = 'business_rule' | 'workflow' | 'entity';
+export type CoverageStatus = 'covered' | 'partial' | 'missing';
+
+export interface RuleCoverage {
+  item: string;
+  kind: CoverageKind;
+  status: CoverageStatus;
+  evidence: string[];
+  note: string;
+}
+
+export interface CompletenessReport {
+  project_id: string;
+  completeness_score: number;
+  items: RuleCoverage[];
+  gaps: string[];
+  recommendations: string[];
+  degraded: boolean;
 }
 
 export interface PriorAnswer {
@@ -166,10 +243,23 @@ async function request<T>(
   }
 }
 
+/** Drop transport-only bulk (resilient-pipeline diagnostics + raw AI response)
+ * from the blueprint before sending it to an agent stage — it is never needed
+ * for generation and only inflates the request body. */
+function stripBlueprintForTransport(blueprint: unknown): unknown {
+  if (!blueprint || typeof blueprint !== 'object' || Array.isArray(blueprint)) return blueprint ?? null;
+  const { responseDiagnostics: _drop, ...rest } = blueprint as Record<string, unknown>;
+  return rest;
+}
+
 function extractError(body: unknown, status: number): string {
   if (body && typeof body === 'object') {
     const record = body as Record<string, unknown>;
     if (typeof record.detail === 'string') return record.detail;
+    if (record.detail && typeof record.detail === 'object') {
+      const message = (record.detail as Record<string, unknown>).message;
+      if (typeof message === 'string') return message;
+    }
     if (record.error && typeof record.error === 'object') {
       const message = (record.error as Record<string, unknown>).message;
       if (typeof message === 'string') return message;
@@ -180,6 +270,99 @@ function extractError(body: unknown, status: number): string {
 }
 
 export const metaFactoryClient = {
+  createJob: (payload: {
+    projectId: string;
+    workspaceId?: string | null;
+    projectName: string;
+    spec: ProjectSpec;
+    blueprint: unknown;
+    blueprintVersion: number;
+    mode?: 'llm' | 'deterministic';
+  }) => request<ResilientGenerationJob>(
+    '/api/meta-factory/jobs',
+    { method: 'POST', body: JSON.stringify(payload) },
+    30_000,
+  ),
+  latestJob: (projectId: string) => request<ResilientGenerationJob | null>(
+    `/api/meta-factory/jobs/latest?projectId=${encodeURIComponent(projectId)}`,
+    undefined,
+    30_000,
+  ),
+  getJob: (jobId: string) => request<ResilientGenerationJob>(
+    `/api/meta-factory/jobs/${encodeURIComponent(jobId)}`,
+    undefined,
+    30_000,
+  ),
+  streamJob: async (
+    jobId: string,
+    onJob: (job: ResilientGenerationJob) => void,
+    signal?: AbortSignal,
+    onEvent?: (event: GenerationExecutionEvent) => void,
+  ) => {
+    const run = async (allowRefresh: boolean): Promise<void> => {
+      const accessToken = getAccessToken();
+      const response = await fetch(`${API_BASE_URL}/api/meta-factory/jobs/${encodeURIComponent(jobId)}/events`, {
+        headers: { ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+        credentials: 'include', cache: 'no-store', signal,
+      });
+      if (response.status === 401 && allowRefresh && await refreshAccessToken()) return run(false);
+      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const line = frame.split('\n').find((item) => item.startsWith('data: '));
+          if (line) {
+            const event = JSON.parse(line.slice(6)) as {
+              type: string;
+              job?: ResilientGenerationJob;
+              event?: GenerationExecutionEvent;
+            };
+            if (event.type === 'generation_job' && event.job) onJob(event.job);
+            else if (event.type === 'execution_event' && event.event) onEvent?.(event.event);
+          }
+          boundary = buffer.indexOf('\n\n');
+        }
+      }
+    };
+    return run(true);
+  },
+  retryJobStage: (jobId: string, stage: string, mode: 'normal' | 'partitioned' | 'deterministic') =>
+    request<ResilientGenerationJob>(
+      `/api/meta-factory/jobs/${encodeURIComponent(jobId)}/stages/${encodeURIComponent(stage)}/retry`,
+      { method: 'POST', body: JSON.stringify({ mode }) },
+      30_000,
+    ),
+  resumeJob: (jobId: string) => request<ResilientGenerationJob>(
+    `/api/meta-factory/jobs/${encodeURIComponent(jobId)}/resume`,
+    { method: 'POST' },
+    30_000,
+  ),
+  continueWithWarnings: (jobId: string) => request<ResilientGenerationJob>(
+    `/api/meta-factory/jobs/${encodeURIComponent(jobId)}/continue`,
+    { method: 'POST' },
+    30_000,
+  ),
+  pauseJob: (jobId: string) => request<ResilientGenerationJob>(
+    `/api/meta-factory/jobs/${encodeURIComponent(jobId)}/pause`,
+    { method: 'POST' },
+    30_000,
+  ),
+  downloadJobDiagnostic: (jobId: string) => downloadAuthenticated(
+    `${API_BASE_URL}/api/meta-factory/jobs/${encodeURIComponent(jobId)}/diagnostic`,
+    `${jobId}-diagnostic.json`,
+  ),
+  downloadRawArtifact: (jobId: string, artifactId: string, filename: string) => downloadAuthenticated(
+    `${API_BASE_URL}/api/meta-factory/jobs/${encodeURIComponent(jobId)}/artifacts/${encodeURIComponent(artifactId)}/raw`,
+    filename,
+  ),
   orchestrate: (raw_intent: string, prior_answers: PriorAnswer[] = [], user_model_choice?: string, use_user_key = false) =>
     request<OrchestrateResponse>(
       '/api/meta-factory/orchestrate',
@@ -192,6 +375,92 @@ export const metaFactoryClient = {
       { method: 'POST', body: JSON.stringify({ spec, project_name, user_model_choice, persist: true, use_user_key }) },
       TEN_MIN,
     ),
+  // Deep Engineering pre-flight: streams the system "thinking" through the project
+  // (requirements, architecture, security, risk, build plan, validation) with a
+  // deliberate pace, before any code is generated.
+  deepAnalyzeStream: async (
+    spec: ProjectSpec,
+    blueprint: unknown,
+    onEvent: (event: DeepEvent) => void,
+  ): Promise<void> => {
+    const run = async (allowRefresh: boolean): Promise<void> => {
+      const accessToken = getAccessToken();
+      const res = await fetch(`${API_BASE_URL}/api/deep-engineering/analyze/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ spec, blueprint: blueprint ?? null, pace: true }),
+      });
+      if (res.status === 401 && allowRefresh && (await refreshAccessToken())) {
+        return run(false);
+      }
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const dataLine = frame.split('\n').find((line) => line.startsWith('data: '));
+          if (dataLine) onEvent(JSON.parse(dataLine.slice(6)) as DeepEvent);
+        }
+      }
+    };
+    await run(true);
+  },
+  // Deep Engineering for an existing codebase (Modernize): streams the same
+  // staged thinking, derived from the ingested project's inventory/diagnosis.
+  deepAnalyzeModernizeStream: async (
+    ingest_id: string,
+    onEvent: (event: DeepEvent) => void,
+  ): Promise<void> => {
+    const run = async (allowRefresh: boolean): Promise<void> => {
+      const accessToken = getAccessToken();
+      const res = await fetch(`${API_BASE_URL}/api/modernize/deep-analyze/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ ingest_id, pace: true }),
+      });
+      if (res.status === 401 && allowRefresh && (await refreshAccessToken())) {
+        return run(false);
+      }
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const dataLine = frame.split('\n').find((line) => line.startsWith('data: '));
+          if (dataLine) onEvent(JSON.parse(dataLine.slice(6)) as DeepEvent);
+        }
+      }
+    };
+    await run(true);
+  },
   // Real-time generation: streams the API-First pipeline as Server-Sent Events.
   // Consumed via fetch + ReadableStream (POST carries the full spec in the body).
   generateStream: async (
@@ -237,6 +506,110 @@ export const metaFactoryClient = {
     };
     await run(true);
   },
+  generateStageStream: async (
+    spec: ProjectSpec,
+    project_name: string,
+    role: string,
+    project_id: string | null,
+    onEvent: (event: FactoryEvent) => void,
+    user_model_choice?: string,
+    use_user_key = false,
+    blueprint?: unknown,
+  ): Promise<void> => {
+    // Keep the request body small so it never trips a proxy body limit (HTTP 413).
+    // The first stage (no project_id) sends spec + blueprint once; the server
+    // persists them and every later stage references them by project_id with a
+    // slim body. Diagnostics on the blueprint are never needed for generation.
+    const slim = Boolean(project_id);
+    const outSpec = slim ? ({ raw_intent: spec.raw_intent } as ProjectSpec) : spec;
+    const outBlueprint = slim ? null : stripBlueprintForTransport(blueprint);
+
+    const run = async (allowRefresh: boolean): Promise<void> => {
+      const accessToken = getAccessToken();
+      const res = await fetch(`${API_BASE_URL}/api/meta-factory/generate/stage/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ spec: outSpec, project_name, role, project_id, user_model_choice, persist: true, use_user_key, blueprint: outBlueprint }),
+      });
+      if (res.status === 401 && allowRefresh && (await refreshAccessToken())) {
+        return run(false);
+      }
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const dataLine = frame.split('\n').find((line) => line.startsWith('data: '));
+          if (dataLine) onEvent(JSON.parse(dataLine.slice(6)) as FactoryEvent);
+        }
+      }
+    };
+    await run(true);
+  },
+  reviewCompleteness: (spec: ProjectSpec, project_id: string, user_model_choice?: string, use_user_key = false) =>
+    request<CompletenessReport>(
+      '/api/meta-factory/review',
+      { method: 'POST', body: JSON.stringify({ spec, project_id, user_model_choice, use_user_key }) },
+      FIVE_MIN,
+    ),
+  // Build/auto-repair "sala de teste": streams verify + repair progress over SSE.
+  verifyAndRepairStream: async (
+    projectId: string,
+    spec: ProjectSpec,
+    onEvent: (event: FactoryEvent) => void,
+    user_model_choice?: string,
+    use_user_key = false,
+  ): Promise<void> => {
+    const run = async (allowRefresh: boolean): Promise<void> => {
+      const accessToken = getAccessToken();
+      const res = await fetch(`${API_BASE_URL}/api/meta-factory/${projectId}/verify/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ spec, user_model_choice, use_user_key }),
+      });
+      if (res.status === 401 && allowRefresh && (await refreshAccessToken())) {
+        return run(false);
+      }
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const dataLine = frame.split('\n').find((line) => line.startsWith('data: '));
+          if (dataLine) onEvent(JSON.parse(dataLine.slice(6)) as FactoryEvent);
+        }
+      }
+    };
+    await run(true);
+  },
   listFiles: (projectId: string) =>
     request<GeneratedFilesResponse>(`/api/meta-factory/${projectId}/files`, undefined, 30_000),
   fileContent: (projectId: string, path: string) =>
@@ -245,9 +618,9 @@ export const metaFactoryClient = {
       undefined,
       30_000,
     ),
-  prepareDownload: (projectId: string) =>
+  prepareDownload: (projectId: string, force = false) =>
     request<PreparedDownloadResponse>(
-      `/api/meta-factory/${projectId}/prepare-download`,
+      `/api/meta-factory/${projectId}/prepare-download${force ? '?force=true' : ''}`,
       { method: 'POST' },
       30_000,
     ),

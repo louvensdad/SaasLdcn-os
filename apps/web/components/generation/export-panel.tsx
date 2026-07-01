@@ -18,9 +18,12 @@ interface ExportPanelProps {
   readonly surface: GenerationSurface;
   readonly projectId: string;
   readonly defaultRepoName: string;
+  // When false, the build verification ("sala de teste") has not passed; exporting
+  // requires an explicit override (force) and shows a warning.
+  readonly verified?: boolean;
 }
 
-export function ExportPanel({ surface, projectId, defaultRepoName }: ExportPanelProps) {
+export function ExportPanel({ surface, projectId, defaultRepoName, verified = true }: ExportPanelProps) {
   const { t } = useLocale();
   const github = useGitProviderConnection('github');
   const gitlab = useGitProviderConnection('gitlab');
@@ -52,6 +55,8 @@ export function ExportPanel({ surface, projectId, defaultRepoName }: ExportPanel
         branch: branch.trim() || 'main',
         commit_message: 'Initial generated project export',
         visibility,
+        // Exporting an unverified project is an explicit override.
+        force: !verified,
       });
       setResult(exported);
     } catch (err) {
@@ -68,9 +73,15 @@ export function ExportPanel({ surface, projectId, defaultRepoName }: ExportPanel
   return (
     <section className="rounded-2xl border border-border/60 bg-card/60 p-5 shadow-sm">
       <div className="mb-4 flex items-center gap-2">
-        <UploadCloud className="h-4 w-4 text-indigo-500" />
+        <UploadCloud className="h-4 w-4 text-[color:var(--accent)]" />
         <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t('generationExport.title')}</h3>
       </div>
+
+      {!verified && (
+        <p className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          {t('generationExport.notVerified')}
+        </p>
+      )}
 
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-xs font-medium text-muted-foreground">
@@ -104,7 +115,7 @@ export function ExportPanel({ surface, projectId, defaultRepoName }: ExportPanel
           className="rounded-xl"
         >
           {busy === 'github' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Github className="h-4 w-4" />}
-          GitHub
+          {t('projectDetail.gitExport.provider.github')}
         </Button>
         <Button
           type="button"
@@ -113,10 +124,10 @@ export function ExportPanel({ surface, projectId, defaultRepoName }: ExportPanel
           className="rounded-xl"
         >
           {busy === 'gitlab' ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitBranch className="h-4 w-4" />}
-          GitLab
+          {t('projectDetail.gitExport.provider.gitlab')}
         </Button>
         {(!githubConnected || !gitlabConnected) && (
-          <a href="/settings#integrations" className="text-xs font-medium text-indigo-500 hover:underline">
+          <a href="/settings#integrations" className="text-xs font-medium text-[color:var(--accent)] hover:underline">
             {t('generationExport.connectProvider')}
           </a>
         )}

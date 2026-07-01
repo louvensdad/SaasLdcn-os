@@ -31,6 +31,14 @@ export const SEARCH_ITEMS: readonly SearchItem[] = [
     keywords: ['registry', 'project', 'delivery'],
   },
   {
+    id: 'page-analytics',
+    title: 'Analytics Center',
+    description: 'Open operational intelligence and platform telemetry.',
+    kind: 'page',
+    href: '/analytics',
+    keywords: ['analytics', 'data intelligence', 'telemetry', 'quality', 'llm', 'agents'],
+  },
+  {
     id: 'page-templates',
     title: 'Templates',
     description: 'Open template previews.',
@@ -45,6 +53,14 @@ export const SEARCH_ITEMS: readonly SearchItem[] = [
     kind: 'page',
     href: '/wizard',
     keywords: ['setup', 'flow', 'stack'],
+  },
+  {
+    id: 'page-engineering-laboratory',
+    title: 'Engineering Laboratory',
+    description: 'Open real project analysis, terminal, security, quality, API and DevOps modules.',
+    kind: 'page',
+    href: '/engineering-laboratory',
+    keywords: ['lab', 'terminal', 'security', 'quality', 'api', 'tests', 'deploy'],
   },
   {
     id: 'page-documentation',

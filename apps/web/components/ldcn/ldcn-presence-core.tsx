@@ -4,6 +4,7 @@ import type { HTMLAttributes } from 'react';
 
 import type { LdcnAction, LdcnContext } from '@contracts/ldcn.contract';
 
+import { LDCNCoreBadge } from '@/components/three/ldcn-core-badge';
 import { Card } from '@/components/ui/card';
 import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
@@ -11,7 +12,6 @@ import { cn } from '@/lib/cn';
 import { LDCNAvatarSkeleton } from './ldcn-avatar-skeleton';
 import { LDCNCommandSurface } from './ldcn-command-surface';
 import { LDCNContextPanel } from './ldcn-context-panel';
-import { LDCNOrb } from './ldcn-orb';
 
 interface LDCNPresenceCoreProps extends HTMLAttributes<HTMLDivElement> {
   readonly context: LdcnContext;
@@ -27,7 +27,7 @@ export function LDCNPresenceCore({ className, context, actions, ...props }: LDCN
       <div className="relative grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="grid gap-4">
           <div className="flex items-start gap-3 md:gap-4">
-            <LDCNOrb state={context.status} variant="ambient" className="h-10 w-10 shrink-0 md:h-12 md:w-12" />
+            <LDCNCoreBadge state={context.status} className="h-12 w-12 shrink-0 md:h-14 md:w-14" />
             <div className="min-w-0 space-y-2">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('ldcn.presence.layer')}</p>

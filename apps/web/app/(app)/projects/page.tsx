@@ -77,8 +77,11 @@ function ProjectRegistryCard({
         <div className="grid gap-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('projects.card.architectureIdentity')}</p>
-              <h3 className="mt-2 truncate text-2xl font-semibold text-[color:var(--text)]">{project.project_name}</h3>
+              <p className="type-eyebrow">{t('projects.card.architectureIdentity')}</p>
+              <h3 className="mt-2 flex items-center gap-2.5 truncate text-2xl font-semibold text-[color:var(--text)]">
+                <span className="signal-node shrink-0" data-state={readinessTone === 'danger' ? 'idle' : 'active'} aria-hidden />
+                <span className="truncate">{project.project_name}</span>
+              </h3>
               <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
                 {project.technology_graph.language.name} / {project.technology_graph.runtime.name} / {project.technology_graph.framework.name}
               </p>
@@ -123,17 +126,17 @@ function ProjectRegistryCard({
 
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">{t('projects.card.locale')}</p>
+              <p className="type-eyebrow">{t('projects.card.locale')}</p>
               <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{project.locale}</p>
               <p className="mt-2 text-xs text-[color:var(--muted)]">{t('projects.card.mode', { mode: statusLabel(project.generation_mode) })}</p>
             </div>
             <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">{t('projects.card.blueprintLineage')}</p>
+              <p className="type-eyebrow">{t('projects.card.blueprintLineage')}</p>
               <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{new Date(project.blueprint_snapshot.generated_at).toLocaleString(locale)}</p>
               <p className="mt-2 text-xs text-[color:var(--muted)]">{t('projects.card.blueprintLineageDetail')}</p>
             </div>
             <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-[color:var(--muted)]">{t('projects.card.operationalState')}</p>
+              <p className="type-eyebrow">{t('projects.card.operationalState')}</p>
               <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{statusLabel(project.gatekeeper_snapshot.decision)}</p>
               <p className="mt-2 text-xs text-[color:var(--muted)]">{t('projects.card.issues', { blockers: project.gatekeeper_snapshot.blockers.length, warnings: project.gatekeeper_snapshot.warnings.length })}</p>
             </div>

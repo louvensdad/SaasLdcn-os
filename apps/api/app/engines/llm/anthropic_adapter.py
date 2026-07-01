@@ -1,14 +1,34 @@
 from __future__ import annotations
 
 import json
+import re
 
-from app.engines.llm.base import LLMAdapter, LLMError
+from app.engines.llm.base import (
+    LLMAdapter,
+    LLMError,
+    is_transient_provider_error,
+    timeout_seconds,
+)
 from app.schemas.llm import LLMRequest, LLMResponse, Provider
 
 # Effort maps 1:1 to the neutral reasoning level (Claude output_config.effort).
 _EFFORT = {"low": "low", "medium": "medium", "high": "high", "max": "max"}
 
 _FABLE_FALLBACK_BETA = "server-side-fallback-2026-06-01"
+
+# Delimiters that frame the untrusted user content. A payload could otherwise embed
+# a closing tag to break out of the envelope and inject instructions, so we
+# neutralize any occurrence in the user text (diagnosis H4).
+_DELIMITER_RE = re.compile(r"</?\s*(task|output_rules)\b", re.IGNORECASE)
+
+
+_ZWSP = "\u200b"  # zero-width space
+
+
+def _sanitize_user(text: str) -> str:
+    # Insert a zero-width space right after '<' so a forged '</task>' no longer
+    # parses as the delimiter, while the visible content is preserved.
+    return _DELIMITER_RE.sub(lambda m: m.group(0).replace("<", "<" + _ZWSP, 1), text)
 
 
 class AnthropicAdapter(LLMAdapter):
@@ -47,7 +67,7 @@ class AnthropicAdapter(LLMAdapter):
 
     def _wrap_xml(self, req: LLMRequest) -> str:
         return (
-            f"<task>\n{req.user}\n</task>\n\n"
+            f"<task>\n{_sanitize_user(req.user)}\n</task>\n\n"
             "<output_rules>\n"
             "Siga o contrato de formato definido no sistema. "
             "Nao inclua preambulo fora do formato pedido.\n"
@@ -70,6 +90,9 @@ class AnthropicAdapter(LLMAdapter):
             "output_config": output_config,
             "system": [system_block],
             "messages": [{"role": "user", "content": self._wrap_xml(req)}],
+            # Per-request hard timeout (seconds) so a hung call fails fast instead
+            # of blocking the worker thread / SSE stream indefinitely (H1/H2).
+            "timeout": timeout_seconds(req),
         }
 
     def complete(self, model: str, req: LLMRequest, *, api_key: str | None = None) -> LLMResponse:
@@ -87,7 +110,10 @@ class AnthropicAdapter(LLMAdapter):
         try:
             resp = create(**params)
         except Exception as exc:  # surface, do not swallow
-            raise LLMError(f"Anthropic request failed for {model}: {exc}") from exc
+            raise LLMError(
+                f"Anthropic request failed for {model}: {exc}",
+                transient=is_transient_provider_error(exc),
+            ) from exc
 
         # Check stop_reason BEFORE reading content — a refusal has empty content.
         stop_reason = getattr(resp, "stop_reason", "") or ""

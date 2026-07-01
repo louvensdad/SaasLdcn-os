@@ -38,6 +38,18 @@ class MockAdapter(LLMAdapter):
         del api_key
         provider = Provider(MODEL_REGISTRY.get(model, {}).get("provider", "anthropic"))
 
+        if req.json_schema is not None and "Completeness Reviewer" in req.system:
+            report = _build_completeness_report(req.user)
+            text = json.dumps(report, ensure_ascii=False)
+            return LLMResponse(
+                provider=provider,
+                model=model,
+                text=text,
+                parsed=report,
+                stopped_by=MOCK_STOPPED_BY,
+                served_by_fallback=True,
+            )
+
         if req.json_schema is not None:
             # Orchestrator call: synthesize a ProjectSpec from the raw intent.
             spec = _build_project_spec(req.user)
@@ -69,32 +81,178 @@ class MockAdapter(LLMAdapter):
 # Intent / mega-prompt parsing
 # --------------------------------------------------------------------------- #
 
+# Domain profiles for the deterministic fallback. NOT AI — a keyword router that
+# adapts users/entities/rules/workflows to the domain so two different ideas no
+# longer produce ~98% identical specs. Honest, clearly the "Modo Determinístico".
+# Each profile: (keywords, users, entities, business_rules, workflows, extra_nf).
+_DOMAIN_PROFILES: list[dict] = [
+    {
+        "id": "saude",
+        "keywords": ("clinic", "clín", "odonto", "dent", "médic", "medic", "saúde", "saude", "hospital", "paciente", "consultório", "consultorio"),
+        "users": ["Administrador", "Profissional de saúde", "Recepcionista", "Paciente"],
+        "entities": ["Paciente", "Profissional", "Agendamento", "Prontuario", "Pagamento"],
+        "rules": [
+            "Um agendamento não pode colidir com outro do mesmo profissional no mesmo horário.",
+            "O prontuário só é acessível ao profissional responsável e ao próprio paciente.",
+            "Dados de saúde são sensíveis (LGPD): acesso auditado e consentimento registrado.",
+        ],
+        "workflows": [
+            "Paciente agenda uma consulta e recebe confirmação.",
+            "Profissional registra o atendimento no prontuário.",
+            "Recepção confirma presença e processa o pagamento.",
+        ],
+        "extra_nf": {"compliance": "LGPD para dados de saúde: consentimento, retenção e trilha de auditoria."},
+    },
+    {
+        "id": "estoque",
+        "keywords": ("estoque", "depósito", "deposito", "armazé", "armaze", "galpão", "galpao", "cana", "insumo", "inventário", "inventario", "logíst", "logist"),
+        "users": ["Administrador", "Operador de estoque", "Comprador", "Entregador"],
+        "entities": ["Produto", "Lote", "Estoque", "Pedido", "Entrega", "Fornecedor"],
+        "rules": [
+            "O estoque é reduzido somente quando uma saída é confirmada.",
+            "Todo lote possui validade e rastreabilidade de origem.",
+            "Um pedido percorre estados (aberto, separado, expedido, entregue).",
+        ],
+        "workflows": [
+            "Entrada de mercadoria com conferência e registro de lote.",
+            "Separação e expedição de pedidos.",
+            "Conferência periódica de inventário.",
+        ],
+        "extra_nf": {"reliability": "Movimentações de estoque transacionais e idempotentes."},
+    },
+    {
+        "id": "marketplace",
+        "keywords": ("marketplace", "anúncio", "anuncio", "vendedor", "comprador", "aluguel", "aluguer", "locação", "locacao"),
+        "users": ["Administrador", "Vendedor", "Comprador"],
+        "entities": ["Anuncio", "Vendedor", "Comprador", "Pedido", "Pagamento", "Avaliacao"],
+        "rules": [
+            "Uma comissão é retida pela plataforma a cada venda concluída.",
+            "Um vendedor só pode editar os próprios anúncios.",
+            "O pagamento fica retido até a confirmação de entrega/uso.",
+        ],
+        "workflows": [
+            "Vendedor publica um anúncio com preço e disponibilidade.",
+            "Comprador faz um pedido e paga pela plataforma.",
+            "Avaliação mútua após a conclusão.",
+        ],
+        "extra_nf": {"payments": "Conciliação de pagamentos, split e antifraude."},
+    },
+    {
+        "id": "oficina",
+        "keywords": ("oficina", "mecânic", "mecanic", "automotiv", "veículo", "veiculo", "carro"),
+        "users": ["Administrador", "Mecânico", "Atendente", "Cliente"],
+        "entities": ["Cliente", "Veiculo", "OrdemDeServico", "Peca", "Orcamento"],
+        "rules": [
+            "Uma ordem de serviço só é executada após o orçamento ser aprovado pelo cliente.",
+            "Cada peça utilizada baixa do estoque e entra no faturamento da OS.",
+        ],
+        "workflows": [
+            "Abertura de ordem de serviço para um veículo.",
+            "Orçamento e aprovação do cliente.",
+            "Execução, faturamento e entrega.",
+        ],
+        "extra_nf": {},
+    },
+    {
+        "id": "ecommerce",
+        "keywords": ("e-commerce", "ecommerce", "loja", "venda online", "carrinho", "checkout"),
+        "users": ["Administrador", "Cliente"],
+        "entities": ["Produto", "Carrinho", "Pedido", "Pagamento", "Cliente", "Cupom"],
+        "rules": [
+            "O estoque é reservado no checkout e liberado se o pagamento falhar.",
+            "Cupons possuem regras de validade, valor mínimo e limite de uso.",
+        ],
+        "workflows": [
+            "Navegação no catálogo e adição ao carrinho.",
+            "Checkout com cálculo de frete e cupom.",
+            "Pagamento e rastreamento do pedido.",
+        ],
+        "extra_nf": {"payments": "Gateway de pagamento com idempotência e webhooks."},
+    },
+    {
+        "id": "educacao",
+        "keywords": ("escola", "curso", "educa", "aluno", "ensino", "faculdade", "professor"),
+        "users": ["Administrador", "Professor", "Aluno", "Responsável"],
+        "entities": ["Aluno", "Curso", "Turma", "Matricula", "Nota", "Pagamento"],
+        "rules": [
+            "A matrícula exige vaga disponível na turma.",
+            "Notas só podem ser lançadas pelo professor da turma.",
+        ],
+        "workflows": [
+            "Matrícula do aluno em uma turma.",
+            "Lançamento de notas e frequência.",
+            "Emissão de boletim e cobrança de mensalidade.",
+        ],
+        "extra_nf": {},
+    },
+]
+
+_GENERIC_PROFILE = {
+    "id": "generico",
+    "users": ["Administrador", "Operador", "Cliente"],
+    "rules": [
+        "Apenas usuários autenticados podem alterar registros protegidos.",
+        "Toda alteração relevante é registrada para auditoria.",
+    ],
+    "workflows": [
+        "Usuário cria, consulta e gerencia os registros do domínio.",
+        "Operador revisa e aprova as operações sensíveis.",
+    ],
+    "extra_nf": {},
+}
+
+
+# Human label for the inferred vertical (drives system_type so downstream agents
+# and the Architect blueprint get the domain, not just free text).
+_SYSTEM_TYPE_LABELS = {
+    "saude": "SaaS de saúde",
+    "estoque": "Sistema de estoque/logística",
+    "marketplace": "Marketplace",
+    "oficina": "Sistema de oficina/ordens de serviço",
+    "ecommerce": "E-commerce",
+    "educacao": "Plataforma educacional",
+    "generico": "Sistema de gestão sob medida",
+}
+
+
+def _infer_domain(text: str) -> dict:
+    lowered = (text or "").lower()
+    for profile in _DOMAIN_PROFILES:
+        if any(keyword in lowered for keyword in profile["keywords"]):
+            return profile
+    return _GENERIC_PROFILE
+
+
 def _build_project_spec(user_turn: str) -> dict:
-    """Infer a complete, valid ProjectSpec dict from the orchestrator user turn."""
+    """Infer a domain-adapted ProjectSpec dict from the orchestrator user turn.
+
+    Deterministic (no LLM): a keyword→domain-profile router so different domains
+    produce genuinely different specs. This is the honest 'Modo Determinístico'
+    fallback — the premium path is the real LLM author.
+    """
     raw_intent = _extract_after(user_turn, "Ideia do usuario:") or user_turn.strip()
     raw_intent = raw_intent.strip()
     language, runtime, framework, architecture = _infer_stack(raw_intent)
-    entities = _infer_entities(raw_intent)
-    summary = raw_intent.split("\n")[0][:240] if raw_intent else "Aplicação de software governada."
+    profile = _infer_domain(raw_intent)
+    entities = profile.get("entities") or _infer_entities(raw_intent)
+    summary = (raw_intent.split("\n")[0][:240] if raw_intent else "Aplicação de software governada.")
+
+    non_functional = {
+        "security": "OWASP baseline: validação de entrada, JWT, headers seguros.",
+        "performance": "Respostas P95 < 300ms para operações de leitura.",
+        "scalability": "Stateless; escala horizontal por réplicas.",
+        **profile.get("extra_nf", {}),
+    }
 
     return {
         "raw_intent": raw_intent,
         "product_summary": summary,
-        "target_users": ["operadores", "clientes"],
-        "business_rules": [
-            "Apenas usuários autenticados podem alterar registros protegidos.",
-            "Toda alteração relevante é registrada para auditoria.",
-        ],
+        "system_type": _SYSTEM_TYPE_LABELS.get(profile["id"], "Sistema sob medida"),
+        "target_users": list(profile["users"]),
+        "business_rules": list(profile["rules"]),
         "entities": entities,
-        "core_workflows": [
-            f"Usuário cria e consulta {entities[0]}.",
-            "Operador revisa e aprova registros.",
-        ],
-        "non_functional": {
-            "security": "OWASP baseline: validação de entrada, JWT, headers seguros.",
-            "performance": "Respostas P95 < 300ms para operações de leitura.",
-            "scalability": "Stateless; escala horizontal por réplicas.",
-        },
+        "core_workflows": list(profile["workflows"]),
+        "non_functional": non_functional,
         "suggested_stack": {
             "language": language,
             "language_reason": "Inferido da intenção do usuário (modo mock offline).",
@@ -115,6 +273,67 @@ def _build_project_spec(user_turn: str) -> dict:
         "open_questions": [],
         # >= the orchestrator confidence gate (0.85) so no CLARIFY round is needed.
         "confidence": 0.9,
+    }
+
+
+def _build_completeness_report(user_turn: str) -> dict:
+    try:
+        payload = json.loads(user_turn)
+    except json.JSONDecodeError:
+        payload = {}
+    spec = payload.get("spec") if isinstance(payload, dict) else {}
+    paths = payload.get("generated_paths") if isinstance(payload, dict) else []
+    if not isinstance(spec, dict):
+        spec = {}
+    if not isinstance(paths, list):
+        paths = []
+    path_text = "\n".join(str(path).lower() for path in paths)
+
+    items: list[dict] = []
+    for kind, field in (
+        ("business_rule", "business_rules"),
+        ("workflow", "core_workflows"),
+        ("entity", "entities"),
+    ):
+        values = spec.get(field) or []
+        if not isinstance(values, list):
+            continue
+        for raw in values:
+            item = str(raw)
+            needle = _slug(item).replace("_", "")
+            status = "covered" if needle and needle in path_text.replace("_", "").replace("-", "") else "partial"
+            evidence = [str(path) for path in paths[:3]] if paths else []
+            items.append(
+                {
+                    "item": item,
+                    "kind": kind,
+                    "status": status,
+                    "evidence": evidence,
+                    "note": "Mock review based on generated path names and key snippets.",
+                }
+            )
+
+    if not items:
+        items.append(
+            {
+                "item": "ProjectSpec",
+                "kind": "workflow",
+                "status": "partial" if paths else "missing",
+                "evidence": [str(path) for path in paths[:3]],
+                "note": "Spec did not include explicit rules, workflows, or entities.",
+            }
+        )
+
+    score_by_status = {"covered": 100, "partial": 55, "missing": 0}
+    score = int(sum(score_by_status[item["status"]] for item in items) / max(1, len(items)))
+    gaps = [item["item"] for item in items if item["status"] != "covered"]
+    return {
+        "project_id": str(payload.get("project_id") or "mock-project") if isinstance(payload, dict) else "mock-project",
+        "completeness_score": score,
+        "items": items,
+        "gaps": gaps,
+        "recommendations": ["Review partial or missing items before handoff."] if gaps else [],
+        "degraded": True,
     }
 
 

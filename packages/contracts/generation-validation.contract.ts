@@ -20,12 +20,22 @@ export interface DependencyAuditReport {
   readonly findings: readonly DependencyFinding[];
 }
 
+export interface BuildRuntimeMetrics {
+  readonly install_ms: number;
+  readonly build_ms: number;
+  readonly total_ms: number;
+  readonly peak_memory_mb?: number | null;
+  readonly cpu_seconds?: number | null;
+  readonly sampler: 'psutil' | 'wallclock';
+}
+
 export interface BuildValidationReport {
   readonly installed: BuildStageStatus;
   readonly built: BuildStageStatus;
   readonly ok: boolean;
   readonly skipped_reason?: string | null;
   readonly logs_tail: string;
+  readonly metrics?: BuildRuntimeMetrics | null;
 }
 
 export interface GenerationValidationReport extends ContractMetadata {

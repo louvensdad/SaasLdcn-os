@@ -15,6 +15,10 @@ from app.core import deps as auth_deps
 from app.core.config import get_settings
 from app.main import create_application
 from app.repositories.user_repository import AuditLogRepository, UserRepository
+from app.repositories.modernize_job_repository import ModernizeJobRepository
+from app.repositories.project_room_repository import ProjectRoomRepository
+from app.routes import modernize as modernize_route
+from app.routes import project_rooms as project_rooms_route
 from app.routes import prompt_master as prompt_master_route
 from app.routes.auth import service as auth_route_service
 from app.routes.projects import service as project_route_service
@@ -51,6 +55,12 @@ def client() -> TestClient:
     # (bound to the default DB at import time), so point it at the same
     # isolated per-test database used by the projects route above.
     prompt_master_route.project_repository = isolated_service.project_repository
+
+    # The project-rooms route holds its own module-level ProjectRoomService bound to
+    # the default DB at import time; point it at the isolated per-test database too.
+    # (Done before the app/lifespan starts so initialize() targets this DB.)
+    project_rooms_route.service.repository = ProjectRoomRepository(database_path)
+    modernize_route._jobs_repo = ModernizeJobRepository(database_path)
 
     # Point the auth system (used to protect every non-public route) at the
     # same isolated, per-test SQLite database.

@@ -9,6 +9,10 @@ class Provider(str, Enum):
     anthropic = "anthropic"
     openai = "openai"
     google = "google"
+    ollama = "ollama"  # local, key-free generation via an OpenAI-compatible endpoint
+    openrouter = "openrouter"  # online aggregator (many models, one key) via OpenAI-compatible API
+    deepseek = "deepseek"  # DeepSeek first-class API (deepseek-chat / deepseek-reasoner)
+    custom = "custom"  # any user-configured OpenAI-compatible endpoint (vLLM, LM Studio, Together, ...)
 
 
 class ReasoningLevel(str, Enum):
@@ -35,6 +39,7 @@ class LLMRequest(BaseModel):
     max_output_tokens: int = 16000
     json_schema: dict | None = None  # if set, forces structured output
     cache_prefix: bool = True  # apply cache_control to the stable system prefix
+    timeout_ms: int | None = None  # per-request hard timeout; None = provider default
 
 
 class LLMResponse(BaseModel):

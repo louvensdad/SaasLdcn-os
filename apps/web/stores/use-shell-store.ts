@@ -25,7 +25,7 @@ export const useShellStore = create<ShellState>()(
       setHydrated: (hydrated) => set({ hydrated }),
     }),
     {
-      name: 'ldcn-shell-v2',
+      name: 'ldcn-shell-v4',
       partialize: (state) => ({ themeId: state.themeId }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);

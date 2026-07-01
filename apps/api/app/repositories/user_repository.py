@@ -246,6 +246,38 @@ class AuditLogRepository:
         "user_data_exported",
         "user_account_deleted",
         "token_refreshed",
+        # Meta-Factory quality gate / auto-repair / release events.
+        "quality_gate_run",
+        "quality_gate_failed",
+        "auto_repair_started",
+        "auto_repair_action_applied",
+        "auto_repair_failed",
+        "auto_repair_completed",
+        "revalidation_run",
+        "force_release_requested",
+        "force_release_confirmed",
+        "git_export_blocked",
+        # Modernize codebase pipeline events.
+        "modernize_project_uploaded",
+        "modernize_git_imported",
+        "llm_provider_selected",
+        "llm_connection_tested",
+        "codebase_analysis_started",
+        "codebase_analysis_completed",
+        "modernization_plan_approved",
+        "auto_refactor_started",
+        "auto_refactor_completed",
+        "revalidation_started",
+        "revalidation_completed",
+        "modernized_project_exported",
+        "LLM_PROVIDER_CONFIGURED",
+        "LLM_PROVIDER_SELECTED",
+        "LLM_PROVIDER_CONFIRMED",
+        "LLM_PROVIDER_TESTED",
+        "LLM_PROVIDER_FAILED",
+        "LLM_FALLBACK_DETERMINISTIC_USED",
+        "LLM_ACTION_STARTED",
+        "LLM_ACTION_COMPLETED",
     }
 
     def __init__(self, sqlite_path: Path | None = None) -> None:
@@ -302,3 +334,4 @@ class AuditLogRepository:
                 "DELETE FROM audit_logs WHERE created_at < ?",
                 (cutoff.replace(microsecond=0).isoformat(),),
             )
+

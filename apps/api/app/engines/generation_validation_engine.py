@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from app.engines.generated_project_quality_engine import GeneratedProjectQualityEngine
 from app.schemas.generation_validation import GenerationValidationReport
@@ -14,12 +14,17 @@ class GenerationValidationEngine:
         self.quality_engine = GeneratedProjectQualityEngine()
         self.files_service = GeneratedProjectService()
 
-    def validate(self, project: dict[str, Any]) -> GenerationValidationReport:
+    def validate(
+        self,
+        project: dict[str, Any],
+        *,
+        event_sink: Callable[[dict[str, Any]], None] | None = None,
+    ) -> GenerationValidationReport:
         quality = self.quality_engine.quality_check(project)
         dependency_audit = dependency_research_service.audit_manifest(
             self.files_service.export_files(project)
         )
-        build = build_validation_service.validate(project)
+        build = build_validation_service.validate(project, event_sink=event_sink)
 
         score = int(quality.get("score", 0))
         if dependency_audit.status == "failed":

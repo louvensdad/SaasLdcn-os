@@ -26,10 +26,12 @@ class GitProviderService:
     def __init__(self, storage: GitProviderRepository | None = None) -> None:
         self._storage = storage or GitProviderRepository()
         self._storage.initialize()
-        self._connections: dict[Provider, dict[str, Any]] = {}
-        self._repositories: dict[str, dict[str, Any]] = {}
+        # Caches are keyed per user so one user's credentials are never served to
+        # another: (user_id, provider) for connections, (user_id, repo_key) for repos.
+        self._connections: dict[tuple[str, Provider], dict[str, Any]] = {}
+        self._repositories: dict[tuple[str, str], dict[str, Any]] = {}
 
-    def connect(self, provider: Provider, token: str) -> dict[str, Any]:
+    def connect(self, user_id: str, provider: Provider, token: str) -> dict[str, Any]:
         token = token.strip()
         if not token:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A provider token is required.")
@@ -52,17 +54,17 @@ class GitProviderService:
                 detail=f"{self._label(provider)} is unavailable. Try again shortly.",
             ) from exc
 
-        self._connections[provider] = {"token": token, "profile": profile}
-        self._storage.save_connection(provider, token, profile)
+        self._connections[(user_id, provider)] = {"token": token, "profile": profile}
+        self._storage.save_connection(user_id, provider, token, profile)
         return profile
 
-    def disconnect(self, provider: Provider) -> dict[str, Any]:
-        self._connections.pop(provider, None)
-        self._storage.delete_connection(provider)
-        return self.status(provider)
+    def disconnect(self, user_id: str, provider: Provider) -> dict[str, Any]:
+        self._connections.pop((user_id, provider), None)
+        self._storage.delete_connection(user_id, provider)
+        return self.status(user_id, provider)
 
-    def status(self, provider: Provider) -> dict[str, Any]:
-        connection = self._get_connection(provider)
+    def status(self, user_id: str, provider: Provider) -> dict[str, Any]:
+        connection = self._get_connection(user_id, provider)
         if connection:
             return connection["profile"]
         return {
@@ -78,12 +80,13 @@ class GitProviderService:
             "last_sync": None,
         }
 
-    def validate(self, provider: Provider) -> dict[str, Any]:
-        connection = self._require_connection(provider)
-        return self.connect(provider, connection["token"])
+    def validate(self, user_id: str, provider: Provider) -> dict[str, Any]:
+        connection = self._require_connection(user_id, provider)
+        return self.connect(user_id, provider, connection["token"])
 
     def create_repository(
         self,
+        user_id: str,
         provider: Provider,
         *,
         namespace: str,
@@ -91,17 +94,17 @@ class GitProviderService:
         visibility: str,
         branch: str,
     ) -> dict[str, Any]:
-        connection = self._require_connection(provider)
+        connection = self._require_connection(user_id, provider)
         key = self._repo_key(provider, namespace, repo_name)
-        existing = self._get_repository(key)
+        existing = self._get_repository(user_id, key)
         if existing:
             return existing
 
         try:
             repository = (
-                self._create_github_repository(connection["token"], namespace, repo_name, visibility, branch)
+                self._create_github_repository(user_id, connection["token"], namespace, repo_name, visibility, branch)
                 if provider == "github"
-                else self._create_gitlab_repository(connection["token"], namespace, repo_name, visibility, branch)
+                else self._create_gitlab_repository(user_id, connection["token"], namespace, repo_name, visibility, branch)
             )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in {401, 403}:
@@ -119,12 +122,13 @@ class GitProviderService:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Provider transport is unavailable.") from exc
 
         repository["status"] = "created"
-        self._repositories[key] = repository
-        self._storage.save_repository(key, repository)
+        self._repositories[(user_id, key)] = repository
+        self._storage.save_repository(user_id, key, repository)
         return repository
 
     def push_initial_commit(
         self,
+        user_id: str,
         provider: Provider,
         *,
         namespace: str,
@@ -133,9 +137,9 @@ class GitProviderService:
         commit_message: str,
         files: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        connection = self._require_connection(provider)
+        connection = self._require_connection(user_id, provider)
         key = self._repo_key(provider, namespace, repo_name)
-        repository = self._get_repository(key)
+        repository = self._get_repository(user_id, key)
         if repository is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Create the repository before exporting files.")
 
@@ -156,8 +160,8 @@ class GitProviderService:
 
         repository["status"] = "ready"
         repository["branch"] = branch
-        self._repositories[key] = repository
-        self._storage.save_repository(key, repository)
+        self._repositories[(user_id, key)] = repository
+        self._storage.save_repository(user_id, key, repository)
         return repository
 
     def _github_profile(self, token: str) -> dict[str, Any]:
@@ -199,8 +203,8 @@ class GitProviderService:
             "Repository Write",
         )
 
-    def _create_github_repository(self, token: str, namespace: str, repo_name: str, visibility: str, branch: str) -> dict[str, Any]:
-        profile = self.status("github")
+    def _create_github_repository(self, user_id: str, token: str, namespace: str, repo_name: str, visibility: str, branch: str) -> dict[str, Any]:
+        profile = self.status(user_id, "github")
         path = "/user/repos" if namespace == profile["username"] else f"/orgs/{quote(namespace, safe='')}/repos"
         with self._client(token, "github") as client:
             response = client.post(path, json={"name": repo_name, "private": visibility == "private", "auto_init": False})
@@ -208,8 +212,8 @@ class GitProviderService:
             data = response.json()
         return self._repository("github", namespace, repo_name, branch, visibility, data["html_url"], str(data["id"]))
 
-    def _create_gitlab_repository(self, token: str, namespace: str, repo_name: str, visibility: str, branch: str) -> dict[str, Any]:
-        profile = self.status("gitlab")
+    def _create_gitlab_repository(self, user_id: str, token: str, namespace: str, repo_name: str, visibility: str, branch: str) -> dict[str, Any]:
+        profile = self.status(user_id, "gitlab")
         payload: dict[str, Any] = {"name": repo_name, "visibility": visibility, "initialize_with_readme": False}
         with self._client(token, "gitlab") as client:
             if namespace != profile["username"]:
@@ -253,26 +257,26 @@ class GitProviderService:
             )
             response.raise_for_status()
 
-    def _get_connection(self, provider: Provider) -> dict[str, Any] | None:
-        connection = self._connections.get(provider)
+    def _get_connection(self, user_id: str, provider: Provider) -> dict[str, Any] | None:
+        connection = self._connections.get((user_id, provider))
         if connection is not None:
             return connection
-        persisted = self._storage.get_connection(provider)
+        persisted = self._storage.get_connection(user_id, provider)
         if persisted is not None:
-            self._connections[provider] = persisted
+            self._connections[(user_id, provider)] = persisted
         return persisted
 
-    def _get_repository(self, key: str) -> dict[str, Any] | None:
-        repository = self._repositories.get(key)
+    def _get_repository(self, user_id: str, key: str) -> dict[str, Any] | None:
+        repository = self._repositories.get((user_id, key))
         if repository is not None:
             return repository
-        persisted = self._storage.get_repository(key)
+        persisted = self._storage.get_repository(user_id, key)
         if persisted is not None:
-            self._repositories[key] = persisted
+            self._repositories[(user_id, key)] = persisted
         return persisted
 
-    def _require_connection(self, provider: Provider) -> dict[str, Any]:
-        connection = self._get_connection(provider)
+    def _require_connection(self, user_id: str, provider: Provider) -> dict[str, Any]:
+        connection = self._get_connection(user_id, provider)
         if connection is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

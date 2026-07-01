@@ -75,6 +75,10 @@ import { InfrastructureRecommendationsPanel } from '@/components/wizard/infrastr
 import { EngineeringReadinessPanel } from '@/components/wizard/engineering-readiness-panel';
 import { VisualizationCockpit } from '@/components/system-design/visualization-cockpit';
 import { ArchitecturalGraphCanvas } from '@/components/architectural-graph/architectural-graph-canvas';
+import { AiIntakePanel } from '@/components/wizard/ai-intake-panel';
+import { LlmToolCard, type LlmToolState } from '@/components/wizard/llm-tool-card';
+import { matchSuggestedStack, specToRequirementFields } from '@/components/wizard/spec-to-wizard';
+import type { ProjectSpec } from '@/lib/api/meta-factory';
 
 type WizardStepId =
   | 'project_requirements'
@@ -206,6 +210,27 @@ function createTriggerId(stepId: WizardStepId) {
 function formatComplexityLabel(value?: string | null) {
   if (!value) return 'pending';
   return value.replaceAll('_', ' ');
+}
+
+function projectNameFromSpec(spec: ProjectSpec) {
+  const source = spec.product_summary || spec.raw_intent || 'ldcn-project';
+  const normalized = source
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return normalized || 'ldcn-project';
+}
+
+function suggestedStackLabel(spec: ProjectSpec) {
+  return [
+    spec.suggested_stack?.language,
+    spec.suggested_stack?.runtime,
+    spec.suggested_stack?.framework,
+    spec.suggested_stack?.architecture,
+  ]
+    .filter(Boolean)
+    .join(' / ');
 }
 
 function gatekeeperToneFromStatus(
@@ -363,7 +388,7 @@ function ReviewDisclosure({
           aria-label={title}
           className="focus-ring cursor-pointer list-none rounded-xl text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]"
         >
-          Toggle section
+          {title}
         </summary>
         <div className="mt-4">{children}</div>
       </details>
@@ -411,6 +436,8 @@ export default function WizardPage() {
   const [generationMode, setGenerationMode] = useState<(typeof GENERATION_MODE_OPTIONS)[number]['value']>('local_build_90');
   const [showAdvancedCapabilities, setShowAdvancedCapabilities] = useState(false);
   const [openEndpointModules, setOpenEndpointModules] = useState<string[]>([]);
+  const [pendingAiStackSpec, setPendingAiStackSpec] = useState<ProjectSpec | null>(null);
+  const [aiSuggestedStack, setAiSuggestedStack] = useState('');
   const lastInfrastructureSelectionKey = useRef<string | null>(null);
 
   useEffect(() => {
@@ -656,6 +683,14 @@ export default function WizardPage() {
     }
     return grouped;
   }, [availableEndpoints, businessModuleIds]);
+  const selectableEndpointCount = useMemo(
+    () =>
+      businessModuleIds.reduce(
+        (count, moduleId) => count + (endpointsBySelectedModule.get(moduleId)?.length ?? 0),
+        0,
+      ),
+    [businessModuleIds, endpointsBySelectedModule],
+  );
 
   const selectedModules = useMemo(
     () => availableModules.filter((item) => businessModuleIds.includes(item.id)),
@@ -737,6 +772,43 @@ export default function WizardPage() {
         ? 'error'
         : 'empty';
 
+  const blueprintToolState: LlmToolState = blueprintPreviewMutation.isPending
+    ? 'loading'
+    : blueprintPreviewMutation.isError
+      ? 'error'
+      : backendBlueprint
+        ? backendBlueprint.validation.valid
+          ? 'success'
+          : 'warning'
+        : 'empty';
+  const promptMasterToolState: LlmToolState = promptMasterPreviewMutation.isPending
+    ? 'loading'
+    : promptMasterPreviewMutation.isError
+      ? 'error'
+      : promptMasterDocument
+        ? promptMasterDocument.validation.valid
+          ? 'success'
+          : 'warning'
+        : 'empty';
+  const gatekeeperToolState: LlmToolState = gatekeeperPreviewMutation.isPending
+    ? 'loading'
+    : gatekeeperPreviewMutation.isError
+      ? 'error'
+      : gatekeeperReport
+        ? gatekeeperReport.decision === 'blocked'
+          ? 'error'
+          : gatekeeperReport.decision === 'approved_with_warnings'
+            ? 'warning'
+            : 'success'
+        : 'empty';
+  const saveToolState: LlmToolState = saveProjectMutation.isPending
+    ? 'loading'
+    : saveProjectMutation.isError
+      ? 'error'
+      : savedProject
+        ? 'success'
+        : 'idle';
+
   const foundationError =
     languagesQuery.error ??
     runtimesQuery.error ??
@@ -774,18 +846,31 @@ export default function WizardPage() {
   const projectTypeComplete = Boolean(architectureComplete && archetypeId);
   const capabilitiesComplete = Boolean(projectTypeComplete && (capabilityIds.length > 0 || availableCapabilities.length === 0));
   const modulesComplete = Boolean(capabilitiesComplete && businessModuleIds.length > 0);
-  const endpointsComplete = Boolean(modulesComplete && endpointIds.length > 0);
+  const endpointsComplete = Boolean(
+    modulesComplete && (endpointIds.length > 0 || selectableEndpointCount === 0),
+  );
 
-  const stepAvailability: Record<WizardStepId, boolean> = {
-    project_requirements: true,
-    technology_path: requirementsComplete,
-    architecture: technologyPathComplete,
-    project_type: architectureComplete,
-    capabilities: projectTypeComplete,
-    business_modules: capabilitiesComplete,
-    endpoints: modulesComplete,
-    blueprint_review: endpointsComplete,
-  };
+  const stepAvailability = useMemo<Record<WizardStepId, boolean>>(
+    () => ({
+      project_requirements: true,
+      technology_path: requirementsComplete,
+      architecture: technologyPathComplete,
+      project_type: architectureComplete,
+      capabilities: projectTypeComplete,
+      business_modules: capabilitiesComplete,
+      endpoints: modulesComplete,
+      blueprint_review: endpointsComplete,
+    }),
+    [
+      architectureComplete,
+      capabilitiesComplete,
+      endpointsComplete,
+      modulesComplete,
+      projectTypeComplete,
+      requirementsComplete,
+      technologyPathComplete,
+    ],
+  );
 
   useEffect(() => {
     setRuntimeId((current) =>
@@ -812,6 +897,80 @@ export default function WizardPage() {
   }, [filteredArchetypes]);
 
   useEffect(() => {
+    if (!pendingAiStackSpec) {
+      return;
+    }
+
+    const matched = matchSuggestedStack(pendingAiStackSpec, {
+      languages: languagesQuery.data ?? [],
+      runtimes: runtimesQuery.data ?? [],
+      frameworks: languageFrameworksQuery.data ?? [],
+      architectures: languageArchitecturesQuery.data ?? [],
+    });
+
+    if (matched.languageId && matched.languageId !== languageId) {
+      handleLanguageChange(matched.languageId);
+      return;
+    }
+
+    if (
+      matched.runtimeId &&
+      matched.runtimeId !== runtimeId &&
+      availableRuntimes.some((runtime) => runtime.id === matched.runtimeId)
+    ) {
+      handleRuntimeChange(matched.runtimeId);
+      return;
+    }
+
+    if (
+      matched.frameworkId &&
+      matched.frameworkId !== frameworkId &&
+      availableFrameworks.some((framework) => framework.id === matched.frameworkId)
+    ) {
+      handleFrameworkChange(matched.frameworkId);
+      return;
+    }
+
+    if (
+      matched.architectureId &&
+      matched.architectureId !== architectureId &&
+      availableArchitectures.some((architecture) => architecture.id === matched.architectureId)
+    ) {
+      handleArchitectureChange(matched.architectureId);
+      setPendingAiStackSpec(null);
+      return;
+    }
+
+    const waitingForDependentRegistries =
+      (Boolean(matched.languageId) && languageFrameworksQuery.isLoading) ||
+      (Boolean(matched.languageId) && languageArchitecturesQuery.isLoading);
+    const appliedAvailableMatches =
+      (!matched.languageId || matched.languageId === languageId) &&
+      (!matched.runtimeId || matched.runtimeId === runtimeId) &&
+      (!matched.frameworkId || matched.frameworkId === frameworkId) &&
+      (!matched.architectureId || matched.architectureId === architectureId);
+
+    if (!waitingForDependentRegistries && appliedAvailableMatches) {
+      setPendingAiStackSpec(null);
+    }
+  }, [
+    architectureId,
+    availableArchitectures,
+    availableFrameworks,
+    availableRuntimes,
+    frameworkId,
+    languageArchitecturesQuery.data,
+    languageArchitecturesQuery.isLoading,
+    languageFrameworksQuery.data,
+    languageFrameworksQuery.isLoading,
+    languageId,
+    languagesQuery.data,
+    pendingAiStackSpec,
+    runtimeId,
+    runtimesQuery.data,
+  ]);
+
+  useEffect(() => {
     const allowedCapabilityIds = new Set(availableCapabilities.map((item) => item.id));
     setCapabilityIds((current) => current.filter((item) => allowedCapabilityIds.has(item)));
   }, [availableCapabilities]);
@@ -822,9 +981,18 @@ export default function WizardPage() {
   }, [availableModules]);
 
   useEffect(() => {
-    const allowedEndpointIds = new Set(availableEndpoints.map((item) => item.id));
+    const selectedModuleIds = new Set(businessModuleIds);
+    const allowedEndpointIds = new Set(
+      availableEndpoints
+        .filter(
+          (endpoint) =>
+            endpoint.business_module_id != null &&
+            selectedModuleIds.has(endpoint.business_module_id),
+        )
+        .map((endpoint) => endpoint.id),
+    );
     setEndpointIds((current) => current.filter((item) => allowedEndpointIds.has(item)));
-  }, [availableEndpoints]);
+  }, [availableEndpoints, businessModuleIds]);
 
   useEffect(() => {
     setOpenEndpointModules((current) => current.filter((item) => businessModuleIds.includes(item)));
@@ -951,7 +1119,7 @@ export default function WizardPage() {
   function goToNextStep(stepId: WizardStepId) {
     const currentIndex = STEP_INDEX_BY_ID[stepId];
     const nextStep = WIZARD_STEPS[currentIndex + 1];
-    if (!nextStep) return;
+    if (!nextStep || !stepAvailability[nextStep.id]) return;
     setCurrentStepId(nextStep.id);
   }
 
@@ -1020,6 +1188,35 @@ export default function WizardPage() {
     setEndpointIds((nextArchetype?.default_endpoints ?? []).filter((item) => allowedEndpointIds.has(item)));
     setInfrastructureComponentIds([]);
     lastInfrastructureSelectionKey.current = null;
+  }
+
+  function handleApplyProjectSpec(spec: ProjectSpec) {
+    const fields = specToRequirementFields(spec);
+    const stackLabel = suggestedStackLabel(spec);
+
+    setProjectName((current) => current.trim() || projectNameFromSpec(spec));
+    setProjectGoal(fields.projectGoal);
+    setBusinessContext(fields.businessContext);
+    setTargetUsers(fields.targetUsers);
+    setBusinessRules(fields.businessRules);
+    setEntities(fields.entities);
+    setWorkflows(fields.workflows);
+    setConstraints(fields.constraints);
+    setDeliveryTarget((current) => current || 'zip');
+    if (LOCALE_OPTIONS.includes(spec.locale as (typeof LOCALE_OPTIONS)[number])) {
+      setLocale(spec.locale as (typeof LOCALE_OPTIONS)[number]);
+    }
+
+    setAiSuggestedStack(stackLabel);
+    setPendingAiStackSpec(spec);
+
+    addToast({
+      tone: 'success',
+      title: t('wizard.toast.intakeApplied.title'),
+      description: stackLabel
+        ? t('wizard.toast.intakeApplied.descriptionWithStack', { stack: stackLabel })
+        : t('wizard.toast.intakeApplied.description'),
+    });
   }
 
   function toggleEndpointModule(moduleId: string) {
@@ -1140,6 +1337,14 @@ export default function WizardPage() {
         tone: 'error',
         title: t('wizard.toast.validationChainIncomplete.title'),
         description: t('wizard.toast.validationChainIncomplete.description'),
+      });
+      return;
+    }
+    if (gatekeeperReport.decision === 'blocked') {
+      addToast({
+        tone: 'error',
+        title: t('wizard.toast.gatekeeperBlocked.title'),
+        description: gatekeeperReport.summary,
       });
       return;
     }
@@ -1673,25 +1878,39 @@ export default function WizardPage() {
                 {localizedWizardSteps.map((step, index) => {
                   const state = getStepState(step.id);
                   const isNavigable = state !== 'locked';
+                  const isActive = currentStepId === step.id;
+                  const isDone = index < (STEP_INDEX_BY_ID[currentStepId] ?? 0);
                   return (
                     <li key={step.id}>
                       <button
                         id={createTriggerId(step.id)}
                         type="button"
                         aria-controls={createRegionId(step.id)}
-                        aria-current={currentStepId === step.id ? 'step' : undefined}
+                        aria-current={isActive ? 'step' : undefined}
                         disabled={!isNavigable}
                         onClick={() => isNavigable && setCurrentStepId(step.id)}
                         className={[
-                          'focus-ring flex w-full items-start gap-3 rounded-[var(--radius-xl)] border px-3 py-3 text-left transition duration-200',
-                          state === 'active'
-                            ? 'border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]'
-                            : 'border-white/10 bg-white/5 hover:bg-white/8',
+                          'focus-ring flex w-full items-start gap-3 rounded-[var(--radius-lg)] border px-3 py-3 text-left transition duration-200',
+                          isActive
+                            ? 'border-[color-mix(in_srgb,var(--accent)_40%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)]'
+                            : 'border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_45%,transparent)] hover:border-[color:var(--border-strong)]',
                           !isNavigable ? 'cursor-not-allowed opacity-55' : '',
                         ].join(' ')}
                       >
-                        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 text-xs font-semibold text-[color:var(--text)]">
-                          {index + 1}
+                        <span
+                          className={[
+                            'relative mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full t-mono text-xs font-semibold',
+                            isDone
+                              ? 'accent-fill'
+                              : isActive
+                                ? 'border border-[color-mix(in_srgb,var(--accent)_55%,transparent)] text-[color:var(--accent)]'
+                                : 'border border-[color:var(--border-strong)] text-[color:var(--muted)]',
+                          ].join(' ')}
+                        >
+                          {isActive ? (
+                            <span className="absolute inset-0 animate-ping rounded-full border border-[color-mix(in_srgb,var(--accent)_45%,transparent)]" aria-hidden />
+                          ) : null}
+                          {String(index + 1).padStart(2, '0')}
                         </span>
                         <span className="min-w-0">
                           <span className="block text-sm font-semibold text-[color:var(--text)]">{step.title}</span>
@@ -1754,6 +1973,7 @@ export default function WizardPage() {
                     </Button>
                   }
                 >
+                  <AiIntakePanel onApply={handleApplyProjectSpec} />
                   <SelectionGroup title={t('wizard.businessFirst.objective')} description={t('wizard.businessFirst.objective.description')}>
                     <TextField label={t('wizard.businessFirst.projectName')} value={projectName} onChange={(event) => setProjectName(event.target.value)} required />
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1790,9 +2010,9 @@ export default function WizardPage() {
                   <SelectionGroup title={t('wizard.businessFirst.delivery')} description={t('wizard.businessFirst.delivery.description')}>
                     <SelectField label={t('wizard.businessFirst.delivery.label')} value={deliveryTarget} onChange={(event) => setDeliveryTarget(event.target.value as typeof deliveryTarget)} required>
                       <option value="">{t('wizard.businessFirst.delivery.select')}</option>
-                      <option value="github">GitHub</option>
-                      <option value="gitlab">GitLab</option>
-                      <option value="both">GitHub + GitLab</option>
+                      <option value="github">{t('wizard.businessFirst.delivery.github')}</option>
+                      <option value="gitlab">{t('wizard.businessFirst.delivery.gitlab')}</option>
+                      <option value="both">{t('wizard.businessFirst.delivery.both')}</option>
                       <option value="zip">{t('wizard.businessFirst.delivery.zip')}</option>
                     </SelectField>
                     {!requirementsComplete ? (
@@ -1815,7 +2035,7 @@ export default function WizardPage() {
                         variant="secondary"
                         onClick={() => goToPreviousStep('technology_path')}
                       >
-                        Back
+                        {t('wizard.steps.back')}
                       </Button>
                       <Button
                         type="button"
@@ -1831,6 +2051,18 @@ export default function WizardPage() {
                     </>
                   }
                 >
+                  {aiSuggestedStack ? (
+                    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--accent)_28%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_7%,transparent)] p-4 text-sm text-[color:var(--muted)]">
+                      <Sparkles className="h-4 w-4 text-[color:var(--accent)]" aria-hidden />
+                      <span className="font-semibold text-[color:var(--text)]">{t('wizard.intake.stackSuggestionLabel')}</span>
+                      <span>{aiSuggestedStack}</span>
+                      {pendingAiStackSpec ? (
+                        <Button type="button" variant="soft" className="ml-auto" onClick={() => setPendingAiStackSpec({ ...pendingAiStackSpec })}>
+                          {t('wizard.intake.applySuggestedStack')}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <SelectionGroup
                     title={t('wizard.chooseTechnologySpine')}
                     description={t('wizard.chooseTechnologySpineDescription')}
@@ -1971,7 +2203,7 @@ export default function WizardPage() {
                   actions={
                     <>
                       <Button type="button" variant="secondary" onClick={() => goToPreviousStep('architecture')}>
-                        Back
+                        {t('wizard.steps.back')}
                       </Button>
                       <Button
                         type="button"
@@ -2033,7 +2265,7 @@ export default function WizardPage() {
                   actions={
                     <>
                       <Button type="button" variant="secondary" onClick={() => goToPreviousStep('project_type')}>
-                        Back
+                        {t('wizard.steps.back')}
                       </Button>
                       <Button
                         type="button"
@@ -2088,7 +2320,7 @@ export default function WizardPage() {
                   actions={
                     <>
                       <Button type="button" variant="secondary" onClick={() => goToPreviousStep('capabilities')}>
-                        Back
+                        {t('wizard.steps.back')}
                       </Button>
                       <Button
                         type="button"
@@ -2107,8 +2339,8 @@ export default function WizardPage() {
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap gap-2">
-                        <Badge>{capabilityIds.length} selected</Badge>
-                        <Badge>{recommendedCapabilities.length} recommended</Badge>
+                        <Badge>{t('wizard.steps.selectedCount', { count: capabilityIds.length })}</Badge>
+                        <Badge>{t('wizard.steps.recommendedCount', { count: recommendedCapabilities.length })}</Badge>
                       </div>
                       <Button
                         type="button"
@@ -2177,7 +2409,7 @@ export default function WizardPage() {
                   actions={
                     <>
                       <Button type="button" variant="secondary" onClick={() => goToPreviousStep('business_modules')}>
-                        Back
+                        {t('wizard.steps.back')}
                       </Button>
                       <Button
                         type="button"
@@ -2249,9 +2481,14 @@ export default function WizardPage() {
                   actions={
                     <>
                       <Button type="button" variant="secondary" onClick={() => goToPreviousStep('endpoints')}>
-                        Back
+                        {t('wizard.steps.back')}
                       </Button>
-                      <Button type="button" variant="primary" onClick={() => goToNextStep('endpoints')}>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        disabled={!endpointsComplete}
+                        onClick={() => goToNextStep('endpoints')}
+                      >
                         {t('wizard.continueBlueprint')}
                       </Button>
                     </>
@@ -2286,8 +2523,8 @@ export default function WizardPage() {
                                   <span className="mt-1 block text-xs text-[color:var(--muted)]">{module.description}</span>
                                 </span>
                                 <div className="flex items-center gap-2">
-                                  <Badge>{moduleEndpoints.length} routes</Badge>
-                                  <Badge>{module.default_endpoints.filter((item) => moduleEndpoints.some((endpoint) => endpoint.id === item)).length} recommended</Badge>
+                                  <Badge>{t('wizard.steps.routesCount', { count: moduleEndpoints.length })}</Badge>
+                                  <Badge>{t('wizard.steps.recommendedCount', { count: module.default_endpoints.filter((item) => moduleEndpoints.some((endpoint) => endpoint.id === item)).length })}</Badge>
                                 </div>
                               </button>
 
@@ -2326,46 +2563,9 @@ export default function WizardPage() {
                   step={currentStep}
                   stepState={getStepState('blueprint_review')}
                   actions={
-                    <>
-                      <Button type="button" variant="secondary" onClick={() => goToPreviousStep('blueprint_review')}>
-                        Back
-                      </Button>
-                      <Button type="button" variant="primary" onClick={previewCurrentBlueprint} disabled={blueprintPreviewMutation.isPending}>
-                        {blueprintPreviewMutation.isPending ? <ButtonLoading label={t('wizard.button.buildingBlueprintPreview')} /> : t('wizard.button.previewBlueprint')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={previewPromptMaster}
-                        disabled={!backendBlueprint || promptMasterPreviewMutation.isPending}
-                      >
-                        {promptMasterPreviewMutation.isPending ? <ButtonLoading label={t('wizard.button.buildingPromptMaster')} /> : t('wizard.previewPromptMaster')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="soft"
-                        onClick={() => void copyPromptMaster()}
-                        disabled={!promptMasterDocument}
-                      >
-                        {t('wizard.button.copyPromptMaster')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={runGatekeeper}
-                        disabled={!promptMasterDocument || gatekeeperPreviewMutation.isPending}
-                      >
-                        {gatekeeperPreviewMutation.isPending ? <ButtonLoading label={t('wizard.button.runningGatekeeper')} /> : t('wizard.runGatekeeper')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="primary"
-                        onClick={saveProject}
-                        disabled={!gatekeeperReport || saveProjectMutation.isPending}
-                      >
-                        {saveProjectMutation.isPending ? <ButtonLoading label={t('wizard.button.savingProject')} /> : t('wizard.button.saveProject')}
-                      </Button>
-                    </>
+                    <Button type="button" variant="secondary" onClick={() => goToPreviousStep('blueprint_review')}>
+                      {t('wizard.steps.back')}
+                    </Button>
                   }
                 >
                   <SelectionGroup
@@ -2403,6 +2603,164 @@ export default function WizardPage() {
                           </option>
                         ))}
                       </SelectField>
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-4">
+                      <LlmToolCard
+                        title={t('wizard.tools.blueprint.title')}
+                        description={t('wizard.tools.blueprint.description')}
+                        prerequisites={[
+                          t('wizard.tools.prereq.requirements'),
+                          t('wizard.tools.prereq.stack'),
+                          t('wizard.tools.prereq.scope'),
+                        ]}
+                        state={blueprintToolState}
+                        stateLabel={t(`wizard.tools.state.${blueprintToolState}`)}
+                        actionLabel={t('wizard.button.previewBlueprint')}
+                        loadingLabel={t('wizard.button.buildingBlueprintPreview')}
+                        onAction={previewCurrentBlueprint}
+                        disabled={blueprintPreviewMutation.isPending}
+                        error={
+                          blueprintPreviewMutation.isError
+                            ? getApiErrorMessage(
+                                blueprintPreviewMutation.error,
+                                t('wizard.review.blueprintPreviewFailedFallback'),
+                              )
+                            : null
+                        }
+                        result={
+                          backendBlueprint ? (
+                            <div className="space-y-2">
+                              <p className="font-semibold text-[color:var(--text)]">
+                                {backendBlueprint.validation.valid
+                                  ? t('wizard.tools.blueprint.valid')
+                                  : t('wizard.tools.blueprint.warning')}
+                              </p>
+                              <p>
+                                {t('wizard.tools.blueprint.result', {
+                                  errors: backendBlueprint.validation.errors.length,
+                                  warnings: backendBlueprint.validation.warnings.length,
+                                  recommendations: backendBlueprint.recommendations.length,
+                                })}
+                              </p>
+                            </div>
+                          ) : null
+                        }
+                      />
+                      <LlmToolCard
+                        title={t('wizard.tools.promptMaster.title')}
+                        description={t('wizard.tools.promptMaster.description')}
+                        prerequisites={[
+                          t('wizard.tools.prereq.blueprint'),
+                          t('wizard.tools.prereq.validation'),
+                        ]}
+                        state={promptMasterToolState}
+                        stateLabel={t(`wizard.tools.state.${promptMasterToolState}`)}
+                        actionLabel={t('wizard.previewPromptMaster')}
+                        loadingLabel={t('wizard.button.buildingPromptMaster')}
+                        onAction={previewPromptMaster}
+                        disabled={!backendBlueprint || promptMasterPreviewMutation.isPending}
+                        error={
+                          promptMasterPreviewMutation.isError
+                            ? getApiErrorMessage(
+                                promptMasterPreviewMutation.error,
+                                t('wizard.review.promptMasterPreviewFailedFallback'),
+                              )
+                            : null
+                        }
+                        result={
+                          promptMasterDocument ? (
+                            <div className="space-y-3">
+                              <p className="font-semibold text-[color:var(--text)]">
+                                {t('wizard.tools.promptMaster.result', {
+                                  sections: promptMasterDocument.sections.length,
+                                  warnings: promptMasterDocument.validation.warnings.length,
+                                })}
+                              </p>
+                              <Button
+                                type="button"
+                                variant="soft"
+                                onClick={() => void copyPromptMaster()}
+                                disabled={!promptMasterDocument}
+                              >
+                                {t('wizard.button.copyPromptMaster')}
+                              </Button>
+                            </div>
+                          ) : null
+                        }
+                      />
+                      <LlmToolCard
+                        title={t('wizard.tools.gatekeeper.title')}
+                        description={t('wizard.tools.gatekeeper.description')}
+                        prerequisites={[
+                          t('wizard.tools.prereq.blueprint'),
+                          t('wizard.tools.prereq.promptMaster'),
+                        ]}
+                        state={gatekeeperToolState}
+                        stateLabel={t(`wizard.tools.state.${gatekeeperToolState}`)}
+                        actionLabel={t('wizard.runGatekeeper')}
+                        loadingLabel={t('wizard.button.runningGatekeeper')}
+                        onAction={runGatekeeper}
+                        disabled={!promptMasterDocument || gatekeeperPreviewMutation.isPending}
+                        error={
+                          gatekeeperPreviewMutation.isError
+                            ? getApiErrorMessage(
+                                gatekeeperPreviewMutation.error,
+                                t('wizard.review.gatekeeperPreviewFailedFallback'),
+                              )
+                            : null
+                        }
+                        result={
+                          gatekeeperReport ? (
+                            <div className="space-y-2">
+                              <p className="font-semibold text-[color:var(--text)]">{gatekeeperReport.decision}</p>
+                              <p>
+                                {t('wizard.tools.gatekeeper.result', {
+                                  checks: gatekeeperReport.checks.length,
+                                  blockers: gatekeeperReport.blockers.length,
+                                  warnings: gatekeeperReport.warnings.length,
+                                })}
+                              </p>
+                            </div>
+                          ) : null
+                        }
+                      />
+                      <LlmToolCard
+                        title={t('wizard.tools.save.title')}
+                        description={t('wizard.tools.save.description')}
+                        prerequisites={[
+                          t('wizard.tools.prereq.blueprint'),
+                          t('wizard.tools.prereq.promptMaster'),
+                          t('wizard.tools.prereq.gatekeeper'),
+                        ]}
+                        state={saveToolState}
+                        stateLabel={t(`wizard.tools.state.${saveToolState}`)}
+                        actionLabel={t('wizard.button.saveProject')}
+                        loadingLabel={t('wizard.button.savingProject')}
+                        onAction={saveProject}
+                        disabled={
+                          !gatekeeperReport ||
+                          gatekeeperReport.decision === 'blocked' ||
+                          saveProjectMutation.isPending
+                        }
+                        error={
+                          saveProjectMutation.isError
+                            ? getApiErrorMessage(
+                                saveProjectMutation.error,
+                                t('wizard.review.projectSaveFailedFallback'),
+                              )
+                            : null
+                        }
+                        result={
+                          savedProject ? (
+                            <p>
+                              {t('wizard.tools.save.result', {
+                                projectId: savedProject.project_id,
+                              })}
+                            </p>
+                          ) : null
+                        }
+                      />
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2">
@@ -2707,7 +3065,7 @@ export default function WizardPage() {
                             </div>
                             {backendBlueprint.infrastructure_profile.warnings.length ? (
                               <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3">
-                                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">Warnings</p>
+                                <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('common.warnings')}</p>
                                 <div className="mt-2 space-y-1">
                                   {backendBlueprint.infrastructure_profile.warnings.map((warning) => (
                                     <p key={warning}>{warning}</p>
@@ -2794,9 +3152,9 @@ export default function WizardPage() {
                           >
                             <div className="flex flex-wrap gap-2">
                               <Badge>{promptMasterDocument.validation.valid ? t('wizard.review.validPromptMasterBadge') : t('wizard.review.promptMasterIssuesBadge')}</Badge>
-                              <Badge>{promptMasterDocument.sections.length} sections</Badge>
-                              <Badge>{promptMasterDocument.validation.errors.length} errors</Badge>
-                              <Badge>{promptMasterDocument.validation.warnings.length} warnings</Badge>
+                              <Badge>{t('wizard.review.sectionsCount', { count: promptMasterDocument.sections.length })}</Badge>
+                              <Badge>{t('wizard.review.errorsCount', { count: promptMasterDocument.validation.errors.length })}</Badge>
+                              <Badge>{t('wizard.review.warningsCount', { count: promptMasterDocument.validation.warnings.length })}</Badge>
                             </div>
 
                             {promptMasterDocument.validation.errors.length ? (
@@ -2925,9 +3283,9 @@ export default function WizardPage() {
                           >
                             <div className="flex flex-wrap gap-2">
                               <Badge>{gatekeeperReport.decision}</Badge>
-                              <Badge>{gatekeeperReport.checks.length} checks</Badge>
-                              <Badge>{gatekeeperReport.blockers.length} blockers</Badge>
-                              <Badge>{gatekeeperReport.warnings.length} warnings</Badge>
+                              <Badge>{t('wizard.review.checksCount', { count: gatekeeperReport.checks.length })}</Badge>
+                              <Badge>{t('wizard.review.blockersCount', { count: gatekeeperReport.blockers.length })}</Badge>
+                              <Badge>{t('wizard.review.warningsCount', { count: gatekeeperReport.warnings.length })}</Badge>
                             </div>
 
                             <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-4 text-sm text-[color:var(--muted)]">
@@ -3129,7 +3487,7 @@ export default function WizardPage() {
                     <div key={recommendation.template.id} className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-sm font-semibold text-[color:var(--text)]">{recommendation.template.name}</p>
-                        <Badge>{recommendation.compatibility?.score ?? 0}% match</Badge>
+                        <Badge>{t('wizard.rail.matchPercent', { score: recommendation.compatibility?.score ?? 0 })}</Badge>
                       </div>
                       <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
                         {t('wizard.rail.matchedTemplate', { matched: recommendation.compatibility?.matched.join(', ') || 'template metadata' })}

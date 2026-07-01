@@ -38,8 +38,15 @@ async function request<T>(
 
 function extractError(body: unknown, status: number): string {
   if (body && typeof body === 'object') {
-    const detail = (body as Record<string, unknown>).detail;
-    if (typeof detail === 'string') return detail;
+    const record = body as Record<string, unknown>;
+    // FastAPI raw detail.
+    if (typeof record.detail === 'string') return record.detail;
+    // App-wide error envelope: { error: { code, message, details } }.
+    if (record.error && typeof record.error === 'object') {
+      const message = (record.error as Record<string, unknown>).message;
+      if (typeof message === 'string') return message;
+    }
+    if (typeof record.message === 'string') return record.message;
   }
   return `HTTP ${status}`;
 }
@@ -49,7 +56,7 @@ export const generatedExportClient = {
     surface: GenerationSurface,
     projectId: string,
     provider: GitProvider,
-    payload: GeneratedProjectExportRequest,
+    payload: GeneratedProjectExportRequest & { force?: boolean },
   ) =>
     request<GeneratedProjectExportResponse>(
       `/api/${surface}/${projectId}/export/${provider}`,

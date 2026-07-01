@@ -1,15 +1,20 @@
 import {
   BarChart3,
+  ChartNoAxesCombined,
   BookOpen,
   BrainCircuit,
-  Factory,
   GitBranch,
+  Library,
+  SearchCheck,
   LayoutDashboard,
+  Compass,
+  FlaskConical,
   Map,
+  MessagesSquare,
   MonitorCog,
+  Orbit,
   RefreshCw,
   Settings2,
-  SquareStack,
   WandSparkles,
 } from 'lucide-react';
 
@@ -22,22 +27,28 @@ export interface NavigationItem {
 
 export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
   {
+    labelKey: 'navigation.platform.label',
+    href: '/platform',
+    icon: Orbit,
+    descriptionKey: 'navigation.platform.description',
+  },
+  {
     labelKey: 'navigation.dashboard.label',
     href: '/dashboard',
     icon: LayoutDashboard,
     descriptionKey: 'navigation.dashboard.description',
   },
   {
+    labelKey: 'navigation.analytics.label',
+    href: '/analytics',
+    icon: ChartNoAxesCombined,
+    descriptionKey: 'navigation.analytics.description',
+  },
+  {
     labelKey: 'navigation.projects.label',
     href: '/projects',
     icon: BarChart3,
     descriptionKey: 'navigation.projects.description',
-  },
-  {
-    labelKey: 'navigation.templates.label',
-    href: '/templates',
-    icon: SquareStack,
-    descriptionKey: 'navigation.templates.description',
   },
   {
     labelKey: 'navigation.skills.label',
@@ -52,16 +63,46 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
     descriptionKey: 'navigation.wizard.description',
   },
   {
-    labelKey: 'navigation.metaFactory.label',
-    href: '/meta-factory',
-    icon: Factory,
-    descriptionKey: 'navigation.metaFactory.description',
+    labelKey: 'navigation.projectRooms.label',
+    href: '/project-rooms',
+    icon: MessagesSquare,
+    descriptionKey: 'navigation.projectRooms.description',
+  },
+  {
+    labelKey: 'navigation.architect.label',
+    href: '/architect',
+    icon: Compass,
+    descriptionKey: 'navigation.architect.description',
+  },
+  {
+    labelKey: 'navigation.engineeringReview.label',
+    href: '/engineering-review',
+    icon: SearchCheck,
+    descriptionKey: 'navigation.engineeringReview.description',
+  },
+  {
+    labelKey: 'navigation.engineeringLaboratory.label',
+    href: '/engineering-laboratory',
+    icon: FlaskConical,
+    descriptionKey: 'navigation.engineeringLaboratory.description',
+  },
+  {
+    labelKey: 'navigation.library.label',
+    href: '/templates',
+    icon: Library,
+    descriptionKey: 'navigation.library.description',
   },
   {
     labelKey: 'navigation.modernize.label',
     href: '/modernize',
     icon: RefreshCw,
     descriptionKey: 'navigation.modernize.description',
+  },
+  {
+    labelKey: 'navigation.autoFix.label',
+    href: '/auto-fix',
+    icon: WandSparkles,
+    descriptionKey: 'navigation.autoFix.description',
   },
   {
     labelKey: 'navigation.systemStatus.label',

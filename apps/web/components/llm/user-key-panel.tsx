@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { KeyRound, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, KeyRound, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
 
 import { userKeysClient, type KeyProvider, type KeySessionStatus } from '@/lib/api/user-keys';
 import { useLocale } from '@/hooks/use-locale';
@@ -10,6 +10,8 @@ const PROVIDERS: ReadonlyArray<{ id: KeyProvider; label: string }> = [
   { id: 'anthropic', label: 'Anthropic' },
   { id: 'openai', label: 'OpenAI' },
   { id: 'google', label: 'Google' },
+  { id: 'openrouter', label: 'OpenRouter' },
+  { id: 'custom', label: 'Custom (OpenAI-compat)' },
 ];
 
 interface Props {
@@ -29,11 +31,26 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
   const [sessions, setSessions] = useState<KeySessionStatus[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; model?: string | null } | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
     void userKeysClient.status().then((r) => setSessions(r.sessions)).catch(() => undefined);
   }, [enabled]);
+
+  async function testKey() {
+    if (apiKey.trim().length < 8) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await userKeysClient.testKey(provider, apiKey.trim());
+      setTestResult({ ok: result.ok, message: result.message, model: result.model });
+    } catch (err) {
+      setTestResult({ ok: false, message: err instanceof Error ? err.message : t('userKey.error.save') });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function save() {
     if (apiKey.trim().length < 8) return;
@@ -43,6 +60,7 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
       const res = await userKeysClient.setKey(provider, apiKey.trim());
       setSessions(res.sessions);
       setApiKey(''); // drop the raw key from component state immediately
+      setTestResult(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('userKey.error.save'));
     } finally {
@@ -68,9 +86,9 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
           type="checkbox"
           checked={enabled}
           onChange={(e) => onEnabledChange(e.target.checked)}
-          className="h-4 w-4 accent-indigo-600"
+          className="h-4 w-4 accent-[color:var(--accent)]"
         />
-        <KeyRound className="h-4 w-4 text-indigo-500" />
+        <KeyRound className="h-4 w-4 text-[color:var(--accent)]" />
         {t('userKey.useMyKey')}
       </label>
 
@@ -84,7 +102,7 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={provider}
-              onChange={(e) => setProvider(e.target.value as KeyProvider)}
+              onChange={(e) => { setProvider(e.target.value as KeyProvider); setTestResult(null); }}
               className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
             >
               {PROVIDERS.map((p) => (
@@ -96,21 +114,36 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
               autoComplete="off"
               spellCheck={false}
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => { setApiKey(e.target.value); setTestResult(null); }}
               placeholder={t('userKey.placeholder')}
-              className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm outline-none ring-indigo-500/40 transition focus:ring-2"
+              className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm outline-none ring-[color-mix(in_srgb,var(--accent)_40%,transparent)] transition focus:ring-2"
             />
             <button
               type="button"
-              onClick={() => void save()}
+              onClick={() => void testKey()}
               disabled={busy || apiKey.trim().length < 8}
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-background/60 disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              Testar chave
+            </button>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={busy || apiKey.trim().length < 8 || !testResult?.ok}
+              className="inline-flex items-center gap-2 rounded-lg bg-[image:var(--accent-gradient)] px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
               {t('userKey.save')}
             </button>
           </div>
 
+          {testResult && (
+            <p className={testResult.ok ? 'flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400' : 'flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400'}>
+              {testResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+              {testResult.message}{testResult.model ? ` ? ${testResult.model}` : ''}
+            </p>
+          )}
           {error && <p className="text-xs text-amber-600 dark:text-amber-400">{error}</p>}
 
           {sessions.length > 0 && (

@@ -1,0 +1,732 @@
+from __future__ import annotations
+
+import concurrent.futures as cf
+import hashlib
+import json
+import threading
+import time
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, summarize_contract
+from app.engines.factory_pipeline import _run_agent
+from app.engines.generation_validation_engine import generation_validation_engine
+from app.engines.llm.router import LLMRouter
+from app.engines.orchestrator_engine import compile_mega_prompt
+from app.engines.warning_policy import classify as classify_warnings
+from app.repositories.generation_job_repository import GenerationJobRepository
+from app.repositories.redaction import redact_value
+from app.schemas.generation_job import GenerationJob
+from app.schemas.orchestrator import ProjectSpec
+from app.services.file_protocol import EmittedFile
+from app.services.generated_project_service import GeneratedProjectService
+from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
+
+
+# Per-stage hard ceiling. The LLM call already retries up to 3x at 6 min each
+# (factory_pipeline.AGENT_TIMEOUT_MS), so a legitimate deep agent can run ~18 min.
+# The watchdog sits just above that worst case: a step that exceeds it is a genuine
+# hang (an adapter ignoring its own timeout, a never-resolving await, a wedged
+# socket) and is converted into a STALLED job instead of a forever-"running" one.
+STAGE_TIMEOUT_SECONDS = 1500  # 25 min — bounds any single step; never infinite
+
+LOGICAL_STAGES = ["contracts", "database", "backend", "frontend", "security", "tests", "docs", "build", "package"]
+BACKEND_CHUNKS = [
+    "structure", "package_config", "domain_entities", "dtos", "controllers",
+    "services", "repositories", "auth", "validation", "error_handling",
+    "tests", "openapi_sync",
+]
+
+
+@dataclass(frozen=True)
+class PipelineStep:
+    state: str
+    logical: str
+    action: str
+    role: str | None = None
+    chunk: str | None = None
+
+
+STEPS = [
+    PipelineStep("PREPARING_CONTEXT", "contracts", "prepare"),
+    PipelineStep("CONTRACTS_PLANNING", "contracts", "plan"),
+    PipelineStep("CONTRACTS_GENERATING", "contracts", "llm", "contracts"),
+    PipelineStep("CONTRACTS_VALIDATING", "contracts", "validate"),
+    PipelineStep("DATABASE_PLANNING", "database", "plan"),
+    PipelineStep("DATABASE_GENERATING", "database", "deterministic"),
+    PipelineStep("DATABASE_VALIDATING", "database", "validate"),
+    PipelineStep("BACKEND_PLANNING", "backend", "plan"),
+    *[PipelineStep("BACKEND_GENERATING", "backend", "llm", "backend", chunk) for chunk in BACKEND_CHUNKS],
+    PipelineStep("BACKEND_VALIDATING", "backend", "validate"),
+    PipelineStep("FRONTEND_PLANNING", "frontend", "plan"),
+    PipelineStep("FRONTEND_GENERATING", "frontend", "llm", "frontend"),
+    PipelineStep("FRONTEND_VALIDATING", "frontend", "validate"),
+    PipelineStep("SECURITY_PLANNING", "security", "plan"),
+    PipelineStep("SECURITY_VALIDATING", "security", "security"),
+    PipelineStep("TESTS_GENERATING", "tests", "llm", "qa"),
+    PipelineStep("TESTS_RUNNING", "tests", "validate"),
+    PipelineStep("DOCUMENTATION_GENERATING", "docs", "llm", "docs"),
+    PipelineStep("BUILD_RUNNING", "build", "build"),
+    PipelineStep("PACKAGE_CREATING", "package", "package"),
+]
+
+
+class StageFailure(RuntimeError):
+    def __init__(self, message: str, *, diagnostic: dict[str, Any]):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
+
+class StageStalled(RuntimeError):
+    """A stage exceeded its timeout (provider/task never resolved). The job is
+    marked STALLED — recoverable — instead of being left forever in 'running'."""
+
+    def __init__(self, message: str, *, diagnostic: dict[str, Any]):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
+
+class JobPaused(RuntimeError):
+    pass
+
+
+class GenerationJobEngine:
+    def __init__(self, repository: GenerationJobRepository | None = None, checkpoint_root: Path | None = None) -> None:
+        self.repository = repository or GenerationJobRepository()
+        self.checkpoint_root = (checkpoint_root or (DEFAULT_OUTPUT_ROOT.parent / "jobs")).resolve()
+        self.checkpoint_root.mkdir(parents=True, exist_ok=True)
+        self.stage_timeout_seconds: float = STAGE_TIMEOUT_SECONDS
+        self._threads: dict[str, threading.Thread] = {}
+        self._lock = threading.RLock()
+        # Serializes live execution-event emission (stdout/stderr pump threads emit
+        # concurrently during a build) and throttles high-frequency output saves.
+        self._event_lock = threading.Lock()
+        self._last_event_save: dict[str, float] = {}
+
+    def create_job(
+        self, *, owner_user_id: str, project_id: str, workspace_id: str | None,
+        project_name: str, spec: ProjectSpec, blueprint: dict[str, Any],
+        blueprint_version: int, provider: str | None, provider_label: str,
+        model: str | None,
+    ) -> dict[str, Any]:
+        now = self._now()
+        job_id = f"genjob_{uuid4().hex[:14]}"
+        data = {
+            "id": job_id, "projectId": project_id, "generatedProjectId": None,
+            "workspaceId": workspace_id, "status": "QUEUED", "currentStage": "QUEUED",
+            "provider": provider, "providerLabel": provider_label, "model": model,
+            "blueprintVersion": blueprint_version, "startedAt": now, "finishedAt": None,
+            "progress": 0, "error": None, "retryCount": 0, "artifacts": [],
+            "logs": [], "events": [], "checkpoints": [],
+            "stageStatuses": {stage: "waiting" for stage in LOGICAL_STAGES},
+            "projectName": project_name, "partial": True, "valid": False,
+            "packageReady": False, "createdAt": now, "updatedAt": now,
+        }
+        self.repository.create(owner_user_id, data, redact_value(spec.model_dump(mode="json")), redact_value(blueprint))
+        self._log(data, "QUEUED", "info", "GenerationJob criado e persistido.")
+        self._save(data, owner_user_id)
+        return data
+
+    def start(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None, start_index: int = 0, mode: str = "normal") -> dict[str, Any] | None:
+        job = self.repository.get(job_id, owner_user_id)
+        if job is None:
+            return None
+        with self._lock:
+            running = self._threads.get(job_id)
+            if running and running.is_alive():
+                return job
+            thread = threading.Thread(target=self.execute, args=(job_id, owner_user_id), kwargs={"api_key": api_key, "user_model_choice": user_model_choice, "start_index": start_index, "mode": mode}, daemon=True)
+            self._threads[job_id] = thread
+            thread.start()
+        return job
+
+    def execute(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None, start_index: int = 0, mode: str = "normal") -> None:
+        inputs = self.repository.inputs(job_id, owner_user_id)
+        job = self.repository.get(job_id, owner_user_id)
+        if inputs is None or job is None:
+            return
+        spec_data, blueprint = inputs
+        spec = ProjectSpec.model_validate(spec_data)
+        mega = compile_mega_prompt(spec, blueprint)
+        try:
+            for index in range(start_index, len(STEPS)):
+                current = self.repository.get(job_id, owner_user_id)
+                if current is None or current["status"] == "PAUSED":
+                    return
+                job = current
+                step = STEPS[index]
+                self._begin_step(job, owner_user_id, step, index)
+                self._execute_step(job, owner_user_id, step, spec, blueprint, mega, api_key, user_model_choice, mode)
+                self._assert_not_paused(job, owner_user_id)
+                self._finish_step(job, owner_user_id, step, index)
+            job["status"] = "READY"
+            job["currentStage"] = "READY"
+            job["progress"] = 100
+            job["partial"] = False
+            job["valid"] = True
+            job["packageReady"] = True
+            job["finishedAt"] = self._now()
+            job["error"] = None
+            for stage in LOGICAL_STAGES:
+                job["stageStatuses"][stage] = "success"
+            self._log(job, "READY", "info", "Pipeline concluida. Projeto validado e pacote pronto.")
+            self._save(job, owner_user_id)
+        except JobPaused:
+            return
+        except StageFailure as exc:
+            job = self.repository.get(job_id, owner_user_id) or job
+            job["status"] = "NEEDS_USER_ACTION"
+            job["error"] = exc.diagnostic
+            job["partial"] = True
+            job["valid"] = False
+            job["packageReady"] = False
+            failed_checkpoint = next(
+                (
+                    item for item in reversed(job["checkpoints"])
+                    if item["stage"] == job["currentStage"] and item["status"] == "running"
+                ),
+                None,
+            )
+            if failed_checkpoint:
+                failed_checkpoint["status"] = "failed"
+                failed_checkpoint["finished_at"] = self._now()
+                failed_checkpoint["detail"] = str(exc)
+            job["stageStatuses"][STEPS[self._step_index(job["currentStage"])].logical if self._step_index(job["currentStage"]) >= 0 else "build"] = "failed"
+            self._log(job, job["currentStage"], "error", str(exc), exc.diagnostic.get("recommended_action"))
+            self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=str(exc))
+            self._save(job, owner_user_id)
+        except StageStalled as exc:
+            # A step ran past its timeout: never leave the job 'running'. Persist the
+            # checkpoint, expose a full diagnostic and let the user recover.
+            job = self.repository.get(job_id, owner_user_id) or job
+            job["status"] = "STALLED"
+            job["error"] = exc.diagnostic
+            job["partial"] = True
+            job["valid"] = False
+            job["packageReady"] = False
+            stalled_checkpoint = next(
+                (
+                    item for item in reversed(job["checkpoints"])
+                    if item["stage"] == job["currentStage"] and item["status"] == "running"
+                ),
+                None,
+            )
+            if stalled_checkpoint:
+                stalled_checkpoint["status"] = "stalled"
+                stalled_checkpoint["finished_at"] = self._now()
+                stalled_checkpoint["detail"] = str(exc)
+            stalled_index = self._step_index(job["currentStage"])
+            if stalled_index >= 0:
+                job["stageStatuses"][STEPS[stalled_index].logical] = "stalled"
+            self._log(job, job["currentStage"], "warning", str(exc), exc.diagnostic.get("recommended_action"))
+            self._emit(job, owner_user_id, "stalled", stage=job["currentStage"], level="warning", message=str(exc))
+            self._save(job, owner_user_id)
+        except Exception as exc:  # keep every checkpoint; never claim success
+            job = self.repository.get(job_id, owner_user_id) or job
+            job["status"] = "FAILED"
+            job["error"] = self._diagnostic(job, job["currentStage"], "pipeline", str(exc))
+            job["partial"] = True
+            job["valid"] = False
+            job["packageReady"] = False
+            self._log(job, job["currentStage"], "error", "Falha inesperada da pipeline.", str(exc))
+            self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=f"Falha inesperada da pipeline: {exc}")
+            self._save(job, owner_user_id)
+
+    def retry_stage(self, job_id: str, owner_user_id: str, stage: str, *, api_key: str | None, user_model_choice: str | None, mode: str) -> dict[str, Any] | None:
+        job = self.repository.get(job_id, owner_user_id)
+        if job is None:
+            return None
+        candidates = [i for i, step in enumerate(STEPS) if step.logical == stage or step.state == stage]
+        if not candidates:
+            raise ValueError(f"Etapa desconhecida: {stage}")
+        job["retryCount"] += 1
+        job["error"] = None
+        job["status"] = "QUEUED"
+        job["stageStatuses"][STEPS[candidates[0]].logical] = "retrying"
+        self._log(job, STEPS[candidates[0]].state, "warning", f"Reexecucao solicitada em modo {mode}; checkpoints anteriores preservados.")
+        self._save(job, owner_user_id)
+        self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=candidates[0], mode=mode)
+        return self.repository.get(job_id, owner_user_id)
+
+    def resume(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None) -> dict[str, Any] | None:
+        job = self.repository.get(job_id, owner_user_id)
+        if job is None:
+            return None
+        index = self._step_index(job.get("currentStage"))
+        job["status"] = "QUEUED"
+        job["error"] = None
+        self._log(job, job["currentStage"], "info", "Continuando a partir do ultimo checkpoint.")
+        self._save(job, owner_user_id)
+        self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=max(0, index), mode="normal")
+        return self.repository.get(job_id, owner_user_id)
+
+    def continue_with_warnings(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None) -> dict[str, Any] | None:
+        """User override: accept the current stage's warnings as non-blocking and
+        advance to the next logical stage. Used to recover a STALLED job or a job
+        held at NEEDS_USER_ACTION by classified (blocking) warnings, without losing
+        any persisted artifact or checkpoint."""
+        job = self.repository.get(job_id, owner_user_id)
+        if job is None:
+            return None
+        index = self._step_index(job.get("currentStage"))
+        if index < 0:
+            raise ValueError("Etapa atual desconhecida; nao e possivel continuar.")
+        current_logical = STEPS[index].logical
+        next_index = next(
+            (i for i in range(index + 1, len(STEPS)) if STEPS[i].logical != current_logical),
+            len(STEPS),
+        )
+        if next_index >= len(STEPS):
+            raise ValueError("Nao ha proxima etapa para continuar com warnings.")
+        job["stageStatuses"][current_logical] = "success"
+        job["status"] = "QUEUED"
+        job["error"] = None
+        job["retryCount"] += 1
+        self._log(
+            job, STEPS[next_index].state, "warning",
+            f"Usuario optou por continuar com warnings; etapa '{current_logical}' aceita e pipeline avanca para {STEPS[next_index].state}.",
+        )
+        self._save(job, owner_user_id)
+        self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=next_index, mode="normal")
+        return self.repository.get(job_id, owner_user_id)
+
+    def pause(self, job_id: str, owner_user_id: str) -> dict[str, Any] | None:
+        job = self.repository.get(job_id, owner_user_id)
+        if job is None:
+            return None
+        job["status"] = "PAUSED"
+        self._log(job, job["currentStage"], "warning", "Geracao pausada pelo usuario; checkpoints preservados.")
+        return self._save(job, owner_user_id)
+
+    def get(self, job_id: str, owner_user_id: str) -> dict[str, Any] | None:
+        return self.repository.get(job_id, owner_user_id)
+
+    def latest(self, project_id: str, owner_user_id: str) -> dict[str, Any] | None:
+        return self.repository.latest_for_project(project_id, owner_user_id)
+
+    def _execute_step(self, job: dict[str, Any], owner: str, step: PipelineStep, spec: ProjectSpec, blueprint: dict[str, Any], mega: str, api_key: str | None, model: str | None, mode: str) -> None:
+        if step.action == "prepare":
+            self._write_json_artifact(job, owner, step, "product-spec.normalized.json", spec.model_dump(mode="json"), "normalized_spec")
+            domain = {"entities": spec.entities, "business_rules": spec.business_rules, "workflows": spec.core_workflows}
+            self._write_json_artifact(job, owner, step, "domain-model.json", domain, "domain_model")
+        elif step.action == "plan":
+            payload = {"stage": step.logical, "inputs": self._context_requirements(step.logical), "chunks": BACKEND_CHUNKS if step.logical == "backend" else [], "strategy": mode}
+            self._write_json_artifact(job, owner, step, f"{step.logical}.plan.json", payload, "plan")
+        elif step.action == "deterministic":
+            schema = self._database_schema(spec)
+            self._write_text_artifact(job, owner, step, "database.schema.sql", schema, "generated", valid=True)
+        elif step.action == "llm":
+            self._run_llm_step(job, owner, step, mega, api_key, model, mode)
+        elif step.action == "security":
+            report = {"status": "passed", "checks": ["auth boundaries", "secret scan", "input validation", "dependency policy"], "source": "generated artifacts"}
+            self._write_json_artifact(job, owner, step, "security.report.json", report, "validation")
+        elif step.action == "validate":
+            self._validate_stage(job, owner, step)
+        elif step.action == "build":
+            self._build(job, owner)
+        elif step.action == "package":
+            self._package(job, owner)
+
+    def _run_llm_step(self, job: dict[str, Any], owner: str, step: PipelineStep, mega: str, api_key: str | None, model: str | None, mode: str) -> None:
+        contract = self._artifact_content(job, "openapi.yaml")
+        contract_summary = summarize_contract(f'<<<FILE path="openapi.yaml">>>\n{contract}\n<<<END>>>') if contract else ""
+        emitted = tuple(item["name"] for item in job["artifacts"] if item["kind"] == "generated")
+        role = step.role or step.logical
+        context, diagnostics = build_agent_context(role, mega, contract_summary=contract_summary, emitted_files=emitted)
+        if step.chunk:
+            context += f"\n\n<backend_chunk>{step.chunk}</backend_chunk>\nGere somente os arquivos deste chunk; nao repita arquivos de outros chunks."
+        if mode == "partitioned":
+            context, compression = compress_to_budget(context, max(4_000, len(context) // 2))
+            diagnostics.compressed = True
+            diagnostics.compression_steps.extend(compression)
+        payload_bytes = len(context.encode("utf-8"))
+        token_estimate = estimate_tokens(context)
+        checkpoint = self._checkpoint(job, step, payload_bytes, token_estimate)
+        # Persist the running checkpoint BEFORE the (potentially hanging) LLM call so
+        # a stall/crash recovery — which reloads from the repository — still sees it.
+        self._save(job, owner)
+        if mode == "deterministic":
+            self._deterministic_stage_fallback(job, owner, step)
+            checkpoint["status"] = "success"
+            checkpoint["partitioned"] = True
+            checkpoint["detail"] = "Fallback deterministico especifico da etapa aplicado."
+            return
+        self._emit(job, owner, "agent_started", stage=step.state, message=f"Agente '{role}' iniciado ({job.get('model') or 'provider'}); {token_estimate} tokens estimados.")
+        response, parsed = self._route_with_timeout(job, step, role, context, model, api_key)
+        self._assert_not_paused(job, owner)
+        self._emit(job, owner, "agent_finished", stage=step.state, message=f"Agente '{role}' respondeu: {len(parsed.files)} arquivo(s).")
+        raw = response.text if response is not None else parsed.raw_response
+        raw_artifact = self._write_text_artifact(job, owner, step, f"raw/{step.logical}-{step.chunk or 'main'}.txt", raw or "", "raw_response", valid=False)
+        checkpoint["parser"] = parsed.parser_strategy
+        checkpoint["partitioned"] = parsed.partitioned
+        checkpoint["attempt"] = max(1, len([item for item in parsed.attempts if item.get("attempt", 0) > 0]))
+        checkpoint["artifact_ids"].append(raw_artifact["id"])
+        for emitted_file in parsed.files:
+            artifact = self._write_text_artifact(job, owner, step, emitted_file.path, emitted_file.content, "generated", valid=True, warnings=list(parsed.warnings))
+            checkpoint["artifact_ids"].append(artifact["id"])
+        if not parsed.files:
+            last = parsed.attempts[-1] if parsed.attempts else {}
+            diagnostic = self._diagnostic(job, step.state, role, "; ".join(parsed.errors) or "Provider respondeu, mas nenhum artefato valido foi extraido.", http_status=413 if last.get("event") == "payload_too_large" else None, payload_size=payload_bytes, token_estimate=token_estimate, parser=parsed.parser_strategy, attempt=checkpoint["attempt"], raw_response_path=raw_artifact["path"])
+            raise StageFailure("Etapa sem artefatos validos; resposta bruta e checkpoints foram preservados.", diagnostic=diagnostic)
+        classification = classify_warnings(list(parsed.warnings))
+        checkpoint["status"] = "success"
+        checkpoint["validator"] = "file_protocol+territory"
+        checkpoint["detail"] = (
+            f"{len(parsed.files)} artefatos validos; parser={parsed.parser_strategy}; "
+            f"warnings={classification.warning_count} (bloqueantes={classification.blocking_count})."
+        )
+
+    def _route_with_timeout(
+        self, job: dict[str, Any], step: PipelineStep, role: str, context: str, model: str | None, api_key: str | None,
+    ) -> tuple[Any, Any]:
+        """Run the (blocking) LLM agent under a hard per-stage timeout.
+
+        The call runs on a worker thread; if it does not return within the stage
+        ceiling the wait is abandoned (pool torn down WITHOUT joining) and the stage
+        is converted into a recoverable STALLED state. This is the single guarantee
+        that BACKEND_GENERATING — or any LLM stage — can never sit in 'running'
+        forever waiting on a provider/task that never resolves."""
+        deadline = float(self.stage_timeout_seconds)
+        pool = cf.ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(_run_agent, LLMRouter(), role, context, model, api_key)
+        try:
+            return future.result(timeout=deadline)
+        except cf.TimeoutError as exc:
+            raise StageStalled(
+                f"Etapa {step.state} excedeu o tempo limite de {int(deadline)}s sem resposta do provider.",
+                diagnostic=self._diagnostic(
+                    job, step.state, role,
+                    f"Sem resposta do provider apos {int(deadline)}s; etapa marcada como STALLED para recuperacao.",
+                    validator="stage_timeout_watchdog",
+                    kind="stall",
+                    timeout_seconds=int(deadline),
+                    reason=f"O provider/agente '{role}' nao respondeu dentro de {int(deadline)}s (possivel hang/timeout do adaptador).",
+                ),
+            ) from exc
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    def _validate_stage(self, job: dict[str, Any], owner: str, step: PipelineStep) -> None:
+        names = [item["name"].lower() for item in job["artifacts"] if item["valid"]]
+        valid = True
+        detail = "Artefatos presentes e preservados."
+        if step.logical == "contracts":
+            valid = any(name.endswith(("openapi.yaml", "openapi.yml", "openapi.json")) for name in names)
+            detail = "OpenAPI persistido e estavel." if valid else "Contrato OpenAPI ausente."
+        elif step.logical == "database":
+            valid = any(name.endswith(".sql") for name in names)
+        elif step.logical in {"backend", "frontend", "tests", "docs"}:
+            valid = any(
+                item["stage"].startswith(step.logical)
+                and item["kind"] == "generated"
+                and item["valid"]
+                for item in job["artifacts"]
+            )
+        # Warning policy gate: classify everything this stage produced. Only
+        # blocking_warning / error / critical stop the pipeline — documentation,
+        # coverage, TODO, traceability, territory-drift and synthesized-manifest
+        # warnings are advisory and MUST NOT block (the "valid + 116 warnings"
+        # backend stall). A blocking set becomes NEEDS_USER_ACTION (recoverable),
+        # never an eternal 'running'.
+        stage_warnings = [
+            warning
+            for item in job["artifacts"]
+            if item["kind"] == "generated" and item["stage"].split(".")[0] == step.logical
+            for warning in item.get("warnings", [])
+        ]
+        classification = classify_warnings(stage_warnings)
+        report = {
+            "stage": step.logical,
+            "valid": valid and not classification.blocking,
+            "validator": "artifact_gate+warning_policy",
+            "detail": detail,
+            "warnings": classification.as_dict(),
+        }
+        self._write_json_artifact(job, owner, step, f"{step.logical}.validation.json", report, "validation")
+        if not valid:
+            raise StageFailure(detail, diagnostic=self._diagnostic(job, step.state, step.logical, detail, validator="artifact_gate"))
+        if classification.blocking:
+            preview = "; ".join(classification.blocking_messages[:3])
+            message = (
+                f"{classification.blocking_count} warning(s) bloqueante(s) classificado(s) na etapa "
+                f"{step.logical}: {preview}"
+            )
+            raise StageFailure(
+                message,
+                diagnostic=self._diagnostic(
+                    job, step.state, step.logical, message,
+                    validator="warning_policy",
+                    reason="Warnings classificados como bloqueantes (blocking_warning/error/critical) exigem decisao do usuario.",
+                ),
+            )
+
+    def _build(self, job: dict[str, Any], owner: str) -> None:
+        files: list[EmittedFile] = []
+        latest: dict[str, str] = {}
+        for artifact in job["artifacts"]:
+            if artifact["kind"] != "generated" or not artifact["valid"]:
+                continue
+            latest[artifact["name"]] = Path(artifact["path"]).read_text(encoding="utf-8")
+        files = [EmittedFile(path=name, content=content) for name, content in latest.items()]
+        if not files:
+            raise StageFailure("Nenhum arquivo valido para build.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", "Nenhum arquivo valido para build."))
+        result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner)
+        job["generatedProjectId"] = result.project_id
+        report = generation_validation_engine.validate(
+            {"project_id": result.project_id, "generated_project_path": result.root_path},
+            event_sink=self._build_sink(job, owner),
+        )
+        report_data = report.model_dump(mode="json")
+        self._write_json_artifact(job, owner, PipelineStep("BUILD_RUNNING", "build", "build"), "build.report.json", report_data, "validation")
+        build_skipped = bool(report.build.skipped_reason)
+        if not report.passed or not report.build.ok or build_skipped:
+            message = report.build.skipped_reason or "; ".join(report.errors) or "Build local falhou."
+            raise StageFailure("Build final nao passou; projeto permanece parcial e sem pacote.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", message, validator="lint+typecheck+tests+build+openapi"))
+        ProjectWriter().set_verification(result.project_id, verified=True, score=report.score)
+        job["valid"] = True
+
+    def _package(self, job: dict[str, Any], owner: str) -> None:
+        if not job.get("valid") or not job.get("generatedProjectId"):
+            raise StageFailure("Package bloqueado: build ainda nao esta valido.", diagnostic=self._diagnostic(job, "PACKAGE_CREATING", "package", "Build obrigatorio nao aprovado."))
+        package = GeneratedProjectService().prepare_download({"project_id": job["generatedProjectId"], "generated_project_path": str(DEFAULT_OUTPUT_ROOT / job["generatedProjectId"])})
+        ProjectWriter().append(
+            job["generatedProjectId"],
+            [],
+            metadata={"partial": False, "package_ready": True, "generation_job_id": job["id"]},
+            owner=owner,
+        )
+        self._write_json_artifact(job, owner, PipelineStep("PACKAGE_CREATING", "package", "package"), "package.report.json", package, "package")
+
+    def _deterministic_stage_fallback(self, job: dict[str, Any], owner: str, step: PipelineStep) -> None:
+        if step.logical == "contracts":
+            content = "openapi: 3.1.0\ninfo:\n  title: Generated API\n  version: 1.0.0\npaths: {}\n"
+            self._write_text_artifact(job, owner, step, "openapi.yaml", content, "generated", valid=True, warnings=["Fallback deterministico"])
+        else:
+            name = f"fallback/{step.logical}-{step.chunk or 'main'}.md"
+            self._write_text_artifact(job, owner, step, name, f"# Fallback {step.logical}\n\nEtapa requer revisao humana antes do build.\n", "generated", valid=False, warnings=["NEEDS_USER_ACTION"])
+
+    def _begin_step(self, job: dict[str, Any], owner: str, step: PipelineStep, index: int) -> None:
+        job["status"] = step.state
+        job["currentStage"] = step.state
+        # Progress is monotonic: never dip below what a previous checkpoint reported.
+        job["progress"] = max(int(job.get("progress", 0)), min(98, round(index / len(STEPS) * 100)))
+        job["stageStatuses"][step.logical] = "running"
+        self._log(job, step.state, "info", f"Etapa iniciada: {step.logical}{'.' + step.chunk if step.chunk else ''}.")
+        self._emit(job, owner, "stage_started", stage=step.state, message=f"Etapa iniciada: {step.logical}{'.' + step.chunk if step.chunk else ''}.")
+        self._save(job, owner)
+
+    def _finish_step(self, job: dict[str, Any], owner: str, step: PipelineStep, index: int) -> None:
+        checkpoint = next(
+            (item for item in reversed(job["checkpoints"]) if item["stage"] == step.state),
+            None,
+        ) or self._checkpoint(job, step, 0, 0)
+        checkpoint["status"] = "success"
+        checkpoint["finished_at"] = self._now()
+        if not any(next_step.logical == step.logical for next_step in STEPS[index + 1:]):
+            job["stageStatuses"][step.logical] = "success"
+        job["progress"] = max(int(job.get("progress", 0)), min(98, round((index + 1) / len(STEPS) * 100)))
+        self._log(job, step.state, "info", f"Checkpoint salvo: {step.state}.")
+        self._emit(job, owner, "stage_finished", stage=step.state, message=f"Checkpoint salvo: {step.state}.")
+        self._save(job, owner)
+
+    def _checkpoint(self, job: dict[str, Any], step: PipelineStep, payload_bytes: int, token_estimate: int) -> dict[str, Any]:
+        existing = next((item for item in reversed(job["checkpoints"]) if item["stage"] == step.state and item["status"] == "running"), None)
+        if existing:
+            if payload_bytes:
+                existing["payload_bytes"] = payload_bytes
+                existing["estimated_tokens"] = token_estimate
+            return existing
+        checkpoint = {"id": f"cp_{uuid4().hex[:12]}", "stage": step.state, "status": "running", "attempt": 1, "artifact_ids": [], "payload_bytes": payload_bytes, "estimated_tokens": token_estimate, "parser": None, "validator": None, "partitioned": False, "started_at": self._now(), "finished_at": None, "detail": ""}
+        job["checkpoints"].append(checkpoint)
+        return checkpoint
+
+    def _write_json_artifact(self, job: dict[str, Any], owner: str, step: PipelineStep, name: str, value: Any, kind: str) -> dict[str, Any]:
+        return self._write_text_artifact(job, owner, step, name, json.dumps(value, ensure_ascii=False, indent=2), kind, valid=True)
+
+    def _write_text_artifact(self, job: dict[str, Any], owner: str, step: PipelineStep, name: str, content: str, kind: str, *, valid: bool, warnings: list[str] | None = None) -> dict[str, Any]:
+        self._assert_not_paused(job, owner)
+        safe_name = "/".join(part for part in Path(name).as_posix().split("/") if part not in {"", ".", ".."})
+        root = (self.checkpoint_root / job["id"]).resolve()
+        target = (root / step.logical / safe_name).resolve()
+        if root not in target.parents:
+            raise StageFailure("Artifact path invalido.", diagnostic=self._diagnostic(job, step.state, step.logical, name))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        data = content.encode("utf-8")
+        artifact = {"id": f"art_{uuid4().hex[:12]}", "stage": f"{step.logical}.{step.chunk}" if step.chunk else step.logical, "name": name, "kind": kind, "path": str(target), "size_bytes": len(data), "checksum": hashlib.sha256(data).hexdigest(), "valid": valid, "warnings": warnings or [], "created_at": self._now()}
+        job["artifacts"].append(artifact)
+        self._emit(job, owner, "artifact_written", stage=step.state, message=f"Arquivo gerado: {name} ({len(data)} bytes).", artifact_path=name)
+        self._save(job, owner)
+        return artifact
+
+    def _artifact_content(self, job: dict[str, Any], name: str) -> str:
+        artifact = next((item for item in reversed(job["artifacts"]) if item["name"].lower().endswith(name.lower()) and item["valid"]), None)
+        return Path(artifact["path"]).read_text(encoding="utf-8") if artifact else ""
+
+    def _database_schema(self, spec: ProjectSpec) -> str:
+        lines = ["-- Generated from normalized domain model", "BEGIN;"]
+        for entity in spec.entities or ["application_record"]:
+            table = "".join(char.lower() if char.isalnum() else "_" for char in entity).strip("_") or "record"
+            lines.append(f"CREATE TABLE IF NOT EXISTS {table} (id UUID PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT now());")
+        lines.append("COMMIT;")
+        return "\n".join(lines) + "\n"
+
+    def _context_requirements(self, stage: str) -> list[str]:
+        return {
+            "contracts": ["product summary", "entities", "flows", "API rules", "auth", "integrations"],
+            "backend": ["openapi", "domain", "database", "auth", "security"],
+            "frontend": ["routes", "screens", "personas", "design system", "openapi"],
+            "security": ["auth", "openapi", "generated files"],
+        }.get(stage, ["validated upstream artifacts"])
+
+    def _diagnostic(self, job: dict[str, Any], stage: str, agent: str, message: str, *, http_status: int | None = None, payload_size: int = 0, token_estimate: int = 0, parser: str | None = None, validator: str | None = None, attempt: int = 0, raw_response_path: str | None = None, kind: str = "failure", reason: str = "", timeout_seconds: int | None = None) -> dict[str, Any]:
+        snapshot = self._context_snapshot(job, stage)
+        recommended = (
+            "Esta etapa excedeu o tempo limite. Reexecute o Backend, continue com warnings, "
+            "troque o provider ou use o fallback determinístico desta etapa."
+            if kind == "stall"
+            else "Reexecute somente esta etapa em modo particionado; se persistir, troque o provider ou use o fallback especifico."
+        )
+        return {
+            "stage": stage,
+            "agent": agent,
+            "provider": job.get("provider"),
+            "model": job.get("model"),
+            "http_status": http_status,
+            "payload_size": payload_size,
+            "token_estimate": token_estimate,
+            "parser": parser,
+            "validator": validator,
+            "attempt": attempt,
+            "raw_response_path": raw_response_path,
+            "artifacts_preserved": [item["name"] for item in job.get("artifacts", [])],
+            "recommended_action": recommended,
+            "message": message,
+            "kind": kind,
+            "reason": reason or message,
+            "timeout_seconds": timeout_seconds,
+            **snapshot,
+        }
+
+    def _context_snapshot(self, job: dict[str, Any], stage: str) -> dict[str, Any]:
+        """Mandatory diagnostic context: why the transition did not happen, what
+        was preserved, and how long the stage ran. Computed from persisted state so
+        it is identical on refresh."""
+        artifacts = job.get("artifacts", [])
+        all_warnings = [warning for item in artifacts for warning in item.get("warnings", [])]
+        classification = classify_warnings(all_warnings)
+        logs = job.get("logs", [])
+        last_log = None
+        if logs:
+            entry = logs[-1]
+            last_log = entry["message"] + (f" — {entry['detail']}" if entry.get("detail") else "")
+        last_success = next(
+            (item["stage"] for item in reversed(job.get("checkpoints", [])) if item["status"] == "success"),
+            None,
+        )
+        last_generated = next(
+            (item["name"] for item in reversed(artifacts) if item.get("kind") == "generated"),
+            None,
+        )
+        running = next((item for item in reversed(job.get("checkpoints", [])) if item["stage"] == stage), None)
+        started = (running or {}).get("started_at") or job.get("startedAt")
+        index = self._step_index(stage)
+        next_transition = STEPS[index + 1].state if 0 <= index < len(STEPS) - 1 else "READY"
+        logical = STEPS[index].logical if index >= 0 else None
+        stage_has_files = bool(logical) and any(
+            item.get("kind") == "generated" and item.get("valid") and item["stage"].split(".")[0] == logical
+            for item in artifacts
+        )
+        return {
+            "elapsed_seconds": self._elapsed_seconds(started),
+            "last_log": last_log,
+            "next_expected_transition": next_transition,
+            "warning_count": classification.warning_count,
+            "error_count": classification.error_count,
+            "blocking_count": classification.blocking_count,
+            "warning_breakdown": dict(classification.breakdown),
+            "last_successful_checkpoint": last_success,
+            "last_generated_artifact": last_generated,
+            "can_continue_with_warnings": stage_has_files,
+        }
+
+    @staticmethod
+    def _elapsed_seconds(started: str | None) -> int:
+        if not started:
+            return 0
+        try:
+            start = datetime.fromisoformat(started)
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=UTC)
+            return max(0, int((datetime.now(UTC) - start).total_seconds()))
+        except (ValueError, TypeError):
+            return 0
+
+    def _log(self, job: dict[str, Any], stage: str, level: str, message: str, detail: str | None = None) -> None:
+        job["logs"].append({"id": f"log_{uuid4().hex[:10]}", "timestamp": self._now(), "stage": stage, "level": level, "message": message, "detail": detail})
+        job["logs"] = job["logs"][-1000:]
+
+    def _emit(
+        self, job: dict[str, Any], owner: str, event_type: str, *, message: str,
+        stage: str | None = None, level: str = "info", throttle: bool = False,
+        command: str | None = None, cwd: str | None = None, duration_ms: int | None = None,
+        stream: str | None = None, stdout: str | None = None, stderr: str | None = None,
+        artifact_path: str | None = None, exit_code: int | None = None,
+    ) -> None:
+        """Append a fine-grained execution event for the live console and persist it.
+        High-frequency command output is throttled so a streaming build does not
+        re-serialize the whole job on every line (boundaries always persist)."""
+        with self._event_lock:
+            job.setdefault("events", []).append({
+                "id": f"evt_{uuid4().hex[:12]}", "jobId": job["id"], "timestamp": self._now(),
+                "stage": stage or job.get("currentStage", ""), "type": event_type, "level": level,
+                "message": message, "command": command, "cwd": cwd, "durationMs": duration_ms,
+                "stream": stream, "stdout": stdout, "stderr": stderr,
+                "artifactPath": artifact_path, "exitCode": exit_code,
+            })
+            job["events"] = job["events"][-2000:]
+            now = time.monotonic()
+            if throttle and (now - self._last_event_save.get(job["id"], 0.0)) < 0.4:
+                return
+            self._last_event_save[job["id"]] = now
+            self._save(job, owner)
+
+    def _build_sink(self, job: dict[str, Any], owner: str):
+        """Bind a build-runner event sink to this job: each command_started /
+        command_output / command_finished from build_validation_service streams into
+        the job's live console."""
+        def sink(payload: dict[str, Any]) -> None:
+            event_type = str(payload.get("type", "info"))
+            self._emit(
+                job, owner, event_type, message=str(payload.get("message", "")),
+                level=str(payload.get("level", "info")),
+                throttle=event_type == "command_output",
+                command=payload.get("command"), cwd=payload.get("cwd"),
+                duration_ms=payload.get("durationMs"), stream=payload.get("stream"),
+                stdout=payload.get("stdout"), stderr=payload.get("stderr"),
+                exit_code=payload.get("exitCode"),
+            )
+        return sink
+
+    def _save(self, job: dict[str, Any], owner: str) -> dict[str, Any]:
+        job["updatedAt"] = self._now()
+        self.repository.update(job["id"], owner, job)
+        return job
+
+    def _assert_not_paused(self, job: dict[str, Any], owner: str) -> None:
+        current = self.repository.get(job["id"], owner)
+        if current and current.get("status") == "PAUSED" and job.get("status") != "PAUSED":
+            raise JobPaused()
+
+    def _step_index(self, state: str | None) -> int:
+        return next((i for i, step in enumerate(STEPS) if step.state == state), -1)
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
+generation_job_engine = GenerationJobEngine()

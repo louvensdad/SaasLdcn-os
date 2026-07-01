@@ -2,11 +2,32 @@ from __future__ import annotations
 
 import json
 
-from app.engines.llm.base import LLMAdapter, LLMError
-from app.schemas.llm import LLMRequest, LLMResponse, Provider
+from app.engines.llm.base import (
+    LLMAdapter,
+    LLMError,
+    is_transient_provider_error,
+    timeout_ms,
+)
+from app.schemas.llm import LLMRequest, LLMResponse, Provider, ReasoningLevel
 
 # JSON Schema keywords the Gemini Developer API does not accept on response_schema.
 _GEMINI_DROP_KEYS = {"title", "default", "$schema", "examples", "$defs", "additionalProperties"}
+
+# Maps the neutral reasoning level to a Gemini 2.5 thinking budget (in tokens).
+# -1 = dynamic: the model decides how much to think, which is what we want for the
+# deep agents (it scales thinking to task difficulty without starving the output
+# budget on a fixed cap). Small positive values keep cheap/shallow stages fast.
+_GEMINI_THINKING_BUDGET: dict[ReasoningLevel, int] = {
+    ReasoningLevel.low: 1024,
+    ReasoningLevel.medium: 8192,
+    ReasoningLevel.high: -1,
+    ReasoningLevel.max: -1,
+}
+
+
+def _supports_thinking(model: str) -> bool:
+    # Only the Gemini 2.5 family accepts thinking_config; older models 400 on it.
+    return model.startswith("gemini-2.5")
 
 
 def _to_gemini_schema(schema: dict, defs: dict | None = None) -> dict:
@@ -103,6 +124,11 @@ class GoogleAdapter(LLMAdapter):
             "temperature": req.creativity,
             "max_output_tokens": req.max_output_tokens,
         }
+        # Bound the call so a hung/over-loaded model fails fast instead of blocking
+        # the pipeline (and its worker thread) indefinitely. google-genai expresses
+        # http_options.timeout in MILLISECONDS (unlike the openai/anthropic SDKs,
+        # which take seconds), so the neutral timeout is passed through as-is.
+        config["http_options"] = {"timeout": timeout_ms(req)}
         if req.json_schema:
             config["response_mime_type"] = "application/json"
             config["response_schema"] = _to_gemini_schema(req.json_schema)
@@ -115,11 +141,20 @@ class GoogleAdapter(LLMAdapter):
         except ImportError as exc:  # pragma: no cover - environment dependent
             raise LLMError("The 'google-genai' package is required for GoogleAdapter.") from exc
 
-        config = types.GenerateContentConfig(**self._build_config(req))
+        cfg_kwargs = self._build_config(req)
+        if _supports_thinking(model):
+            # Reasoning depth reaches Gemini only via thinking_config — without this,
+            # the neutral reasoning level was silently dropped for Google models.
+            budget = _GEMINI_THINKING_BUDGET.get(req.reasoning, -1)
+            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
+        config = types.GenerateContentConfig(**cfg_kwargs)
         try:
             resp = client.models.generate_content(model=model, contents=req.user, config=config)
         except Exception as exc:
-            raise LLMError(f"Google request failed for {model}: {exc}") from exc
+            raise LLMError(
+                f"Google request failed for {model}: {exc}",
+                transient=is_transient_provider_error(exc),
+            ) from exc
 
         text = getattr(resp, "text", "") or ""
         parsed = None

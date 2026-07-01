@@ -3,24 +3,20 @@
 import { useState } from 'react';
 import type { LocaleCode } from '@contracts/locale.contract';
 import { useRouter } from 'next/navigation';
+import { Activity, Check, Code2, GitBranch, Palette, Sparkles, User, X } from 'lucide-react';
 
-import { ActionLink } from '@/components/ui/action-link';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tabs, type TabItem } from '@/components/ui/tabs';
 import { PageError } from '@/components/feedback/error-system';
-import { CardLoading } from '@/components/feedback/loading-system';
 import { SectionHeader } from '@/components/shell/section-header';
-import { ThemeSwitcher } from '@/components/shell/theme-switcher';
 import { LocaleSelector } from '@/components/shell/locale-selector';
 import { Select } from '@/components/ui/select';
-import {
-  ArchitectureGraphSurface,
-  OperationalRail,
-  ReadinessRing,
-  StackEcosystemMap,
-} from '@/components/visual/engineering-surface';
+import { ThemeGallery } from '@/components/settings/theme-gallery';
+import { AiProvidersTab } from '@/components/settings/ai-providers-tab';
+import { ArchitectureGraphSurface, OperationalRail, StackEcosystemMap } from '@/components/visual/engineering-surface';
 import { useArchitectures } from '@/hooks/use-architectures';
 import { useArchetypes } from '@/hooks/use-archetypes';
 import { useCapabilities } from '@/hooks/use-capabilities';
@@ -45,219 +41,29 @@ import {
 
 export default function SettingsPage() {
   const { t } = useLocale();
-  const preferences = useLocaleStore();
-  const healthQuery = useHealth();
-  const languagesQuery = useLanguages();
-  const frameworksQuery = useFrameworks();
-  const architecturesQuery = useArchitectures();
-  const archetypesQuery = useArchetypes();
-  const capabilitiesQuery = useCapabilities();
-  const stacksQuery = useStacks();
-  const projectsQuery = useProjects();
-  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
-  const offline = healthQuery.isError && isApiOffline(healthQuery.error);
-  const readinessScore = offline ? 34 : healthQuery.data?.status === 'degraded' ? 72 : 92;
+
+  const items: TabItem[] = [
+    { id: 'account', label: t('settings.tabs.account'), icon: User, content: <AccountTab /> },
+    { id: 'ai', label: t('settings.tabs.ai'), icon: Sparkles, content: <AiProvidersTab /> },
+    { id: 'git', label: t('settings.tabs.git'), icon: GitBranch, content: <GitTab /> },
+    { id: 'interface', label: t('settings.tabs.interface'), icon: Palette, content: <InterfaceTab /> },
+    { id: 'runtime', label: t('settings.tabs.runtime'), icon: Activity, content: <RuntimeTab /> },
+    { id: 'advanced', label: t('settings.tabs.advanced'), icon: Code2, content: <AdvancedTab /> },
+  ];
 
   return (
-    <div className="space-y-8">
-      <SectionHeader
-        title={t('settings.title')}
-        description={t('settings.description')}
-      />
-
-      <SecurityPrivacyCard />
-
-      {isAdmin ? <section id="integrations" className="space-y-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('settings.integrations.eyebrow')}</p>
-          <h2 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{t('settings.integrations.title')}</h2>
-          <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('settings.integrations.description')}</p>
-        </div>
-        <div className="grid gap-4 xl:grid-cols-2">
-          <GitProviderCard provider="github" />
-          <GitProviderCard provider="gitlab" />
-        </div>
-      </section> : (
-        <Card id="integrations" className="space-y-3 p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
-            {t('settings.integrations.restrictedEyebrow')}
-          </p>
-          <h2 className="text-xl font-semibold text-[color:var(--text)]">
-            {t('settings.integrations.restrictedTitle')}
-          </h2>
-          <p className="text-sm leading-6 text-[color:var(--muted)]">
-            {t('settings.integrations.restrictedDescription')}
-          </p>
-        </Card>
-      )}
-
-      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="grid gap-4">
-          <Card className="space-y-4 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('settings.theme.title')}</p>
-            <ThemeSwitcher />
-            <p className="text-sm leading-6 text-[color:var(--muted)]">
-              {t('settings.theme.description')}
-            </p>
-          </Card>
-
-          <Card className="space-y-5 p-5">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('settings.localization.title')}</p>
-              <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('settings.localization.description')}</p>
-            </div>
-            <LocaleField label={t('settings.interfaceLanguage')}><LocaleSelector /></LocaleField>
-            <LocaleField label={t('settings.generatedProjectLanguage')}>
-              <PreferenceSelect value={preferences.generatedProjectLocale} onChange={preferences.setGeneratedProjectLocale} />
-            </LocaleField>
-            <LocaleField label={t('settings.documentationLanguage')}>
-              <PreferenceSelect value={preferences.documentationLocale} onChange={preferences.setDocumentationLocale} />
-            </LocaleField>
-            <LocaleField label={t('settings.codeCommentsLanguage')}>
-              <PreferenceSelect value={preferences.codeCommentsLocale} onChange={preferences.setCodeCommentsLocale} />
-            </LocaleField>
-            <LocaleField label={t('settings.fallbackLanguage')}>
-              <PreferenceSelect value={preferences.fallbackLocale} onChange={preferences.setFallbackLocale} />
-            </LocaleField>
-          </Card>
-
-          <ArchitectureGraphSurface
-            title={t('settings.contracts.title')}
-            subtitle={t('settings.contracts.description')}
-            nodes={[
-              {
-                label: t('settings.contracts.languages'),
-                value: String(languagesQuery.data?.length ?? 0),
-                detail: t('settings.contracts.languagesDetail'),
-                tone: 'accent',
-              },
-              {
-                label: t('settings.contracts.frameworks'),
-                value: String(frameworksQuery.data?.length ?? 0),
-                detail: t('settings.contracts.frameworksDetail'),
-                tone: 'accent2',
-              },
-              {
-                label: t('settings.contracts.architectures'),
-                value: String(architecturesQuery.data?.length ?? 0),
-                detail: t('settings.contracts.architecturesDetail'),
-                tone: 'success',
-              },
-              {
-                label: t('settings.contracts.archetypes'),
-                value: String(archetypesQuery.data?.length ?? 0),
-                detail: t('settings.contracts.archetypesDetail'),
-                tone: 'muted',
-              },
-            ]}
-          />
-        </div>
-
-        <div className="grid gap-4">
-          <ReadinessRing
-            title={t('settings.health.title')}
-            value={readinessScore}
-            label={offline ? t('common.offline') : healthQuery.data?.status ?? t('common.pending')}
-            caption={t('settings.health.description')}
-            tone={offline ? 'danger' : healthQuery.data?.status === 'degraded' ? 'warning' : 'success'}
-          />
-
-          <OperationalRail
-            title={t('settings.runtime.title')}
-            items={[
-              {
-                label: t('settings.runtime.backendRegistry'),
-                value: offline ? t('common.unavailable') : t('common.visible'),
-                detail: t('settings.runtime.backendRegistryDetail'),
-                tone: offline ? 'warning' : 'success',
-              },
-              {
-                label: t('settings.runtime.contractSync'),
-                value: t('common.aligned'),
-                detail: t('settings.runtime.contractSyncDetail'),
-                tone: 'accent',
-              },
-              {
-                label: t('settings.runtime.topologySync'),
-                value: t('settings.runtime.stackCount', { count: stacksQuery.data?.length ?? 0 }),
-                detail: t('settings.runtime.topologySyncDetail'),
-                tone: 'accent2',
-              },
-              {
-                label: t('settings.runtime.projectRegistry'),
-                value: t('settings.runtime.recordCount', { count: projectsQuery.data?.length ?? 0 }),
-                detail: t('settings.runtime.projectRegistryDetail'),
-                tone: 'success',
-              },
-            ]}
-          />
-
-          <StackEcosystemMap
-            title={t('settings.panels.title')}
-            nodes={[
-              {
-                label: t('settings.panels.apiBase'),
-                value: API_BASE_URL,
-                detail: t('settings.panels.apiBaseDetail'),
-                tone: 'accent',
-              },
-              {
-                label: t('settings.panels.health'),
-                value: healthQuery.data?.status ?? t('common.pending'),
-                detail: healthQuery.data ? `${healthQuery.data.service} v${healthQuery.data.version}` : t('common.awaitingResponse'),
-                tone: offline ? 'warning' : 'success',
-              },
-              {
-                label: t('settings.panels.capabilities'),
-                value: String(capabilitiesQuery.data?.length ?? 0),
-                detail: t('settings.panels.capabilitiesDetail'),
-                tone: 'accent2',
-              },
-              {
-                label: t('settings.panels.registryMode'),
-                value: offline ? t('common.recovery') : t('common.live'),
-                detail: t('settings.panels.registryModeDetail'),
-                tone: offline ? 'warning' : 'success',
-              },
-            ]}
-          />
-
-          <Card className="space-y-4 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('settings.actions.title')}</p>
-            <div className="flex flex-wrap gap-3">
-              <Badge>{offline ? t('settings.actions.backendOffline') : t('settings.actions.backendOnline')}</Badge>
-              <Badge>{t('settings.actions.projectCount', { count: projectsQuery.data?.length ?? 0 })}</Badge>
-              <Badge>{t('settings.actions.stackCount', { count: stacksQuery.data?.length ?? 0 })}</Badge>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <ActionLink href="/dashboard" variant="primary">
-                {t('settings.actions.dashboard')}
-              </ActionLink>
-              <ActionLink href="/documentation" variant="secondary">
-                {t('settings.actions.rules')}
-              </ActionLink>
-            </div>
-          </Card>
-        </div>
-      </div>
-
-      {healthQuery.isLoading ? (
-        <CardLoading />
-      ) : healthQuery.isError ? (
-        <PageError
-          title={offline ? t('settings.errors.offlineTitle') : t('settings.errors.healthTitle')}
-          description={getApiErrorMessage(
-            healthQuery.error,
-            t('settings.errors.healthDescription'),
-          )}
-          onRetry={() => void healthQuery.refetch()}
-        />
-      ) : null}
+    <div className="mx-auto max-w-5xl space-y-8 pb-12">
+      <SectionHeader title={t('settings.title')} description={t('settings.description')} />
+      <Tabs items={items} defaultTab="account" />
     </div>
   );
 }
 
-function SecurityPrivacyCard() {
+// --------------------------------------------------------------------------- //
+// Account
+// --------------------------------------------------------------------------- //
+
+function AccountTab() {
   const router = useRouter();
   const { t } = useLocale();
   const user = useAuthStore((state) => state.user);
@@ -266,14 +72,15 @@ function SecurityPrivacyCard() {
   const [busy, setBusy] = useState<'export' | 'delete' | 'logout' | null>(null);
   const [error, setError] = useState<unknown>(null);
 
+  const name = user?.full_name?.trim() || user?.email || '—';
+  const initials = name.replace(/[^a-zA-Z ]/g, '').split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || 'U';
+
   async function exportData() {
     setBusy('export');
     setError(null);
     try {
       const payload = await apiClient.exportMyData();
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
-      );
+      const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
       const link = document.createElement('a');
       link.href = url;
       link.download = `ldcn-personal-data-${new Date().toISOString().slice(0, 10)}.json`;
@@ -317,48 +124,61 @@ function SecurityPrivacyCard() {
   }
 
   return (
-    <Card className="space-y-5 p-5" surface="primary">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
-          {t('settings.privacy.eyebrow')}
-        </p>
-        <h2 className="mt-2 text-xl font-semibold text-[color:var(--text)]">
-          {t('settings.privacy.title')}
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-          {t('settings.privacy.description')}
-        </p>
-      </div>
+    <div className="space-y-5">
+      <Card surface="primary" className="space-y-6 p-6">
+        <div className="flex flex-wrap items-center gap-4">
+          <span
+            className="grid h-16 w-16 shrink-0 place-items-center rounded-full text-xl font-bold"
+            style={{ background: 'var(--accent-gradient)', color: 'var(--control-selected-text)' }}
+            aria-hidden
+          >
+            {initials}
+          </span>
+          <div className="min-w-0">
+            <h2 className="t-h2 text-[color:var(--text)]">{name}</h2>
+            <p className="mt-1 t-mono text-sm text-[color:var(--muted)]">{user?.email ?? '—'}</p>
+          </div>
+          <Badge tone="accent" className="ml-auto capitalize">{user?.role ?? '—'}</Badge>
+        </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <IntegrationMetric label={t('settings.privacy.account')} value={user?.email ?? '-'} />
-        <IntegrationMetric label={t('settings.privacy.role')} value={user?.role ?? '-'} />
-        <IntegrationMetric
-          label={t('settings.privacy.consent')}
-          value={user?.consent_policy_version ?? t('settings.privacy.notRecorded')}
-        />
-      </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Metric label={t('settings.privacy.consent')} value={user?.consent_policy_version ?? t('settings.privacy.notRecorded')} />
+          <label className="grid gap-2 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)] p-3">
+            <span className="t-caption">{t('settings.interfaceLanguage')}</span>
+            <LocaleSelector />
+          </label>
+        </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Button type="button" variant="secondary" onClick={() => void exportData()} disabled={busy !== null}>
-          {busy === 'export' ? t('settings.privacy.exporting') : t('settings.privacy.export')}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => void signOut()} disabled={busy !== null}>
-          {t('settings.privacy.logout')}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => void deleteAccount()} disabled={busy !== null}>
-          {busy === 'delete' ? t('settings.privacy.deleting') : t('settings.privacy.delete')}
-        </Button>
-      </div>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="secondary" loading={busy === 'export'} onClick={() => void exportData()} disabled={busy !== null}>
+            {t('settings.privacy.export')}
+          </Button>
+          <Button variant="ghost" onClick={() => void signOut()} disabled={busy !== null}>
+            {t('settings.privacy.logout')}
+          </Button>
+          <Button variant="ghost" className="ml-auto text-[color:var(--danger)]" loading={busy === 'delete'} onClick={() => void deleteAccount()} disabled={busy !== null}>
+            {t('settings.privacy.delete')}
+          </Button>
+        </div>
 
-      {error ? (
-        <PageError
-          title={t('settings.privacy.error')}
-          description={getApiErrorMessage(error, t('settings.privacy.errorDescription'))}
-          className="p-4"
-        />
-      ) : null}
-    </Card>
+        {error ? (
+          <PageError title={t('settings.privacy.error')} description={getApiErrorMessage(error, t('settings.privacy.errorDescription'))} className="p-4" />
+        ) : null}
+      </Card>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Git
+// --------------------------------------------------------------------------- //
+
+function GitTab() {
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <GitProviderCard provider="github" />
+      <GitProviderCard provider="gitlab" />
+    </div>
   );
 }
 
@@ -390,37 +210,35 @@ function GitProviderCard({ provider }: { readonly provider: 'github' | 'gitlab' 
         <div className="flex items-center gap-3">
           {data?.avatar_url ? <img src={data.avatar_url} alt="" className="h-11 w-11 rounded-full border border-white/10" /> : null}
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{label}</p>
+            <p className="t-overline">{label}</p>
             <h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">
-              {connected
-                ? t('settings.integrations.connected', { provider: label })
-                : t('settings.integrations.notConnected', { provider: label })}
+              {connected ? t('settings.integrations.connected', { provider: label }) : t('settings.integrations.notConnected', { provider: label })}
             </h3>
           </div>
         </div>
-        <Badge>{data?.status ?? t('common.loading')}</Badge>
+        <Badge tone={connected ? 'success' : 'neutral'}>{data?.status ?? t('common.loading')}</Badge>
       </div>
 
       {connected && data ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
-            <IntegrationMetric label={t('settings.integrations.username')} value={data.username ?? t('common.unavailable')} />
-            <IntegrationMetric label={provider === 'github' ? t('settings.integrations.organizations') : t('settings.integrations.groups')} value={String(data.namespaces.length)} />
-            <IntegrationMetric label={provider === 'github' ? t('settings.integrations.repositories') : t('settings.integrations.projects')} value={String(data.repositories_count)} />
-            <IntegrationMetric label={t('settings.integrations.permission')} value={data.permission} />
-            <IntegrationMetric label={t('settings.integrations.scopes')} value={data.scopes.join(', ') || t('settings.integrations.providerManaged')} />
-            <IntegrationMetric label={t('settings.integrations.lastSync')} value={data.last_sync ? new Date(data.last_sync).toLocaleString(locale) : t('common.never')} />
+            <Metric label={t('settings.integrations.username')} value={data.username ?? t('common.unavailable')} />
+            <Metric label={provider === 'github' ? t('settings.integrations.organizations') : t('settings.integrations.groups')} value={String(data.namespaces.length)} />
+            <Metric label={provider === 'github' ? t('settings.integrations.repositories') : t('settings.integrations.projects')} value={String(data.repositories_count)} />
+            <Metric label={t('settings.integrations.permission')} value={data.permission} />
+            <Metric label={t('settings.integrations.scopes')} value={data.scopes.join(', ') || t('settings.integrations.providerManaged')} />
+            <Metric label={t('settings.integrations.lastSync')} value={data.last_sync ? new Date(data.last_sync).toLocaleString(locale) : t('common.never')} />
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button type="button" variant="secondary" onClick={() => validate.mutate()} disabled={validate.isPending}>{t('settings.integrations.validate')}</Button>
-            <Button type="button" variant="secondary" onClick={() => disconnect.mutate()} disabled={disconnect.isPending}>{t('settings.integrations.disconnect', { provider: label })}</Button>
+            <Button variant="secondary" loading={validate.isPending} onClick={() => validate.mutate()}>{t('settings.integrations.validate')}</Button>
+            <Button variant="ghost" loading={disconnect.isPending} onClick={() => disconnect.mutate()}>{t('settings.integrations.disconnect', { provider: label })}</Button>
           </div>
         </>
       ) : (
         <div className="space-y-3">
           <Input type="password" aria-label={t('settings.integrations.tokenLabel', { provider: label })} placeholder={t('settings.integrations.tokenLabel', { provider: label })} value={token} onChange={(event) => setToken(event.target.value)} />
-          <p className="text-xs leading-5 text-[color:var(--muted)]">{t('settings.integrations.tokenDescription')}</p>
-          <Button type="button" variant="primary" onClick={() => void submit()} disabled={!token.trim() || connect.isPending}>{t('settings.integrations.connect', { provider: label })}</Button>
+          <p className="t-caption">{t('settings.integrations.tokenDescription')}</p>
+          <Button variant="primary" disabled={!token.trim()} loading={connect.isPending} onClick={() => void submit()}>{t('settings.integrations.connect', { provider: label })}</Button>
         </div>
       )}
 
@@ -429,8 +247,206 @@ function GitProviderCard({ provider }: { readonly provider: 'github' | 'gitlab' 
   );
 }
 
-function IntegrationMetric({ label, value }: { readonly label: string; readonly value: string }) {
-  return <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3"><p className="text-xs text-[color:var(--muted)]">{label}</p><p className="mt-1 break-words text-sm font-semibold text-[color:var(--text)]">{value}</p></div>;
+// --------------------------------------------------------------------------- //
+// Interface
+// --------------------------------------------------------------------------- //
+
+function InterfaceTab() {
+  const { t } = useLocale();
+  const preferences = useLocaleStore();
+
+  return (
+    <div className="space-y-6">
+      <section className="space-y-4">
+        <div>
+          <h2 className="t-h2 text-[color:var(--text)]">{t('settings.theme.title')}</h2>
+          <p className="mt-2 t-body text-[color:var(--muted)]">{t('settings.theme.description')}</p>
+        </div>
+        <ThemeGallery />
+      </section>
+
+      <Card className="space-y-5 p-6">
+        <div>
+          <h3 className="t-h3 text-[color:var(--text)]">{t('settings.localization.title')}</h3>
+          <p className="mt-2 t-body text-[color:var(--muted)]">{t('settings.localization.description')}</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <LocaleField label={t('settings.generatedProjectLanguage')}><PreferenceSelect value={preferences.generatedProjectLocale} onChange={preferences.setGeneratedProjectLocale} /></LocaleField>
+          <LocaleField label={t('settings.documentationLanguage')}><PreferenceSelect value={preferences.documentationLocale} onChange={preferences.setDocumentationLocale} /></LocaleField>
+          <LocaleField label={t('settings.codeCommentsLanguage')}><PreferenceSelect value={preferences.codeCommentsLocale} onChange={preferences.setCodeCommentsLocale} /></LocaleField>
+          <LocaleField label={t('settings.fallbackLanguage')}><PreferenceSelect value={preferences.fallbackLocale} onChange={preferences.setFallbackLocale} /></LocaleField>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Runtime
+// --------------------------------------------------------------------------- //
+
+function RuntimeTab() {
+  const { locale, t } = useLocale();
+  const healthQuery = useHealth();
+  const stacksQuery = useStacks();
+  const languagesQuery = useLanguages();
+  const projectsQuery = useProjects();
+  const capabilitiesQuery = useCapabilities();
+
+  const offline = healthQuery.isError && isApiOffline(healthQuery.error);
+  const score = offline ? 34 : healthQuery.data?.status === 'degraded' ? 72 : 92;
+
+  const checks: { label: string; ok: boolean }[] = [
+    { label: t('settings.runtime.backendRegistry'), ok: !offline && healthQuery.data?.status === 'ok' },
+    { label: t('settings.runtime.contractSync'), ok: languagesQuery.isSuccess },
+    { label: t('settings.runtime.topologySync'), ok: stacksQuery.isSuccess },
+    { label: t('settings.runtime.projectRegistry'), ok: projectsQuery.isSuccess },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+        <HealthCard score={score} checks={checks} lastCheckedAt={healthQuery.dataUpdatedAt} offline={offline} locale={locale} />
+
+        <OperationalRail
+          title={t('settings.runtime.title')}
+          items={[
+            { label: t('settings.panels.apiBase'), value: API_BASE_URL, detail: t('settings.panels.apiBaseDetail'), tone: 'accent' },
+            { label: t('settings.panels.health'), value: healthQuery.data?.status ?? t('common.pending'), detail: healthQuery.data ? `${healthQuery.data.service} v${healthQuery.data.version}` : t('common.awaitingResponse'), tone: offline ? 'warning' : 'success' },
+            { label: t('settings.runtime.topologySync'), value: t('settings.runtime.stackCount', { count: stacksQuery.data?.length ?? 0 }), detail: t('settings.runtime.topologySyncDetail'), tone: 'accent2' },
+            { label: t('settings.runtime.projectRegistry'), value: t('settings.runtime.recordCount', { count: projectsQuery.data?.length ?? 0 }), detail: t('settings.runtime.projectRegistryDetail'), tone: 'success' },
+          ]}
+        />
+      </div>
+
+      <StackEcosystemMap
+        title={t('settings.panels.title')}
+        nodes={[
+          { label: t('settings.panels.capabilities'), value: String(capabilitiesQuery.data?.length ?? 0), detail: t('settings.panels.capabilitiesDetail'), tone: 'accent2' },
+          { label: t('settings.panels.registryMode'), value: offline ? t('common.recovery') : t('common.live'), detail: t('settings.panels.registryModeDetail'), tone: offline ? 'warning' : 'success' },
+        ]}
+      />
+
+      {healthQuery.isError ? (
+        <PageError
+          title={offline ? t('settings.errors.offlineTitle') : t('settings.errors.healthTitle')}
+          description={getApiErrorMessage(healthQuery.error, t('settings.errors.healthDescription'))}
+          onRetry={() => void healthQuery.refetch()}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function HealthCard({ score, checks, lastCheckedAt, offline, locale }: {
+  readonly score: number;
+  readonly checks: { label: string; ok: boolean }[];
+  readonly lastCheckedAt: number;
+  readonly offline: boolean;
+  readonly locale: string;
+}) {
+  const { t } = useLocale();
+  const tone = offline ? 'var(--danger)' : score >= 90 ? 'var(--success)' : 'var(--warning)';
+  const label = offline ? t('common.offline') : score >= 90 ? t('settings.health.excellent') : t('common.pending');
+
+  let relChecked = '—';
+  if (lastCheckedAt) {
+    const minutes = Math.round((lastCheckedAt - Date.now()) / 60000);
+    try {
+      relChecked = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(minutes, 'minute');
+    } catch {
+      relChecked = `${Math.abs(minutes)}m`;
+    }
+  }
+
+  return (
+    <Card surface="primary" className="glass noise relative overflow-hidden p-6">
+      <p className="t-overline">{t('settings.health.title')}</p>
+      <div className="mt-3 flex items-end gap-3">
+        <span className="t-mono text-5xl font-bold leading-none text-[color:var(--text)]">{score}</span>
+        <span className="t-mono text-2xl font-semibold" style={{ color: tone }}>%</span>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-semibold" style={{ color: tone, background: 'color-mix(in srgb, currentColor 12%, transparent)' }}>
+          {label}
+        </span>
+      </div>
+
+      <ul className="mt-5 space-y-2" aria-label={t('settings.health.checks')}>
+        {checks.map((check) => (
+          <li key={check.label} className="flex items-center gap-2.5 text-sm text-[color:var(--text)]">
+            <span className="grid h-5 w-5 place-items-center rounded-full" style={{ background: `color-mix(in srgb, ${check.ok ? 'var(--success)' : 'var(--danger)'} 16%, transparent)`, color: check.ok ? 'var(--success)' : 'var(--danger)' }}>
+              {check.ok ? <Check className="h-3 w-3" aria-hidden /> : <X className="h-3 w-3" aria-hidden />}
+            </span>
+            {check.label}
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-5 t-caption">{t('settings.health.lastCheck')} · {relChecked}</p>
+    </Card>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Advanced / Developer Mode
+// --------------------------------------------------------------------------- //
+
+function AdvancedTab() {
+  const { t } = useLocale();
+  const [devMode, setDevMode] = useState(false);
+  const languagesQuery = useLanguages();
+  const frameworksQuery = useFrameworks();
+  const architecturesQuery = useArchitectures();
+  const archetypesQuery = useArchetypes();
+
+  return (
+    <div className="space-y-6">
+      <Card className="flex flex-wrap items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="t-h2 text-[color:var(--text)]">{t('settings.advanced.title')}</h2>
+          <p className="mt-2 max-w-xl t-body text-[color:var(--muted)]">{t('settings.advanced.description')}</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={devMode}
+          onClick={() => setDevMode((value) => !value)}
+          className="focus-ring inline-flex h-7 w-12 shrink-0 items-center rounded-full border border-[color:var(--border)] p-0.5 transition-colors"
+          style={devMode ? { background: 'color-mix(in srgb, var(--accent) 35%, transparent)' } : undefined}
+        >
+          <span className="h-5 w-5 rounded-full bg-[color:var(--text)] transition-transform" style={{ transform: devMode ? 'translateX(20px)' : 'translateX(0)' }} />
+          <span className="sr-only">{t('settings.advanced.devMode')}</span>
+        </button>
+      </Card>
+
+      {devMode ? (
+        <ArchitectureGraphSurface
+          title={t('settings.contracts.title')}
+          subtitle={t('settings.contracts.description')}
+          nodes={[
+            { label: t('settings.contracts.languages'), value: String(languagesQuery.data?.length ?? 0), detail: t('settings.contracts.languagesDetail'), tone: 'accent' },
+            { label: t('settings.contracts.frameworks'), value: String(frameworksQuery.data?.length ?? 0), detail: t('settings.contracts.frameworksDetail'), tone: 'accent2' },
+            { label: t('settings.contracts.architectures'), value: String(architecturesQuery.data?.length ?? 0), detail: t('settings.contracts.architecturesDetail'), tone: 'success' },
+            { label: t('settings.contracts.archetypes'), value: String(archetypesQuery.data?.length ?? 0), detail: t('settings.contracts.archetypesDetail'), tone: 'muted' },
+          ]}
+        />
+      ) : (
+        <p className="t-caption">{t('settings.advanced.devModeHint')}</p>
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Shared bits
+// --------------------------------------------------------------------------- //
+
+function Metric({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)] p-3">
+      <p className="t-caption">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-[color:var(--text)]">{value}</p>
+    </div>
+  );
 }
 
 function LocaleField({ label, children }: { readonly label: string; readonly children: React.ReactNode }) {
@@ -439,7 +455,7 @@ function LocaleField({ label, children }: { readonly label: string; readonly chi
 
 function PreferenceSelect({ value, onChange }: { readonly value: LocaleCode; readonly onChange: (locale: LocaleCode) => void }) {
   return (
-    <Select value={value} onChange={(event) => onChange(event.target.value as LocaleCode)}>
+    <Select value={value} onChange={(event) => onChange(event.target.value as LocaleCode)} className="w-full">
       {LOCALES.map((item) => <option key={item.code} value={item.code}>{item.nativeName}</option>)}
     </Select>
   );

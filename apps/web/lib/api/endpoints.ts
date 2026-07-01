@@ -71,6 +71,12 @@ export const apiEndpoints = {
   generatedProjectQuality: {
     run: (projectId: string) => `${API_BASE_URL}/api/generated-projects/${projectId}/quality-check`,
   },
+  documentation: {
+    library: (projectId: string) => `${API_BASE_URL}/api/projects/${projectId}/documentation`,
+    export: (projectId: string) => `${API_BASE_URL}/api/projects/${projectId}/documentation/export`,
+    generate: (projectId: string) => `${API_BASE_URL}/api/projects/${projectId}/documentation/generate`,
+    save: (projectId: string) => `${API_BASE_URL}/api/projects/${projectId}/documentation/save`,
+  },
   gitExport: {
     preview: `${API_BASE_URL}/api/git/export/preview`,
     github: `${API_BASE_URL}/api/git/export/github`,

@@ -6,6 +6,9 @@ httpx==0.28.1
 # Multipart form parsing for brownfield ZIP uploads (POST /modernize/ingest/zip).
 python-multipart>=0.0.9
 
+# Loads apps/api/.env so a stable LDCN_SECRET_KEY survives restarts (see config.py).
+python-dotenv>=1.0.0
+
 # Auth / security (Fase B): JWT access+refresh tokens and password hashing.
 pyjwt>=2.8.0
 passlib[bcrypt]>=1.7.4
@@ -23,3 +26,4 @@ cryptography>=42.0.0
 anthropic>=0.69.0
 openai>=1.50.0
 google-genai>=0.3.0
+psutil>=5.9

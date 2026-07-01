@@ -20,6 +20,7 @@ interface AuthState {
   readonly user: UserPublic | null;
   readonly error: string | null;
   initialize: () => Promise<void>;
+  retry: () => Promise<void>;
   login: (payload: UserLoginRequest) => Promise<void>;
   register: (payload: UserRegisterRequest) => Promise<void>;
   logout: () => Promise<void>;
@@ -47,6 +48,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       setAccessToken(null);
       set({ status: 'unauthenticated', user: null });
     }
+  },
+
+  // Force a fresh bootstrap after a stuck/failed session: `initialize` is guarded
+  // to run only from 'idle', so reset to 'idle' before re-running it.
+  retry: async () => {
+    set({ status: 'idle', error: null });
+    await get().initialize();
   },
 
   login: async (payload) => {

@@ -1,4 +1,6 @@
 export type ThemeId =
+  | 'engineering-runtime'
+  | 'assembly-line'
   | 'obsidian-blue'
   | 'graphite-cyan'
   | 'titanium-violet'
@@ -14,6 +16,20 @@ export interface ThemeDefinition {
 }
 
 export const THEMES: readonly ThemeDefinition[] = [
+  {
+    id: 'engineering-runtime',
+    name: 'Engineering Runtime',
+    accent: '#06b6d4',
+    accentSecondary: '#3b82f6',
+    description: 'Near-black navy, glass surfaces, cyan→electric-blue accent.',
+  },
+  {
+    id: 'assembly-line',
+    name: 'Assembly Line',
+    accent: '#34e5a0',
+    accentSecondary: '#57d6c8',
+    description: 'Matte board-green with an emerald signal that runs the line.',
+  },
   {
     id: 'obsidian-blue',
     name: 'Obsidian Blue',
@@ -51,7 +67,7 @@ export const THEMES: readonly ThemeDefinition[] = [
   },
 ] as const;
 
-export const DEFAULT_THEME_ID: ThemeId = 'obsidian-blue';
+export const DEFAULT_THEME_ID: ThemeId = 'engineering-runtime';
 
 export function isThemeId(value: string): value is ThemeId {
   return THEMES.some((theme) => theme.id === value);

@@ -1,29 +1,32 @@
 'use client';
 
-import { useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, Clock3, FolderKanban, Send, Users } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, FolderKanban, Send } from 'lucide-react';
 
 import { ActionLink } from '@/components/ui/action-link';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
 import { CardLoading } from '@/components/feedback/loading-system';
 import { PageError } from '@/components/feedback/error-system';
-import { SectionHeader } from '@/components/shell/section-header';
 import { AnimatedCounter } from '@/components/motion/animated-counter';
 import { Stagger, StaggerItem } from '@/components/motion/stagger';
-import { ComplexityRadar, ReadinessRing } from '@/components/visual/engineering-surface';
+import { ComplexityRadar } from '@/components/visual/engineering-surface';
 import { useHealth } from '@/hooks/use-health';
 import { useProjects } from '@/hooks/use-projects';
 import { useLocale } from '@/hooks/use-locale';
+import { cn } from '@/lib/cn';
 import { getApiErrorMessage } from '@/lib/api/errors';
+import type { Project } from '@/lib/api/types';
 
 type MetricTone = 'accent' | 'success' | 'warning';
+type StageState = 'done' | 'active' | 'idle';
 
 const TONE_COLOR: Record<MetricTone, string> = {
   accent: 'var(--accent)',
   success: 'var(--success)',
   warning: 'var(--warning)',
 };
+
+const STAGE_KEYS = ['idea', 'spec', 'contract', 'build', 'verify', 'ship'] as const;
 
 function readinessTone(status: string): BadgeTone {
   if (status === 'ready' || status === 'generated') return 'success';
@@ -32,73 +35,124 @@ function readinessTone(status: string): BadgeTone {
   return 'accent';
 }
 
+// Cumulative count of matching projects across the portfolio — a real, monotonic
+// series for the card sparkline (no fabricated trend data).
+function cumulativeSeries(projects: Project[], predicate: (p: Project) => boolean): number[] {
+  let running = 0;
+  const series = projects.map((p) => (running += predicate(p) ? 1 : 0));
+  return series.length ? series : [0];
+}
+
 export default function DashboardPage() {
   const { t } = useLocale();
   const healthQuery = useHealth();
   const projectsQuery = useProjects();
   const projects = projectsQuery.data ?? [];
+  const healthOk = healthQuery.data?.status === 'ok';
 
   const metrics = useMemo(() => {
-    const ready = projects.filter((project) => ['ready', 'ready_with_warnings', 'generated'].includes(project.readiness_status)).length;
-    const risks = projects.filter((project) => project.readiness_status === 'blocked' || project.status === 'generation_blocked').length;
-    const generated = projects.filter((project) => project.status === 'generated').length;
+    const ready = projects.filter((p) => ['ready', 'ready_with_warnings', 'generated'].includes(p.readiness_status)).length;
+    const risks = projects.filter((p) => p.readiness_status === 'blocked' || p.status === 'generation_blocked').length;
+    const generated = projects.filter((p) => p.status === 'generated').length;
     const complexity = projects.length ? Math.min(100, 28 + projects.length * 9 + risks * 12) : 18;
-    return { ready, risks, generated, complexity, team: Math.max(2, Math.ceil(complexity / 18)), weeks: Math.max(2, Math.ceil(complexity / 12)) };
+    return { ready, risks, generated, complexity };
   }, [projects]);
+
+  const reached = useMemo(() => {
+    const milestones = [healthOk, projects.length > 0, projects.length > 0, metrics.generated > 0, metrics.ready > 0, metrics.generated > 0];
+    let count = 0;
+    for (const done of milestones) { if (!done) break; count += 1; }
+    return count;
+  }, [healthOk, metrics.generated, metrics.ready, projects.length]);
 
   const loading = healthQuery.isLoading || projectsQuery.isLoading;
   const error = healthQuery.error ?? projectsQuery.error;
   const readinessPct = projects.length ? Math.round((metrics.ready / projects.length) * 100) : 0;
 
   return (
-    <div className="space-y-8 pb-10">
-      <div className="flex flex-wrap items-end justify-between gap-5">
-        <SectionHeader title={t('dashboard.title')} description={t('dashboard.description')} />
+    <div className="space-y-6 pb-12">
+      <ScrollProgress />
+
+      {/* Hero header */}
+      <header className="glass noise relative flex flex-wrap items-center justify-between gap-5 overflow-hidden p-6">
+        <div className="pointer-events-none absolute -left-10 -top-16 h-48 w-48 rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--accent)_22%,transparent),transparent_70%)] blur-2xl" />
+        <div className="relative min-w-0">
+          <p className="t-overline">{t('dashboard.title')}</p>
+          <h1 className="mt-2 t-h1 text-[color:var(--text)]">{t('dashboard.description')}</h1>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge tone={healthOk ? 'success' : 'danger'}>
+              <span className="live-dot mr-1.5" style={healthOk ? undefined : { background: 'var(--danger)' }} aria-hidden />
+              {healthOk ? t('dashboard.line.live') : t('dashboard.line.offline')}
+            </Badge>
+            <Badge>{t('dashboard.activeProjects')}: {projects.length}</Badge>
+            <Badge tone={metrics.risks ? 'warning' : 'success'}>{t('dashboard.risks')}: {metrics.risks}</Badge>
+          </div>
+        </div>
         <ActionLink href="/wizard" variant="primary">{t('dashboard.newProject')}</ActionLink>
-      </div>
+      </header>
 
       {loading ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><CardLoading /><CardLoading /><CardLoading /><CardLoading /></div>
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><CardLoading /><CardLoading /><CardLoading /><CardLoading /></div>
+          <CardLoading className="h-72" />
+        </div>
       ) : error ? (
         <PageError title={t('dashboard.error.title')} description={getApiErrorMessage(error, t('dashboard.error.description'))} onRetry={() => { void healthQuery.refetch(); void projectsQuery.refetch(); }} />
       ) : (
         <>
+          {/* KPI row */}
           <Stagger className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('dashboard.metrics')}>
-            <ExecutiveMetric icon={FolderKanban} label={t('dashboard.activeProjects')} value={projects.length} detail={t('dashboard.activeProjects.detail')} />
-            <ExecutiveMetric icon={CheckCircle2} label={t('dashboard.readyProjects')} value={metrics.ready} detail={t('dashboard.readyProjects.detail')} tone="success" />
-            <ExecutiveMetric icon={AlertTriangle} label={t('dashboard.risks')} value={metrics.risks} detail={t('dashboard.risks.detail')} tone={metrics.risks ? 'warning' : 'success'} />
-            <ExecutiveMetric icon={Send} label={t('dashboard.exports')} value={metrics.generated} detail={t('dashboard.exports.detail')} />
+            <KpiCard icon={FolderKanban} label={t('dashboard.activeProjects')} value={projects.length} detail={t('dashboard.activeProjects.detail')} series={cumulativeSeries(projects, () => true)} />
+            <KpiCard icon={CheckCircle2} label={t('dashboard.readyProjects')} value={metrics.ready} detail={t('dashboard.readyProjects.detail')} tone="success" series={cumulativeSeries(projects, (p) => ['ready', 'ready_with_warnings', 'generated'].includes(p.readiness_status))} />
+            <KpiCard icon={AlertTriangle} label={t('dashboard.risks')} value={metrics.risks} detail={t('dashboard.risks.detail')} tone={metrics.risks ? 'warning' : 'success'} series={cumulativeSeries(projects, (p) => p.readiness_status === 'blocked' || p.status === 'generation_blocked')} />
+            <KpiCard icon={Send} label={t('dashboard.exports')} value={metrics.generated} detail={t('dashboard.exports.detail')} series={cumulativeSeries(projects, (p) => p.status === 'generated')} />
           </Stagger>
 
-          <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-            <Card className="relative overflow-hidden p-6">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,color-mix(in_srgb,var(--accent)_14%,transparent),transparent_38%)]" />
-              <div className="relative space-y-6">
-                <div><p className="type-label text-[color:var(--muted)]">{t('dashboard.portfolio.eyebrow')}</p><h2 className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{t('dashboard.portfolio.title')}</h2><p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('dashboard.portfolio.description')}</p></div>
-                <Stagger className="grid gap-3 sm:grid-cols-3">
-                  <CompactMetric icon={Users} label={t('dashboard.team')} value={`${metrics.team}`} />
-                  <CompactMetric icon={Clock3} label={t('dashboard.time')} value={`${metrics.weeks} ${t('dashboard.weeks')}`} />
-                  <CompactMetric icon={CheckCircle2} label={t('dashboard.readiness')} value={`${readinessPct}%`} />
-                </Stagger>
-                <Stagger className="space-y-3">
-                  {projects.slice(0, 4).map((project) => (
-                    <StaggerItem key={project.project_id} className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.03] px-4 py-3 transition hover:border-[color-mix(in_srgb,var(--accent)_32%,var(--border))] hover:bg-white/[0.06]">
-                      <div><p className="text-sm font-semibold text-[color:var(--text)]">{project.project_name}</p><p className="mt-1 text-xs text-[color:var(--muted)]">{project.technology_graph.framework.name} · {project.technology_graph.architecture.name}</p></div>
-                      <Badge tone={readinessTone(project.readiness_status)}>{project.readiness_status.replaceAll('_', ' ')}</Badge>
-                    </StaggerItem>
-                  ))}
-                  {!projects.length ? <p className="text-sm text-[color:var(--muted)]">{t('dashboard.empty')}</p> : null}
-                </Stagger>
-              </div>
-            </Card>
+          {/* Main: gauge + load */}
+          <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="glass noise relative flex flex-col items-center justify-center gap-4 overflow-hidden p-7">
+              <p className="t-overline self-start">{t('dashboard.readiness')}</p>
+              <RuntimeGauge value={readinessPct} />
+              <p className="t-caption text-center">{t('dashboard.readiness.detail')}</p>
+              <Badge tone={metrics.risks ? 'warning' : 'success'}>{metrics.risks ? t('dashboard.attention') : t('dashboard.healthy')}</Badge>
+            </div>
 
-            <div className="grid gap-5">
-              <ReadinessRing title={t('dashboard.readiness')} value={readinessPct} label={metrics.risks ? t('dashboard.attention') : t('dashboard.healthy')} caption={t('dashboard.readiness.detail')} tone={metrics.risks ? 'warning' : 'success'} />
+            <div className="glass noise relative overflow-hidden p-6">
+              <p className="t-overline">{t('dashboard.line.eyebrow')}</p>
+              <h2 className="mt-2 t-h2 text-[color:var(--text)]">{t('dashboard.line.title')}</h2>
+              <p className="mt-2 t-caption max-w-lg">{t('dashboard.line.caption')}</p>
+              <PipelineRail reached={reached} t={t} />
+            </div>
+          </div>
+
+          {/* Portfolio + complexity */}
+          <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="glass relative overflow-hidden p-6">
+              <p className="t-overline">{t('dashboard.portfolio.eyebrow')}</p>
+              <h2 className="mt-2 t-h2 text-[color:var(--text)]">{t('dashboard.portfolio.title')}</h2>
+              <Stagger className="mt-4 space-y-2.5">
+                {projects.slice(0, 5).map((project) => (
+                  <StaggerItem key={project.project_id} className="lift flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_60%,transparent)] px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="live-dot" style={{ background: TONE_COLOR[readinessTone(project.readiness_status) === 'danger' ? 'warning' : 'success'] }} aria-hidden />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[color:var(--text)]">{project.project_name}</p>
+                        <p className="mt-0.5 t-mono text-xs text-[color:var(--muted-2)]">{project.technology_graph.framework.name} · {project.technology_graph.architecture.name}</p>
+                      </div>
+                    </div>
+                    <Badge tone={readinessTone(project.readiness_status)}>{project.readiness_status.replaceAll('_', ' ')}</Badge>
+                  </StaggerItem>
+                ))}
+                {!projects.length ? <p className="t-caption">{t('dashboard.empty')}</p> : null}
+              </Stagger>
+            </div>
+
+            <div className="glass noise relative overflow-hidden p-6">
               <ComplexityRadar title={t('dashboard.complexity')} score={metrics.complexity} axes={[
                 { label: t('dashboard.axis.scope'), value: metrics.complexity },
                 { label: t('dashboard.axis.risk'), value: Math.min(100, metrics.risks * 28 + 12) },
-                { label: t('dashboard.axis.team'), value: metrics.team * 14 },
-                { label: t('dashboard.axis.time'), value: metrics.weeks * 10 },
+                { label: t('dashboard.axis.team'), value: Math.min(100, 30 + projects.length * 4) },
+                { label: t('dashboard.axis.time'), value: Math.min(100, 24 + projects.length * 5) },
               ]} />
             </div>
           </div>
@@ -108,28 +162,109 @@ export default function DashboardPage() {
   );
 }
 
-function ExecutiveMetric({ icon: Icon, label, value, detail, tone = 'accent' }: { readonly icon: typeof FolderKanban; readonly label: string; readonly value: number; readonly detail: string; readonly tone?: MetricTone }) {
+function ScrollProgress() {
+  const [progress, setProgress] = useState(0);
+  useEffect(() => {
+    const onScroll = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      setProgress(max > 0 ? Math.min(1, window.scrollY / max) : 0);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return <div className="scroll-progress" style={{ ['--progress' as string]: progress }} aria-hidden />;
+}
+
+function RuntimeGauge({ value }: { readonly value: number }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const offset = c * (1 - Math.max(0, Math.min(100, value)) / 100);
   return (
-    <StaggerItem className="h-full">
-      <Card interactive className="h-full p-5">
-        <div className="flex items-center justify-between gap-3">
-          <Icon className="h-5 w-5" style={{ color: TONE_COLOR[tone] }} />
-          <span className="h-2 w-2 rounded-full" style={{ background: TONE_COLOR[tone], boxShadow: '0 0 12px var(--glow)' }} />
-        </div>
-        <AnimatedCounter value={value} className="mt-6 block text-4xl font-semibold text-[color:var(--text)]" />
-        <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{label}</p>
-        <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">{detail}</p>
-      </Card>
-    </StaggerItem>
+    <div className="relative grid h-44 w-44 place-items-center">
+      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+        <defs>
+          <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#06b6d4" />
+            <stop offset="100%" stopColor="#3b82f6" />
+          </linearGradient>
+        </defs>
+        <circle cx="60" cy="60" r={r} fill="none" stroke="color-mix(in srgb, var(--border-strong) 90%, transparent)" strokeWidth="8" />
+        <circle
+          cx="60" cy="60" r={r} fill="none" stroke="url(#gaugeGrad)" strokeWidth="8" strokeLinecap="round"
+          className="ring-draw"
+          style={{ strokeDasharray: c, strokeDashoffset: offset, ['--dash' as string]: c, ['--dash-offset' as string]: offset }}
+        />
+      </svg>
+      <div className="absolute grid place-items-center text-center">
+        <AnimatedCounter value={value} className="t-mono text-4xl font-bold text-[color:var(--text)]" />
+        <span className="t-overline mt-1">%</span>
+      </div>
+    </div>
   );
 }
 
-function CompactMetric({ icon: Icon, label, value }: { readonly icon: typeof Users; readonly label: string; readonly value: string }) {
+function PipelineRail({ reached, t }: { readonly reached: number; readonly t: (k: string) => string }) {
+  const stages = STAGE_KEYS.map((key, i): { key: string; state: StageState } => ({
+    key,
+    state: i < reached ? 'done' : i === reached ? 'active' : 'idle',
+  }));
   return (
-    <StaggerItem className="rounded-[var(--radius-xl)] border border-white/10 bg-black/15 p-4">
-      <Icon className="h-4 w-4 text-[color:var(--accent)]" />
-      <p className="mt-3 text-xs text-[color:var(--muted)]">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-[color:var(--text)]">{value}</p>
+    <ol className="mt-6 flex flex-col gap-3 md:flex-row md:items-center">
+      {stages.map((stage, i) => (
+        <Fragment key={stage.key}>
+          <li className="flex-1">
+            <div className={cn(
+              'rounded-[var(--radius-lg)] border p-3 transition',
+              stage.state === 'idle'
+                ? 'border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)]'
+                : 'border-[color-mix(in_srgb,var(--accent)_35%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]',
+            )}>
+              <div className="flex items-center justify-between">
+                <span className={cn('live-dot', stage.state === 'idle' && 'opacity-40')} style={{ background: stage.state === 'idle' ? 'var(--muted-2)' : 'var(--accent)' }} aria-hidden />
+                <span className="t-mono text-[0.625rem] text-[color:var(--muted-2)]">{String(i + 1).padStart(2, '0')}</span>
+              </div>
+              <p className="mt-2 t-mono text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text)]">{t(`dashboard.stage.${stage.key}`)}</p>
+            </div>
+          </li>
+          {i < stages.length - 1 ? (
+            <li aria-hidden className="hidden self-center md:block md:w-6 lg:w-10">
+              <span className="flow-line block h-0.5 rounded-full" data-active={stage.state === 'done'} />
+            </li>
+          ) : null}
+        </Fragment>
+      ))}
+    </ol>
+  );
+}
+
+function Sparkline({ series, color }: { readonly series: number[]; readonly color: string }) {
+  const max = Math.max(1, ...series);
+  const pts = series.length > 1 ? series : [0, ...series];
+  const step = 100 / (pts.length - 1 || 1);
+  const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i * step).toFixed(2)} ${(28 - (v / max) * 24).toFixed(2)}`).join(' ');
+  return (
+    <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="sparkline h-7 w-full" aria-hidden>
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+    </svg>
+  );
+}
+
+function KpiCard({ icon: Icon, label, value, detail, tone = 'accent', series }: { readonly icon: typeof FolderKanban; readonly label: string; readonly value: number; readonly detail: string; readonly tone?: MetricTone; readonly series: number[] }) {
+  return (
+    <StaggerItem className="h-full">
+      <div className="glass lift noise relative h-full overflow-hidden p-5">
+        <div className="flex items-center justify-between gap-3">
+          <Icon className="h-5 w-5" style={{ color: TONE_COLOR[tone] }} />
+          <span className="live-dot" style={{ background: TONE_COLOR[tone] }} aria-hidden />
+        </div>
+        <AnimatedCounter value={value} className="mt-5 block t-mono text-4xl font-bold text-[color:var(--text)]" />
+        <p className="mt-1.5 text-sm font-semibold text-[color:var(--text)]">{label}</p>
+        <p className="mt-1 t-caption">{detail}</p>
+        <div className="mt-3 -mx-1 opacity-70">
+          <Sparkline series={series} color={TONE_COLOR[tone]} />
+        </div>
+      </div>
     </StaggerItem>
   );
 }

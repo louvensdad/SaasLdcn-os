@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Disclosure } from '@/components/ui/disclosure';
 import { SectionHeader } from '@/components/shell/section-header';
+import { TopologyGraph } from '@/components/three/topology-graph';
 import { OperationalRail } from '@/components/visual/engineering-surface';
 import { useLocale } from '@/hooks/use-locale';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
@@ -68,23 +69,30 @@ export default function ArchitecturePage() {
             <Badge>{t('architecture.graph.compatible')}</Badge>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-6">
-            {graphNodes.map(({ id, icon: Icon }, index) => (
-              <div key={id} className="relative">
-                <div className="h-full rounded-[var(--radius-xl)] border border-white/10 bg-black/20 p-4 shadow-[var(--shadow-soft)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <Icon className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
-                    <span className="h-2 w-2 rounded-full bg-[color:var(--success)] shadow-[0_0_14px_var(--glow)]" />
+          <TopologyGraph
+            className="h-[clamp(20rem,42vh,30rem)] overflow-hidden rounded-[var(--radius-xl)] border border-white/10 bg-black/20"
+            nodes={graphNodes.map(({ id }) => ({ id, label: t(`architecture.node.${id}`) }))}
+            edges={connections.map(([from, to]) => ({ from, to }))}
+            fallback={
+              <div className="grid gap-3 lg:grid-cols-6">
+                {graphNodes.map(({ id, icon: Icon }, index) => (
+                  <div key={id} className="relative">
+                    <div className="h-full rounded-[var(--radius-xl)] border border-white/10 bg-black/20 p-4 shadow-[var(--shadow-soft)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <Icon className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
+                        <span className="h-2 w-2 rounded-full bg-[color:var(--success)] shadow-[0_0_14px_var(--glow)]" />
+                      </div>
+                      <p className="mt-5 text-sm font-semibold text-[color:var(--text)]">{t(`architecture.node.${id}`)}</p>
+                      <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">{t(`architecture.node.${id}.detail`)}</p>
+                    </div>
+                    {index < graphNodes.length - 1 ? (
+                      <ArrowRight className="absolute -right-3 top-1/2 z-10 hidden h-5 w-5 -translate-y-1/2 text-[color:var(--accent)] lg:block" aria-hidden />
+                    ) : null}
                   </div>
-                  <p className="mt-5 text-sm font-semibold text-[color:var(--text)]">{t(`architecture.node.${id}`)}</p>
-                  <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">{t(`architecture.node.${id}.detail`)}</p>
-                </div>
-                {index < graphNodes.length - 1 ? (
-                  <ArrowRight className="absolute -right-3 top-1/2 z-10 hidden h-5 w-5 -translate-y-1/2 text-[color:var(--accent)] lg:block" aria-hidden />
-                ) : null}
+                ))}
               </div>
-            ))}
-          </div>
+            }
+          />
 
           <div className="flex flex-wrap gap-2">
             {connections.map(([from, to]) => <Badge key={`${from}-${to}`}>{t(`architecture.node.${from}`)} → {t(`architecture.node.${to}`)}</Badge>)}
