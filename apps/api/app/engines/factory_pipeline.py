@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import concurrent.futures as cf
 import logging
+import random
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -86,6 +87,19 @@ def _agent_request(system: str, user: str, role: str) -> LLMRequest:
 
 _MAX_AGENT_ATTEMPTS = 3
 
+# Exponential backoff + jitter before an agent RETRY, so N attempts don't hammer the
+# provider in an instant thundering herd (audit AI4). Kept small; the per-request
+# timeout still bounds the overall stage.
+_RETRY_BACKOFF_BASE_S = 0.6
+_RETRY_BACKOFF_MAX_S = 8.0
+_RETRY_JITTER_S = 0.4
+
+
+def _retry_sleep(attempt: int) -> None:
+    """Sleep before agent attempt N (N>=2): exponential backoff with jitter."""
+    delay = min(_RETRY_BACKOFF_MAX_S, _RETRY_BACKOFF_BASE_S * (2 ** (attempt - 2)))
+    time.sleep(delay + random.uniform(0, _RETRY_JITTER_S))
+
 # Appended to the context on a retry when the previous reply produced no files,
 # nudging the model back onto the exact protocol. The tolerant parser already
 # recovers markdown/JSON/XML, so this is a last resort, not the first line.
@@ -142,6 +156,8 @@ def _run_agent(
     attempt = 0
     while attempt < _MAX_AGENT_ATTEMPTS:
         attempt += 1
+        if attempt >= 2:
+            _retry_sleep(attempt)  # backoff + jitter before every retry (audit AI4)
         if attempt == 2:
             working, _ = compress_to_budget(working, max(3_000, int(budget * 0.72)))
             correction = True

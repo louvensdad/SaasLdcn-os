@@ -137,7 +137,22 @@ def test_malformed_json_with_trailing_comma_is_normalized():
     assert parsed.files[0].path == "src/a.ts"
 
 
-def test_provider_failure_uses_three_progressive_attempts():
+def test_retry_sleep_backs_off_with_jitter(monkeypatch):
+    from app.engines import factory_pipeline as fp
+
+    slept: list[float] = []
+    monkeypatch.setattr(fp.time, "sleep", lambda seconds: slept.append(seconds))
+    fp._retry_sleep(2)
+    fp._retry_sleep(3)
+    # attempt 2 ~ base + jitter; attempt 3 ~ 2*base + jitter; strictly increasing.
+    assert fp._RETRY_BACKOFF_BASE_S <= slept[0] <= fp._RETRY_BACKOFF_BASE_S + fp._RETRY_JITTER_S
+    assert 2 * fp._RETRY_BACKOFF_BASE_S <= slept[1] <= 2 * fp._RETRY_BACKOFF_BASE_S + fp._RETRY_JITTER_S
+    assert slept[1] > slept[0]
+
+
+def test_provider_failure_uses_three_progressive_attempts(monkeypatch):
+    monkeypatch.setattr("app.engines.factory_pipeline._retry_sleep", lambda *a, **k: None)
+
     class FailingRouter:
         def __init__(self):
             self.calls = 0
@@ -154,7 +169,9 @@ def test_provider_failure_uses_three_progressive_attempts():
     assert parsed.partitioned is True
 
 
-def test_provider_error_reason_is_redacted():
+def test_provider_error_reason_is_redacted(monkeypatch):
+    monkeypatch.setattr("app.engines.factory_pipeline._retry_sleep", lambda *a, **k: None)
+
     class LeakyRouter:
         def route(self, *args, **kwargs):  # noqa: ANN002, ANN003
             raise LLMError("401 Unauthorized Authorization: Bearer sk-ant-api03-LEAKEDKEY1234567890ABCD")

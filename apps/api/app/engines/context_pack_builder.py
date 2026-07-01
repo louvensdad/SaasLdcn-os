@@ -287,10 +287,48 @@ def compress_to_budget(text: str, budget_chars: int) -> tuple[str, list[str]]:
         if len(text) <= budget_chars:
             return text, steps
 
-    # Last resort: hard truncate, keeping the head (spec backbone lives there).
-    text = text[: max(0, budget_chars - 80)].rstrip() + "\n… (contexto truncado para respeitar o limite do agente)"
-    steps.append("hard_truncate")
+    # Last resort: priority-aware truncation (audit AI3). Blindly truncating the head
+    # can drop mandatory TAIL sections (Localization NON-NEGOTIABLE, Business rules,
+    # Blueprint decisions). Instead keep the backbone + mandatory sections and drop
+    # non-priority bodies first; only hard-truncate if the backbone alone overflows.
+    text = _priority_truncate(text, budget_chars)
+    steps.append("priority_truncate")
     return text, steps
+
+
+def _priority_truncate(text: str, budget_chars: int) -> str:
+    preamble, sections = _split_sections(text)
+
+    def _is_priority(title: str) -> bool:
+        return title in _ALWAYS or title.startswith(_BLUEPRINT_TITLE)
+
+    def _block(title: str, body: str) -> str:
+        return f"## {title}\n{body}".rstrip()
+
+    parts: list[str] = []
+    if preamble.strip():
+        parts.append(preamble.rstrip())
+    # 1) Mandatory backbone survives in full.
+    parts.extend(_block(t, b) for t, b in sections if _is_priority(t))
+    used = len("\n\n".join(parts))
+    # 2) Fill remaining budget with non-priority sections; drop the body (keep a
+    # labelled placeholder) once it no longer fits, so nothing silently vanishes.
+    for title, body in sections:
+        if _is_priority(title):
+            continue
+        block = _block(title, body)
+        placeholder = f"## {title}\n… (omitido para respeitar o limite do agente)"
+        candidate = block if used + len(block) + 2 <= budget_chars else placeholder
+        if used + len(candidate) + 2 > budget_chars and candidate is placeholder:
+            continue
+        parts.append(candidate)
+        used += len(candidate) + 2
+
+    out = "\n\n".join(parts)
+    # 3) Backbone alone still overflows: fall back to a head truncation.
+    if len(out) > budget_chars:
+        out = out[: max(0, budget_chars - 80)].rstrip() + "\n… (contexto truncado para respeitar o limite do agente)"
+    return out
 
 
 # --------------------------------------------------------------------------- #

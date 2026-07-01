@@ -701,6 +701,14 @@ Detalhado em B4. Impossível construir modelo de billing ou detectar abuso.
 
 **Prioridade:** P2
 
+**✅ RESOLVIDO (2026-07-01):** o último recurso da compressão deixou de ser truncamento cego
+do head. `context_pack_builder._priority_truncate` preserva o backbone/seções obrigatórias
+(`_ALWAYS`: Intent, Summary, Suggested stack, **Business rules (priority zero)**, **Localization
+rules (NON-NEGOTIABLE)** + decisões do **Architecture Blueprint**) e descarta primeiro o corpo
+das seções não-prioritárias (deixando um placeholder rotulado, nunca sumindo em silêncio); só
+cai para truncamento de head se o próprio backbone estourar o budget. Testes:
+`tests/test_context_pack.py`.
+
 ---
 
 ### AI4 — MAX_AGENT_ATTEMPTS = 3 sem jitter entre tentativas [BAIXO]
@@ -712,6 +720,12 @@ Detalhado em B4. Impossível construir modelo de billing ou detectar abuso.
 **Como corrigir:** Adicionar `time.sleep(1.5 ** attempt + random.uniform(0, 0.5))` entre format retries.
 
 **Prioridade:** P3
+
+**✅ RESOLVIDO (2026-07-01):** `factory_pipeline._run_agent` agora chama `_retry_sleep(attempt)`
+antes de cada retry (attempt>=2, cobrindo erro de provider, 413 e correção de formato):
+backoff exponencial (`_RETRY_BACKOFF_BASE_S`·2^(n-2), teto `_RETRY_BACKOFF_MAX_S`) + jitter
+(`random.uniform(0, _RETRY_JITTER_S)`), evitando thundering herd. Testes:
+`test_retry_sleep_backs_off_with_jitter` (os testes de falha forçada monkeypatcham `_retry_sleep`).
 
 ---
 
