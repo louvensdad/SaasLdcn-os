@@ -159,3 +159,36 @@ def test_saved_snapshots_do_not_contain_secrets(client):
     assert "password=" not in serialized
     assert "token=" not in serialized
     assert "secret=" not in serialized
+
+
+def _save_project(client):
+    blueprint = _build_blueprint(client)
+    prompt_master = _build_prompt_master(client, blueprint)
+    gatekeeper = _build_gatekeeper(client, blueprint, prompt_master)
+    return client.post(
+        "/api/projects/save-from-wizard",
+        json={"blueprint": blueprint, "prompt_master": prompt_master, "gatekeeper": gatekeeper},
+    ).json()
+
+
+def test_projects_list_pagination_is_backward_compatible(client):
+    for _ in range(3):
+        _save_project(client)
+
+    full = client.get("/api/projects")
+    assert full.status_code == 200
+    total = len(full.json())
+    assert total >= 1
+    # Total is always exposed for pagers, and the no-param call still returns a plain array.
+    assert full.headers.get("X-Total-Count") == str(total)
+    assert isinstance(full.json(), list)
+
+    limited = client.get("/api/projects", params={"limit": 1})
+    assert limited.status_code == 200
+    assert isinstance(limited.json(), list) and len(limited.json()) == min(1, total)
+    assert limited.headers.get("X-Total-Count") == str(total)
+
+    if total >= 2:
+        page2 = client.get("/api/projects", params={"limit": 1, "offset": 1})
+        assert len(page2.json()) == 1
+        assert page2.json()[0]["project_id"] != limited.json()[0]["project_id"]

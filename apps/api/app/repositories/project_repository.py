@@ -52,10 +52,11 @@ class ProjectRepository:
                         """,
                         seed_project,
                     )
-    def list_projects(self) -> Sequence[dict[str, Any]]:
-        with self.connection() as conn:
-            rows = conn.execute(
-                """
+    def list_projects(self, *, limit: int | None = None, offset: int = 0) -> Sequence[dict[str, Any]]:
+        # Optional, opt-in pagination (audit B7/M3): when limit is None the full list
+        # is returned (unchanged behavior); when set, LIMIT/OFFSET are pushed to SQL
+        # so a large catalog is never fully materialized over the wire.
+        query = """
                 SELECT
                     COALESCE(project_id, project_key) AS project_id,
                     project_key, project_name, status, locale, generation_mode,
@@ -67,8 +68,17 @@ class ProjectRepository:
                 WHERE status != 'draft'
                 ORDER BY created_at DESC
                 """
-            ).fetchall()
+        params: list[Any] = []
+        if limit is not None:
+            query += " LIMIT ? OFFSET ?"
+            params = [int(limit), max(0, int(offset))]
+        with self.connection() as conn:
+            rows = conn.execute(query, params).fetchall()
         return [self._row_to_project(dict(row)) for row in rows]
+
+    def count_projects(self) -> int:
+        with self.connection() as conn:
+            return int(conn.execute("SELECT COUNT(*) FROM projects WHERE status != 'draft'").fetchone()[0])
 
     def get_project(self, project_id: str) -> dict[str, Any] | None:
         with self.connection() as conn:

@@ -24,8 +24,11 @@ class ProjectService:
     def initialize(self) -> None:
         self.project_repository.initialize()
 
-    def list_projects(self) -> Sequence[dict]:
-        return self.project_repository.list_projects()
+    def list_projects(self, *, limit: int | None = None, offset: int = 0) -> Sequence[dict]:
+        return self.project_repository.list_projects(limit=limit, offset=offset)
+
+    def count_projects(self) -> int:
+        return self.project_repository.count_projects()
 
     def get_project(self, project_id: str) -> dict:
         project = self.project_repository.get_project(project_id)

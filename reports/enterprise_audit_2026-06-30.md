@@ -262,6 +262,13 @@ def list_projects(
 
 **Prioridade:** P2
 
+**✅ RESOLVIDO (2026-07-01, opt-in e retrocompatível):** `GET /api/projects` aceita
+`limit`/`offset` opcionais empurrados para o SQL (`ProjectRepository.list_projects(limit, offset)`
+com `LIMIT ? OFFSET ?`); sem params retorna a lista completa como antes (não quebra o frontend
+que espera array). O total vai sempre no header `X-Total-Count` (via `count_projects()`) para o
+cliente paginar sem uma 2ª chamada. Padrão aplicável aos demais list endpoints. Testes:
+`test_projects_list_pagination_is_backward_compatible`.
+
 ---
 
 ### B8 — TOCTOU no primeiro admin [MÉDIO]

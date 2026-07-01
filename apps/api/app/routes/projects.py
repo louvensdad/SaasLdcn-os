@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Query, Response, status
 
 from app.schemas.project import ProjectRecord, ProjectUpdateRequest, SaveProjectFromWizardRequest
 from app.services.project_service import ProjectService
@@ -11,8 +11,15 @@ service = ProjectService()
 
 
 @router.get("/projects", response_model=list[ProjectRecord])
-def list_projects() -> list[ProjectRecord]:
-    return [ProjectRecord.model_validate(item) for item in service.list_projects()]
+def list_projects(
+    response: Response,
+    limit: int | None = Query(None, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> list[ProjectRecord]:
+    # Opt-in pagination (audit B7/M3): no params → full list (unchanged); the total
+    # is always exposed via X-Total-Count so a client can page without a second call.
+    response.headers["X-Total-Count"] = str(service.count_projects())
+    return [ProjectRecord.model_validate(item) for item in service.list_projects(limit=limit, offset=offset)]
 
 
 @router.post("/projects/save-from-wizard", response_model=ProjectRecord, status_code=status.HTTP_201_CREATED)
