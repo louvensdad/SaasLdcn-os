@@ -585,6 +585,11 @@ Detalhado em P3. Impacto de UX: LCP mais lento, Time-to-Interactive degradado.
 
 **Prioridade:** P2
 
+**✅ JÁ RESOLVIDO (verificado 2026-07-01):** os três pontos de entrada 3D
+(`components/three/ambient-backdrop.tsx`, `ldcn-core-badge.tsx`, `topology-graph.tsx`) já
+usam `next/dynamic(..., { ssr: false })` para carregar as cenas Three.js (`./scenes/*`) sob
+demanda — o Three.js já está fora do bundle inicial (chunks assíncronos). Sem mudança.
+
 ---
 
 ### F4 — Sem skeleton na maioria dos módulos [MÉDIO]
@@ -867,6 +872,12 @@ Detalhado em B6.
 
 **Prioridade:** P1
 
+**✅ RESOLVIDO (2026-07-01):** criado `apps/api/OPERATIONS.md` — guia único de deploy de
+produção: pré-requisitos (PostgreSQL/Redis), variáveis `LDCN_*` obrigatórias vs opcionais
+(lista real do `config.py`), migrations (`alembic upgrade head`), execução (`uvicorn
+app.main:app`) e postura de segurança (docs off fora de local + export estático de OpenAPI,
+CORS, cookies, rate limiting, secrets/redação).
+
 ---
 
 ### D2 — Sem runbook operacional [ALTO]
@@ -874,6 +885,12 @@ Detalhado em B6.
 **Descrição:** Zero documentação sobre: como rodar em produção, como configurar TLS, como fazer backup do SQLite/PostgreSQL, o que fazer quando uma geração trava, como monitorar health.
 
 **Prioridade:** P1
+
+**✅ RESOLVIDO (2026-07-01):** `apps/api/OPERATIONS.md` §6 "Operations runbook": health
+(`GET /api/health`), backups (pg_dump + artefatos), recuperação de geração travada/STALLED
+(retry/resume/continue + diagnostic + live console), custo/uso (`/jobs/usage`), tuning de
+capacidade (`LDCN_AGENT_WORKERS`, `LDCN_MAX_CONCURRENT_GENERATIONS`) e logs/redação; §7 lista
+caveats (artefatos em FS efêmero → MF4, skills sem sandbox → S6).
 
 ---
 
