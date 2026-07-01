@@ -12,6 +12,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 logger = logging.getLogger("ldcn.api.errors")
 
 
+class ServiceUnavailableError(RuntimeError):
+    """Safe operational dependency failure exposed as a structured HTTP 503."""
+
+    def __init__(self, code: str, message: str, *, retry_after: int = 5) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.retry_after = retry_after
+
+
 def _build_error_payload(
     *,
     code: str,
@@ -118,6 +128,23 @@ def configure_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content=payload,
+        )
+
+    @app.exception_handler(ServiceUnavailableError)
+    async def service_unavailable_handler(
+        request: Request,
+        exc: ServiceUnavailableError,
+    ) -> JSONResponse:
+        logger.error(
+            "Service dependency unavailable on %s %s: %s",
+            request.method,
+            request.url.path,
+            exc.code,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=_build_error_payload(code=exc.code, message=exc.message),
+            headers={"Retry-After": str(exc.retry_after)},
         )
 
     @app.exception_handler(Exception)

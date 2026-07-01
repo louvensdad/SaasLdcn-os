@@ -56,10 +56,7 @@ from app.routes import (
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     projects.service.initialize()
-    auth.service.initialize()
-    project_rooms.service.repository.initialize()
-    modernize._jobs_repo.initialize()
-    logger.info("Project repository initialized at %s", get_settings().sqlite_path)
+    logger.info("Database ready at %s", get_settings().database_url)
     yield
 
 

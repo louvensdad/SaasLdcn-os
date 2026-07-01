@@ -13,6 +13,8 @@ if str(API_ROOT) not in sys.path:
 
 from app.core import deps as auth_deps
 from app.core.config import get_settings
+from app.core.database import Base, database_url_for, get_engine
+import app.models  # noqa: F401
 from app.main import create_application
 from app.repositories.user_repository import AuditLogRepository, UserRepository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
@@ -47,6 +49,8 @@ def client() -> TestClient:
     get_settings.cache_clear()
     settings = get_settings()
     settings.sqlite_path = database_path
+    settings.database_url = database_url_for(database_path)
+    Base.metadata.create_all(bind=get_engine(settings.database_url))
     isolated_service = ProjectService()
     project_route_service.project_repository = isolated_service.project_repository
     project_route_service.catalog_repository = isolated_service.catalog_repository
@@ -87,5 +91,6 @@ def client() -> TestClient:
         access_token = register_response.json()["tokens"]["access_token"]
         test_client.headers.update({"Authorization": f"Bearer {access_token}"})
         yield test_client
+    get_engine(settings.database_url).dispose()
     if database_path.exists():
         database_path.unlink()

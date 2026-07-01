@@ -345,13 +345,9 @@ def test_router_dispatches_by_provider():
     assert [m for m, _ in google_stub.seen] == ["gemini-2.5-pro"]
 
 
-def test_meta_factory_browse_endpoints_reuse_file_service():
+def test_meta_factory_browse_endpoints_reuse_file_service(client):
     import shutil
     from pathlib import Path
-
-    from fastapi.testclient import TestClient
-
-    from app.main import create_application
 
     # Write a real generated project under generated-projects/active (inside the
     # workspace, as the GeneratedProjectService safety check requires).
@@ -362,27 +358,12 @@ def test_meta_factory_browse_endpoints_reuse_file_service():
     )
     created = Path(result.root_path)
     try:
-        from uuid import uuid4
+        resp = client.get(f"/api/meta-factory/{result.project_id}/files")
+        assert resp.status_code == 200
+        names = [f["relative_path"] for f in resp.json()["files"]]
+        assert "openapi.yaml" in names
 
-        with TestClient(create_application()) as client:
-            register_response = client.post(
-                "/api/auth/register",
-                json={
-                    "email": f"test_{uuid4().hex}@example.com",
-                    "password": "TestPassword123!",
-                    "full_name": "Test User",
-                    "privacy_policy_accepted": True,
-                },
-            )
-            access_token = register_response.json()["tokens"]["access_token"]
-            client.headers.update({"Authorization": f"Bearer {access_token}"})
-
-            resp = client.get(f"/api/meta-factory/{result.project_id}/files")
-            assert resp.status_code == 200
-            names = [f["relative_path"] for f in resp.json()["files"]]
-            assert "openapi.yaml" in names
-
-            # invalid id is rejected before touching the filesystem
-            assert client.get("/api/meta-factory/bad@id/files").status_code == 400
+        # invalid id is rejected before touching the filesystem
+        assert client.get("/api/meta-factory/bad@id/files").status_code == 400
     finally:
         shutil.rmtree(created, ignore_errors=True)

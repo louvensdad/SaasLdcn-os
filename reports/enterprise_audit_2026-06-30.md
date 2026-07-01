@@ -201,6 +201,17 @@ _GLOBAL_POOL = cf.ThreadPoolExecutor(max_workers=int(os.getenv("LDCN_AGENT_WORKE
 
 **Prioridade:** P2
 
+**✅ RESOLVIDO (2026-07-01):** Criado `apps/api/app/engines/agent_executor.py` — pool
+único, process-wide e limitado (`get_agent_executor`/`submit_agent`), com teto
+configurável via `Settings.agent_worker_limit` (env `LDCN_AGENT_WORKERS`, default 8,
+mínimo 1). Os três locais que criavam `ThreadPoolExecutor(max_workers=1)` por chamada
+passaram a submeter ao pool compartilhado e a abandonar via `future.cancel()` no
+timeout (sem `shutdown` por chamada): `factory_pipeline.iter_single_agent`,
+`generation_job_engine._route_with_timeout` e `verification_engine._with_heartbeat`.
+Threads globais agora têm teto fixo (backpressure) em vez de crescer com o número de
+gerações concorrentes. Testes: `tests/test_agent_executor.py` (singleton, limite,
+piso=1, concorrência ≤ limite); semântica de timeout/STALLED preservada.
+
 ---
 
 ### B6 — Analytics sem pré-agregação [MÉDIO]
@@ -281,6 +292,10 @@ response.set_cookie(
 
 **Prioridade:** P2
 
+**✅ JÁ RESOLVIDO (verificado 2026-07-01):** `auth._set_refresh_cookie`/`_clear_refresh_cookie`
+já definem `samesite="lax"` (escolha correta: `strict` quebraria navegações top-level/redirects;
+`lax` já mitiga CSRF em POST cross-site). Sem mudança necessária.
+
 ---
 
 ### B10 — Índices críticos ausentes no SQLite [BAIXO]
@@ -296,6 +311,10 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expir
 ```
 
 **Prioridade:** P3
+
+**✅ JÁ RESOLVIDO (verificado 2026-07-01):** os modelos SQLAlchemy já declaram
+`idx_audit_logs_created_at`, `idx_audit_logs_event_code` e `idx_refresh_tokens_expires_at`
+(`app/models/user.py`). Resolvido pela migração para SQLAlchemy. Sem mudança necessária.
 
 ---
 
@@ -359,6 +378,13 @@ reason = redact_text(str(exc))[:400]
 ```
 
 **Prioridade:** P2
+
+**✅ RESOLVIDO (2026-07-01):** `factory_pipeline._run_agent` e `iter_single_agent` agora passam
+o texto do erro por `redact_text(...)` antes de gravar/loggar (`attempts[].reason`,
+`parsed.errors`). O `redact_text` foi reforçado para mascarar também `Authorization: Bearer <t>`
+e chaves `sk-…`/`sk-ant-…` (além do padrão `chave: valor` que já existia) — que são exatamente
+os formatos que vazam em erros de SDK de LLM e não têm forma `key=value`. Testes:
+`tests/test_redaction.py` + `test_provider_error_reason_is_redacted` (chave nunca é registrada).
 
 ---
 
@@ -699,6 +725,17 @@ Detalhado em B4. Impossível construir modelo de billing ou detectar abuso.
 
 **Prioridade:** P1
 
+**✅ RESOLVIDO (2026-07-01):** `ProjectWriter.write` agora é atômico — monta o projeto
+inteiro num diretório de staging (`.staging-*` sob `output_root`, mesmo filesystem),
+escreve o marker por último e publica com um único `os.replace` (rename atômico). Em
+qualquer exceção o staging é removido (`shutil.rmtree`), então nunca resta um projeto
+meio-escrito que download/export pudesse ler. Cobre generate/generate-stream, modernize e
+`generation_job_engine._build` (todos usam `write`). `append` permanece incremental por
+design (estado parcial é protegido pelo marker e recuperável). Testes:
+`tests/test_project_writer.py` (publish atômico + marker; falha não deixa projeto/staging;
+append continua estendendo). Observação: a persistência dos JOBS em si (MF1/C4) já foi
+resolvida pela migração para SQLAlchemy (`GenerationJobRepository`).
+
 ---
 
 ### MF3 — Sem limite de geração simultânea por usuário [ALTO]
@@ -715,6 +752,17 @@ if active >= settings.max_concurrent_generations_per_user:
 ```
 
 **Prioridade:** P1
+
+**✅ RESOLVIDO (2026-07-01):** `POST /api/meta-factory/jobs` agora conta as gerações
+in-flight do usuário (`GenerationJobEngine.count_active_for_user` →
+`GenerationJobRepository.count_active_for_owner`, via índice `(owner_user_id, status)`,
+contando tudo que NÃO está em `TERMINAL_STATUSES`) e retorna **429**
+(`code=TOO_MANY_CONCURRENT_GENERATIONS`, com `activeCount`/`limit`) quando atinge
+`Settings.max_concurrent_generations_per_user` (env `LDCN_MAX_CONCURRENT_GENERATIONS`,
+default 3). Recuperação (retry/resume/continue) reusa job existente e não é contada. O
+frontend já exibe `detail.message`. Testes em `tests/test_generation_job_pipeline.py`
+(contagem exclui terminais + 3ª geração bloqueada com limite 2). Complementa o teto do
+pool compartilhado (B5).
 
 ---
 

@@ -27,7 +27,7 @@ def _status(user_id: str) -> KeySessionStatusResponse:
 
 @router.get("/user-ai-keys/status", response_model=KeySessionStatusResponse)
 def get_user_ai_key_status(user: CurrentUser) -> KeySessionStatusResponse:
-    """List the user's active (in-memory) key sessions, masked. Never the raw key."""
+    """List the user's active encrypted key sessions, masked. Never the raw key."""
     return _status(user["user_id"])
 
 
@@ -73,9 +73,9 @@ def test_user_ai_key(payload: TestKeyRequest, user: CurrentUser) -> TestKeyRespo
 
 @router.post("/user-ai-keys/session", response_model=KeySessionStatusResponse)
 def upsert_user_ai_key(payload: UpsertKeyRequest, user: CurrentUser) -> KeySessionStatusResponse:
-    """Store a user-owned LLM key in the ephemeral RAM vault for this user.
+    """Store a user-owned LLM key in the encrypted ephemeral vault for this user.
 
-    The key is encrypted in memory and never persisted/logged/echoed. The response
+    Redis deployments persist only ciphertext with a TTL; local development keeps ciphertext in RAM. The response
     returns only the masked status of the user's sessions.
     """
     user_key_session.set(user["user_id"], payload.provider, payload.api_key)

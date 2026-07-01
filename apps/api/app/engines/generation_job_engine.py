@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.engines.agent_executor import submit_agent
 from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, summarize_contract
 from app.engines.factory_pipeline import _run_agent
 from app.engines.generation_validation_engine import generation_validation_engine
@@ -19,7 +20,6 @@ from app.engines.orchestrator_engine import compile_mega_prompt
 from app.engines.warning_policy import classify as classify_warnings
 from app.repositories.generation_job_repository import GenerationJobRepository
 from app.repositories.redaction import redact_value
-from app.schemas.generation_job import GenerationJob
 from app.schemas.orchestrator import ProjectSpec
 from app.services.file_protocol import EmittedFile
 from app.services.generated_project_service import GeneratedProjectService
@@ -33,7 +33,34 @@ from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
 # socket) and is converted into a STALLED job instead of a forever-"running" one.
 STAGE_TIMEOUT_SECONDS = 1500  # 25 min — bounds any single step; never infinite
 
+# Statuses that no longer occupy an agent worker: a job in one of these is done,
+# awaiting the user, or parked. Everything else (QUEUED + the *_RUNNING/*_GENERATING
+# stages) counts as "in flight" for the per-user concurrency cap (audit MF3).
+TERMINAL_STATUSES = frozenset({"READY", "FAILED", "PAUSED", "NEEDS_USER_ACTION", "STALLED"})
+
 LOGICAL_STAGES = ["contracts", "database", "backend", "frontend", "security", "tests", "docs", "build", "package"]
+
+
+def _usage_totals(parsed: Any, response: Any) -> tuple[int, int]:
+    """Sum every billable response, including format-retry attempts."""
+    usages = [item.get("tokens", {}) for item in getattr(parsed, "attempts", []) if item.get("tokens")]
+    if not usages and response is not None and getattr(response, "usage", None):
+        usages = [response.usage]
+
+    def token_value(usage: dict[str, Any], *keys: str) -> int:
+        for key in keys:
+            value = usage.get(key)
+            if value is not None:
+                try:
+                    return max(0, int(value))
+                except (TypeError, ValueError):
+                    return 0
+        return 0
+
+    return (
+        sum(token_value(usage, "input", "input_tokens", "prompt_tokens") for usage in usages),
+        sum(token_value(usage, "output", "output_tokens", "completion_tokens") for usage in usages),
+    )
 BACKEND_CHUNKS = [
     "structure", "package_config", "domain_entities", "dtos", "controllers",
     "services", "repositories", "auth", "validation", "error_handling",
@@ -123,7 +150,8 @@ class GenerationJobEngine:
             "logs": [], "events": [], "checkpoints": [],
             "stageStatuses": {stage: "waiting" for stage in LOGICAL_STAGES},
             "projectName": project_name, "partial": True, "valid": False,
-            "packageReady": False, "createdAt": now, "updatedAt": now,
+            "packageReady": False, "inputTokensTotal": 0, "outputTokensTotal": 0,
+            "resultPath": None, "createdAt": now, "updatedAt": now,
         }
         self.repository.create(owner_user_id, data, redact_value(spec.model_dump(mode="json")), redact_value(blueprint))
         self._log(data, "QUEUED", "info", "GenerationJob criado e persistido.")
@@ -307,6 +335,11 @@ class GenerationJobEngine:
     def latest(self, project_id: str, owner_user_id: str) -> dict[str, Any] | None:
         return self.repository.latest_for_project(project_id, owner_user_id)
 
+    def count_active_for_user(self, owner_user_id: str) -> int:
+        """Owner's in-flight generations (not in a terminal status). Bounds how many
+        concurrent generations a single user can start (audit MF3)."""
+        return self.repository.count_active_for_owner(owner_user_id, TERMINAL_STATUSES)
+
     def _execute_step(self, job: dict[str, Any], owner: str, step: PipelineStep, spec: ProjectSpec, blueprint: dict[str, Any], mega: str, api_key: str | None, model: str | None, mode: str) -> None:
         if step.action == "prepare":
             self._write_json_artifact(job, owner, step, "product-spec.normalized.json", spec.model_dump(mode="json"), "normalized_spec")
@@ -356,6 +389,11 @@ class GenerationJobEngine:
             return
         self._emit(job, owner, "agent_started", stage=step.state, message=f"Agente '{role}' iniciado ({job.get('model') or 'provider'}); {token_estimate} tokens estimados.")
         response, parsed = self._route_with_timeout(job, step, role, context, model, api_key)
+        input_tokens, output_tokens = _usage_totals(parsed, response)
+        if input_tokens or output_tokens:
+            totals = self.repository.add_usage(job["id"], owner, input_tokens, output_tokens)
+            if totals is not None:
+                job["inputTokensTotal"], job["outputTokensTotal"] = totals
         self._assert_not_paused(job, owner)
         self._emit(job, owner, "agent_finished", stage=step.state, message=f"Agente '{role}' respondeu: {len(parsed.files)} arquivo(s).")
         raw = response.text if response is not None else parsed.raw_response
@@ -384,17 +422,18 @@ class GenerationJobEngine:
     ) -> tuple[Any, Any]:
         """Run the (blocking) LLM agent under a hard per-stage timeout.
 
-        The call runs on a worker thread; if it does not return within the stage
-        ceiling the wait is abandoned (pool torn down WITHOUT joining) and the stage
-        is converted into a recoverable STALLED state. This is the single guarantee
+        The call runs on the shared, bounded agent pool (audit B5); if it does not
+        return within the stage ceiling the wait is abandoned (future cancelled,
+        worker bounded by the adapter's own request timeout) and the stage is
+        converted into a recoverable STALLED state. This is the single guarantee
         that BACKEND_GENERATING — or any LLM stage — can never sit in 'running'
         forever waiting on a provider/task that never resolves."""
         deadline = float(self.stage_timeout_seconds)
-        pool = cf.ThreadPoolExecutor(max_workers=1)
-        future = pool.submit(_run_agent, LLMRouter(), role, context, model, api_key)
+        future = submit_agent(_run_agent, LLMRouter(), role, context, model, api_key)
         try:
             return future.result(timeout=deadline)
         except cf.TimeoutError as exc:
+            future.cancel()
             raise StageStalled(
                 f"Etapa {step.state} excedeu o tempo limite de {int(deadline)}s sem resposta do provider.",
                 diagnostic=self._diagnostic(
@@ -406,8 +445,6 @@ class GenerationJobEngine:
                     reason=f"O provider/agente '{role}' nao respondeu dentro de {int(deadline)}s (possivel hang/timeout do adaptador).",
                 ),
             ) from exc
-        finally:
-            pool.shutdown(wait=False, cancel_futures=True)
 
     def _validate_stage(self, job: dict[str, Any], owner: str, step: PipelineStep) -> None:
         names = [item["name"].lower() for item in job["artifacts"] if item["valid"]]
@@ -475,6 +512,7 @@ class GenerationJobEngine:
             raise StageFailure("Nenhum arquivo valido para build.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", "Nenhum arquivo valido para build."))
         result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner)
         job["generatedProjectId"] = result.project_id
+        job["resultPath"] = str(result.root_path)
         report = generation_validation_engine.validate(
             {"project_id": result.project_id, "generated_project_path": result.root_path},
             event_sink=self._build_sink(job, owner),

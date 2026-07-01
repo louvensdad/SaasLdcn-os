@@ -133,7 +133,7 @@ def test_generate_with_use_user_key_but_no_session_errors(client):
 def _clear_global_vault():
     yield
     # Keep the process-global vault clean between HTTP tests.
-    user_key_session._vault.clear()  # type: ignore[attr-defined]
+    user_key_session.reset_for_tests()
 
 
 def test_test_key_endpoint_validates_without_persisting_or_echoing(client, monkeypatch):

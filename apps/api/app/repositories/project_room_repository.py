@@ -1,15 +1,14 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Sequence
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from app.core.config import get_settings
+from app.core.database import connection as database_connection, database_url_for
 from app.repositories.redaction import redact_text, redact_value
 
 
@@ -46,67 +45,16 @@ MUTABLE_COLUMNS = (
 
 
 class ProjectRoomRepository:
-    def __init__(self, sqlite_path: Path | None = None) -> None:
-        self.sqlite_path = sqlite_path or get_settings().sqlite_path
+    def __init__(self, database: str | Path | None = None) -> None:
+        self.database_url = database_url_for(database)
+        self.sqlite_path = database if isinstance(database, Path) else get_settings().sqlite_path
 
-    @contextmanager
-    def connection(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.sqlite_path)
-        connection.row_factory = sqlite3.Row
-        try:
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()
+    def connection(self):
+        return database_connection(self.database_url)
 
     def initialize(self) -> None:
-        with self.connection() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS project_rooms (
-                    room_id TEXT PRIMARY KEY,
-                    owner_user_id TEXT NOT NULL,
-                    workspace_id TEXT,
-                    title TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    raw_intent TEXT NOT NULL DEFAULT '',
-                    locale TEXT NOT NULL DEFAULT 'pt-BR',
-                    confidence REAL NOT NULL DEFAULT 0,
-                    degraded INTEGER NOT NULL DEFAULT 0,
-                    spec_json TEXT,
-                    messages_json TEXT NOT NULL DEFAULT '[]',
-                    prompt_master_md TEXT,
-                    prompt_master_versions_json TEXT NOT NULL DEFAULT '[]',
-                    architecture_blueprint_json TEXT,
-                    blueprint_versions_json TEXT NOT NULL DEFAULT '[]',
-                    active_blueprint_version INTEGER,
-                    generation_handoff_json TEXT,
-                    history_json TEXT NOT NULL DEFAULT '[]',
-                    operational_log_json TEXT NOT NULL DEFAULT '[]',
-                    last_failure_json TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_project_rooms_owner ON project_rooms(owner_user_id)"
-            )
-            # Migration for pre-existing tables: add the Architect blueprint column.
-            columns = {row[1] for row in conn.execute("PRAGMA table_info(project_rooms)").fetchall()}
-            if "architecture_blueprint_json" not in columns:
-                conn.execute("ALTER TABLE project_rooms ADD COLUMN architecture_blueprint_json TEXT")
-            if "blueprint_versions_json" not in columns:
-                conn.execute("ALTER TABLE project_rooms ADD COLUMN blueprint_versions_json TEXT NOT NULL DEFAULT '[]'")
-            if "active_blueprint_version" not in columns:
-                conn.execute("ALTER TABLE project_rooms ADD COLUMN active_blueprint_version INTEGER")
-            if "history_json" not in columns:
-                conn.execute("ALTER TABLE project_rooms ADD COLUMN history_json TEXT NOT NULL DEFAULT '[]'")
-            if "operational_log_json" not in columns:
-                conn.execute("ALTER TABLE project_rooms ADD COLUMN operational_log_json TEXT NOT NULL DEFAULT '[]'")
-            if "last_failure_json" not in columns:
-                conn.execute("ALTER TABLE project_rooms ADD COLUMN last_failure_json TEXT")
-
+        """Schema creation is owned by Alembic."""
+        return None
     # ----------------------------------------------------------------- create
     def create(
         self,
@@ -128,7 +76,7 @@ class ProjectRoomRepository:
             "raw_intent": redact_text(raw_intent or ""),
             "locale": locale or "pt-BR",
             "confidence": 0.0,
-            "degraded": 0,
+            "degraded": False,
             "spec_json": None,
             "messages_json": "[]",
             "prompt_master_md": None,
@@ -211,7 +159,7 @@ class ProjectRoomRepository:
         changes: dict[str, Any] = {
             "spec_json": self._dumps(redact_value(spec)),
             "confidence": float(confidence),
-            "degraded": 1 if degraded else 0,
+            "degraded": bool(degraded),
         }
         if status is not None:
             changes["status"] = status
@@ -268,7 +216,7 @@ class ProjectRoomRepository:
             "architecture_blueprint_json": self._dumps(version["blueprint"]),
             "blueprint_versions_json": self._dumps(versions),
             "active_blueprint_version": version["version"],
-            "degraded": 1 if version["blueprint"].get("degraded") else 0,
+            "degraded": bool(version["blueprint"].get("degraded")),
             "status": status,
         })
 
@@ -284,7 +232,7 @@ class ProjectRoomRepository:
             "blueprint_versions_json": self._dumps(versions),
             "active_blueprint_version": active_version,
             "architecture_blueprint_json": self._dumps(blueprint),
-            "degraded": 1 if blueprint.get("degraded") else 0,
+            "degraded": bool(blueprint.get("degraded")),
         })
 
     def update_status(self, room_id: str, owner_user_id: str, status: str) -> dict[str, Any] | None:

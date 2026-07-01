@@ -1,82 +1,140 @@
 from __future__ import annotations
 
 import json
-import sqlite3
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from collections.abc import Sequence
+
+from sqlalchemy import func, select, update
+
 from app.core.config import get_settings
+from app.core.database import database_url_for, session_factory
+from app.models.persistence import GenerationJob
 
 
 class GenerationJobRepository:
-    def __init__(self, sqlite_path: Path | None = None) -> None:
-        self.sqlite_path = sqlite_path or get_settings().sqlite_path
-        self.initialize()
-
-    @contextmanager
-    def connection(self):
-        connection = sqlite3.connect(self.sqlite_path, timeout=30)
-        connection.row_factory = sqlite3.Row
-        try:
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()
-
-    def initialize(self) -> None:
-        with self.connection() as connection:
-            connection.execute("""
-                CREATE TABLE IF NOT EXISTS generation_jobs (
-                    id TEXT PRIMARY KEY,
-                    owner_user_id TEXT NOT NULL,
-                    project_id TEXT NOT NULL,
-                    data_json TEXT NOT NULL,
-                    spec_json TEXT NOT NULL,
-                    blueprint_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            """)
-            connection.execute("CREATE INDEX IF NOT EXISTS idx_generation_jobs_owner ON generation_jobs(owner_user_id, updated_at DESC)")
+    def __init__(self, database: str | Path | None = None) -> None:
+        self.database_url = database_url_for(database)
+        self.sqlite_path = database if isinstance(database, Path) else get_settings().sqlite_path
+        self._sessions = session_factory(self.database_url)
 
     def create(self, owner_user_id: str, data: dict[str, Any], spec: dict[str, Any], blueprint: dict[str, Any]) -> dict[str, Any]:
-        with self.connection() as connection:
-            connection.execute(
-                "INSERT INTO generation_jobs (id, owner_user_id, project_id, data_json, spec_json, blueprint_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (data["id"], owner_user_id, data["projectId"], self._dump(data), self._dump(spec), self._dump(blueprint), data["createdAt"], data["updatedAt"]),
-            )
+        normalized = self._normalized(data)
+        with self._sessions.begin() as session:
+            session.add(GenerationJob(
+                id=data["id"],
+                owner_user_id=owner_user_id,
+                project_id=data["projectId"],
+                data_json=self._dump(data),
+                spec_json=self._dump(spec),
+                blueprint_json=self._dump(blueprint),
+                created_at=data["createdAt"],
+                updated_at=data["updatedAt"],
+                input_tokens_total=0,
+                output_tokens_total=0,
+                **normalized,
+            ))
         return data
 
     def get(self, job_id: str, owner_user_id: str) -> dict[str, Any] | None:
-        with self.connection() as connection:
-            row = connection.execute("SELECT * FROM generation_jobs WHERE id = ? AND owner_user_id = ?", (job_id, owner_user_id)).fetchone()
-        return self._row(row)
+        with self._sessions() as session:
+            row = session.scalar(select(GenerationJob).where(GenerationJob.id == job_id, GenerationJob.owner_user_id == owner_user_id))
+            return self._row(row)
 
     def latest_for_project(self, project_id: str, owner_user_id: str) -> dict[str, Any] | None:
-        with self.connection() as connection:
-            row = connection.execute("SELECT * FROM generation_jobs WHERE project_id = ? AND owner_user_id = ? ORDER BY updated_at DESC LIMIT 1", (project_id, owner_user_id)).fetchone()
-        return self._row(row)
+        with self._sessions() as session:
+            row = session.scalar(select(GenerationJob).where(GenerationJob.project_id == project_id, GenerationJob.owner_user_id == owner_user_id).order_by(GenerationJob.updated_at.desc()).limit(1))
+            return self._row(row)
 
     def list(self, owner_user_id: str) -> list[dict[str, Any]]:
-        with self.connection() as connection:
-            rows = connection.execute("SELECT * FROM generation_jobs WHERE owner_user_id = ? ORDER BY updated_at DESC", (owner_user_id,)).fetchall()
-        return [self._row(row) for row in rows]
+        with self._sessions() as session:
+            rows = session.scalars(select(GenerationJob).where(GenerationJob.owner_user_id == owner_user_id).order_by(GenerationJob.updated_at.desc())).all()
+            return [self._row(row) for row in rows if row is not None]
+
+    def count_active_for_owner(self, owner_user_id: str, terminal_statuses: Sequence[str]) -> int:
+        """Number of the owner's jobs that are NOT in a terminal status — i.e. in
+        flight (QUEUED or any *_RUNNING/*_GENERATING stage). Uses the
+        (owner_user_id, status) index. Used to cap concurrent generations."""
+        with self._sessions() as session:
+            count = session.scalar(
+                select(func.count())
+                .select_from(GenerationJob)
+                .where(
+                    GenerationJob.owner_user_id == owner_user_id,
+                    GenerationJob.status.notin_(list(terminal_statuses)),
+                )
+            )
+            return int(count or 0)
 
     def update(self, job_id: str, owner_user_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        with self.connection() as connection:
-            result = connection.execute("UPDATE generation_jobs SET data_json = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?", (self._dump(data), data["updatedAt"], job_id, owner_user_id))
-        return data if result.rowcount else None
+        values = {
+            "data_json": self._dump(data),
+            "updated_at": data["updatedAt"],
+            **self._normalized(data),
+        }
+        with self._sessions.begin() as session:
+            result = session.execute(update(GenerationJob).where(GenerationJob.id == job_id, GenerationJob.owner_user_id == owner_user_id).values(**values))
+            if not result.rowcount:
+                return None
+        return self.get(job_id, owner_user_id)
+
+    def add_usage(self, job_id: str, owner_user_id: str, input_tokens: int = 0, output_tokens: int = 0) -> tuple[int, int] | None:
+        """Atomically accumulate provider usage and return the persisted totals."""
+        input_tokens = max(0, int(input_tokens or 0))
+        output_tokens = max(0, int(output_tokens or 0))
+        with self._sessions.begin() as session:
+            result = session.execute(
+                update(GenerationJob)
+                .where(GenerationJob.id == job_id, GenerationJob.owner_user_id == owner_user_id)
+                .values(
+                    input_tokens_total=GenerationJob.input_tokens_total + input_tokens,
+                    output_tokens_total=GenerationJob.output_tokens_total + output_tokens,
+                )
+            )
+            if not result.rowcount:
+                return None
+            totals = session.execute(
+                select(GenerationJob.input_tokens_total, GenerationJob.output_tokens_total)
+                .where(GenerationJob.id == job_id, GenerationJob.owner_user_id == owner_user_id)
+            ).one()
+            return int(totals[0]), int(totals[1])
 
     def inputs(self, job_id: str, owner_user_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
-        with self.connection() as connection:
-            row = connection.execute("SELECT spec_json, blueprint_json FROM generation_jobs WHERE id = ? AND owner_user_id = ?", (job_id, owner_user_id)).fetchone()
+        with self._sessions() as session:
+            row = session.execute(select(GenerationJob.spec_json, GenerationJob.blueprint_json).where(GenerationJob.id == job_id, GenerationJob.owner_user_id == owner_user_id)).first()
+            return (json.loads(row[0]), json.loads(row[1])) if row else None
+
+    @classmethod
+    def _row(cls, row: GenerationJob | None) -> dict[str, Any] | None:
         if row is None:
             return None
-        return json.loads(row["spec_json"]), json.loads(row["blueprint_json"])
+        data = json.loads(row.data_json)
+        data["status"] = row.status
+        data["currentStage"] = row.stage or data.get("currentStage") or row.status
+        data["model"] = row.model
+        data["inputTokensTotal"] = int(row.input_tokens_total or 0)
+        data["outputTokensTotal"] = int(row.output_tokens_total or 0)
+        data["startedAt"] = row.started_at or data.get("startedAt")
+        data["finishedAt"] = row.completed_at
+        if row.error:
+            data["error"] = json.loads(row.error)
+        if row.result_path:
+            data["resultPath"] = row.result_path
+        return data
 
-    def _row(self, row: sqlite3.Row | None) -> dict[str, Any] | None:
-        return json.loads(row["data_json"]) if row else None
+    @classmethod
+    def _normalized(cls, data: dict[str, Any]) -> dict[str, Any]:
+        error = data.get("error")
+        return {
+            "status": str(data.get("status") or "QUEUED"),
+            "stage": data.get("currentStage"),
+            "model": data.get("model"),
+            "error": cls._dump(error) if error is not None else None,
+            "result_path": data.get("resultPath"),
+            "started_at": data.get("startedAt"),
+            "completed_at": data.get("finishedAt"),
+        }
 
     @staticmethod
     def _dump(value: Any) -> str:

@@ -7,14 +7,16 @@ from pathlib import Path
 
 import pytest
 
+from app.core.database import Base, database_url_for, get_engine
+import app.models  # noqa: F401
 from app.engines.context_pack_builder import build_agent_context
 from app.engines.factory_pipeline import _run_agent
 from app.engines.generation_job_engine import (
     BACKEND_CHUNKS,
     STEPS,
     GenerationJobEngine,
-    PipelineStep,
     StageFailure,
+    _usage_totals,
 )
 from app.engines.llm.base import LLMError
 from app.engines.warning_policy import classify, classify_one
@@ -26,11 +28,15 @@ from app.services.file_protocol import EmittedFile, ParsedAgentOutput, parse_age
 @pytest.fixture
 def isolated_engine():
     root = Path(tempfile.mkdtemp(prefix="ldcn-generation-job-"))
-    repository = GenerationJobRepository(root / "jobs.db")
+    database_path = root / "jobs.db"
+    database_url = database_url_for(database_path)
+    Base.metadata.create_all(bind=get_engine(database_url))
+    repository = GenerationJobRepository(database_path)
     engine = GenerationJobEngine(repository, root / "checkpoints")
     try:
         yield engine, repository, root
     finally:
+        get_engine(database_url).dispose()
         shutil.rmtree(root, ignore_errors=True)
 
 
@@ -60,6 +66,28 @@ def test_generation_creates_persistent_job(isolated_engine):
     assert persisted and persisted["status"] == "QUEUED"
     assert persisted["provider"] == "anthropic" and persisted["blueprintVersion"] == 4
 
+
+def test_generation_job_usage_is_persisted_atomically(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+
+    assert repository.add_usage(job["id"], "other-user", 99, 99) is None
+    assert repository.add_usage(job["id"], "user-1", 120, 40) == (120, 40)
+    assert repository.add_usage(job["id"], "user-1", 30, 10) == (150, 50)
+
+    restarted = GenerationJobRepository(repository.sqlite_path)
+    persisted = restarted.get(job["id"], "user-1")
+    assert persisted["inputTokensTotal"] == 150
+    assert persisted["outputTokensTotal"] == 50
+
+
+def test_usage_totals_include_every_format_retry():
+    parsed = ParsedAgentOutput()
+    parsed.attempts = [
+        {"attempt": 1, "tokens": {"input": 100, "output": 20}, "ok": False},
+        {"attempt": 2, "tokens": {"input_tokens": 70, "output_tokens": 30}, "ok": True},
+    ]
+    assert _usage_totals(parsed, None) == (170, 50)
 
 def test_refresh_reads_same_progress_and_logs(isolated_engine):
     engine, repository, _ = isolated_engine
@@ -123,6 +151,18 @@ def test_provider_failure_uses_three_progressive_attempts():
     assert router.calls == 3
     assert [item["attempt"] for item in parsed.attempts if item["event"] == "llm_error"] == [1, 2, 3]
     assert parsed.partitioned is True
+
+
+def test_provider_error_reason_is_redacted():
+    class LeakyRouter:
+        def route(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            raise LLMError("401 Unauthorized Authorization: Bearer sk-ant-api03-LEAKEDKEY1234567890ABCD")
+
+    response, parsed = _run_agent(LeakyRouter(), "backend", "context " * 10, "model", "secret")
+    assert response is None
+    blob = " ".join(parsed.errors) + " " + " ".join(str(a.get("reason", "")) for a in parsed.attempts)
+    assert "sk-ant-api03-LEAKEDKEY" not in blob  # the key must never be recorded/logged
+    assert "[REDACTED]" in blob
 
 
 def test_failure_preserves_raw_response_and_checkpoint(isolated_engine, monkeypatch):
@@ -365,6 +405,40 @@ def test_job_api_survives_refresh(client, isolated_engine, monkeypatch):
     fetched = client.get(f"/api/meta-factory/jobs/{created['id']}")
     assert latest.status_code == fetched.status_code == 200
     assert latest.json()["id"] == fetched.json()["id"] == created["id"]
+
+
+def test_count_active_for_user_excludes_terminal(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    assert engine.count_active_for_user("user-1") == 1  # QUEUED counts as in flight
+    assert engine.count_active_for_user("other-user") == 0  # owner-scoped
+    job["status"] = "READY"
+    engine._save(job, "user-1")
+    assert engine.count_active_for_user("user-1") == 0  # terminal no longer counts
+
+
+def test_create_generation_job_caps_concurrency_per_user(client, isolated_engine, monkeypatch):
+    from app.core.config import get_settings
+    from app.routes import meta_factory as route
+
+    engine, _, _ = isolated_engine
+    monkeypatch.setattr(route, "generation_job_engine", engine)
+    monkeypatch.setattr(engine, "start", lambda *args, **kwargs: None)
+    monkeypatch.setattr(get_settings(), "max_concurrent_generations_per_user", 2)
+
+    def _post(project_id: str):
+        return client.post("/api/meta-factory/jobs", json={
+            "projectId": project_id, "projectName": "Job",
+            "spec": _spec().model_dump(mode="json"), "blueprint": {"decisions": []},
+            "blueprintVersion": 1, "mode": "deterministic",
+        })
+
+    assert _post("room-c1").status_code == 202
+    assert _post("room-c2").status_code == 202
+    third = _post("room-c3")
+    assert third.status_code == 429
+    assert third.json()["detail"]["code"] == "TOO_MANY_CONCURRENT_GENERATIONS"
+    assert third.json()["detail"]["limit"] == 2
 
 
 def test_llm_job_never_falls_back_silently_without_provider(client, isolated_engine, monkeypatch):

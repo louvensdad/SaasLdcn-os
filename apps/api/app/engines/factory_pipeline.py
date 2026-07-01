@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger("ldcn.meta_factory")
 
+from app.engines.agent_executor import submit_agent
 from app.engines.agent_prompts import AGENT_PROMPTS
 from app.engines.context_pack_builder import (
     budget_for,
@@ -18,6 +19,7 @@ from app.engines.context_pack_builder import (
     summarize_contract,
 )
 from app.engines.llm.base import LLMError
+from app.repositories.redaction import redact_text
 from app.engines.llm.router import LLMRouter
 from app.schemas.llm import LLMRequest, LLMResponse, ReasoningLevel
 from app.schemas.orchestrator import ProjectSpec
@@ -177,7 +179,9 @@ def _run_agent(
             # A real provider/agent error (timeout, auth, 4xx/5xx, schema, …).
             # RECORD it (attempt + reason) instead of re-raising and losing the
             # diagnostics — the stage still fails, but now with a visible cause.
-            reason = f"{type(exc).__name__}: {exc}"
+            # Redact first: provider SDK errors can embed request headers/URLs with
+            # API keys or Bearer tokens (audit S3), and this reason is logged.
+            reason = redact_text(f"{type(exc).__name__}: {exc}")
             attempts.append({
                 "attempt": attempt, "model": user_model_choice or "—",
                 "latency_ms": int((time.perf_counter() - started) * 1000),
@@ -254,40 +258,34 @@ def iter_single_agent(
     yield {"type": "agent_started", "role": role}
 
     response: LLMResponse | None = None
-    pool = cf.ThreadPoolExecutor(max_workers=1)
-    try:
-        future = pool.submit(_run_agent, router, role, context, user_model_choice, api_key)
-        started = time.monotonic()
-        deadline = started + AGENT_TIMEOUT_MS / 1000
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                # Hard timeout actually enforced: stop waiting so the pipeline can
-                # never block (or heartbeat) forever. The worker thread cannot be
-                # force-killed, but the adapter's own per-request timeout bounds it,
-                # and the pool is shut down WITHOUT waiting so this generator returns
-                # immediately instead of hanging on executor teardown.
-                future.cancel()
-                parsed = ParsedAgentOutput()
-                parsed.errors.append(
-                    f"{role} excedeu o tempo limite de {AGENT_TIMEOUT_MS // 1000}s e foi abortado."
-                )
-                break
-            try:
-                response, parsed = future.result(timeout=min(HEARTBEAT_EVERY_S, remaining))
-                break
-            except cf.TimeoutError:
-                yield {
-                    "type": "heartbeat",
-                    "role": role,
-                    "elapsed_ms": int((time.monotonic() - started) * 1000),
-                }
-            except Exception as exc:  # agent failed: provider error, timeout, ...
-                parsed = ParsedAgentOutput()
-                parsed.errors.append(f"{role} falhou: {exc}")
-                break
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+    # Shared, bounded pool (audit B5): no per-call executor to spawn/tear down. On
+    # hard timeout we stop waiting and best-effort cancel; a running worker is bounded
+    # by the adapter's own request timeout, and the global pool caps total workers.
+    future = submit_agent(_run_agent, router, role, context, user_model_choice, api_key)
+    started = time.monotonic()
+    deadline = started + AGENT_TIMEOUT_MS / 1000
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            future.cancel()
+            parsed = ParsedAgentOutput()
+            parsed.errors.append(
+                f"{role} excedeu o tempo limite de {AGENT_TIMEOUT_MS // 1000}s e foi abortado."
+            )
+            break
+        try:
+            response, parsed = future.result(timeout=min(HEARTBEAT_EVERY_S, remaining))
+            break
+        except cf.TimeoutError:
+            yield {
+                "type": "heartbeat",
+                "role": role,
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+            }
+        except Exception as exc:  # agent failed: provider error, timeout, ...
+            parsed = ParsedAgentOutput()
+            parsed.errors.append(redact_text(f"{role} falhou: {exc}"))
+            break
 
     for emitted in parsed.files:
         yield {

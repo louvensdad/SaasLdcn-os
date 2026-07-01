@@ -145,6 +145,9 @@ class GenerationJob(ApiModel):
     partial: bool = True
     valid: bool = False
     packageReady: bool = False
+    inputTokensTotal: int = 0
+    outputTokensTotal: int = 0
+    resultPath: str | None = None
     createdAt: str
     updatedAt: str
 

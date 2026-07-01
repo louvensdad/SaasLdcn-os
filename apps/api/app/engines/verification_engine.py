@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from pathlib import PurePosixPath
 from typing import Any, Callable
 
+from app.engines.agent_executor import submit_agent
 from app.engines.agent_prompts import AGENT_PROMPTS
 from app.engines.factory_pipeline import HEARTBEAT_EVERY_S, _agent_request, _language_for
 from app.engines.generation_validation_engine import generation_validation_engine
@@ -34,21 +35,21 @@ _MANIFEST_HINTS = (
 def _with_heartbeat(label: str, fn: Callable[[], Any], holder: dict) -> Iterator[dict]:
     """Run fn() on a worker thread, yielding heartbeat events while it blocks. Fills
     holder['value']/holder['error']. The build can take minutes, so this keeps the
-    SSE stream alive (same pattern as factory_pipeline.iter_single_agent)."""
-    with cf.ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(fn)
-        started = time.monotonic()
-        while True:
-            try:
-                holder["value"] = future.result(timeout=HEARTBEAT_EVERY_S)
-                holder["error"] = None
-                return
-            except cf.TimeoutError:
-                yield {"type": "heartbeat", "role": label, "elapsed_ms": int((time.monotonic() - started) * 1000)}
-            except Exception as exc:  # build/repair blew up — surface it, don't crash the stream
-                holder["value"] = None
-                holder["error"] = exc
-                return
+    SSE stream alive (same pattern as factory_pipeline.iter_single_agent). Runs on
+    the shared, bounded agent pool (audit B5) instead of a per-call executor."""
+    future = submit_agent(fn)
+    started = time.monotonic()
+    while True:
+        try:
+            holder["value"] = future.result(timeout=HEARTBEAT_EVERY_S)
+            holder["error"] = None
+            return
+        except cf.TimeoutError:
+            yield {"type": "heartbeat", "role": label, "elapsed_ms": int((time.monotonic() - started) * 1000)}
+        except Exception as exc:  # build/repair blew up — surface it, don't crash the stream
+            holder["value"] = None
+            holder["error"] = exc
+            return
 
 
 def _summarize_issues(report) -> list[str]:

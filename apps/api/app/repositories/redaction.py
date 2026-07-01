@@ -13,12 +13,20 @@ SENSITIVE_KEY_PATTERN = re.compile(
 SENSITIVE_VALUE_PATTERN = re.compile(
     r"(secret|token|password|api[_-]?key|private[_-]?key)\s*[:=]\s*\S+", re.IGNORECASE
 )
+# Auth headers and provider key shapes that leak in LLM-SDK error strings/URLs but
+# have no "key: value" form: "Authorization: Bearer <t>" and "sk-…"/"sk-ant-…" keys.
+BEARER_PATTERN = re.compile(r"(Bearer\s+)[A-Za-z0-9._\-]+", re.IGNORECASE)
+KEY_PREFIX_PATTERN = re.compile(r"\bsk-[A-Za-z0-9._\-]{16,}")
 REDACTED = "[REDACTED]"
 
 
 def redact_text(value: str) -> str:
-    """Mask inline 'api_key=...'/'token: ...' style secrets inside free text."""
-    return SENSITIVE_VALUE_PATTERN.sub(REDACTED, value)
+    """Mask inline 'api_key=...'/'token: ...' secrets, Bearer tokens and sk-* provider
+    keys inside free text (e.g. LLM provider error messages / request URLs)."""
+    value = SENSITIVE_VALUE_PATTERN.sub(REDACTED, value)
+    value = BEARER_PATTERN.sub(r"\1" + REDACTED, value)
+    value = KEY_PREFIX_PATTERN.sub(REDACTED, value)
+    return value
 
 
 def redact_value(value: Any) -> Any:

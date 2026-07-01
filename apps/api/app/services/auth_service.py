@@ -39,9 +39,6 @@ class AuthService:
         self.user_repository = user_repository or UserRepository()
         self.audit_repository = audit_repository or AuditLogRepository()
 
-    def initialize(self) -> None:
-        self.user_repository.initialize()
-        self.audit_repository.initialize()
 
     # ------------------------------------------------------------------
     # Registration / login / tokens

@@ -7,6 +7,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.database import Base, database_url_for, get_engine
+import app.models  # noqa: F401
 from app.repositories.git_provider_repository import GitProviderRepository
 from app.services.git_provider_service import GitProviderService
 
@@ -35,8 +37,19 @@ def store_dir():
         shutil.rmtree(path, ignore_errors=True)
 
 
-def test_provider_connection_never_returns_token(monkeypatch):
-    service = GitProviderService()
+@pytest.fixture
+def service(store_dir):
+    storage_path = store_dir / f"git_providers_{uuid4().hex}.db"
+    database_url = database_url_for(storage_path)
+    Base.metadata.create_all(bind=get_engine(database_url))
+    instance = GitProviderService(GitProviderRepository(storage_path))
+    try:
+        yield instance
+    finally:
+        get_engine(database_url).dispose()
+
+
+def test_provider_connection_never_returns_token(service, monkeypatch):
     monkeypatch.setattr(service, "_github_profile", lambda token: dict(_GITHUB_PROFILE))
 
     connection = service.connect("user-1", "github", "secret-token")
@@ -47,8 +60,7 @@ def test_provider_connection_never_returns_token(monkeypatch):
     assert "token" not in service.status("user-1", "github")
 
 
-def test_disconnect_revokes_runtime_connection(monkeypatch):
-    service = GitProviderService()
+def test_disconnect_revokes_runtime_connection(service, monkeypatch):
     monkeypatch.setattr(service, "_gitlab_profile", lambda token: dict(_GITLAB_PROFILE))
 
     service.connect("user-1", "gitlab", "secret-token")
@@ -58,8 +70,7 @@ def test_disconnect_revokes_runtime_connection(monkeypatch):
     assert service._connections == {}
 
 
-def test_connections_are_isolated_per_user(monkeypatch):
-    service = GitProviderService()
+def test_connections_are_isolated_per_user(service, monkeypatch):
     monkeypatch.setattr(service, "_github_profile", lambda token: dict(_GITHUB_PROFILE))
 
     service.connect("alice", "github", "alice-token")
@@ -71,6 +82,8 @@ def test_connections_are_isolated_per_user(monkeypatch):
 
 def test_connection_persists_across_service_instances(store_dir, monkeypatch):
     storage_path = store_dir / f"git_providers_{uuid4().hex}.db"
+    database_url = database_url_for(storage_path)
+    Base.metadata.create_all(bind=get_engine(database_url))
     storage = GitProviderRepository(storage_path)
 
     first = GitProviderService(storage)

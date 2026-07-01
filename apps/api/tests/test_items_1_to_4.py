@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 
 from app.core.config import get_settings
+from app.core.database import Base, database_url_for, get_engine
+import app.models  # noqa: F401
 from app.engines import prompt_master_md_engine as pm_engine
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.schemas.orchestrator import ProjectSpec
@@ -83,8 +85,9 @@ def test_modernize_job_persists_and_is_owner_scoped():
     tmp = Path(tempfile.mkdtemp())
     db = tmp / "jobs.db"
     try:
+        database_url = database_url_for(db)
+        Base.metadata.create_all(bind=get_engine(database_url))
         repo_a = ModernizeJobRepository(db)
-        repo_a.initialize()
         repo_a.create(owner_user_id="user-a", project_id="ingest_x", data={"source": "zip", "report": None})
         repo_a.update("ingest_x", "user-a", {"report": {"ok": True}})
 
@@ -96,4 +99,6 @@ def test_modernize_job_persists_and_is_owner_scoped():
         # Owner isolation: a different owner cannot read it.
         assert repo_b.get_for_owner("ingest_x", "user-b") is None
     finally:
+        if 'database_url' in locals():
+            get_engine(database_url).dispose()
         shutil.rmtree(tmp, ignore_errors=True)

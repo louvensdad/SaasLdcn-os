@@ -25,7 +25,6 @@ class GitProviderService:
 
     def __init__(self, storage: GitProviderRepository | None = None) -> None:
         self._storage = storage or GitProviderRepository()
-        self._storage.initialize()
         # Caches are keyed per user so one user's credentials are never served to
         # another: (user_id, provider) for connections, (user_id, repo_key) for repos.
         self._connections: dict[tuple[str, Provider], dict[str, Any]] = {}

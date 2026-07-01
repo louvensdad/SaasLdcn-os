@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,17 +59,28 @@ class ProjectWriter:
         # defense in depth: the project dir must stay under the output root
         if self.output_root != root and self.output_root not in root.parents:
             raise ProjectWriteError("Resolved project root escaped the output directory.")
-        root.mkdir(parents=True, exist_ok=True)
+        self.output_root.mkdir(parents=True, exist_ok=True)
 
-        written: list[str] = []
-        for emitted in files:
-            target = self._safe_target(root, emitted.path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(emitted.content, encoding="utf-8")
-            written.append(target.relative_to(root).as_posix())
+        # Atomic write (audit MF2): assemble the whole project in a sibling staging
+        # dir and publish it with a single atomic rename. A crash/exception mid-write
+        # leaves only the staging dir (removed here), never a half-populated project
+        # directory that download/export could read. Staging is under output_root so
+        # the rename stays on one filesystem.
+        staging = Path(tempfile.mkdtemp(prefix=f".staging-{project_id}-", dir=self.output_root))
+        try:
+            written: list[str] = []
+            for emitted in files:
+                target = self._safe_target(staging, emitted.path)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(emitted.content, encoding="utf-8")
+                written.append(target.relative_to(staging).as_posix())
 
-        all_files = self._merge_paths([], written)
-        self._write_marker(root, project_id, project_name, metadata, all_files, owner=owner)
+            all_files = self._merge_paths([], written)
+            self._write_marker(staging, project_id, project_name, metadata, all_files, owner=owner)
+            os.replace(staging, root)
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
         return WriteResult(project_id=project_id, root_path=str(root), written=all_files)
 
     def append(

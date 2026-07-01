@@ -142,6 +142,25 @@ def _generation_llm_context(
 @router.post("/meta-factory/jobs", response_model=GenerationJob, status_code=status.HTTP_202_ACCEPTED)
 def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser) -> GenerationJob:
     """Create the durable pipeline record before any provider request is made."""
+    # Cap concurrent in-flight generations per user (audit MF3): each one holds
+    # agent-pool workers for multi-minute LLM calls, so an unbounded user could
+    # starve the shared pool for everyone. Recovery actions (retry/resume/continue)
+    # re-run existing jobs and are intentionally not counted here.
+    max_concurrent = get_settings().max_concurrent_generations_per_user
+    active = generation_job_engine.count_active_for_user(user["user_id"])
+    if active >= max_concurrent:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "TOO_MANY_CONCURRENT_GENERATIONS",
+                "message": (
+                    f"Você já tem {active} geração(ões) em andamento (limite: {max_concurrent}). "
+                    "Aguarde uma concluir ou pause/cancele antes de iniciar outra."
+                ),
+                "activeCount": active,
+                "limit": max_concurrent,
+            },
+        )
     context = _generation_llm_context(
         user,
         workspace_id=payload.workspaceId,

@@ -64,6 +64,14 @@ class Settings(BaseModel):
     debug: bool = False
     log_level: str = "INFO"
     allowed_origins: list[str] = Field(default_factory=_default_allowed_origins)
+    database_url: str = Field(
+        default_factory=lambda: os.environ.get(
+            "LDCN_DATABASE_URL",
+            f"sqlite:///{(DATA_DIR / 'ldcn_os.db').resolve().as_posix()}",
+        )
+    )
+    # Temporary compatibility for constructors/tests that still pass a Path.
+    # SQLAlchemy/Alembic use database_url as the source of truth.
     sqlite_path: Path = DATA_DIR / "ldcn_os.db"
     contracts_ready: bool = True
 
@@ -88,6 +96,7 @@ class Settings(BaseModel):
     security_headers_enabled: bool = True
     hsts_enabled: bool = Field(default_factory=lambda: os.environ.get("LDCN_ENVIRONMENT", "local") == "production")
     rate_limit_enabled: bool = Field(default_factory=lambda: os.environ.get("LDCN_ENVIRONMENT", "local") == "production")
+    redis_url: str = Field(default_factory=lambda: os.environ.get("LDCN_REDIS_URL", ""))
     rate_limit_auth_per_minute: int = 20
     rate_limit_default_per_minute: int = 240
     # Generation endpoints each trigger multiple multi-minute (paid) LLM calls, so
@@ -147,6 +156,21 @@ class Settings(BaseModel):
     custom_base_url: str = Field(default_factory=lambda: os.environ.get("LDCN_CUSTOM_BASE_URL", ""))
     custom_model: str = Field(default_factory=lambda: os.environ.get("LDCN_CUSTOM_MODEL", ""))
 
+    # --- Agent execution pool (bounded, shared) ---
+    # Blocking LLM-agent calls run on ONE process-wide, bounded thread pool instead
+    # of a fresh ThreadPoolExecutor per pipeline stage. This caps total worker
+    # threads under concurrent generations (diagnosis B5) — each worker may hold a
+    # multi-minute LLM call, so tune per host. Minimum enforced at 1.
+    agent_worker_limit: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_AGENT_WORKERS", "8"))
+    )
+    # Max in-flight generations a single user can have at once. Each generation
+    # holds agent-pool workers for multi-minute LLM calls, so an unbounded user
+    # could exhaust the shared pool for everyone (audit MF3). Extra starts get 429.
+    max_concurrent_generations_per_user: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MAX_CONCURRENT_GENERATIONS", "3"))
+    )
+
     # --- User LLM key vault TTL ---
     # User-owned keys are session-scoped: they expire from the in-memory vault after
     # this many seconds (defence in depth on top of "RAM only, lost on restart").
@@ -185,5 +209,7 @@ class Settings(BaseModel):
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
-    settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    if settings.database_url.startswith("sqlite:///"):
+        raw_path = settings.database_url.removeprefix("sqlite:///")
+        Path(raw_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
     return settings

@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 from collections.abc import Sequence
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from app.core.config import get_settings
+from app.core.database import connection as database_connection, database_url_for
 from app.data.foundation import CONTRACT_VERSION, PROJECT_SEED
 from app.engines.architectural_graph_engine import generate_graph_snapshot
 
@@ -21,55 +20,16 @@ SAFE_BOOLEAN_TRACE_KEYS = {"contains_secrets"}
 
 
 class ProjectRepository:
-    def __init__(self, sqlite_path: Path | None = None) -> None:
-        self.sqlite_path = sqlite_path or get_settings().sqlite_path
+    def __init__(self, database: str | Path | None = None) -> None:
+        self.database_url = database_url_for(database)
+        self.sqlite_path = database if isinstance(database, Path) else get_settings().sqlite_path
 
-    @contextmanager
-    def connection(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.sqlite_path)
-        connection.row_factory = sqlite3.Row
-        try:
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()
+    def connection(self):
+        return database_connection(self.database_url)
 
     def initialize(self) -> None:
+        """Seed reference projects after Alembic has created the schema."""
         with self.connection() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS projects (
-                    project_id TEXT PRIMARY KEY,
-                    project_key TEXT NOT NULL,
-                    project_name TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    objective TEXT NOT NULL,
-                    stack_id TEXT NOT NULL,
-                    project_locale TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    scope TEXT NOT NULL,
-                    locale TEXT NOT NULL,
-                    generation_mode TEXT NOT NULL,
-                    technology_graph_json TEXT NOT NULL,
-                    architecture_id TEXT NOT NULL,
-                    archetype_id TEXT NOT NULL,
-                    selected_capabilities_json TEXT NOT NULL,
-                    selected_business_modules_json TEXT NOT NULL,
-                    selected_endpoints_json TEXT NOT NULL,
-                    blueprint_snapshot_json TEXT NOT NULL,
-                    architectural_graph_snapshot_json TEXT,
-                    prompt_master_snapshot_json TEXT NOT NULL,
-                    gatekeeper_snapshot_json TEXT NOT NULL,
-                    tags_json TEXT NOT NULL,
-                    readiness_status TEXT NOT NULL,
-                    contract_version TEXT NOT NULL,
-                    generated_project_path TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            self._ensure_optional_columns(conn)
             project_count = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
             if project_count == 0:
                 for project in PROJECT_SEED:
@@ -92,7 +52,6 @@ class ProjectRepository:
                         """,
                         seed_project,
                     )
-
     def list_projects(self) -> Sequence[dict[str, Any]]:
         with self.connection() as conn:
             rows = conn.execute(
@@ -130,25 +89,13 @@ class ProjectRepository:
         return self._row_to_project(dict(row)) if row else None
 
     def get_project_by_blueprint_id(self, blueprint_id: str) -> dict[str, Any] | None:
-        with self.connection() as conn:
-            row = conn.execute(
-                """
-                SELECT
-                    COALESCE(project_id, project_key) AS project_id,
-                    project_key, project_name, status, locale, generation_mode,
-                    technology_graph_json, architecture_id, archetype_id,
-                    selected_capabilities_json, selected_business_modules_json, selected_endpoints_json,
-                    blueprint_snapshot_json, architectural_graph_snapshot_json, prompt_master_snapshot_json, gatekeeper_snapshot_json,
-                    readiness_status, contract_version, generated_project_path, created_at, updated_at
-                FROM projects
-                WHERE json_extract(blueprint_snapshot_json, '$.blueprint_id') = ?
-                ORDER BY updated_at DESC
-                LIMIT 1
-                """,
-                (blueprint_id,),
-            ).fetchone()
-        return self._row_to_project(dict(row)) if row else None
-
+        # JSON extraction differs between SQLite and PostgreSQL. Keep the snapshot
+        # portable by decoding candidate rows in Python until this column becomes
+        # a native JSONB field in a dedicated migration.
+        for project in self.list_projects():
+            if project.get("blueprint_snapshot", {}).get("blueprint_id") == blueprint_id:
+                return project
+        return None
     def save_from_wizard(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         blueprint = self._sanitize_snapshot(payload["blueprint"])
@@ -317,33 +264,7 @@ class ProjectRepository:
             result = conn.execute("DELETE FROM projects WHERE project_id = ? OR project_key = ?", (project_id, project_id))
         return result.rowcount > 0
 
-    def _ensure_optional_columns(self, conn: sqlite3.Connection) -> None:
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(projects)").fetchall()}
-        optional_columns = {
-            "project_key": "ALTER TABLE projects ADD COLUMN project_key TEXT",
-            "project_name": "ALTER TABLE projects ADD COLUMN project_name TEXT",
-            "status": "ALTER TABLE projects ADD COLUMN status TEXT",
-            "locale": "ALTER TABLE projects ADD COLUMN locale TEXT",
-            "generation_mode": "ALTER TABLE projects ADD COLUMN generation_mode TEXT",
-            "technology_graph_json": "ALTER TABLE projects ADD COLUMN technology_graph_json TEXT",
-            "architecture_id": "ALTER TABLE projects ADD COLUMN architecture_id TEXT",
-            "archetype_id": "ALTER TABLE projects ADD COLUMN archetype_id TEXT",
-            "selected_capabilities_json": "ALTER TABLE projects ADD COLUMN selected_capabilities_json TEXT",
-            "selected_business_modules_json": "ALTER TABLE projects ADD COLUMN selected_business_modules_json TEXT",
-            "selected_endpoints_json": "ALTER TABLE projects ADD COLUMN selected_endpoints_json TEXT",
-            "blueprint_snapshot_json": "ALTER TABLE projects ADD COLUMN blueprint_snapshot_json TEXT",
-            "prompt_master_snapshot_json": "ALTER TABLE projects ADD COLUMN prompt_master_snapshot_json TEXT",
-            "gatekeeper_snapshot_json": "ALTER TABLE projects ADD COLUMN gatekeeper_snapshot_json TEXT",
-            "architectural_graph_snapshot_json": "ALTER TABLE projects ADD COLUMN architectural_graph_snapshot_json TEXT",
-            "readiness_status": "ALTER TABLE projects ADD COLUMN readiness_status TEXT",
-            "contract_version": "ALTER TABLE projects ADD COLUMN contract_version TEXT",
-            "generated_project_path": "ALTER TABLE projects ADD COLUMN generated_project_path TEXT",
-        }
-        for column_name, statement in optional_columns.items():
-            if column_name not in columns:
-                conn.execute(statement)
-
-    def _generate_project_id(self, conn: sqlite3.Connection) -> str:
+    def _generate_project_id(self, conn) -> str:
         while True:
             project_id = f"project_{uuid4().hex[:12]}"
             exists = conn.execute(
