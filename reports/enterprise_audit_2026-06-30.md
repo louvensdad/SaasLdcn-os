@@ -584,6 +584,13 @@ const LDCNCore = dynamic(() => import('@/components/three/ldcn-core'), {
 
 **Prioridade:** P1
 
+**✅ RESOLVIDO (2026-07-01):** (1) `documentation` já não é permanentemente vazia — mostra os
+projetos gerados elegíveis quando existem (dados reais, sob demanda). (2) `laboratory` deixou
+de ser hardcoded-empty: a execução real (`POST /engineering-lab/.../terminal`) agora é auditada
+(`laboratory_terminal_run`, no allowlist `SAFE_EVENT_CODES`) e `collect_laboratory_metrics` conta
+esses eventos reais do audit log. Ambas permanecem honestamente vazias só até haver dado real
+(sem números inventados). Testes: `tests/test_analytics.py`.
+
 ---
 
 ### F3 — Três.js no bundle crítico sem lazy load [MÉDIO]

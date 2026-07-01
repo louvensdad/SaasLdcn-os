@@ -67,6 +67,7 @@ _QUALITY_EVENTS = {
     "auto_repair_failed", "auto_repair_completed", "revalidation_run",
     "force_release_requested", "force_release_confirmed", "git_export_blocked",
 }
+_LAB_EVENTS = {"laboratory_terminal_run"}
 
 _SECTION_IDS = [
     "project_rooms", "llm", "meta_factory", "modernize",
@@ -418,10 +419,26 @@ def collect_technology_trends(ctx: "_Context") -> AnalyticsSection:
 
 
 def collect_laboratory_metrics(ctx: "_Context") -> AnalyticsSection:
-    # The Engineering Laboratory has no persistent backend store of runs/scans;
-    # surface that honestly instead of inventing numbers.
-    return _empty("laboratory", "Laboratory", "no_data_source",
-                  "Nenhuma fonte real de execução do Laboratory (testes/scans/terminal) está persistida.")
+    # Real Laboratory executions are audited (laboratory_terminal_run) — count them
+    # from the audit log (audit F2). Honest: still empty until a real run happens,
+    # never invented numbers.
+    events = [e for e in ctx.audit if e.get("event_code") in _LAB_EVENTS and _within(e.get("created_at"), ctx.cutoff)]
+    if not events:
+        return _empty("laboratory", "Laboratory", "no_data_source",
+                      "Nenhuma execução real do Laboratory (terminal/scan) registrada no período.")
+    counts = Counter(e.get("event_code") for e in events)
+    return AnalyticsSection(
+        id="laboratory",
+        title="Laboratory",
+        description="Execuções reais do Engineering Laboratory registradas no audit log.",
+        metrics=[
+            _metric("laboratory_terminal_runs", "Execuções de terminal", counts.get("laboratory_terminal_run", 0),
+                    source="laboratory"),
+        ],
+        series=_series(counts, series="event"),
+        records=[{"id": e.get("id"), "event": e.get("event_code"), "at": e.get("created_at")} for e in events[:50]],
+        columns=["event", "at"],
+    )
 
 
 # --------------------------------------------------------------------------- #

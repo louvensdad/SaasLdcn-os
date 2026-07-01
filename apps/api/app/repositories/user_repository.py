@@ -167,6 +167,7 @@ class AuditLogRepository:
         "LLM_PROVIDER_CONFIGURED", "LLM_PROVIDER_SELECTED", "LLM_PROVIDER_CONFIRMED",
         "LLM_PROVIDER_TESTED", "LLM_PROVIDER_FAILED", "LLM_FALLBACK_DETERMINISTIC_USED",
         "LLM_ACTION_STARTED", "LLM_ACTION_COMPLETED",
+        "laboratory_terminal_run",
     }
 
     def __init__(self, database: str | Path | None = None) -> None:

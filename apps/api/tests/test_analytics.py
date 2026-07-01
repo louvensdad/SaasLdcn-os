@@ -191,3 +191,32 @@ def test_llm_collector_empty_without_events_or_usage():
     ctx = _Context(user_id="u", filters=None, cutoff=None, rooms=[], audit=[], projects=[],
                    active_llm=ActiveLlmSettings(reason="x"), usage=None)
     assert collect_llm_metrics(ctx).status == "empty"
+
+
+def test_laboratory_collector_counts_real_terminal_runs():
+    from app.schemas.llm_settings import ActiveLlmSettings
+    from app.services.analytics_service import _Context, collect_laboratory_metrics
+
+    ctx = _Context(
+        user_id="u", filters=None, cutoff=None, rooms=[], projects=[],
+        active_llm=ActiveLlmSettings(reason="x"),
+        audit=[
+            {"id": "a1", "event_code": "laboratory_terminal_run", "created_at": "2026-07-01T00:00:00+00:00"},
+            {"id": "a2", "event_code": "laboratory_terminal_run", "created_at": "2026-07-01T00:00:00+00:00"},
+            {"id": "a3", "event_code": "user_login", "created_at": "2026-07-01T00:00:00+00:00"},
+        ],
+    )
+    section = collect_laboratory_metrics(ctx)
+    assert section.status == "available"
+    values = {m.id: m.value for m in section.metrics}
+    assert values["laboratory_terminal_runs"] == 2
+
+
+def test_laboratory_collector_empty_without_runs():
+    from app.schemas.llm_settings import ActiveLlmSettings
+    from app.services.analytics_service import _Context, collect_laboratory_metrics
+
+    ctx = _Context(user_id="u", filters=None, cutoff=None, rooms=[], projects=[],
+                   active_llm=ActiveLlmSettings(reason="x"),
+                   audit=[{"id": "a1", "event_code": "user_login", "created_at": "2026-07-01T00:00:00+00:00"}])
+    assert collect_laboratory_metrics(ctx).status == "empty"
