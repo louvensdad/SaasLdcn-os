@@ -374,6 +374,14 @@ E implementar validação de output para código gerado (já existe `generated_p
 
 **Prioridade:** P2
 
+**✅ RESOLVIDO (2026-07-01):** o intent (e as respostas de refinamento) do usuário agora são
+delimitados no turn do orquestrador via `_wrap_untrusted(...)`: envolvidos em
+`<user_intent>`/`<user_answer>` com o fechamento da tag **neutralizado** (`</user_intent>` →
+`<\/user_intent>`, case-insensitive) para impedir breakout, mais uma instrução explícita de que
+o conteúdo é DADO e nunca instruções. Aplicado no vetor primário (entrada livre → spec estruturada
+em `orchestrator_engine._compose_user_turn`); os agentes recebem a spec já estruturada. Validação
+de output de código gerado permanece follow-up. Testes: `tests/test_prompt_injection.py`.
+
 ---
 
 ### S3 — Secrets em logs de erro [MÉDIO]
