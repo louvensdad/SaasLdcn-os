@@ -36,11 +36,11 @@ class SkillExecutionEngine:
         self.generated_project_service = generated_project_service or GeneratedProjectService()
         self.registry = SkillRegistryEngine()
 
-    def execute(self, skill_id: str, project_id: str | None, context: dict[str, Any]) -> dict[str, Any]:
+    def execute(self, skill_id: str, project_id: str | None, context: dict[str, Any], user_id: str | None = None) -> dict[str, Any]:
         normalized_skill_id = self._normalize_skill(skill_id)
         if normalized_skill_id not in EXECUTABLE_SKILLS:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Skill '{skill_id}' is not executable in V1.")
-        project = self.project_service.get_project(project_id) if project_id else None
+        project = self.project_service.get_project(project_id, user_id) if project_id else None
         if project is None and normalized_skill_id not in {"generate_local_project"}:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="project_id is required for this skill execution.")
 

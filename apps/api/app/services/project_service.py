@@ -24,14 +24,14 @@ class ProjectService:
     def initialize(self) -> None:
         self.project_repository.initialize()
 
-    def list_projects(self, *, limit: int | None = None, offset: int = 0) -> Sequence[dict]:
-        return self.project_repository.list_projects(limit=limit, offset=offset)
+    def list_projects(self, *, user_id: str | None = None, limit: int | None = None, offset: int = 0) -> Sequence[dict]:
+        return self.project_repository.list_projects(user_id=user_id, limit=limit, offset=offset)
 
-    def count_projects(self) -> int:
-        return self.project_repository.count_projects()
+    def count_projects(self, user_id: str | None = None) -> int:
+        return self.project_repository.count_projects(user_id)
 
-    def get_project(self, project_id: str) -> dict:
-        project = self.project_repository.get_project(project_id)
+    def get_project(self, project_id: str, user_id: str | None = None) -> dict:
+        project = self.project_repository.get_project(project_id, user_id)
         if project is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -39,7 +39,7 @@ class ProjectService:
             )
         return project
 
-    def save_from_wizard(self, payload: SaveProjectFromWizardRequest) -> dict:
+    def save_from_wizard(self, payload: SaveProjectFromWizardRequest, *, owner_user_id: str, workspace_id: str) -> dict:
         blueprint = payload.blueprint
         prompt_master = payload.prompt_master
         gatekeeper = payload.gatekeeper
@@ -60,11 +60,11 @@ class ProjectService:
                 detail="Gatekeeper Prompt Master reference does not match the supplied Prompt Master.",
             )
 
-        return self.project_repository.save_from_wizard(payload.model_dump())
+        return self.project_repository.save_from_wizard(payload.model_dump(), owner_user_id=owner_user_id, workspace_id=workspace_id)
 
-    def update_project(self, project_id: str, payload: ProjectUpdateRequest | dict) -> dict:
+    def update_project(self, project_id: str, payload: ProjectUpdateRequest | dict, user_id: str | None = None) -> dict:
         update_payload = payload.model_dump(exclude_none=True) if isinstance(payload, ProjectUpdateRequest) else payload
-        updated = self.project_repository.update_project(project_id, update_payload)
+        updated = self.project_repository.update_project(project_id, update_payload, actor_user_id=user_id)
         if updated is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -72,8 +72,8 @@ class ProjectService:
             )
         return updated
 
-    def delete_project(self, project_id: str) -> None:
-        deleted = self.project_repository.delete_project(project_id)
+    def delete_project(self, project_id: str, user_id: str | None = None) -> None:
+        deleted = self.project_repository.delete_project(project_id, user_id)
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

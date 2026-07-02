@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.core.deps import CurrentUser
 from app.engines.skill_execution_engine import SkillExecutionEngine
 from app.engines.skill_registry_engine import SkillRegistryEngine
 from app.routes.projects import service as project_service
@@ -67,9 +68,9 @@ def preview_skill(payload: SkillPreviewRequest) -> SkillPreview:
 
 
 @router.post("/skills/execute", response_model=SkillExecutionResult)
-def execute_skill(payload: SkillExecutionRequest) -> SkillExecutionResult:
+def execute_skill(payload: SkillExecutionRequest, user: CurrentUser) -> SkillExecutionResult:
     return SkillExecutionResult.model_validate(
-        execution_engine.execute(payload.skill_id, payload.project_id, payload.context)
+        execution_engine.execute(payload.skill_id, payload.project_id, payload.context, user["user_id"])
     )
 
 

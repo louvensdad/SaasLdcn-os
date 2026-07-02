@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import BASE_DIR
 from app.data.foundation import CONTRACT_VERSION
+from app.services.artifact_storage import ArtifactStore, get_artifact_store
 
 MAX_PREVIEW_BYTES = 64 * 1024
 DOWNLOAD_DIR = BASE_DIR / "app" / "data" / "prepared-downloads"
@@ -38,8 +39,9 @@ SECRET_VALUE_PATTERN = re.compile(
 
 
 class GeneratedProjectService:
-    def __init__(self) -> None:
+    def __init__(self, artifact_store: ArtifactStore | None = None) -> None:
         self.workspace_root = BASE_DIR.parents[1].resolve()
+        self.artifact_store = artifact_store or get_artifact_store()
 
     def list_files(self, project: dict[str, Any]) -> dict[str, Any]:
         root = self._project_root(project)
@@ -113,6 +115,8 @@ class GeneratedProjectService:
                 relative_path = entry["relative_path"]
                 source = self._resolve_inside(root, relative_path)
                 archive.write(source, arcname=relative_path)
+        self.artifact_store.save_project(project["project_id"], root)
+        self.artifact_store.save_download(project["project_id"], zip_path)
 
         return {
             "contractVersion": CONTRACT_VERSION,
@@ -141,6 +145,8 @@ class GeneratedProjectService:
         self._project_root(project)
         zip_path = self._zip_path(project["project_id"])
         if not zip_path.is_file():
+            self.artifact_store.restore_download(project["project_id"], zip_path)
+        if not zip_path.is_file():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prepare download before requesting the ZIP file.")
         return zip_path
 
@@ -149,12 +155,14 @@ class GeneratedProjectService:
         if not raw_path:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Project has no generated project path. Run local generation first.")
         root = Path(str(raw_path)).resolve()
+        if root == self.workspace_root or self.workspace_root not in root.parents:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Generated project path must stay inside the LDCN OS workspace.")
+        if not root.exists():
+            self.artifact_store.restore_project(str(project.get("project_id") or ""), root)
         if not root.exists():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Generated project path does not exist: {root}")
         if not root.is_dir():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Generated project path is not a directory.")
-        if root == self.workspace_root or self.workspace_root not in root.parents:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Generated project path must stay inside the LDCN OS workspace.")
         if not (root / ".ldcn-generation.json").is_file():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Generated project metadata was not found.")
         return root

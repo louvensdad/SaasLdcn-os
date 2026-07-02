@@ -77,4 +77,10 @@ def require_role(*roles: str):
     return _dependency
 
 
+# Not currently wired to any route: workspace/org-scoped authorization is
+# handled separately by TenantRepository's role checks (owner/admin/member/
+# viewer), which cover every access-control need in the codebase today. This
+# is reserved for a genuinely global, cross-tenant admin action if one is ever
+# added (e.g. a support/ops user-management panel) -- don't retrofit it onto
+# a route whose real authorization boundary is workspace- or ownership-based.
 RequireAdmin = Annotated[dict, Depends(require_role("admin"))]

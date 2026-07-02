@@ -14,6 +14,7 @@ Addresses audit items **D1** (production README) and **D2** (operational runbook
 - **PostgreSQL 14+** (production database — do not run SQLite in production)
 - **Redis 6+** (distributed rate limiting + user LLM key vault; required for any
   multi-instance / HA deployment)
+- **S3-compatible object storage** (durable generated projects and prepared ZIPs)
 - A reverse proxy terminating TLS (nginx, Caddy, ALB, …) in front of Uvicorn
 
 Install dependencies:
@@ -35,9 +36,11 @@ real env vars always win). See `app/core/config.py` for defaults.
 |---|---|---|
 | `LDCN_ENVIRONMENT` | `local` \| `staging` \| `production` | Gates docs, HSTS, rate limiting, cookie `Secure`. |
 | `LDCN_SECRET_KEY` | JWT signing secret | **Startup fails in production if unset.** 32+ bytes, stable across instances. |
-| `LDCN_DATABASE_URL` | SQLAlchemy URL | e.g. `postgresql+psycopg2://user:pass@host:5432/ldcn`. |
-| `LDCN_ALLOWED_ORIGINS` | CORS allowlist (comma-separated) | In production an empty list blocks the frontend — set it. |
-| `LDCN_REDIS_URL` | Redis connection | Needed so rate limiter + key vault work across instances. |
+| `LDCN_DATABASE_URL` | SQLAlchemy URL | PostgreSQL is enforced at production startup; SQLite is local-only. |
+| `LDCN_ALLOWED_ORIGINS` | CORS allowlist (comma-separated) | Production startup fails when empty. |
+| `LDCN_REDIS_URL` | Redis connection | Production startup fails when empty; shared by rate limiter + key vault. |
+| `LDCN_ARTIFACT_STORAGE` | Artifact backend | Must be `s3` in production (`local` is development-only). |
+| `LDCN_ARTIFACT_BUCKET` | S3 bucket | Production startup fails when empty. |
 
 ### Recommended / optional
 | Variable | Default | Purpose |
@@ -46,6 +49,9 @@ real env vars always win). See `app/core/config.py` for defaults.
 | `LDCN_TRUST_PROXY_HEADERS` | `0` | Set `1` behind a trusted proxy so rate limiting keys on the real client IP. |
 | `LDCN_AGENT_WORKERS` | `8` | Global bound on concurrent blocking LLM-agent threads (audit B5). |
 | `LDCN_MAX_CONCURRENT_GENERATIONS` | `3` | Max in-flight generations per user; extra → HTTP 429 (audit MF3). |
+| `LDCN_ARTIFACT_PREFIX` | `ldcn-artifacts` | Object-key prefix for project snapshots and downloads. |
+| `LDCN_ARTIFACT_ENDPOINT` | AWS default | S3-compatible endpoint for MinIO, R2 or another provider. |
+| `LDCN_ARTIFACT_REGION` | SDK default | Object-storage region. |
 | `LDCN_FORCE_MOCK` | `0` | `1` forces the deterministic Mock generator (offline demo/tests). |
 | Provider base URLs | — | `LDCN_OLLAMA_BASE_URL`, `LDCN_OPENROUTER_BASE_URL`, `LDCN_DEEPSEEK_BASE_URL`, `LDCN_CUSTOM_BASE_URL`, `LDCN_CUSTOM_MODEL`. |
 | Modernize limits | see config | `LDCN_MODERNIZE_MAX_ANALYZABLE_BYTES`, `_MAX_FILE_BYTES`, `_MAX_UPLOAD_BYTES`, `_ZIP_BOMB_RATIO`. |
@@ -66,6 +72,8 @@ alembic current             # verify the applied revision
 
 - New schema change: `alembic revision --autogenerate -m "describe change"`, review, commit.
 - Zero-downtime: apply additive migrations before rolling out code that needs them.
+- `20260701_c6_tenants` provisions a personal organization/workspace for existing users
+  and backfills legacy Project Rooms and generation jobs before tenant enforcement.
 
 ---
 
@@ -79,8 +87,8 @@ alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-Run behind the TLS-terminating proxy. With multiple workers/instances, `LDCN_REDIS_URL`
-is required (rate limiter and user-key vault are otherwise per-process).
+Run behind the TLS-terminating proxy. Production startup verifies the PostgreSQL, Redis,
+explicit CORS and S3-compatible artifact-storage configuration before accepting traffic.
 
 ---
 
@@ -107,7 +115,8 @@ is required (rate limiter and user-key vault are otherwise per-process).
 
 ### Backups
 - PostgreSQL: schedule `pg_dump` (or managed snapshots); test restore periodically.
-- Generated project artifacts live under `generated-projects/` (see §7 caveat).
+- Enable bucket versioning/retention according to the recovery policy and test restoring
+  generated-project snapshots and prepared downloads.
 
 ### A generation looks stuck / failed
 - Generations are durable jobs (persisted; survive restart). Inspect:
@@ -132,8 +141,9 @@ is required (rate limiter and user-key vault are otherwise per-process).
 
 ## 7. Known caveats / follow-ups
 
-- **Generated artifacts on local filesystem** (`generated-projects/`): on ephemeral/
-  multi-instance hosts these are not shared. Mount a shared/persistent volume, or move
-  to object storage (audit MF4) before scaling horizontally.
-- **Skills execution** is not yet sandboxed (audit S6) — restrict who can register skills.
+- **Local artifact materialization** (`generated-projects/`) is an ephemeral build cache.
+  The durable source is the configured S3-compatible bucket; missing local projects and
+  prepared ZIPs are restored lazily on another instance (audit MF4/H7).
+- **Skills are currently preview-only** and do not execute arbitrary code. Reassess
+  sandboxing before adding executable third-party skills.
 - See `reports/enterprise_audit_2026-06-30.md` for the full remediation status.

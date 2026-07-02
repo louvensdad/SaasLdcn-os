@@ -393,7 +393,7 @@ class GenerationJobEngine:
             checkpoint["detail"] = "Fallback deterministico especifico da etapa aplicado."
             return
         self._emit(job, owner, "agent_started", stage=step.state, message=f"Agente '{role}' iniciado ({job.get('model') or 'provider'}); {token_estimate} tokens estimados.")
-        response, parsed = self._route_with_timeout(job, step, role, context, model, api_key)
+        response, parsed = self._route_with_timeout(job, owner, step, role, context, model, api_key)
         input_tokens, output_tokens = _usage_totals(parsed, response)
         if input_tokens or output_tokens:
             totals = self.repository.add_usage(job["id"], owner, input_tokens, output_tokens)
@@ -423,7 +423,8 @@ class GenerationJobEngine:
         )
 
     def _route_with_timeout(
-        self, job: dict[str, Any], step: PipelineStep, role: str, context: str, model: str | None, api_key: str | None,
+        self, job: dict[str, Any], owner: str, step: PipelineStep, role: str,
+        context: str, model: str | None, api_key: str | None,
     ) -> tuple[Any, Any]:
         """Run the (blocking) LLM agent under a hard per-stage timeout.
 
@@ -433,23 +434,31 @@ class GenerationJobEngine:
         converted into a recoverable STALLED state. This is the single guarantee
         that BACKEND_GENERATING — or any LLM stage — can never sit in 'running'
         forever waiting on a provider/task that never resolves."""
-        deadline = float(self.stage_timeout_seconds)
+        timeout_seconds = float(self.stage_timeout_seconds)
+        deadline = time.monotonic() + timeout_seconds
         future = submit_agent(_run_agent, LLMRouter(), role, context, model, api_key)
-        try:
-            return future.result(timeout=deadline)
-        except cf.TimeoutError as exc:
-            future.cancel()
-            raise StageStalled(
-                f"Etapa {step.state} excedeu o tempo limite de {int(deadline)}s sem resposta do provider.",
-                diagnostic=self._diagnostic(
-                    job, step.state, role,
-                    f"Sem resposta do provider apos {int(deadline)}s; etapa marcada como STALLED para recuperacao.",
-                    validator="stage_timeout_watchdog",
-                    kind="stall",
-                    timeout_seconds=int(deadline),
-                    reason=f"O provider/agente '{role}' nao respondeu dentro de {int(deadline)}s (possivel hang/timeout do adaptador).",
-                ),
-            ) from exc
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                future.cancel()
+                raise StageStalled(
+                    f"Etapa {step.state} excedeu o tempo limite de {int(timeout_seconds)}s sem resposta do provider.",
+                    diagnostic=self._diagnostic(
+                        job, step.state, role,
+                        f"Sem resposta do provider apos {int(timeout_seconds)}s; etapa marcada como STALLED para recuperacao.",
+                        validator="stage_timeout_watchdog",
+                        kind="stall",
+                        timeout_seconds=int(timeout_seconds),
+                        reason=f"O provider/agente '{role}' nao respondeu dentro de {int(timeout_seconds)}s (possivel hang/timeout do adaptador).",
+                    ),
+                )
+            try:
+                return future.result(timeout=min(0.5, remaining))
+            except cf.TimeoutError:
+                current = self.repository.get(job["id"], owner)
+                if current and current.get("status") == "PAUSED":
+                    future.cancel()
+                    raise JobPaused()
 
     def _validate_stage(self, job: dict[str, Any], owner: str, step: PipelineStep) -> None:
         names = [item["name"].lower() for item in job["artifacts"] if item["valid"]]
@@ -515,7 +524,7 @@ class GenerationJobEngine:
         files = [EmittedFile(path=name, content=content) for name, content in latest.items()]
         if not files:
             raise StageFailure("Nenhum arquivo valido para build.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", "Nenhum arquivo valido para build."))
-        result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner)
+        result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner, workspace_id=job.get("workspaceId"))
         job["generatedProjectId"] = result.project_id
         job["resultPath"] = str(result.root_path)
         report = generation_validation_engine.validate(
@@ -540,6 +549,7 @@ class GenerationJobEngine:
             [],
             metadata={"partial": False, "package_ready": True, "generation_job_id": job["id"]},
             owner=owner,
+            workspace_id=job.get("workspaceId"),
         )
         self._write_json_artifact(job, owner, PipelineStep("PACKAGE_CREATING", "package", "package"), "package.report.json", package, "package")
 

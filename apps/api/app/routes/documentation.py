@@ -47,17 +47,18 @@ def _resolve_api_key(user: dict, *, use_user_key: bool, user_model_choice: str |
     return None
 
 @router.get("/projects/{project_id}/documentation", response_model=DocumentationLibraryResponse)
-def get_project_documentation(project_id: str) -> DocumentationLibraryResponse:
-    project = project_service.get_project(project_id)
+def get_project_documentation(project_id: str, user: CurrentUser) -> DocumentationLibraryResponse:
+    project = project_service.get_project(project_id, user["user_id"])
     return DocumentationLibraryResponse.model_validate(engine.analyze(project))
 
 
 @router.post("/projects/{project_id}/documentation/export", response_model=DocumentationExportResponse)
 def export_project_documentation(
     project_id: str,
+    user: CurrentUser,
     payload: DocumentationExportRequest | None = None,
 ) -> DocumentationExportResponse:
-    project = project_service.get_project(project_id)
+    project = project_service.get_project(project_id, user["user_id"])
     organize = bool(payload.organize) if payload else False
     return DocumentationExportResponse.model_validate(engine.export(project, organize=organize))
 
@@ -68,7 +69,7 @@ def generate_project_documentation(
     payload: DocumentationGenerateRequest,
     user: CurrentUser,
 ) -> DocumentationGenerateResponse:
-    project = project_service.get_project(project_id)
+    project = project_service.get_project(project_id, user["user_id"])
     api_key = _resolve_api_key(user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice)
     try:
         result = writer.generate(
@@ -93,7 +94,7 @@ def save_project_documentation(
     payload: DocumentationSaveRequest,
     user: CurrentUser,
 ) -> DocumentationSaveResponse:
-    project = project_service.get_project(project_id)
+    project = project_service.get_project(project_id, user["user_id"])
     items = [{"id": item.id, "content": item.content} for item in payload.docs]
     return DocumentationSaveResponse.model_validate(
         writer.save(project, items, overwrite=payload.overwrite)

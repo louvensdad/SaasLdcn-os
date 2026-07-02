@@ -97,6 +97,23 @@ class Settings(BaseModel):
     hsts_enabled: bool = Field(default_factory=lambda: os.environ.get("LDCN_ENVIRONMENT", "local") == "production")
     rate_limit_enabled: bool = Field(default_factory=lambda: os.environ.get("LDCN_ENVIRONMENT", "local") == "production")
     redis_url: str = Field(default_factory=lambda: os.environ.get("LDCN_REDIS_URL", ""))
+    # Generated projects are materialized locally for build tools, then snapshotted
+    # to shared S3-compatible storage so another instance can restore them.
+    artifact_storage_backend: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_ARTIFACT_STORAGE", "local").strip().lower()
+    )
+    artifact_storage_bucket: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_ARTIFACT_BUCKET", "").strip()
+    )
+    artifact_storage_prefix: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_ARTIFACT_PREFIX", "ldcn-artifacts").strip()
+    )
+    artifact_storage_endpoint: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_ARTIFACT_ENDPOINT", "").strip()
+    )
+    artifact_storage_region: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_ARTIFACT_REGION", "").strip()
+    )
     rate_limit_auth_per_minute: int = 20
     rate_limit_default_per_minute: int = 240
     # Generation endpoints each trigger multiple multi-minute (paid) LLM calls, so
@@ -206,9 +223,35 @@ class Settings(BaseModel):
     )  # reject the archive if total uncompressed / compressed exceeds this
 
 
+def _validate_production_settings(settings: Settings) -> None:
+    """Reject configurations that would silently disable production guarantees."""
+    if settings.artifact_storage_backend not in {"local", "s3"}:
+        raise RuntimeError("LDCN_ARTIFACT_STORAGE must be 'local' or 's3'.")
+    if settings.environment != "production":
+        return
+
+    missing: list[str] = []
+    if not settings.allowed_origins:
+        missing.append("LDCN_ALLOWED_ORIGINS")
+    if not settings.redis_url.strip():
+        missing.append("LDCN_REDIS_URL")
+    database_url = settings.database_url.lower()
+    if not database_url.startswith(("postgresql://", "postgresql+")):
+        missing.append("LDCN_DATABASE_URL (PostgreSQL required)")
+    if settings.artifact_storage_backend != "s3":
+        missing.append("LDCN_ARTIFACT_STORAGE=s3")
+    if not settings.artifact_storage_bucket:
+        missing.append("LDCN_ARTIFACT_BUCKET")
+    if missing:
+        raise RuntimeError(
+            "Invalid production configuration; set: " + ", ".join(missing)
+        )
+
+
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
+    _validate_production_settings(settings)
     if settings.database_url.startswith("sqlite:///"):
         raw_path = settings.database_url.removeprefix("sqlite:///")
         Path(raw_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)

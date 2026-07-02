@@ -28,6 +28,7 @@ from app.services.project_room_service import (
     ProjectRoomService,
 )
 from app.services.llm_settings_service import llm_provider_resolver
+from app.repositories.tenant_repository import TenantAccessError, TenantRepository, WORKSPACE_WRITE_ROLES
 
 router = APIRouter(tags=["project-rooms"])
 service = ProjectRoomService()
@@ -42,9 +43,10 @@ def _resolve_api_key(
     mode: str = "llm",
     provider_override: str | None = None,
     require_llm: bool = False,
+    workspace_id: str | None = None,
 ) -> str | None:
     context = llm_provider_resolver.resolve(
-        workspace_id=None,
+        workspace_id=workspace_id,
         user_id=user["user_id"],
         requested_capability=capability,
         optional_override_provider=provider_override,
@@ -59,6 +61,24 @@ def _resolve_api_key(
             detail=f"{context.resolution.reason} API key não disponível.",
         )
     return None
+
+
+def _writable_workspace(user: dict, requested_workspace_id: str | None) -> dict:
+    repository = TenantRepository()
+    if requested_workspace_id:
+        try:
+            return repository.require_workspace(
+                requested_workspace_id,
+                user["user_id"],
+                WORKSPACE_WRITE_ROLES,
+            )
+        except TenantAccessError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workspace not found or insufficient permission.",
+            ) from exc
+    workspace = repository.personal_workspace(user["user_id"])
+    return workspace or repository.ensure_personal_workspace(user["user_id"], user["full_name"])
 
 def _to_model(room: dict[str, Any]) -> ProjectRoom:
     open_questions = (room.get("spec") or {}).get("open_questions") or []
@@ -85,8 +105,12 @@ def list_project_rooms(user: CurrentUser) -> list[ProjectRoomSummary]:
 
 @router.post("/project-rooms", response_model=ProjectRoom, status_code=status.HTTP_201_CREATED)
 def create_project_room(payload: CreateRoomRequest, user: CurrentUser) -> ProjectRoom:
+    workspace = _writable_workspace(user, payload.workspace_id)
     api_key = _resolve_api_key(
-        user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice
+        user,
+        use_user_key=payload.use_user_key,
+        user_model_choice=payload.user_model_choice,
+        workspace_id=workspace["workspace_id"],
     )
     try:
         room = service.create_room(
@@ -96,6 +120,7 @@ def create_project_room(payload: CreateRoomRequest, user: CurrentUser) -> Projec
             locale=payload.locale,
             api_key=api_key,
             user_model_choice=payload.user_model_choice,
+            workspace_id=workspace["workspace_id"],
         )
     except LLMError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
@@ -105,8 +130,12 @@ def create_project_room(payload: CreateRoomRequest, user: CurrentUser) -> Projec
 @router.post("/project-rooms/import", response_model=ProjectRoom, status_code=status.HTTP_201_CREATED)
 def import_project_room(payload: ImportPromptMasterRequest, user: CurrentUser) -> ProjectRoom:
     """Fluxo 2: import an existing PromptMaster (.md / text / JSON) -> status PROMPT_APPROVED."""
+    workspace = _writable_workspace(user, payload.workspace_id)
     api_key = _resolve_api_key(
-        user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice
+        user,
+        use_user_key=payload.use_user_key,
+        user_model_choice=payload.user_model_choice,
+        workspace_id=workspace["workspace_id"],
     )
     try:
         room = service.import_prompt_master(
@@ -117,6 +146,7 @@ def import_project_room(payload: ImportPromptMasterRequest, user: CurrentUser) -
             locale=payload.locale,
             api_key=api_key,
             user_model_choice=payload.user_model_choice,
+            workspace_id=workspace["workspace_id"],
         )
     except ProjectRoomImportError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

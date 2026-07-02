@@ -14,19 +14,19 @@ engine = GitExportEngine()
 
 @router.post("/git/export/preview", response_model=GitExportJob)
 def preview_git_export(payload: GitExportRequest, user: CurrentUser) -> GitExportJob:
-    project = project_service.get_project(payload.project_id)
+    project = project_service.get_project(payload.project_id, user["user_id"])
     return GitExportJob.model_validate(engine.preview(user["user_id"], project, payload.model_dump()))
 
 
 @router.post("/git/export/github", response_model=GitExportJob)
 def export_to_github(payload: GitExportRequest, user: CurrentUser) -> GitExportJob:
-    project = project_service.get_project(payload.project_id)
+    project = project_service.get_project(payload.project_id, user["user_id"])
     return GitExportJob.model_validate(engine.export(user["user_id"], project, payload.model_dump(), "github"))
 
 
 @router.post("/git/export/gitlab", response_model=GitExportJob)
 def export_to_gitlab(payload: GitExportRequest, user: CurrentUser) -> GitExportJob:
-    project = project_service.get_project(payload.project_id)
+    project = project_service.get_project(payload.project_id, user["user_id"])
     return GitExportJob.model_validate(engine.export(user["user_id"], project, payload.model_dump(), "gitlab"))
 
 

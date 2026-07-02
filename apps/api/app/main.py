@@ -8,7 +8,7 @@ from app.core.config import get_settings
 from app.core.cors import configure_cors
 from app.core.deps import get_current_user
 from app.core.exceptions import configure_exception_handlers
-from app.core.logging import RequestLoggingMiddleware, logger
+from app.core.logging import RequestIdMiddleware, RequestLoggingMiddleware, logger
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.routes import (
@@ -49,6 +49,7 @@ from app.routes import (
     system_status,
     system_design_visualization,
     templates,
+    tenants,
     user_ai_keys,
 )
 
@@ -56,7 +57,8 @@ from app.routes import (
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     projects.service.initialize()
-    logger.info("Database ready at %s", get_settings().database_url)
+    # Never log the database URL: production URLs commonly embed credentials.
+    logger.info("Database ready")
     yield
 
 
@@ -81,6 +83,11 @@ def create_application() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
+    # Starlette applies add_middleware in reverse of call order, so adding this
+    # last makes it the outermost layer: the request id is set before anything
+    # else runs and is therefore already in the contextvar when
+    # RequestLoggingMiddleware emits its own log line.
+    app.add_middleware(RequestIdMiddleware)
 
     # Public routes: no authentication required. Health checks must always be
     # reachable, auth endpoints are how a session is obtained in the first
@@ -89,6 +96,10 @@ def create_application() -> FastAPI:
     app.include_router(health.router, prefix=settings.api_prefix)
     app.include_router(auth.router, prefix=settings.api_prefix)
     app.include_router(localization.router, prefix=settings.api_prefix)
+    # /metrics is unauthenticated (a Prometheus scraper carries no bearer token),
+    # so -- like /docs -- it is only exposed in local/staging, never production.
+    if settings.environment in ("local", "staging"):
+        app.include_router(health.metrics_router, prefix=settings.api_prefix)
 
     # Everything else requires a valid access token.
     protected = [Depends(get_current_user)]
@@ -98,6 +109,7 @@ def create_application() -> FastAPI:
     app.include_router(framework_specialists.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(infrastructure.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(templates.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(tenants.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(skills.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(system_status.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(roadmap.router, prefix=settings.api_prefix, dependencies=protected)
@@ -131,5 +143,4 @@ def create_application() -> FastAPI:
 
 
 app = create_application()
-
 

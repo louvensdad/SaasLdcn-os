@@ -168,6 +168,7 @@ class AuditLogRepository:
         "LLM_PROVIDER_TESTED", "LLM_PROVIDER_FAILED", "LLM_FALLBACK_DETERMINISTIC_USED",
         "LLM_ACTION_STARTED", "LLM_ACTION_COMPLETED",
         "laboratory_terminal_run",
+        "generation_job_blocked_by_gate", "blueprint_approved",
     }
 
     def __init__(self, database: str | Path | None = None) -> None:

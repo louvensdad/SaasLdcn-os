@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.database import Base, database_url_for, get_engine
+from app.core.database import Base, database_url_for, get_engine, session_factory
 import app.models  # noqa: F401
 from app.engines.context_pack_builder import build_agent_context
 from app.engines.factory_pipeline import _run_agent
@@ -16,11 +16,13 @@ from app.engines.generation_job_engine import (
     BACKEND_CHUNKS,
     STEPS,
     GenerationJobEngine,
+    JobPaused,
     StageFailure,
     _usage_totals,
 )
 from app.engines.llm.base import LLMError
 from app.engines.warning_policy import classify, classify_one
+from app.models.tenant import WorkspaceMembership
 from app.repositories.generation_job_repository import GenerationJobRepository
 from app.schemas.orchestrator import ProjectSpec
 from app.services.file_protocol import EmittedFile, ParsedAgentOutput, parse_agent_output
@@ -32,6 +34,11 @@ def isolated_engine():
     database_path = root / "jobs.db"
     database_url = database_url_for(database_path)
     Base.metadata.create_all(bind=get_engine(database_url))
+    # _create() below associates jobs with workspace_id="enterprise" for
+    # owner_user_id="user-1"; seed the membership row the repository's
+    # defense-in-depth workspace check requires.
+    with session_factory(database_url).begin() as session:
+        session.add(WorkspaceMembership(workspace_id="enterprise", user_id="user-1", role="owner", created_at="2026-01-01T00:00:00+00:00"))
     repository = GenerationJobRepository(database_path)
     engine = GenerationJobEngine(repository, root / "checkpoints")
     try:
@@ -39,6 +46,24 @@ def isolated_engine():
     finally:
         get_engine(database_url).dispose()
         shutil.rmtree(root, ignore_errors=True)
+
+
+@pytest.fixture
+def client_scoped_engine(client):
+    """A GenerationJobEngine whose repository shares the *same* database as the
+    `client` fixture's app (unlike `isolated_engine`, which is deliberately a
+    separate DB) -- needed for route-level tests, since workspace membership
+    rows created via the real auth/workspace flow live in the client's DB and
+    GenerationJobRepository.create() now checks membership against its own DB."""
+    from app.core.config import get_settings
+
+    checkpoint_root = Path(tempfile.mkdtemp(prefix="ldcn-generation-job-checkpoints-"))
+    repository = GenerationJobRepository(get_settings().sqlite_path)
+    engine = GenerationJobEngine(repository, checkpoint_root)
+    try:
+        yield engine
+    finally:
+        shutil.rmtree(checkpoint_root, ignore_errors=True)
 
 
 def _spec() -> ProjectSpec:
@@ -330,6 +355,41 @@ def test_backend_generating_never_runs_forever_marks_stalled(isolated_engine, mo
     assert (root / "checkpoints" / job["id"]).exists()
 
 
+def test_pause_cooperatively_stops_waiting_for_provider(isolated_engine, monkeypatch):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    engine.pause(job["id"], "user-1")
+
+    class PendingFuture:
+        cancelled = False
+
+        def result(self, timeout):  # noqa: ANN001
+            raise TimeoutError
+
+        def cancel(self):
+            self.cancelled = True
+            return True
+
+    pending = PendingFuture()
+    monkeypatch.setattr(
+        "app.engines.generation_job_engine.submit_agent",
+        lambda *args, **kwargs: pending,
+    )
+
+    with pytest.raises(JobPaused):
+        engine._route_with_timeout(
+            job,
+            "user-1",
+            _BACKEND_GEN,
+            "backend",
+            "context",
+            "model",
+            "secret",
+        )
+
+    assert pending.cancelled is True
+
+
 def test_user_can_continue_with_warnings(isolated_engine, monkeypatch):
     engine, repository, _ = isolated_engine
     job = _create(engine)
@@ -406,14 +466,51 @@ def test_latest_job_is_owner_scoped(isolated_engine):
     assert repository.latest_for_project("room-1", "other-user") is None
 
 
-def test_job_api_survives_refresh(client, isolated_engine, monkeypatch):
+def test_workspace_members_can_read_but_only_writers_can_update_generation_job(isolated_engine):
+    from app.core.database import session_factory
+
+    engine, repository, root = isolated_engine
+    job = _create(engine)  # owner_user_id="user-1", workspace_id="enterprise"
+
+    database_url = database_url_for(repository.sqlite_path)
+    with session_factory(database_url).begin() as session:
+        session.add(WorkspaceMembership(workspace_id="enterprise", user_id="viewer-user", role="viewer", created_at="2026-01-01T00:00:00+00:00"))
+        session.add(WorkspaceMembership(workspace_id="enterprise", user_id="member-user", role="member", created_at="2026-01-01T00:00:00+00:00"))
+
+    # Viewers can read the job (any workspace membership grants read access)...
+    assert repository.get(job["id"], "viewer-user")["id"] == job["id"]
+    assert repository.latest_for_project("room-1", "viewer-user")["id"] == job["id"]
+    assert any(item["id"] == job["id"] for item in repository.list("viewer-user"))
+    # ...but cannot write to it.
+    assert repository.update(job["id"], "viewer-user", {**job, "status": "READY"}) is None
+    assert repository.add_usage(job["id"], "viewer-user", 10, 5) is None
+
+    # Members (write role) can both read and write.
+    assert repository.get(job["id"], "member-user")["id"] == job["id"]
+    assert repository.add_usage(job["id"], "member-user", 10, 5) == (10, 5)
+
+
+def test_generation_job_repository_rejects_create_for_non_member_workspace(isolated_engine):
+    engine, repository, _ = isolated_engine
+    with pytest.raises(PermissionError):
+        repository.create(
+            "outsider",
+            {
+                "id": "genjob_outsider", "projectId": "room-x", "workspaceId": "enterprise",
+                "createdAt": "2026-01-01T00:00:00+00:00", "updatedAt": "2026-01-01T00:00:00+00:00",
+            },
+            {}, {},
+        )
+
+
+def test_job_api_survives_refresh(client, client_scoped_engine, monkeypatch):
     from app.routes import meta_factory as route
 
-    engine, _, _ = isolated_engine
+    engine = client_scoped_engine
     monkeypatch.setattr(route, "generation_job_engine", engine)
     monkeypatch.setattr(engine, "start", lambda *args, **kwargs: None)
     response = client.post("/api/meta-factory/jobs", json={
-        "projectId": "room-api", "workspaceId": "enterprise", "projectName": "API Job",
+        "projectId": "room-api", "projectName": "API Job",
         "spec": _spec().model_dump(mode="json"), "blueprint": {"decisions": []},
         "blueprintVersion": 2, "mode": "deterministic",
     })
@@ -435,11 +532,11 @@ def test_count_active_for_user_excludes_terminal(isolated_engine):
     assert engine.count_active_for_user("user-1") == 0  # terminal no longer counts
 
 
-def test_create_generation_job_caps_concurrency_per_user(client, isolated_engine, monkeypatch):
+def test_create_generation_job_caps_concurrency_per_user(client, client_scoped_engine, monkeypatch):
     from app.core.config import get_settings
     from app.routes import meta_factory as route
 
-    engine, _, _ = isolated_engine
+    engine = client_scoped_engine
     monkeypatch.setattr(route, "generation_job_engine", engine)
     monkeypatch.setattr(engine, "start", lambda *args, **kwargs: None)
     monkeypatch.setattr(get_settings(), "max_concurrent_generations_per_user", 2)
@@ -487,10 +584,11 @@ def test_usage_summary_respects_since_window(isolated_engine):
     assert engine.usage_summary("user-1", since=past)["total_tokens"] == 15
 
 
-def test_usage_endpoint_returns_measured_owner_summary(client, isolated_engine, monkeypatch):
+def test_usage_endpoint_returns_measured_owner_summary(client, client_scoped_engine, monkeypatch):
     from app.routes import meta_factory as route
 
-    engine, repository, _ = isolated_engine
+    engine = client_scoped_engine
+    repository = engine.repository
     monkeypatch.setattr(route, "generation_job_engine", engine)
     monkeypatch.setattr(engine, "start", lambda *args, **kwargs: None)
 

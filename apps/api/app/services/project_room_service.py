@@ -67,8 +67,8 @@ class ProjectRoomService:
         room = self.repository.get_for_owner(room_id, owner_user_id)
         return self._decorate(room) if room else None
 
-    def create_room(self, *, owner_user_id: str, title: str, raw_intent: str = "", locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None) -> dict[str, Any]:
-        room = self.repository.create(owner_user_id=owner_user_id, title=title, locale=locale, raw_intent=raw_intent)
+    def create_room(self, *, owner_user_id: str, title: str, raw_intent: str = "", locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None, workspace_id: str | None = None) -> dict[str, Any]:
+        room = self.repository.create(owner_user_id=owner_user_id, title=title, locale=locale, raw_intent=raw_intent, workspace_id=workspace_id)
         self._log(room["room_id"], owner_user_id, "POST", "/api/project-rooms", 201, "success", "Project Room criado")
         if raw_intent.strip():
             return self._orchestrator_turn(room["room_id"], owner_user_id, raw_intent, api_key=api_key, user_model_choice=user_model_choice, status="UNDER_REVIEW")
@@ -341,7 +341,7 @@ class ProjectRoomService:
         room = self.repository.update_status(room_id, owner_user_id, "ARCHIVED")
         return self._decorate(room) if room else None
 
-    def import_prompt_master(self, *, owner_user_id: str, fmt: str, content: str, title: str, locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None) -> dict[str, Any]:
+    def import_prompt_master(self, *, owner_user_id: str, fmt: str, content: str, title: str, locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None, workspace_id: str | None = None) -> dict[str, Any]:
         text = (content or "").strip()
         if not text:
             raise ProjectRoomImportError("O conteudo importado esta vazio.")
@@ -358,7 +358,7 @@ class ProjectRoomService:
             spec = result.spec
             degraded = result.degraded
             document = {"markdown": text, "sections": [], "version": 1, "engine_version": "import", "generated_at": self._now(), "degraded": degraded, "project_name": title}
-        room = self.repository.create(owner_user_id=owner_user_id, title=title, locale=locale, raw_intent=spec.raw_intent)
+        room = self.repository.create(owner_user_id=owner_user_id, title=title, locale=locale, raw_intent=spec.raw_intent, workspace_id=workspace_id)
         room_id = room["room_id"]
         self.repository.set_spec(room_id, owner_user_id, spec.model_dump(mode="json"), confidence=spec.confidence, degraded=degraded)
         self.repository.add_prompt_master_version(room_id, owner_user_id, document, status="PROMPT_APPROVED")

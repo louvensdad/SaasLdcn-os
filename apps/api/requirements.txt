@@ -33,3 +33,7 @@ sqlalchemy>=2.0.0
 alembic>=1.13.0
 psycopg2-binary>=2.9.0
 redis>=5.0.0
+boto3>=1.34.0
+
+# Prometheus /metrics endpoint (request count/latency by route+status).
+prometheus-client>=0.20.0

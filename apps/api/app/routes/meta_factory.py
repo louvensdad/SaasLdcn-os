@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
-import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app.core.config import get_settings
@@ -17,6 +17,10 @@ from app.data.model_registry import MODEL_REGISTRY
 from app.engines.auto_repair_engine import auto_repair_engine
 from app.engines.quality_gate_engine import quality_gate_engine
 from app.repositories.user_repository import AuditLogRepository
+from app.repositories.tenant_repository import TenantAccessError, TenantRepository, WORKSPACE_WRITE_ROLES
+from app.repositories.blueprint_approval_repository import BlueprintApprovalRepository, hash_blueprint
+from app.routes.project_rooms import service as project_room_service
+from app.services.project_room_service import ENGINEERING_APPROVED_STATUSES
 from app.schemas.auto_repair import ForceReleaseRequest, RepairResult, RevalidationResult
 from app.schemas.quality_gate import QualityGateReport
 from app.engines.completeness_review_engine import CompletenessReviewEngine
@@ -141,6 +145,24 @@ def _generation_llm_context(
     return context
 
 
+def _writable_workspace(user: dict, requested_workspace_id: str | None) -> dict:
+    repository = TenantRepository()
+    if requested_workspace_id:
+        try:
+            return repository.require_workspace(
+                requested_workspace_id,
+                user["user_id"],
+                WORKSPACE_WRITE_ROLES,
+            )
+        except TenantAccessError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workspace not found or insufficient permission.",
+            ) from exc
+    workspace = repository.personal_workspace(user["user_id"])
+    return workspace or repository.ensure_personal_workspace(user["user_id"], user["full_name"])
+
+
 @router.post("/meta-factory/jobs", response_model=GenerationJob, status_code=status.HTTP_202_ACCEPTED)
 def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser) -> GenerationJob:
     """Create the durable pipeline record before any provider request is made."""
@@ -163,25 +185,60 @@ def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser
                 "limit": max_concurrent,
             },
         )
+    workspace = _writable_workspace(user, payload.workspaceId)
+    # projectId is the Project Room id for the primary chat -> Meta Factory journey
+    # (the frontend enforces this gate client-side; this is the server-side backstop
+    # for any caller that skips straight to job creation). Callers whose projectId
+    # does not resolve to a room of theirs (ad-hoc/API usage) are not gated here.
+    room = project_room_service.get_room(payload.projectId, user["user_id"])
+    if room is not None and room["status"] not in ENGINEERING_APPROVED_STATUSES:
+        _audit(user["user_id"], "generation_job_blocked_by_gate")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "BLUEPRINT_GATE_BLOCKED",
+                "message": "Este projeto ainda nao teve o Engineering Review aprovado e nao pode iniciar a geracao.",
+            },
+        )
+    if room is not None:
+        # The room's own approve()/acknowledge_preview() flow already requires and
+        # records explicit human sign-off for a degraded (deterministic-preview)
+        # blueprint before it can reach ENGINEERING_APPROVED (see
+        # project_room_service.py). Mirror that into the structured, queryable
+        # blueprint_approvals trail so it isn't only recoverable from history_json.
+        blueprint = room.get("architecture_blueprint") or {}
+        if blueprint.get("degraded") and blueprint.get("preview_acknowledged"):
+            approvals = BlueprintApprovalRepository()
+            blueprint_hash = hash_blueprint(blueprint)
+            if not approvals.is_approved(payload.projectId, blueprint_hash):
+                approvals.record(
+                    project_id=payload.projectId,
+                    blueprint_hash=blueprint_hash,
+                    approved_by_user_id=user["user_id"],
+                    reason="deterministic-preview blueprint consciously acknowledged before engineering approval",
+                )
     context = _generation_llm_context(
         user,
-        workspace_id=payload.workspaceId,
+        workspace_id=workspace["workspace_id"],
         user_model_choice=payload.user_model_choice,
         deterministic=payload.mode == "deterministic",
     )
     resolution = context.resolution
-    job = generation_job_engine.create_job(
-        owner_user_id=user["user_id"],
-        project_id=payload.projectId,
-        workspace_id=payload.workspaceId,
-        project_name=payload.projectName,
-        spec=payload.spec,
-        blueprint=payload.blueprint,
-        blueprint_version=payload.blueprintVersion,
-        provider=resolution.provider,
-        provider_label=resolution.providerLabel or "Nenhum",
-        model=resolution.model or ("Motor deterministico" if payload.mode == "deterministic" else None),
-    )
+    try:
+        job = generation_job_engine.create_job(
+            owner_user_id=user["user_id"],
+            project_id=payload.projectId,
+            workspace_id=workspace["workspace_id"],
+            project_name=payload.projectName,
+            spec=payload.spec,
+            blueprint=payload.blueprint,
+            blueprint_version=payload.blueprintVersion,
+            provider=resolution.provider,
+            provider_label=resolution.providerLabel or "Nenhum",
+            model=resolution.model or ("Motor deterministico" if payload.mode == "deterministic" else None),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     generation_job_engine.start(
         job["id"],
         user["user_id"],
@@ -217,15 +274,26 @@ def get_generation_job(job_id: str, user: CurrentUser) -> GenerationJob:
 
 
 @router.get("/meta-factory/jobs/{job_id}/events")
-def stream_generation_job(job_id: str, user: CurrentUser) -> StreamingResponse:
+def stream_generation_job(
+    job_id: str,
+    request: Request,
+    user: CurrentUser,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+) -> StreamingResponse:
     if generation_job_engine.get(job_id, user["user_id"]) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="GenerationJob nao encontrado.")
 
-    def events():
+    async def events():
         last_revision = ""
-        last_event_index = 0
+        initial = generation_job_engine.get(job_id, user["user_id"])
+        last_event_index = _event_start_index(
+            (initial or {}).get("events", []),
+            last_event_id,
+        )
         terminal = {"READY", "FAILED", "PAUSED", "NEEDS_USER_ACTION", "STALLED"}
         for tick in range(2400):
+            if await request.is_disconnected():
+                return
             job = generation_job_engine.get(job_id, user["user_id"])
             if job is None:
                 yield _sse({"type": "error", "detail": "GenerationJob nao encontrado."})
@@ -235,7 +303,10 @@ def stream_generation_job(job_id: str, user: CurrentUser) -> StreamingResponse:
             job_events = job.get("events", [])
             start = min(last_event_index, len(job_events))
             for event in job_events[start:]:
-                yield _sse({"type": "execution_event", "event": _slim_event(event)})
+                yield _sse(
+                    {"type": "execution_event", "event": _slim_event(event)},
+                    event_id=str(event["id"]),
+                )
             last_event_index = len(job_events)
             # The whole-job snapshot drives status/stage/progress/logs/artifacts only —
             # keyed on those fields (NOT updatedAt) so a streaming build doesn't refire
@@ -252,7 +323,7 @@ def stream_generation_job(job_id: str, user: CurrentUser) -> StreamingResponse:
                 yield _sse({"type": "heartbeat", "jobId": job_id, "stage": job["currentStage"]})
             if job["status"] in terminal:
                 return
-            time.sleep(0.75)
+            await asyncio.sleep(0.75)
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -398,6 +469,27 @@ def _owned_meta_project(project_id: str, user: dict) -> dict:
     return project
 
 
+def _force_release_authorized_project(project_id: str, user: dict) -> dict:
+    """Like _owned_meta_project, but also allows a workspace teammate with a
+    write role (owner/admin/member, not viewer) to force-release a project they
+    don't personally own, when the project has a recorded workspace_id (only
+    the job-based generation pipeline records one today; projects with none
+    fall back to owner-only, same as _owned_meta_project)."""
+    project = _meta_project(project_id)
+    writer = ProjectWriter()
+    owner = writer.read_owner(project_id)
+    if owner is None or owner == user["user_id"]:
+        return project
+    workspace_id = writer.read_workspace(project_id)
+    if workspace_id:
+        try:
+            TenantRepository().require_workspace(workspace_id, user["user_id"], WORKSPACE_WRITE_ROLES)
+            return project
+        except TenantAccessError:
+            pass
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generated project was not found.")
+
+
 @router.post("/meta-factory/orchestrate", response_model=OrchestrateResponse)
 def orchestrate(payload: OrchestrateRequest, user: CurrentUser) -> OrchestrateResponse:
     """Intent -> ProjectSpec (PASSO 2). May return open questions to refine."""
@@ -470,8 +562,23 @@ def generate(payload: GenerateRequest, user: CurrentUser) -> GenerateResponse:
     return response
 
 
-def _sse(event: dict) -> str:
-    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+def _sse(event: dict, *, event_id: str | None = None) -> str:
+    prefix = f"id: {event_id}\n" if event_id else ""
+    return f"{prefix}data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+def _event_start_index(events: list[dict], last_event_id: str | None) -> int:
+    """Resume after the last acknowledged persisted execution event.
+
+    If the cursor has fallen outside the retained 2,000-event window, replay the
+    retained window from its beginning; the frontend deduplicates by event id.
+    """
+    if not last_event_id:
+        return 0
+    return next(
+        (index + 1 for index, event in enumerate(events) if event.get("id") == last_event_id),
+        0,
+    )
 
 
 def _slim_event(event: dict) -> dict:
@@ -840,7 +947,7 @@ def force_release_project(
     project_id: str, payload: ForceReleaseRequest, user: CurrentUser
 ) -> QualityGateReport:
     """Conscious 'liberar mesmo assim': requires the exact confirmation phrase."""
-    _owned_meta_project(project_id, user)
+    _force_release_authorized_project(project_id, user)
     _audit(user["user_id"], "force_release_requested")
     if payload.confirmation.strip() != CONSCIOUS_RELEASE_PHRASE:
         raise HTTPException(

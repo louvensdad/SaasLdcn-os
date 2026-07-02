@@ -5,8 +5,10 @@ from uuid import uuid4
 import pytest
 
 from app.core.config import (
+    Settings,
     _default_allowed_origins,
     _default_secret_key,
+    _validate_production_settings,
     get_settings,
 )
 
@@ -126,6 +128,46 @@ def test_production_requires_explicit_cors_and_secret(monkeypatch):
     assert _default_allowed_origins() == []
     with pytest.raises(RuntimeError, match="LDCN_SECRET_KEY"):
         _default_secret_key()
+
+
+def test_production_rejects_missing_distributed_infrastructure():
+    settings = Settings(
+        environment="production",
+        secret_key="test-secret",
+        allowed_origins=[],
+        redis_url="",
+        database_url="sqlite:///local.db",
+        artifact_storage_backend="local",
+        artifact_storage_bucket="",
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        _validate_production_settings(settings)
+
+    message = str(exc_info.value)
+    assert "LDCN_ALLOWED_ORIGINS" in message
+    assert "LDCN_REDIS_URL" in message
+    assert "LDCN_DATABASE_URL (PostgreSQL required)" in message
+    assert "LDCN_ARTIFACT_STORAGE=s3" in message
+    assert "LDCN_ARTIFACT_BUCKET" in message
+
+    settings.database_url = "mysql+pymysql://ldcn:secret@db/ldcn"
+    with pytest.raises(RuntimeError, match="PostgreSQL required"):
+        _validate_production_settings(settings)
+
+
+def test_production_accepts_explicit_enterprise_infrastructure():
+    settings = Settings(
+        environment="production",
+        secret_key="test-secret",
+        allowed_origins=["https://app.example.com"],
+        redis_url="redis://redis:6379/0",
+        database_url="postgresql+psycopg2://ldcn:secret@db/ldcn",
+        artifact_storage_backend="s3",
+        artifact_storage_bucket="ldcn-production",
+    )
+
+    _validate_production_settings(settings)
 
 
 def test_rate_limit_returns_structured_429(client):

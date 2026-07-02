@@ -14,6 +14,7 @@ from app.core.security import (
     verify_password,
 )
 from app.repositories.user_repository import AuditLogRepository, UserRepository
+from app.repositories.tenant_repository import TenantRepository
 from app.schemas.auth import (
     AuthResponse,
     ConsentRequest,
@@ -70,6 +71,10 @@ class AuthService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Unable to record privacy policy acceptance.",
             )
+        TenantRepository(self.user_repository.database_url).ensure_personal_workspace(
+            user["user_id"],
+            user["full_name"],
+        )
         self.audit_repository.record(user_id=user["user_id"], event_code="user_registered")
         self.audit_repository.record(user_id=user["user_id"], event_code="user_consent_recorded")
         return self._issue_tokens(user)

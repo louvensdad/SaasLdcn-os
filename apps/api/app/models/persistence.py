@@ -10,6 +10,8 @@ class Project(Base):
     __tablename__ = "projects"
 
     project_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_user_id: Mapped[str | None] = mapped_column(String, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String, index=True)
     project_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
     project_name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -72,6 +74,7 @@ class ModernizeJob(Base):
 
     project_id: Mapped[str] = mapped_column(String, primary_key=True)
     owner_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String, index=True)
     data_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -86,6 +89,7 @@ class GenerationJob(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     owner_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String, index=True)
     project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="QUEUED", server_default="QUEUED", index=True)
     stage: Mapped[str | None] = mapped_column(String, index=True)
@@ -101,6 +105,19 @@ class GenerationJob(Base):
     blueprint_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class BlueprintApproval(Base):
+    __tablename__ = "blueprint_approvals"
+    __table_args__ = (Index("idx_blueprint_approvals_project", "project_id", "blueprint_hash"),)
+
+    approval_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False)
+    blueprint_hash: Mapped[str] = mapped_column(String, nullable=False)
+    approved_by_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    revoked_at: Mapped[str | None] = mapped_column(String)
 
 
 class GitProviderConnection(Base):

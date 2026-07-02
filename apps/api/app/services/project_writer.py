@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from app.core.config import BASE_DIR
 from app.data.foundation import CONTRACT_VERSION
+from app.services.artifact_storage import ArtifactStore, get_artifact_store
 from app.services.file_protocol import EmittedFile
 
 # Writes parsed agent output (EmittedFile list) to disk under generated-projects,
@@ -43,8 +44,9 @@ class WriteResult:
 
 
 class ProjectWriter:
-    def __init__(self, output_root: Path | None = None):
+    def __init__(self, output_root: Path | None = None, artifact_store: ArtifactStore | None = None):
         self.output_root = Path(output_root).resolve() if output_root else DEFAULT_OUTPUT_ROOT
+        self.artifact_store = artifact_store or get_artifact_store()
 
     def write(
         self,
@@ -53,6 +55,7 @@ class ProjectWriter:
         project_name: str = "meta-factory-project",
         metadata: dict | None = None,
         owner: str | None = None,
+        workspace_id: str | None = None,
     ) -> WriteResult:
         project_id = f"{_slugify(project_name)}_{uuid4().hex[:12]}"
         root = (self.output_root / project_id).resolve()
@@ -76,11 +79,12 @@ class ProjectWriter:
                 written.append(target.relative_to(staging).as_posix())
 
             all_files = self._merge_paths([], written)
-            self._write_marker(staging, project_id, project_name, metadata, all_files, owner=owner)
+            self._write_marker(staging, project_id, project_name, metadata, all_files, owner=owner, workspace_id=workspace_id)
             os.replace(staging, root)
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
             raise
+        self.artifact_store.save_project(project_id, root, workspace_id=workspace_id)
         return WriteResult(project_id=project_id, root_path=str(root), written=all_files)
 
     def append(
@@ -90,8 +94,9 @@ class ProjectWriter:
         *,
         metadata: dict | None = None,
         owner: str | None = None,
+        workspace_id: str | None = None,
     ) -> WriteResult:
-        root = self._project_root(project_id)
+        root = self._project_root(project_id, workspace_id=workspace_id)
         marker = self._read_marker(root)
         project_name = str(marker.get("project_name") or "meta-factory-project")
 
@@ -107,9 +112,11 @@ class ProjectWriter:
             existing_files = self._existing_file_paths(root)
         all_files = self._merge_paths([str(path) for path in existing_files], written)
         merged_metadata = self._merge_metadata(marker.get("metadata"), metadata)
-        # Preserve the original owner; the first writer establishes ownership.
+        # Preserve the original owner/workspace; the first writer establishes them.
         owner = owner or self._marker_owner(marker)
-        self._write_marker(root, project_id, project_name, merged_metadata, all_files, owner=owner)
+        workspace_id = workspace_id or marker.get("workspace_id")
+        self._write_marker(root, project_id, project_name, merged_metadata, all_files, owner=owner, workspace_id=workspace_id)
+        self.artifact_store.save_project(project_id, root, workspace_id=workspace_id)
         return WriteResult(project_id=project_id, root_path=str(root), written=all_files)
 
     def set_verification(self, project_id: str, *, verified: bool, score: int) -> None:
@@ -125,8 +132,10 @@ class ProjectWriter:
         if not isinstance(files, list):
             files = self._existing_file_paths(root)
         self._write_marker(
-            root, project_id, project_name, metadata, [str(p) for p in files], owner=self._marker_owner(marker)
+            root, project_id, project_name, metadata, [str(p) for p in files],
+            owner=self._marker_owner(marker), workspace_id=marker.get("workspace_id"),
         )
+        self.artifact_store.save_project(project_id, root, workspace_id=marker.get("workspace_id"))
 
     def read_verification(self, project_id: str) -> dict:
         """Return the persisted verification verdict (defaults to unverified)."""
@@ -155,8 +164,10 @@ class ProjectWriter:
         project_name = str(marker.get("project_name") or "meta-factory-project")
         files = [p for p in self._existing_file_paths(root)]
         self._write_marker(
-            root, project_id, project_name, marker.get("metadata"), files, owner=self._marker_owner(marker)
+            root, project_id, project_name, marker.get("metadata"), files,
+            owner=self._marker_owner(marker), workspace_id=marker.get("workspace_id"),
         )
+        self.artifact_store.save_project(project_id, root, workspace_id=marker.get("workspace_id"))
         return True
 
     def set_release_override(self, project_id: str, *, by_user: str, reason: str) -> None:
@@ -179,8 +190,10 @@ class ProjectWriter:
         if not isinstance(files, list):
             files = self._existing_file_paths(root)
         self._write_marker(
-            root, project_id, project_name, metadata, [str(p) for p in files], owner=self._marker_owner(marker)
+            root, project_id, project_name, metadata, [str(p) for p in files],
+            owner=self._marker_owner(marker), workspace_id=marker.get("workspace_id"),
         )
+        self.artifact_store.save_project(project_id, root, workspace_id=marker.get("workspace_id"))
 
     def read_owner(self, project_id: str) -> str | None:
         """Return the recorded owner user id for a generated project, or None.
@@ -196,12 +209,23 @@ class ProjectWriter:
         except ProjectWriteError:
             return None
 
+    def read_workspace(self, project_id: str) -> str | None:
+        """Return the recorded workspace id for a generated project, or None if the
+        project doesn't exist or was written by a caller with no workspace context
+        (e.g. the streaming /generate endpoints, which don't take a workspaceId)."""
+        try:
+            root = self._project_root(project_id)
+            workspace_id = self._read_marker(root).get("workspace_id")
+            return workspace_id if isinstance(workspace_id, str) and workspace_id else None
+        except ProjectWriteError:
+            return None
+
     @staticmethod
     def _marker_owner(marker: dict) -> str | None:
         owner = marker.get("owner_user_id")
         return owner if isinstance(owner, str) and owner else None
 
-    def _project_root(self, project_id: str) -> Path:
+    def _project_root(self, project_id: str, *, workspace_id: str | None = None) -> Path:
         if not project_id or "\x00" in project_id:
             raise ProjectWriteError("Project id is required.")
         candidate = Path(project_id)
@@ -210,6 +234,8 @@ class ProjectWriter:
         root = (self.output_root / candidate).resolve()
         if self.output_root != root and self.output_root not in root.parents:
             raise ProjectWriteError("Resolved project root escaped the output directory.")
+        if not root.is_dir():
+            self.artifact_store.restore_project(project_id, root, workspace_id=workspace_id)
         if not root.is_dir():
             raise ProjectWriteError(f"Generated project does not exist: {project_id}")
         if not (root / ".ldcn-generation.json").is_file():
@@ -274,12 +300,14 @@ class ProjectWriter:
         written: list[str],
         *,
         owner: str | None = None,
+        workspace_id: str | None = None,
     ) -> None:
         marker = {
             "contractVersion": CONTRACT_VERSION,
             "project_id": project_id,
             "project_name": project_name,
             "owner_user_id": owner,
+            "workspace_id": workspace_id,
             "generated_by": "meta_factory",
             "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
             "file_count": len(written),

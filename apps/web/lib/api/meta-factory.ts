@@ -7,6 +7,8 @@ import {
 import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
 import type { GenerationExecutionEvent, ResilientGenerationJob } from '@contracts/generation-job.contract';
 
+const TERMINAL_JOB_STATUSES = new Set(['READY', 'FAILED', 'PAUSED', 'NEEDS_USER_ACTION', 'STALLED']);
+
 // Self-contained client for the meta-factory feature. It does NOT reuse the
 // global apiRequest because that has a 5s timeout — the generate call runs 6 LLM
 // agents and can take minutes.
@@ -321,10 +323,33 @@ export const metaFactoryClient = {
     signal?: AbortSignal,
     onEvent?: (event: GenerationExecutionEvent) => void,
   ) => {
+    let lastEventId: string | undefined;
+    let terminal = false;
+    let reconnectDelayMs = 500;
+
+    const waitForReconnect = (delayMs: number) => new Promise<void>((resolve) => {
+      if (signal?.aborted) {
+        resolve();
+        return;
+      }
+      const onAbort = () => {
+        window.clearTimeout(timeout);
+        resolve();
+      };
+      const timeout = window.setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, delayMs);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+
     const run = async (allowRefresh: boolean): Promise<void> => {
       const accessToken = getAccessToken();
       const response = await fetch(`${API_BASE_URL}/api/meta-factory/jobs/${encodeURIComponent(jobId)}/events`, {
-        headers: { ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+        headers: {
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
+        },
         credentials: 'include', cache: 'no-store', signal,
       });
       if (response.status === 401 && allowRefresh && await refreshAccessToken()) return run(false);
@@ -342,19 +367,37 @@ export const metaFactoryClient = {
           buffer = buffer.slice(boundary + 2);
           const line = frame.split('\n').find((item) => item.startsWith('data: '));
           if (line) {
+            const idLine = frame.split('\n').find((item) => item.startsWith('id: '));
             const event = JSON.parse(line.slice(6)) as {
               type: string;
               job?: ResilientGenerationJob;
               event?: GenerationExecutionEvent;
             };
-            if (event.type === 'generation_job' && event.job) onJob(event.job);
+            if (idLine) lastEventId = idLine.slice(4).trim() || lastEventId;
+            if (event.type === 'generation_job' && event.job) {
+              onJob(event.job);
+              terminal = TERMINAL_JOB_STATUSES.has(event.job.status);
+            }
             else if (event.type === 'execution_event' && event.event) onEvent?.(event.event);
           }
           boundary = buffer.indexOf('\n\n');
         }
       }
     };
-    return run(true);
+    while (!signal?.aborted && !terminal) {
+      try {
+        await run(true);
+        reconnectDelayMs = 500;
+      } catch (reason) {
+        if (signal?.aborted || (reason instanceof DOMException && reason.name === 'AbortError')) return;
+        const message = reason instanceof Error ? reason.message : '';
+        if (/^HTTP 4\d\d$/.test(message) && !/^HTTP (408|429)$/.test(message)) throw reason;
+      }
+      if (!terminal && !signal?.aborted) {
+        await waitForReconnect(reconnectDelayMs);
+        reconnectDelayMs = Math.min(5_000, reconnectDelayMs * 2);
+      }
+    }
   },
   retryJobStage: (jobId: string, stage: string, mode: 'normal' | 'partitioned' | 'deterministic') =>
     request<ResilientGenerationJob>(

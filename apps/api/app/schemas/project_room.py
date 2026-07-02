@@ -242,6 +242,7 @@ class ProjectRoom(ApiModel):
 
 class ProjectRoomSummary(ApiModel):
     room_id: str
+    workspace_id: str | None = None
     title: str
     status: ProjectRoomStatus
     locale: str = "pt-BR"
@@ -255,6 +256,7 @@ class CreateRoomRequest(ApiModel):
     title: str = "Nova Criacao com IA"
     raw_intent: str = ""
     locale: str = "pt-BR"
+    workspace_id: str | None = None
     user_model_choice: str | None = None
     use_user_key: bool = False
 
@@ -285,6 +287,7 @@ class ImportPromptMasterRequest(ApiModel):
     content: str = Field(min_length=1)
     title: str = "PromptMaster importado"
     locale: str = "pt-BR"
+    workspace_id: str | None = None
     user_model_choice: str | None = None
     use_user_key: bool = False
 
