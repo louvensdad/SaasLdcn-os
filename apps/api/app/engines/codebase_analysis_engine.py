@@ -27,16 +27,33 @@ _SECRET_PATTERNS: list[tuple[str, str, str]] = [
     ("dangerous_eval", "medium", r"\b(?:eval|exec)\s*\("),
 ]
 
+# Exact-filename markers, checked in order. BACKEND manifests come first: a
+# Laravel/Rails/Go monorepo almost always carries a package.json for frontend
+# assets, so the backend manifest must win or those stacks are never detected.
+# Specific beats generic (pom before gradle, build.gradle.kts before build.gradle,
+# next.config/tsconfig before package.json). Languages align with
+# app.data.language_agent_profiles so the detected stack activates the matching
+# specialist agent downstream.
 _STACK_MARKERS: list[tuple[str, str, str]] = [
     ("pom.xml", "java", "Java / Maven (Spring Boot)"),
+    ("build.gradle.kts", "kotlin", "Kotlin / Gradle"),
     ("build.gradle", "java", "Java / Gradle"),
-    ("next.config.js", "typescript", "Next.js"),
-    ("next.config.ts", "typescript", "Next.js"),
-    ("package.json", "javascript", "Node.js"),
+    ("go.mod", "go", "Go"),
+    ("composer.json", "php", "PHP / Composer"),
+    ("Cargo.toml", "rust", "Rust / Cargo"),
+    ("Gemfile", "ruby", "Ruby"),
     ("requirements.txt", "python", "Python"),
     ("pyproject.toml", "python", "Python"),
-    ("go.mod", "go", "Go"),
-    ("Gemfile", "ruby", "Ruby"),
+    ("next.config.js", "typescript", "Next.js"),
+    ("next.config.ts", "typescript", "Next.js"),
+    ("tsconfig.json", "typescript", "TypeScript / Node.js"),
+    ("package.json", "javascript", "Node.js"),
+]
+
+# Project-named manifests (*.csproj / *.sln) cannot be exact-matched by filename.
+_STACK_SUFFIXES: list[tuple[str, str, str]] = [
+    (".csproj", "csharp", "C# / .NET"),
+    (".sln", "csharp", "C# / .NET"),
 ]
 
 
@@ -89,6 +106,9 @@ def analyze(ingest_id: str, inventory: CodebaseInventory, service: CodebaseInges
 def _detect_stack(names: set[str], inventory: CodebaseInventory) -> tuple[str, str]:
     for marker, language, label in _STACK_MARKERS:
         if marker in names:
+            return label, language
+    for suffix, language, label in _STACK_SUFFIXES:
+        if any(name.endswith(suffix) for name in names):
             return label, language
     if inventory.languages:
         top = max(inventory.languages, key=lambda k: inventory.languages[k])

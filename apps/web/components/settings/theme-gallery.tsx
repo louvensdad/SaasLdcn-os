@@ -3,7 +3,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { Check } from 'lucide-react';
 
-import { THEMES, type ThemeId } from '@/lib/themes';
+import { THEMES } from '@/lib/themes';
 import { useShellStore } from '@/stores/use-shell-store';
 import { cn } from '@/lib/cn';
 
@@ -26,7 +26,7 @@ export function ThemeGallery() {
           <motion.button
             key={theme.id}
             type="button"
-            onClick={() => setThemeId(theme.id as ThemeId)}
+            onClick={() => setThemeId(theme.id)}
             aria-pressed={active}
             aria-label={theme.name}
             initial={reduce ? false : { opacity: 0, y: 8 }}
@@ -63,7 +63,7 @@ export function ThemeGallery() {
             </div>
             <div className="space-y-1 p-4">
               <p className="text-sm font-semibold text-[color:var(--text)]">{theme.name}</p>
-              <p className="t-caption">{theme.description}</p>
+              <p className="ds-caption">{theme.description}</p>
             </div>
           </motion.button>
         );

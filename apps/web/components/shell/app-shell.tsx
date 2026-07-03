@@ -4,7 +4,6 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 
-import { AmbientBackdrop } from '@/components/three/ambient-backdrop';
 import { CommandPalette } from '@/components/search/command-palette';
 import { ToastProvider } from '@/components/feedback/toast-provider';
 import { DrawerSystem } from '@/components/overlays/drawer-system';
@@ -92,17 +91,6 @@ const shellCopy: Record<string, ShellCopy> = {
 
 function resolveShellCopy(pathname: string): ShellCopy {
   return shellCopy[pathname] ?? shellCopy['/dashboard'];
-}
-
-function SectionGlow() {
-  return (
-    <div className="pointer-events-none fixed inset-0 overflow-hidden">
-      <AmbientBackdrop count={180} opacity={0.32} radius={8} />
-      <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[color-mix(in_srgb,var(--accent)_12%,transparent)] to-transparent opacity-70" />
-      <div className="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-[color:var(--border)] to-transparent opacity-60" />
-      <div className="grid-pattern absolute inset-0 opacity-[0.06]" />
-    </div>
-  );
 }
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
@@ -244,8 +232,10 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden">
-      <SectionGlow />
+    <div className="app-workbench relative min-h-screen overflow-x-hidden">
+      <a className="skip-link" href="#main-content">
+        {t('accessibility.skipToContent')}
+      </a>
 
       <Sidebar compact />
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
@@ -279,19 +269,19 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
           onOpenSearch={() => setSearchOpen(true)}
         />
 
-        <main className="relative z-10 px-4 py-6 md:px-6 xl:px-8">
+        <main id="main-content" tabIndex={-1} className="relative z-10 px-4 py-5 md:px-6 lg:py-7 xl:px-10">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={pathname}
-              initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 12 }}
+              initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 6 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: shouldReduceMotion ? 0 : -8 }}
+              exit={{ opacity: 0, y: shouldReduceMotion ? 0 : -4 }}
               transition={
                 shouldReduceMotion
                   ? { duration: 0 }
-                  : { type: 'spring', stiffness: 160, damping: 24 }
+                  : { duration: 0.2, ease: 'easeOut' }
               }
-              className="mx-auto max-w-[1600px]"
+              className="mx-auto max-w-[1480px]"
             >
               {children}
             </motion.div>

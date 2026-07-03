@@ -9,6 +9,7 @@ import { SectionHeader } from '@/components/shell/section-header';
 import { CardLoading } from '@/components/feedback/loading-system';
 import { PageError } from '@/components/feedback/error-system';
 import { EmptyState } from '@/components/empty-states/empty-state';
+import { ProjectDeleteButton } from '@/components/project/project-delete-button';
 import {
   ArchitectureGraphSurface,
   DeploymentPathSurface,
@@ -178,6 +179,7 @@ function ProjectRegistryCard({
             ]}
           />
           <div className="flex flex-wrap justify-end gap-3">
+            <ProjectDeleteButton projectId={project.project_id} projectName={project.project_name} />
             <ActionLink href={`/projects/${project.project_id}`} variant="primary">
               {t('projects.card.openDetails')}
             </ActionLink>

@@ -75,7 +75,7 @@ export default function ImportPromptMasterPage() {
       </Link>
 
       <Card className="p-7">
-        <div className="type-label mb-2 flex items-center gap-2 text-[color:var(--muted)]">
+        <div className="ds-caption mb-2 flex items-center gap-2 text-[color:var(--muted)]">
           <Upload className="h-4 w-4" />
           {t('projectRooms.import.title')}
         </div>

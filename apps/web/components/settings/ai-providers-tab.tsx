@@ -53,8 +53,8 @@ export function AiProvidersTab() {
   return (
     <div className="space-y-6">
       <header>
-        <h2 className="t-h2 text-[color:var(--text)]">{t('settings.ai.title')}</h2>
-        <p className="mt-2 max-w-2xl t-body text-[color:var(--muted)]">{t('settings.ai.description')}</p>
+        <h2 className="ds-section text-[color:var(--text)]">{t('settings.ai.title')}</h2>
+        <p className="mt-2 max-w-2xl ds-body ds-text-muted">{t('settings.ai.description')}</p>
       </header>
 
       {statusQuery.isLoading ? (
@@ -122,7 +122,7 @@ function ProviderKeyCard({ def, masked, isDefault }: { readonly def: ProviderDef
           </span>
           <div className="min-w-0">
             <h3 className="text-base font-semibold text-[color:var(--text)]">{def.name}</h3>
-            <p className="mt-0.5 t-caption">{def.description}</p>
+            <p className="mt-0.5 ds-caption">{def.description}</p>
           </div>
         </div>
         <Badge tone={tone}>
@@ -133,7 +133,7 @@ function ProviderKeyCard({ def, masked, isDefault }: { readonly def: ProviderDef
 
       <div className="mt-4">
         {def.keyless ? (
-          <p className="t-caption">{t('settings.ai.keyless')}</p>
+          <p className="ds-caption">{t('settings.ai.keyless')}</p>
         ) : hasKey ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_45%,transparent)] px-3 py-2">
             <span className="t-mono text-sm text-[color:var(--text)]" aria-label={t('settings.ai.maskedKey')}>{masked}</span>
@@ -173,13 +173,13 @@ function ProviderKeyCard({ def, masked, isDefault }: { readonly def: ProviderDef
           </div>
         ) : null}
         {testResult ? (
-          <p className={testResult.ok ? 'mt-2 flex items-center gap-1.5 t-caption text-[color:var(--success)]' : 'mt-2 flex items-center gap-1.5 t-caption text-[color:var(--danger)]'} role="status">
+          <p className={testResult.ok ? 'mt-2 flex items-center gap-1.5 ds-caption text-[color:var(--success)]' : 'mt-2 flex items-center gap-1.5 ds-caption text-[color:var(--danger)]'} role="status">
             {testResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
             {testResult.message}{testResult.model ? ` ? ${testResult.model}` : ''}
           </p>
         ) : null}
         {save.isError ? (
-          <p className="mt-2 t-caption text-[color:var(--danger)]" role="alert">{t('settings.ai.providerError')}</p>
+          <p className="mt-2 ds-caption text-[color:var(--danger)]" role="alert">{t('settings.ai.providerError')}</p>
         ) : null}
       </div>
     </div>

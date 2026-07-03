@@ -45,6 +45,31 @@ class DependencyResearchService:
             return VersionLookup("maven", name, None, "dependency research skipped in mock mode")
         return self._cached("maven", name, lambda: self._latest_maven(group, artifact))
 
+    def latest_packagist(self, package: str) -> VersionLookup:
+        if get_settings().force_mock:
+            return VersionLookup("packagist", package, None, "dependency research skipped in mock mode")
+        return self._cached("packagist", package, lambda: self._latest_packagist(package))
+
+    def latest_crates(self, package: str) -> VersionLookup:
+        if get_settings().force_mock:
+            return VersionLookup("crates", package, None, "dependency research skipped in mock mode")
+        return self._cached("crates", package, lambda: self._latest_crates(package))
+
+    def latest_rubygems(self, package: str) -> VersionLookup:
+        if get_settings().force_mock:
+            return VersionLookup("rubygems", package, None, "dependency research skipped in mock mode")
+        return self._cached("rubygems", package, lambda: self._latest_rubygems(package))
+
+    def latest_nuget(self, package: str) -> VersionLookup:
+        if get_settings().force_mock:
+            return VersionLookup("nuget", package, None, "dependency research skipped in mock mode")
+        return self._cached("nuget", package, lambda: self._latest_nuget(package))
+
+    def latest_go(self, module: str) -> VersionLookup:
+        if get_settings().force_mock:
+            return VersionLookup("go", module, None, "dependency research skipped in mock mode")
+        return self._cached("go", module, lambda: self._latest_go(module))
+
     def core_versions(self, stack: Any) -> str:
         framework = str(getattr(stack, "framework", "") or "").lower()
         runtime = str(getattr(stack, "runtime", "") or "").lower()
@@ -60,9 +85,30 @@ class DependencyResearchService:
         elif "nest" in framework:
             for package in ["@nestjs/core", "@nestjs/common", "typescript"]:
                 lookups.append(self.latest_npm(package))
+        elif "kotlin" in language or "ktor" in framework:
+            for package in ["io.ktor:ktor-server-netty", "io.ktor:ktor-server-content-negotiation"]:
+                group, artifact = package.split(":")
+                lookups.append(self.latest_maven(group, artifact))
         elif "spring" in framework or "java" in language or "maven" in runtime:
             lookups.append(self.latest_maven("org.springframework.boot", "spring-boot-starter-web"))
             lookups.append(self.latest_maven("org.springframework.boot", "spring-boot-starter-test"))
+        elif "go" == language or "golang" in language or "gin" in framework:
+            for module in ["github.com/gin-gonic/gin"]:
+                lookups.append(self.latest_go(module))
+        elif "php" in language or "laravel" in framework or "slim" in framework:
+            packages = ["laravel/framework"] if "laravel" in framework else ["slim/slim", "slim/psr7"]
+            for package in packages:
+                lookups.append(self.latest_packagist(package))
+        elif "rust" in language or "axum" in framework:
+            for package in ["axum", "tokio", "serde"]:
+                lookups.append(self.latest_crates(package))
+        elif "ruby" in language or "rails" in framework or "sinatra" in framework:
+            packages = ["rails"] if "rails" in framework else ["sinatra", "puma"]
+            for package in packages:
+                lookups.append(self.latest_rubygems(package))
+        elif "c#" in language or "csharp" in language or "dotnet" in language or "aspnet" in framework or ".net" in framework:
+            for package in ["Microsoft.EntityFrameworkCore", "Swashbuckle.AspNetCore"]:
+                lookups.append(self.latest_nuget(package))
 
         lines = ["## Verified current dependency versions"]
         if not lookups:
@@ -93,12 +139,27 @@ class DependencyResearchService:
             if lower.endswith("requirements.txt"):
                 saw_manifest = True
                 findings.extend(self._audit_requirements(path, text, skipped_reasons))
+            elif lower.endswith("composer.json"):
+                saw_manifest = True
+                findings.extend(self._audit_composer(path, text, skipped_reasons))
             elif lower.endswith("package.json"):
                 saw_manifest = True
                 findings.extend(self._audit_package_json(path, text, skipped_reasons))
             elif lower.endswith("pom.xml"):
                 saw_manifest = True
                 findings.extend(self._audit_pom(path, text, skipped_reasons))
+            elif lower.endswith("go.mod"):
+                saw_manifest = True
+                findings.extend(self._audit_go_mod(path, text, skipped_reasons))
+            elif lower.endswith("cargo.toml"):
+                saw_manifest = True
+                findings.extend(self._audit_cargo(path, text, skipped_reasons))
+            elif lower.endswith("gemfile"):
+                saw_manifest = True
+                findings.extend(self._audit_gemfile(path, text, skipped_reasons))
+            elif lower.endswith(".csproj"):
+                saw_manifest = True
+                findings.extend(self._audit_csproj(path, text, skipped_reasons))
 
         if not saw_manifest:
             return DependencyAuditReport(status="skipped", skipped_reason="No supported dependency manifest was emitted.")
@@ -273,6 +334,65 @@ class DependencyResearchService:
                 return VersionLookup("maven", name, latest)
         except httpx.HTTPError as exc:
             return VersionLookup("maven", name, None, str(exc))
+
+    def _latest_packagist(self, package: str) -> VersionLookup:
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"https://repo.packagist.org/p2/{package}.json")
+                if response.status_code == 404:
+                    return VersionLookup("packagist", package, None)
+                response.raise_for_status()
+                versions = response.json().get("packages", {}).get(package, [])
+                latest = versions[0].get("version") if versions else None
+                return VersionLookup("packagist", package, latest)
+        except httpx.HTTPError as exc:
+            return VersionLookup("packagist", package, None, str(exc))
+
+    def _latest_crates(self, package: str) -> VersionLookup:
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"https://crates.io/api/v1/crates/{package}")
+                if response.status_code == 404:
+                    return VersionLookup("crates", package, None)
+                response.raise_for_status()
+                crate = response.json().get("crate", {})
+                return VersionLookup("crates", package, crate.get("max_stable_version") or crate.get("newest_version"))
+        except httpx.HTTPError as exc:
+            return VersionLookup("crates", package, None, str(exc))
+
+    def _latest_rubygems(self, package: str) -> VersionLookup:
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"https://rubygems.org/api/v1/gems/{package}.json")
+                if response.status_code == 404:
+                    return VersionLookup("rubygems", package, None)
+                response.raise_for_status()
+                return VersionLookup("rubygems", package, response.json().get("version"))
+        except httpx.HTTPError as exc:
+            return VersionLookup("rubygems", package, None, str(exc))
+
+    def _latest_nuget(self, package: str) -> VersionLookup:
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"https://api.nuget.org/v3-flatcontainer/{package.lower()}/index.json")
+                if response.status_code == 404:
+                    return VersionLookup("nuget", package, None)
+                response.raise_for_status()
+                versions = response.json().get("versions") or []
+                return VersionLookup("nuget", package, versions[-1] if versions else None)
+        except httpx.HTTPError as exc:
+            return VersionLookup("nuget", package, None, str(exc))
+
+    def _latest_go(self, module: str) -> VersionLookup:
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"https://proxy.golang.org/{module.lower()}/@latest")
+                if response.status_code in {404, 410}:
+                    return VersionLookup("go", module, None)
+                response.raise_for_status()
+                return VersionLookup("go", module, response.json().get("Version"))
+        except httpx.HTTPError as exc:
+            return VersionLookup("go", module, None, str(exc))
 
     @staticmethod
     def _xml_text(node: ET.Element, child: str) -> str | None:

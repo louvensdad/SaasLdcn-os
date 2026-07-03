@@ -5,9 +5,14 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 from app.data.foundation import CONTRACT_VERSION
+from app.data.language_agent_profiles import (
+    LANGUAGE_AGENT_PROFILES,
+    ecosystem_brief,
+    resolve_language_id,
+)
 from app.engines.documentation_engine import DocumentationEngine
 from app.engines.llm.base import LLMError
 from app.engines.llm.router import LLMRouter
@@ -183,10 +188,15 @@ class DocumentationAiWriter:
         api_key: str | None,
     ) -> tuple[str, str]:
         if ai_active:
+            # Language specialist layer: docs about a Go/PHP/.NET project cite the
+            # real toolchain (manifest, install/test/build commands, docker image).
+            stack = knowledge.get("stack") or {}
+            brief = ecosystem_brief(stack.get("language"), stack.get("framework"))
+            system = f"{WRITER_SYSTEM_PROMPT}\n\n{brief}" if brief else WRITER_SYSTEM_PROMPT
             try:
                 response = self.router.route(
                     LLMRequest(
-                        system=WRITER_SYSTEM_PROMPT,
+                        system=system,
                         user=self._user_prompt(kind, knowledge),
                         reasoning=ReasoningLevel.high,
                         max_output_tokens=6_000,
@@ -243,7 +253,20 @@ class DocumentationAiWriter:
             node = tg.get(name) or {}
             return str(node.get("name") or node.get("id") or "")
 
+        # Ecosystem facts from the language specialist profile: grounds both the
+        # LLM (part of PROJECT FACTS) and the deterministic builders below.
+        language_id = resolve_language_id(_node("language"))
+        ecosystem = None
+        if language_id is not None:
+            profile = LANGUAGE_AGENT_PROFILES[language_id]
+            ecosystem = {
+                "label": profile["label"],
+                "manifest": profile["manifest"],
+                "notes": profile["ecosystem_notes"],
+            }
+
         return {
+            "ecosystem": ecosystem,
             "project_name": str(project.get("project_name") or project["project_id"]),
             "summary": req.get("project_goal") or "",
             "business_context": req.get("business_context") or "",
@@ -314,6 +337,14 @@ class DocumentationAiWriter:
             "## Configuration",
             "Copy `.env.example` to `.env` and fill in local values. Never commit real secrets.",
         ]
+        eco = k.get("ecosystem")
+        if eco:
+            lines += [
+                "",
+                "## Run & build",
+                f"Dependency manifest: `{eco['manifest']}`.",
+                eco["notes"],
+            ]
         return "\n".join(lines)
 
     def _det_architecture(self, k: dict[str, Any]) -> str:
@@ -400,6 +431,7 @@ class DocumentationAiWriter:
 
     def _det_testing(self, k: dict[str, Any]) -> str:
         test_files = [f for f in k["files"] if "test" in f.lower()]
+        eco = k.get("ecosystem")
         return "\n".join(
             [
                 "# Testing",
@@ -407,6 +439,7 @@ class DocumentationAiWriter:
                 "## Strategy",
                 "Cover the service and persistence layers with unit and integration tests; add "
                 "end-to-end checks for the critical workflows.",
+                *(["## Toolchain", eco["notes"]] if eco else []),
                 "## Detected test files",
                 self._bullets(test_files[:20]) or "_No test files detected yet._",
                 "## Workflows to cover",
@@ -416,6 +449,7 @@ class DocumentationAiWriter:
 
     def _det_deployment(self, k: dict[str, Any]) -> str:
         has_docker = any("dockerfile" in f.lower() or "docker-compose" in f.lower() for f in k["files"])
+        eco = k.get("ecosystem")
         return "\n".join(
             [
                 "# Deployment",
@@ -425,6 +459,7 @@ class DocumentationAiWriter:
                 "secret manager, never in the repository.",
                 "## Containers",
                 "A Docker/Compose setup is present in this project." if has_docker else "No container files were detected; deploy as a managed process behind a reverse proxy.",
+                *(["## Ecosystem baseline", eco["notes"]] if eco else []),
                 "## Rollback",
                 "Roll back by redeploying the previous released artifact; database migrations must be "
                 "backward compatible.",
@@ -437,7 +472,7 @@ class DocumentationAiWriter:
             [
                 "# 0001 — Initial architecture",
                 "",
-                f"- **Status:** Accepted",
+                "- **Status:** Accepted",
                 f"- **Date:** {date.today().isoformat()}",
                 "",
                 "## Context",

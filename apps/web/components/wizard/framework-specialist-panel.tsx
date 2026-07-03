@@ -69,7 +69,7 @@ export function FrameworkSpecialistPanel({
       <Card className="relative overflow-hidden border border-dashed border-white/10 bg-white/[0.03] p-5">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,color-mix(in_srgb,var(--accent)_10%,transparent),transparent_40%)]" />
         <div className="relative space-y-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('wizard.frameworkSpecialist')}</p>
+          <p className="t-overline">{t('wizard.frameworkSpecialist')}</p>
           <p className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.selectFrameworkGuidance')}</p>
           <p className="text-sm leading-6 text-[color:var(--muted)]">
             {t('wizard.frameworkPanelDescription')}
@@ -89,7 +89,7 @@ export function FrameworkSpecialistPanel({
               <ShieldAlert className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('wizard.frameworkSpecialist')}</p>
+              <p className="t-overline">{t('wizard.frameworkSpecialist')}</p>
               <h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{resolvedFrameworkName}</h3>
             </div>
           </div>
@@ -116,7 +116,7 @@ export function FrameworkSpecialistPanel({
             </div>
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('wizard.frameworkSpecialist')}</p>
+                <p className="t-overline">{t('wizard.frameworkSpecialist')}</p>
                 <Badge className="border-white/10 text-[color:var(--muted)]">{readinessLabel}</Badge>
               </div>
               <h3 className="text-xl font-semibold text-[color:var(--text)]">{resolvedFrameworkName}</h3>
@@ -152,7 +152,7 @@ export function FrameworkSpecialistPanel({
               <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.architectureGuidance')}</p>
+                    <p className="t-overline">{t('wizard.architectureGuidance')}</p>
                     <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{t('wizard.recommendedFrameworkShapes')}</p>
                   </div>
                   <Badge className="border-white/10 text-[color:var(--muted)]">{architectures.length}</Badge>
@@ -175,7 +175,7 @@ export function FrameworkSpecialistPanel({
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.recommendedCapabilities')}</p>
+                  <p className="t-overline">{t('wizard.recommendedCapabilities')}</p>
                   <div className="mt-3 grid gap-2">
                     {capabilities.map((item) => (
                       <div key={item.capability_id} className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-3">
@@ -190,7 +190,7 @@ export function FrameworkSpecialistPanel({
                 </div>
 
                 <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.readiness')}</p>
+                  <p className="t-overline">{t('wizard.readiness')}</p>
                   <div className="mt-3 space-y-3">
                     <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-3">
                       <p className="text-sm font-semibold text-[color:var(--text)]">{readiness?.label ?? profile?.readiness_profile.label}</p>
@@ -212,7 +212,7 @@ export function FrameworkSpecialistPanel({
               <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-[color:var(--accent)]" />
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.pitfallsTradeoffs')}</p>
+                  <p className="t-overline">{t('wizard.pitfallsTradeoffs')}</p>
                 </div>
                 <div className="mt-3 space-y-2">
                   {compactList(profile?.common_pitfalls ?? [], moreLabel, 3).map((item) => (
@@ -227,7 +227,7 @@ export function FrameworkSpecialistPanel({
               </div>
 
               <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.endpointGuidance')}</p>
+                <p className="t-overline">{t('wizard.endpointGuidance')}</p>
                 <div className="mt-3 space-y-2">
                   {endpointGroups.map((group) => (
                     <div key={group.endpoint_group} className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-3">
@@ -242,7 +242,7 @@ export function FrameworkSpecialistPanel({
               </div>
 
               <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.testingBaseline')}</p>
+                <p className="t-overline">{t('wizard.testingBaseline')}</p>
                 <div className="mt-3 space-y-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('wizard.testing')}</p>
@@ -278,7 +278,7 @@ export function FrameworkSpecialistPanel({
               </div>
 
               <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('wizard.supportedArchetypes')}</p>
+                <p className="t-overline">{t('wizard.supportedArchetypes')}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {compactList(profile?.supported_archetypes ?? [], moreLabel, 4).map((item) => (
                     <Badge key={item} className="border-white/10 bg-white/[0.04] text-[color:var(--text)]">

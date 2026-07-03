@@ -16,7 +16,7 @@ const TONE_CLASS: Record<SummaryTone, string> = {
   success: 'bg-emerald-500 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.35)]',
   warning: 'bg-amber-500 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.3)]',
   danger: 'bg-red-500 text-red-200 shadow-[0_0_12px_rgba(239,68,68,0.3)]',
-  neutral: 'bg-gray-500 text-gray-300 shadow-[0_0_10px_rgba(107,114,128,0.25)]',
+  neutral: 'bg-gray-500 ds-text-secondary shadow-[0_0_10px_rgba(107,114,128,0.25)]',
   accent: 'bg-cyan-500 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.3)]',
 };
 

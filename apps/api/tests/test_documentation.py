@@ -126,6 +126,22 @@ def test_postgres_mention_is_consistent_when_project_uses_postgres(engine):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_postgres_mention_is_consistent_for_go_and_dotnet_manifests(engine):
+    for extra in [
+        {"go.mod": "module example.com/app\n\nrequire github.com/jackc/pgx/v5 v5.5.0\n"},
+        {"Api.csproj": '<Project><ItemGroup><PackageReference Include="Npgsql" Version="8.0.0" /></ItemGroup></Project>'},
+    ]:
+        docs = dict(GOOD_DOCS)
+        docs["DATABASE.md"] = "# Database\n\nThe service persists its entities in PostgreSQL with migrations applied at startup."
+        root = _make_project_dir(docs, extra=extra)
+        try:
+            result = engine.analyze(_project(root))
+            database = next(doc for doc in result["docs"] if doc["id"] == "database")
+            assert database["status"] == "validated", (extra, database["issues"])
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+
 def test_placeholder_marks_doc_as_draft(engine):
     docs = dict(GOOD_DOCS)
     docs["TESTING.md"] = "# Testing\n\nTODO: describe the unit and integration test strategy for the service before the next release ships."

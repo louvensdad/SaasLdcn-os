@@ -27,15 +27,21 @@ def build_blueprint(
         try:
             import json
 
+            from app.data.language_agent_profiles import ecosystem_brief
             from app.engines.agent_prompts import ARCHITECT_SYSTEM_PROMPT
             from app.engines.llm.blueprint_response_pipeline import parse_blueprint_response
             from app.engines.llm.router import LLMRouter
             from app.schemas.llm import LLMRequest
 
             user_payload = json.dumps(spec.model_dump(mode="json"), ensure_ascii=False)
+            # Language specialist layer: when the spec already names a stack, the
+            # architect decides with the ecosystem's real rules (manifests, layout,
+            # test tooling) instead of generic knowledge.
+            brief = ecosystem_brief(spec.suggested_stack.language, spec.suggested_stack.framework)
+            system = f"{ARCHITECT_SYSTEM_PROMPT}\n\n{brief}" if brief else ARCHITECT_SYSTEM_PROMPT
             response = LLMRouter().route(
                 LLMRequest(
-                    system=ARCHITECT_SYSTEM_PROMPT,
+                    system=system,
                     user=user_payload,
                     # No hard json_schema on purpose: it makes adapters reject any
                     # response that isn't pure JSON (fenced/prose JSON, partial,
@@ -115,8 +121,12 @@ def build_blueprint(
 
 
 def _deterministic_blueprint(spec: ProjectSpec, project_id: str, *, generation_time_ms: int = 0) -> ArchitectureBlueprint:
+    from app.data.language_agent_profiles import LANGUAGE_AGENT_PROFILES, resolve_language_id
+
     stack = spec.suggested_stack
     nf = spec.non_functional or {}
+    language_id = resolve_language_id(stack.language)
+    language_profile = LANGUAGE_AGENT_PROFILES.get(language_id) if language_id else None
     vertical = spec.system_type or "sistema sob medida"
     entities = ", ".join(spec.entities) or "as entidades do dominio"
     users = ", ".join(spec.target_users) or "os papeis do dominio"
@@ -129,6 +139,21 @@ def _deterministic_blueprint(spec: ProjectSpec, project_id: str, *, generation_t
     # Requirement links are quoted from the real spec only — never fabricated.
     rule_links = [r for r in spec.business_rules[:3]]
     payment_entities = [e for e in spec.entities if "pag" in e.lower() or "payment" in e.lower()]
+
+    # Mobile Factory (Phase 2): only decide a mobile area when the room's
+    # delivery_type actually calls for one -- a web/backend-only project must
+    # never carry a mobile BlueprintDecision. Stack choice is configurable per
+    # project (decision #1): if the user already picked one on the spec, honor
+    # it; otherwise default to Expo/React Native and only prefer Flutter when
+    # the domain's own non-functional signals point at real native-performance
+    # needs (never invented — same evidence-based pattern as has_payments above).
+    wants_mobile = spec.delivery_type in {"mobile", "full_stack"}
+    native_perf_signals = [
+        k for k, v in nf.items()
+        if any(token in f"{k} {v}".lower() for token in ("nativ", "jogo", "game", "ar/", " ar ", "camera", "bluetooth", "background"))
+    ]
+    mobile_stack = spec.mobile_stack or ("flutter" if native_perf_signals else "react_native_expo")
+    mobile_stack_label = "Flutter" if mobile_stack == "flutter" else "React Native + Expo"
 
     decisions = [
         BlueprintDecision(
@@ -143,12 +168,40 @@ def _deterministic_blueprint(spec: ProjectSpec, project_id: str, *, generation_t
             dependencies=["Contrato de API (apis)", "Locale/i18n da spec"],
             requirement_links=[f"{len(spec.target_users)} perfil(is) de usuario na spec"],
         ),
+        *([BlueprintDecision(
+            area="mobile",
+            choice=f"App {mobile_stack_label} consumindo o mesmo contrato REST do backend",
+            justification=(
+                f"delivery_type da sala inclui mobile; {users} precisam de acesso nativo. "
+                + (
+                    "Sinais de performance nativa no NFR justificam Flutter."
+                    if mobile_stack == "flutter"
+                    else "Expo acelera entrega cross-platform sem exigir dois times nativos."
+                )
+            ),
+            alternatives_considered=["Flutter" if mobile_stack != "flutter" else "React Native + Expo", "WebView empacotado (nao nativo)"],
+            tradeoffs=[
+                "Flutter da controle fino de performance/UI ao custo de um runtime proprio (Dart)."
+                if mobile_stack == "flutter"
+                else "Expo acelera o setup e updates OTA, com menos acesso a modulos nativos exoticos."
+            ],
+            impact="Garante paridade de regras de negocio entre a versao web e a mobile.",
+            risks=["Divergencia de contrato entre frontend web e mobile se nao consumirem o mesmo openapi.yaml."],
+            when_to_reconsider="Se o app exigir recursos nativos profundos (ex.: processamento de video pesado) nao cobertos pelo stack escolhido.",
+            dependencies=["Contrato de API (apis)", "Auth"],
+            requirement_links=[f"delivery_type: {spec.delivery_type}"],
+        )] if wants_mobile else []),
         BlueprintDecision(
             area="backend",
             choice=f"{stack.language or 'Python'} / {stack.framework or 'FastAPI'} em camadas (Clean Architecture)",
             justification=(
                 f"Vertical: {vertical}. "
                 + (stack.framework_reason or "Stack idiomatica; regra de negocio isolada do controller.")
+                + (
+                    f" Ecossistema coberto por agente especialista dedicado ({language_profile['label']}): "
+                    f"{language_profile['ecosystem_notes']}"
+                    if language_profile else ""
+                )
             ),
             alternatives_considered=["Monolito sem camadas", "Microservicos (over-engineering para o escopo)"],
             tradeoffs=["Camadas dao testabilidade e clareza, com mais boilerplate inicial."],
@@ -286,12 +339,12 @@ def _deterministic_blueprint(spec: ProjectSpec, project_id: str, *, generation_t
 _AREA_BASE_CONFIDENCE = {
     "database": 0.97, "backend": 0.95, "auth": 0.94, "authorization": 0.93,
     "apis": 0.92, "tests": 0.91, "frontend": 0.9, "deploy": 0.86,
-    "observability": 0.82, "integrations": 0.7,
+    "observability": 0.82, "integrations": 0.7, "mobile": 0.85,
 }
 _AREA_COST_BAND = {
     "frontend": "Baixo", "auth": "Baixo", "authorization": "Baixo", "apis": "Baixo",
     "tests": "Baixo", "backend": "Médio", "database": "Médio", "observability": "Médio",
-    "deploy": "Médio", "integrations": "Alto",
+    "deploy": "Médio", "integrations": "Alto", "mobile": "Médio",
 }
 _AREA_SECURITY_IMPACT = {
     "auth": "Alto — superfície de autenticação; exige hashing forte e rotação de token.",
@@ -299,6 +352,7 @@ _AREA_SECURITY_IMPACT = {
     "apis": "Médio — superfície de entrada; exige validação e versionamento.",
     "database": "Médio — dados em repouso; exige least-privilege e backup.",
     "integrations": "Médio — confiança em terceiros; exige verificação de webhook/secret.",
+    "mobile": "Médio — token armazenado no dispositivo; exige secure-store, não AsyncStorage puro.",
 }
 _AREA_SCALABILITY_IMPACT = {
     "backend": "Alto — stateless permite escala horizontal sob carga.",
@@ -306,12 +360,14 @@ _AREA_SCALABILITY_IMPACT = {
     "deploy": "Alto — empacotamento stateless habilita réplicas.",
     "apis": "Médio — contrato cacheável ajuda a absorver leitura.",
     "observability": "Médio — necessário para detectar gargalos sob escala.",
+    "mobile": "Baixo — a carga real está no backend; o app só espelha o contrato.",
 }
 _AREA_MAINTAINABILITY_IMPACT = {
     "backend": "Alto — camadas isolam regra do framework, facilitando evolução.",
     "tests": "Alto — rede de segurança contra regressão.",
     "apis": "Médio — contrato explícito reduz acoplamento frontend/backend.",
     "frontend": "Médio — design system padroniza a UI.",
+    "mobile": "Médio — paridade de contrato com o frontend web reduz divergência entre plataformas.",
 }
 
 

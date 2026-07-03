@@ -56,7 +56,7 @@ export function ArchitectureGraphSurface({
       <div className="relative grid gap-4 p-5 md:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="type-label text-[color:var(--muted)]">
+            <p className="ds-caption text-[color:var(--muted)]">
               {hint ?? t('engineering.graphEngine')}
             </p>
             <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{title}</h3>
@@ -81,7 +81,7 @@ export function ArchitectureGraphSurface({
             >
               <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
               <div className="flex items-center justify-between gap-3">
-                <p className="type-label text-[color:var(--muted)]">
+                <p className="ds-caption text-[color:var(--muted)]">
                   {node.label}
                 </p>
                 <div className="h-2 w-2 rounded-full bg-[color:var(--accent)] shadow-[0_0_16px_var(--glow)]" />
@@ -121,7 +121,7 @@ export function ReadinessRing({
       <div className="relative grid gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="type-card text-[color:var(--text)]">{title}</p>
+            <p className="ds-subsection text-[color:var(--text)]">{title}</p>
             <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{caption ?? t('engineering.readinessSurface')}</p>
           </div>
           <Badge className={toneClasses[tone]}>{label}</Badge>
@@ -130,7 +130,7 @@ export function ReadinessRing({
         <DonutChart value={clamped} size={160} stroke={14} color={accentVar} className="mx-auto">
           <div className="text-center">
             <AnimatedCounter value={clamped} className="text-3xl font-semibold text-[color:var(--text)]" />
-            <p className="mt-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-[color:var(--muted)]">{t('engineering.percent')}</p>
+            <p className="mt-0.5 t-overline">{t('engineering.percent')}</p>
           </div>
         </DonutChart>
       </div>
@@ -168,7 +168,7 @@ export function ComplexityRadar({
       <div className="relative grid gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="type-card text-[color:var(--text)]">{title}</p>
+            <p className="ds-subsection text-[color:var(--text)]">{title}</p>
             <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('engineering.complexityDetail')}</p>
           </div>
           <Badge className="border-[color-mix(in_srgb,var(--accent)_28%,transparent)] bg-white/5">{t('engineering.score', { score })}</Badge>
@@ -225,7 +225,7 @@ export function ComplexityRadar({
           <div className="grid gap-3 sm:grid-cols-2">
             {normalizedAxes.map((axis) => (
               <div key={axis.label} className="rounded-[var(--radius-xl)] border border-white/10 bg-black/15 p-4">
-                <p className="type-label text-[color:var(--muted)]">{axis.label}</p>
+                <p className="ds-caption text-[color:var(--muted)]">{axis.label}</p>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/5">
                   <motion.div
                     className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--accent-2))]"
@@ -263,10 +263,10 @@ export function OperationalRail({
       <div className="relative grid gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="type-card text-[color:var(--text)]">{title}</p>
+            <p className="ds-subsection text-[color:var(--text)]">{title}</p>
             <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('engineering.operationalRail')}</p>
           </div>
-          <div className="type-label flex items-center gap-2 text-[color:var(--muted)]">
+          <div className="ds-caption flex items-center gap-2 text-[color:var(--muted)]">
             <Sparkles className="h-4 w-4 text-[color:var(--accent)]" />
             {t('engineering.live')}
           </div>
@@ -276,7 +276,7 @@ export function OperationalRail({
           {items.map((item) => (
             <div key={item.label} className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="type-label text-[color:var(--muted)]">{item.label}</p>
+                <p className="ds-caption text-[color:var(--muted)]">{item.label}</p>
                 <span className={cn('h-2.5 w-2.5 rounded-full shadow-[0_0_14px_var(--glow)]', item.tone === 'warning' ? 'bg-[color:var(--warning)]' : item.tone === 'danger' ? 'bg-[color:var(--danger)]' : item.tone === 'success' ? 'bg-[color:var(--success)]' : 'bg-[color:var(--accent)]')} />
               </div>
               <p className="mt-3 text-lg font-semibold text-[color:var(--text)]">{item.value}</p>
@@ -304,7 +304,7 @@ export function StackEcosystemMap({
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--accent)_8%,transparent),transparent_38%)]" />
       <div className="relative grid gap-4">
         <div>
-          <p className="type-card text-[color:var(--text)]">{title}</p>
+          <p className="ds-subsection text-[color:var(--text)]">{title}</p>
           <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('engineering.ecosystemDetail')}</p>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
@@ -317,7 +317,7 @@ export function StackEcosystemMap({
               )}
             >
               <div className="flex items-center justify-between gap-3">
-                <p className="type-label text-[color:var(--muted)]">{node.label}</p>
+                <p className="ds-caption text-[color:var(--muted)]">{node.label}</p>
                 <Badge className="border-white/10 bg-white/5 text-[color:var(--text)]">{node.value}</Badge>
               </div>
               {node.detail ? <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">{node.detail}</p> : null}
@@ -345,7 +345,7 @@ export function DeploymentPathSurface({
       <div className="relative grid gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="type-card text-[color:var(--text)]">{title}</p>
+            <p className="ds-subsection text-[color:var(--text)]">{title}</p>
             <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('engineering.deploymentDetail')}</p>
           </div>
           <Workflow className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
@@ -382,7 +382,7 @@ export function SurfaceLabel({
 }) {
   return (
     <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-      <div className="type-label flex items-center gap-2 text-[color:var(--muted)]">
+      <div className="ds-caption flex items-center gap-2 text-[color:var(--muted)]">
         {icon}
         {label}
       </div>

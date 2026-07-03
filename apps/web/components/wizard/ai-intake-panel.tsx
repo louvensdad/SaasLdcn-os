@@ -68,7 +68,7 @@ export function AiIntakePanel({ onApply }: AiIntakePanelProps) {
             <Sparkles className="h-5 w-5" aria-hidden />
           </span>
           <div className="min-w-0">
-            <p className="type-label text-[color:var(--accent)]">{t('wizard.intake.eyebrow')}</p>
+            <p className="ds-caption text-[color:var(--accent)]">{t('wizard.intake.eyebrow')}</p>
             <h3 className="mt-1 text-xl font-semibold text-[color:var(--text)]">{t('wizard.intake.title')}</h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">{t('wizard.intake.subtitle')}</p>
           </div>

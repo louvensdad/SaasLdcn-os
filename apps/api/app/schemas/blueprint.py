@@ -7,7 +7,7 @@ from pydantic import Field
 from app.schemas.common import ApiModel
 from app.schemas.dependency_graph import DependencyGraphSnapshot
 from app.schemas.localization import GeneratedProjectLocaleProfile
-from app.schemas.registry import Architecture, Archetype, BusinessModule, Capability, Endpoint, Framework, Language, Runtime
+from app.schemas.registry import Architecture, BusinessModule, Capability, Endpoint, Framework, Language, Runtime
 
 
 class ProjectRequirements(ApiModel):

@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.core.deps import CurrentUser
-from app.data.model_registry import MODEL_REGISTRY
 from app.engines.llm.base import LLMError
 from app.schemas.project_room import (
     AcknowledgePreviewRequest,
@@ -121,6 +120,8 @@ def create_project_room(payload: CreateRoomRequest, user: CurrentUser) -> Projec
             api_key=api_key,
             user_model_choice=payload.user_model_choice,
             workspace_id=workspace["workspace_id"],
+            delivery_type=payload.delivery_type,
+            preferred_language=payload.preferred_language,
         )
     except LLMError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc

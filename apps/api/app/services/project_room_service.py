@@ -15,6 +15,7 @@ from app.engines.engineering_review_engine import build_engineering_review
 from app.engines.orchestrator_engine import run_orchestrator
 from app.engines.prompt_master_md_engine import author_prompt_master_md
 from app.repositories.project_room_repository import ProjectRoomRepository
+from app.schemas.architecture_blueprint import relevant_areas
 from app.schemas.orchestrator import ProjectSpec
 
 # The exact phrase a user must type to consciously accept a degraded (deterministic)
@@ -67,8 +68,8 @@ class ProjectRoomService:
         room = self.repository.get_for_owner(room_id, owner_user_id)
         return self._decorate(room) if room else None
 
-    def create_room(self, *, owner_user_id: str, title: str, raw_intent: str = "", locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None, workspace_id: str | None = None) -> dict[str, Any]:
-        room = self.repository.create(owner_user_id=owner_user_id, title=title, locale=locale, raw_intent=raw_intent, workspace_id=workspace_id)
+    def create_room(self, *, owner_user_id: str, title: str, raw_intent: str = "", locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None, workspace_id: str | None = None, delivery_type: str = "web", preferred_language: str = "") -> dict[str, Any]:
+        room = self.repository.create(owner_user_id=owner_user_id, title=title, locale=locale, raw_intent=raw_intent, workspace_id=workspace_id, delivery_type=delivery_type, preferred_language=preferred_language)
         self._log(room["room_id"], owner_user_id, "POST", "/api/project-rooms", 201, "success", "Project Room criado")
         if raw_intent.strip():
             return self._orchestrator_turn(room["room_id"], owner_user_id, raw_intent, api_key=api_key, user_model_choice=user_model_choice, status="UNDER_REVIEW")
@@ -433,6 +434,11 @@ class ProjectRoomService:
         engineering_ok = room["status"] in ENGINEERING_APPROVED_STATUSES
         nf = spec.get("non_functional") or {}
         decided_count = len({a for a in areas if a})
+        # "mobile" only counts toward this project's total when its delivery_type
+        # actually includes it -- otherwise a web-only project could never show
+        # 100% architecture readiness (see relevant_areas / Mobile Factory Phase 2).
+        total_relevant_areas = len(relevant_areas(spec.get("delivery_type")))
+        architecture_threshold = max(1, total_relevant_areas - 2)  # matches the original 8-of-10 ratio
         def check(id_: str, label: str, passed: bool, detail_ok: str, detail_fail: str, *, required: bool = True) -> dict[str, Any]:
             return {"id": id_, "label": label, "status": "passed" if passed else "failed", "detail": detail_ok if passed else detail_fail, "required": required}
         return [
@@ -449,7 +455,7 @@ class ProjectRoomService:
             check("stack", "Stack", bool(stack or "backend" in areas), "Stack principal definida.", "Stack principal ausente."),
             # Advisory checks (required=False): enrich the Readiness Center without
             # changing the send gate (which only blocks on required checks).
-            check("architecture", "Arquitetura", decided_count >= 8, f"{decided_count}/10 areas arquiteturais decididas.", f"Apenas {decided_count}/10 areas decididas.", required=False),
+            check("architecture", "Arquitetura", decided_count >= architecture_threshold, f"{decided_count}/{total_relevant_areas} areas arquiteturais decididas.", f"Apenas {decided_count}/{total_relevant_areas} areas decididas.", required=False),
             check("performance", "Performance", ("observability" in areas) or bool(nf.get("performance")), "Sinais de performance presentes.", "Sem evidencia de performance (advisory).", required=False),
             check("scalability", "Escalabilidade", ("deploy" in areas) or bool(nf.get("scalability")), "Estrategia de escala definida.", "Sem evidencia de escalabilidade (advisory).", required=False),
             check("observability", "Observabilidade", "observability" in areas, "Observabilidade definida.", "Observabilidade ausente (advisory).", required=False),
@@ -467,8 +473,16 @@ class ProjectRoomService:
         all_texts = [*prior_user_texts, content]
         raw_intent = room.get("raw_intent") or all_texts[0]
         prior_answers = [{"id": f"refine_{index}", "answer": text} for index, text in enumerate(all_texts[1:], start=1)]
-        result = run_orchestrator(raw_intent, prior_answers, api_key=api_key, user_model_choice=user_model_choice)
+        # preferred_language, like delivery_type, is a room-level USER decision:
+        # the orchestrator is told about it in the prompt and the resulting spec
+        # is deterministically enforced (run_orchestrator/enforce_preferred_language),
+        # so the model can never override the user's stack choice.
+        result = run_orchestrator(raw_intent, prior_answers, api_key=api_key, user_model_choice=user_model_choice, preferred_language=room.get("preferred_language") or None)
         spec_dict = result.spec.model_dump(mode="json")
+        # delivery_type is a room-level decision made at creation time, not
+        # something the orchestrator infers from free text -- always carry the
+        # room's value into the compiled spec, overriding the schema default.
+        spec_dict["delivery_type"] = room.get("delivery_type", "web")
         self.repository.append_message(room_id, owner_user_id, {"role": "user", "content": content})
         self.repository.set_spec(room_id, owner_user_id, spec_dict, confidence=result.spec.confidence, degraded=result.degraded, status=status)
         self.repository.append_message(room_id, owner_user_id, self._assistant_message(self._summary(result.spec, result.degraded), degraded=result.degraded))

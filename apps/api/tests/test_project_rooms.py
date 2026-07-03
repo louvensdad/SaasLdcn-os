@@ -117,6 +117,102 @@ def test_create_project_room_starts_as_draft(client: TestClient) -> None:
     assert room["prompt_master_md"] is None
 
 
+def test_create_project_room_defaults_delivery_type_to_web(client: TestClient) -> None:
+    room = _create_room(client)
+    assert room["delivery_type"] == "web"
+
+
+def test_create_project_room_persists_chosen_delivery_type(client: TestClient) -> None:
+    response = client.post(
+        "/api/project-rooms",
+        json={"title": "Mobile idea", "raw_intent": "", "locale": "pt-BR", "delivery_type": "mobile"},
+    )
+    assert response.status_code == 201, response.text
+    room = response.json()
+    assert room["delivery_type"] == "mobile"
+
+    fetched = client.get(f"/api/project-rooms/{room['room_id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["delivery_type"] == "mobile"
+
+
+def test_orchestrator_turn_carries_room_delivery_type_into_spec(client: TestClient) -> None:
+    # raw_intent is non-empty, so room creation immediately runs an orchestrator
+    # turn and compiles a ProjectSpec -- the room's delivery_type (not something
+    # the orchestrator infers) must land on that spec.
+    response = client.post(
+        "/api/project-rooms",
+        json={"title": "Mobile idea", "raw_intent": "quero um app mobile de pedidos", "locale": "pt-BR", "delivery_type": "mobile"},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["delivery_type"] == "mobile"
+    assert body["spec"]["delivery_type"] == "mobile"
+
+
+def test_create_project_room_defaults_preferred_language_to_auto(client: TestClient) -> None:
+    room = _create_room(client)
+    assert room["preferred_language"] == ""
+
+
+def test_preferred_language_is_enforced_on_the_compiled_spec(client: TestClient) -> None:
+    # The user's explicit language choice is a room-level decision: even though
+    # the intent text says nothing about Go, the compiled spec MUST come out in
+    # Go — the orchestrator (LLM or mock) is never allowed to pick its own.
+    response = client.post(
+        "/api/project-rooms",
+        json={
+            "title": "Clinica",
+            "raw_intent": "quero um SaaS para gestao de uma clinica medica",
+            "locale": "pt-BR",
+            "preferred_language": "go",
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["preferred_language"] == "go"
+    stack = body["spec"]["suggested_stack"]
+    assert stack["language"] == "go"
+    assert stack["framework"] == "gin"
+
+
+def test_preferred_language_survives_later_refinement_turns(client: TestClient) -> None:
+    response = client.post(
+        "/api/project-rooms",
+        json={
+            "title": "Clinica",
+            "raw_intent": "quero um SaaS para gestao de uma clinica medica",
+            "locale": "pt-BR",
+            "preferred_language": "java",
+        },
+    )
+    assert response.status_code == 201, response.text
+    room_id = response.json()["room_id"]
+    # A refinement message mentioning another ecosystem must not flip the stack:
+    # the room-level user decision keeps winning on every orchestrator turn.
+    followup = client.post(
+        f"/api/project-rooms/{room_id}/message",
+        json={"content": "adicione relatorios em PDF e exportacao para excel com python"},
+    )
+    assert followup.status_code == 200, followup.text
+    stack = followup.json()["spec"]["suggested_stack"]
+    assert stack["language"] == "java"
+
+
+def test_auto_preferred_language_still_lets_the_orchestrator_suggest(client: TestClient) -> None:
+    response = client.post(
+        "/api/project-rooms",
+        json={
+            "title": "Clinica",
+            "raw_intent": "quero um SaaS para gestao de uma clinica medica",
+            "locale": "pt-BR",
+        },
+    )
+    assert response.status_code == 201, response.text
+    stack = response.json()["spec"]["suggested_stack"]
+    assert stack["language"]  # AI/mock suggested something — auto mode unchanged
+
+
 def test_short_idea_produces_spec_and_messages(client: TestClient) -> None:
     room = _create_room(client)
     response = client.post(f"/api/project-rooms/{room['room_id']}/message", json={"content": "quero um SaaS para clinica"})
@@ -289,6 +385,60 @@ def test_architecture_model_views_are_honest(client: TestClient) -> None:
     assert any(step["step"] == "RBAC" for step in model["auth_flow"])  # authorization was decided
     # Bounded contexts include Identity & Access when auth is decided.
     assert any(c["name"] == "Identity & Access" for c in model["bounded_contexts"])
+
+
+def _mobile_blueprint_room(client: TestClient) -> str:
+    """Mirrors _approved_prompt_room/_blueprint_room but with delivery_type='mobile'
+    set at creation, so the Architect Engine decides a real 'mobile' area."""
+    response = client.post(
+        "/api/project-rooms",
+        json={"title": "Mobile idea", "raw_intent": "quero um app mobile de pedidos", "locale": "pt-BR", "delivery_type": "mobile"},
+    )
+    assert response.status_code == 201, response.text
+    room_id = response.json()["room_id"]
+    assert client.post(f"/api/project-rooms/{room_id}/generate-prompt").status_code == 200
+    approved = client.post(f"/api/project-rooms/{room_id}/approve")
+    assert approved.status_code == 200, approved.text
+    assert client.post(f"/api/project-rooms/{room_id}/blueprint").status_code == 200
+    return room_id
+
+
+def test_mobile_delivery_type_produces_a_mobile_blueprint_decision(client: TestClient) -> None:
+    room_id = _mobile_blueprint_room(client)
+    room = client.get(f"/api/project-rooms/{room_id}").json()
+    decisions = room["architecture_blueprint"]["decisions"]
+    mobile = next((d for d in decisions if d["area"] == "mobile"), None)
+    assert mobile is not None
+    assert "Expo" in mobile["choice"] or "Flutter" in mobile["choice"]
+    assert mobile["justification"]
+    assert mobile["dependencies"]
+
+
+def test_web_delivery_type_has_no_mobile_blueprint_decision(client: TestClient) -> None:
+    room_id = _blueprint_room(client)  # default delivery_type="web"
+    room = client.get(f"/api/project-rooms/{room_id}").json()
+    decisions = room["architecture_blueprint"]["decisions"]
+    assert not any(d["area"] == "mobile" for d in decisions)
+
+
+def test_mobile_room_architecture_readiness_never_exceeds_100_percent(client: TestClient) -> None:
+    """Regression guard: before Phase 2, the readiness denominator was a hardcoded
+    10 -- an 11-decision mobile blueprint would have scored >100%."""
+    room_id = _mobile_blueprint_room(client)
+    review = client.get(f"/api/project-rooms/{room_id}").json()["engineering_review"]
+    architecture = next(c for c in review["score"]["categories"] if c["key"] == "architecture")
+    assert architecture["score"] is not None
+    assert architecture["score"] <= 100
+    assert "11" in architecture["basis"]  # denominator reflects the 11th (mobile) area
+
+
+def test_mobile_room_architecture_model_includes_mobile_node(client: TestClient) -> None:
+    room_id = _mobile_blueprint_room(client)
+    model = client.get(f"/api/project-rooms/{room_id}").json()["architecture_model"]
+    node_ids = {n["id"] for n in model["context_diagram"]["nodes"]}
+    assert "mobile" in node_ids
+    edges = model["context_diagram"]["edges"]
+    assert any(e["from_id"] == "mobile" and e["to_id"] == "api" for e in edges)
 
 
 def test_acknowledge_preview_requires_exact_phrase(client: TestClient) -> None:

@@ -25,6 +25,7 @@ import {
   EmptyStatePremium,
   ExportAnalyticsButton,
 } from '@/components/analytics/analytics-components';
+import { DataAnalysisWorkbench } from '@/components/analytics/data-analysis-workbench';
 import { PageError } from '@/components/feedback/error-system';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -118,13 +119,13 @@ function AnalyticsSectionPanel({
     <details className="group rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface)_92%,transparent)] [content-visibility:auto]" open={index < 2}>
       <summary className="focus-ring flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
         <div className="flex min-w-0 items-center gap-4">
-          <span className="font-mono text-[0.66rem] text-[color:var(--accent)]">{String(index + 1).padStart(2, '0')}</span>
+          <span className="font-mono text-xs text-[color:var(--accent)]">{String(index + 1).padStart(2, '0')}</span>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-[color:var(--text)]">{section.title}</h2>
             {section.description ? <p className="mt-1 truncate text-xs text-[color:var(--muted)]">{section.description}</p> : null}
           </div>
         </div>
-        <span className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-[color:var(--muted)] group-open:text-[color:var(--accent)]">
+        <span className="font-mono text-xs uppercase tracking-[0.14em] text-[color:var(--muted)] group-open:text-[color:var(--accent)]">
           {section.metrics?.length ?? 0} métricas
         </span>
       </summary>
@@ -176,23 +177,33 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6" data-testid="analytics-page">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-2 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-[color:var(--muted)]">
-        <Link href="/platform" className="focus-ring hover:text-[color:var(--text)]">Platform Map</Link>
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.14em] text-[color:var(--muted)]">
+        <Link href="/platform" className="focus-ring inline-flex min-h-11 items-center hover:text-[color:var(--text)]">Platform Map</Link>
         <span>/</span>
         <span className="text-[color:var(--accent)]">Analytics</span>
       </nav>
+
+      <DataAnalysisWorkbench />
+
+      <div className="flex items-end justify-between gap-4 border-t border-[color:var(--border)] pt-8">
+        <div>
+          <p className="type-data text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">Telemetria da plataforma</p>
+          <h2 className="mt-2 font-[family-name:var(--font-display)] text-2xl font-semibold text-[color:var(--text)]">Operação interna do LDCN OS</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">Métricas persistidas de projetos, agentes, qualidade, consumo e segurança.</p>
+        </div>
+      </div>
 
       <header className="relative overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface)_94%,transparent)] px-6 py-7 sm:px-8">
         <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_right,color-mix(in_srgb,var(--accent)_10%,transparent),transparent_66%)]" />
         <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-2 font-mono text-[0.68rem] uppercase tracking-[0.24em] text-[color:var(--accent)]">
+              <span className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.24em] text-[color:var(--accent)]">
                 <Radio className="h-3.5 w-3.5" /> Data Intelligence Center
               </span>
-              <span className="rounded-full border border-[color:var(--border)] px-2 py-0.5 font-mono text-[0.6rem] uppercase text-[color:var(--muted)]">beta</span>
+              <span className="rounded-full border border-[color:var(--border)] px-2 py-0.5 font-mono text-xs uppercase text-[color:var(--muted)]">beta</span>
             </div>
-            <h1 className="mt-4 text-3xl font-semibold tracking-[-0.045em] text-[color:var(--text)] sm:text-4xl">Inteligência operacional, sem estimativas.</h1>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.045em] text-[color:var(--text)] sm:text-4xl">Inteligência operacional, sem estimativas.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
               Projetos, agentes, qualidade e consumo em uma superfície auditável. Cada número abre sua origem; campos sensíveis nunca chegam à interface.
             </p>
@@ -232,7 +243,7 @@ export default function AnalyticsPage() {
           <section aria-labelledby="executive-overview-title">
             <div className="mb-4 flex items-end justify-between gap-4">
               <div>
-                <p className="font-mono text-[0.66rem] uppercase tracking-[0.2em] text-[color:var(--accent)]">Executive overview</p>
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-[color:var(--accent)]">Executive overview</p>
                 <h2 id="executive-overview-title" className="mt-2 text-xl font-semibold tracking-[-0.025em] text-[color:var(--text)]">Pulso da plataforma</h2>
               </div>
               <span className="hidden items-center gap-2 text-xs text-[color:var(--muted)] sm:inline-flex"><Activity className="h-3.5 w-3.5" /> Clique em uma métrica para investigar</span>
@@ -246,7 +257,7 @@ export default function AnalyticsPage() {
             <section className="space-y-3" aria-labelledby="analytics-domains-title">
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
-                  <p className="font-mono text-[0.66rem] uppercase tracking-[0.2em] text-[color:var(--accent)]">Domínios analíticos</p>
+                  <p className="font-mono text-xs uppercase tracking-[0.2em] text-[color:var(--accent)]">Domínios analíticos</p>
                   <h2 id="analytics-domains-title" className="mt-2 text-xl font-semibold tracking-[-0.025em] text-[color:var(--text)]">Leituras por operação</h2>
                 </div>
                 <span className="text-xs text-[color:var(--muted)]">{sections.length} fontes conectadas</span>

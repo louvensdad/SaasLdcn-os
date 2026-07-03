@@ -8,6 +8,7 @@ AGENT_TERRITORIES: dict[str, list[str]] = {
     "contracts": ["openapi.yaml", "packages/contracts/"],
     "backend": ["apps/api/", "docs/traceability.md"],
     "frontend": ["apps/web/", "packages/contracts/"],
+    "mobile": ["apps/mobile/", "packages/contracts/"],
     "qa": ["apps/api/tests/", "deploy/postman/", "docs/security_review.md"],
     "devops": [
         "Dockerfile",

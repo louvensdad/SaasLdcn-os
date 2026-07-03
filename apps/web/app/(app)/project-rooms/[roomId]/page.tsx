@@ -284,7 +284,7 @@ export default function ProjectRoomPage() {
 
             {room.open_questions.length > 0 ? (
               <div className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--accent)_25%,var(--border))] bg-white/[0.03] p-3">
-                <p className="type-label mb-2 text-[color:var(--muted)]">{t('projectRooms.openQuestions')}</p>
+                <p className="ds-caption mb-2 text-[color:var(--muted)]">{t('projectRooms.openQuestions')}</p>
                 <ul className="space-y-1 text-sm text-[color:var(--text)]">
                   {room.open_questions.map((question) => (
                     <li key={question.id}>Ã¢â‚¬Â¢ {question.question}</li>

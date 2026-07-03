@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3000';
 const LOCALES = ['pt-BR', 'en-US', 'es-ES', 'fr-FR'];
-const THEMES = ['obsidian-blue', 'graphite-cyan', 'titanium-violet', 'emerald-matrix', 'crimson-pulse'];
+const THEMES = ['dark', 'light'];
 
 function contrastRatio(foreground: string, background: string) {
   const rgb = (value: string) => value.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) ?? [0, 0, 0];

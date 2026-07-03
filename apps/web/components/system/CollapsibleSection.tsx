@@ -34,7 +34,7 @@ export function CollapsibleSection({
     <section className="overflow-hidden rounded-xl border border-gray-800/50 bg-gray-950/45 backdrop-blur-md" data-testid="system-group">
       <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold uppercase tracking-[0.22em] text-gray-200">{title}</h3>
+          <h3 className="truncate text-sm font-semibold uppercase tracking-[0.22em] ds-text-primary">{title}</h3>
           <p className="mt-1 text-sm text-[color:var(--muted)]">{summary}</p>
         </div>
 

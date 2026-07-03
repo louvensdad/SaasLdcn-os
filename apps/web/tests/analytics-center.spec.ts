@@ -139,3 +139,36 @@ test('keeps analytics usable on a narrow viewport', async ({ page }) => {
   }));
   expect(widths.scroll).toBeLessThanOrEqual(widths.client + 1);
 });
+
+test('profiles an uploaded CSV with quality, correlations and sortable data locally', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAuth(page);
+  await page.route('**/api/analytics/overview**', async (route) => route.fulfill({ json: analyticsFixture }));
+  await page.goto(webUrl('/analytics'));
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'vendas.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from([
+      'region,revenue,cost',
+      'Sul,100,60',
+      'Norte,80,55',
+      'Sudeste,140,75',
+      'Sul,100,60',
+    ].join('\n')),
+  });
+
+  await expect(page.getByText('vendas.csv')).toBeVisible();
+  const tabs = page.getByRole('tab');
+  await tabs.nth(1).click();
+  await expect(page.getByText('revenue', { exact: true }).first()).toBeVisible();
+  await tabs.nth(2).click();
+  await expect(page.getByText(/revenue/).first()).toBeVisible();
+  await tabs.nth(3).click();
+  await expect(page.getByRole('button', { name: 'region' })).toBeVisible();
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
+});

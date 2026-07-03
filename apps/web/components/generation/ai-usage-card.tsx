@@ -76,7 +76,7 @@ export function AiUsageCard({ periodDays = 30 }: { readonly periodDays?: number 
 function Metric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/5 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-[0.16em] text-[color:var(--muted-2)]">{label}</p>
+      <p className="text-xs uppercase tracking-[0.16em] text-[color:var(--muted-2)]">{label}</p>
       <p className="mt-1 font-mono text-lg font-semibold text-[color:var(--text)]">{value}</p>
     </div>
   );

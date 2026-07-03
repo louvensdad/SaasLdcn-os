@@ -78,7 +78,7 @@ export default function DashboardPage() {
         <div className="pointer-events-none absolute -left-10 -top-16 h-48 w-48 rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--accent)_22%,transparent),transparent_70%)] blur-2xl" />
         <div className="relative min-w-0">
           <p className="t-overline">{t('dashboard.title')}</p>
-          <h1 className="mt-2 t-h1 text-[color:var(--text)]">{t('dashboard.description')}</h1>
+          <h1 className="mt-2 ds-page-title text-[color:var(--text)]">{t('dashboard.description')}</h1>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge tone={healthOk ? 'success' : 'danger'}>
               <span className="live-dot mr-1.5" style={healthOk ? undefined : { background: 'var(--danger)' }} aria-hidden />
@@ -113,14 +113,14 @@ export default function DashboardPage() {
             <div className="glass noise relative flex flex-col items-center justify-center gap-4 overflow-hidden p-7">
               <p className="t-overline self-start">{t('dashboard.readiness')}</p>
               <RuntimeGauge value={readinessPct} />
-              <p className="t-caption text-center">{t('dashboard.readiness.detail')}</p>
+              <p className="ds-caption text-center">{t('dashboard.readiness.detail')}</p>
               <Badge tone={metrics.risks ? 'warning' : 'success'}>{metrics.risks ? t('dashboard.attention') : t('dashboard.healthy')}</Badge>
             </div>
 
             <div className="glass noise relative overflow-hidden p-6">
               <p className="t-overline">{t('dashboard.line.eyebrow')}</p>
-              <h2 className="mt-2 t-h2 text-[color:var(--text)]">{t('dashboard.line.title')}</h2>
-              <p className="mt-2 t-caption max-w-lg">{t('dashboard.line.caption')}</p>
+              <h2 className="mt-2 ds-section text-[color:var(--text)]">{t('dashboard.line.title')}</h2>
+              <p className="mt-2 ds-caption max-w-lg">{t('dashboard.line.caption')}</p>
               <PipelineRail reached={reached} t={t} />
             </div>
           </div>
@@ -129,7 +129,7 @@ export default function DashboardPage() {
           <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="glass relative overflow-hidden p-6">
               <p className="t-overline">{t('dashboard.portfolio.eyebrow')}</p>
-              <h2 className="mt-2 t-h2 text-[color:var(--text)]">{t('dashboard.portfolio.title')}</h2>
+              <h2 className="mt-2 ds-section text-[color:var(--text)]">{t('dashboard.portfolio.title')}</h2>
               <Stagger className="mt-4 space-y-2.5">
                 {projects.slice(0, 5).map((project) => (
                   <StaggerItem key={project.project_id} className="lift flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_60%,transparent)] px-4 py-3">
@@ -143,7 +143,7 @@ export default function DashboardPage() {
                     <Badge tone={readinessTone(project.readiness_status)}>{project.readiness_status.replaceAll('_', ' ')}</Badge>
                   </StaggerItem>
                 ))}
-                {!projects.length ? <p className="t-caption">{t('dashboard.empty')}</p> : null}
+                {!projects.length ? <p className="ds-caption">{t('dashboard.empty')}</p> : null}
               </Stagger>
             </div>
 
@@ -222,7 +222,7 @@ function PipelineRail({ reached, t }: { readonly reached: number; readonly t: (k
             )}>
               <div className="flex items-center justify-between">
                 <span className={cn('live-dot', stage.state === 'idle' && 'opacity-40')} style={{ background: stage.state === 'idle' ? 'var(--muted-2)' : 'var(--accent)' }} aria-hidden />
-                <span className="t-mono text-[0.625rem] text-[color:var(--muted-2)]">{String(i + 1).padStart(2, '0')}</span>
+                <span className="ds-metadata">{String(i + 1).padStart(2, '0')}</span>
               </div>
               <p className="mt-2 t-mono text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text)]">{t(`dashboard.stage.${stage.key}`)}</p>
             </div>
@@ -260,7 +260,7 @@ function KpiCard({ icon: Icon, label, value, detail, tone = 'accent', series }: 
         </div>
         <AnimatedCounter value={value} className="mt-5 block t-mono text-4xl font-bold text-[color:var(--text)]" />
         <p className="mt-1.5 text-sm font-semibold text-[color:var(--text)]">{label}</p>
-        <p className="mt-1 t-caption">{detail}</p>
+        <p className="mt-1 ds-caption">{detail}</p>
         <div className="mt-3 -mx-1 opacity-70">
           <Sparkline series={series} color={TONE_COLOR[tone]} />
         </div>

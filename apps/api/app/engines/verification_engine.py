@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 from typing import Any, Callable
 
 from app.engines.agent_executor import submit_agent
-from app.engines.agent_prompts import AGENT_PROMPTS
+from app.engines.agent_prompts import system_prompt_for
 from app.engines.factory_pipeline import HEARTBEAT_EVERY_S, _agent_request, _language_for
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.llm.router import LLMRouter
@@ -124,9 +124,12 @@ def _repair_context(spec: ProjectSpec, report, files_service: GeneratedProjectSe
     )
 
 
-def _run_repair(router: LLMRouter, context: str, user_model_choice: str | None, api_key: str | None):
+def _run_repair(
+    router: LLMRouter, context: str, user_model_choice: str | None, api_key: str | None,
+    language: str | None = None, framework: str | None = None,
+):
     response = router.route(
-        _agent_request(AGENT_PROMPTS["repair"], context, "repair"),
+        _agent_request(system_prompt_for("repair", language, framework), context, "repair"),
         user_choice=user_model_choice,
         agent_role="repair",
         api_key=api_key,
@@ -170,7 +173,12 @@ def iter_verification(
         context = _repair_context(spec, report, files_service, project)
         repair_holder: dict = {}
         yield from _with_heartbeat(
-            "repair", lambda: _run_repair(router, context, user_model_choice, api_key), repair_holder
+            "repair",
+            lambda: _run_repair(
+                router, context, user_model_choice, api_key,
+                language=spec.suggested_stack.language, framework=spec.suggested_stack.framework,
+            ),
+            repair_holder,
         )
         if repair_holder["error"] is not None:
             yield {"type": "repair_finished", "round": round_no + 1, "applied": 0, "detail": str(repair_holder["error"])}

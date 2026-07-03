@@ -30,7 +30,7 @@ export function LDCNCommandSurface({ className, actions, ...props }: LDCNCommand
       <div className="relative space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('ldcn.command.title')}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('ldcn.command.title')}</p>
             <p className="mt-2 text-lg font-semibold text-[color:var(--text)]">{t('ldcn.command.description')}</p>
           </div>
           <Badge className="border-white/10 text-[color:var(--muted)]">{t('ldcn.command.reserved')}</Badge>

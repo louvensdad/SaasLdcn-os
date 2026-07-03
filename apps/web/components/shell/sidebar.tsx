@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ChevronRight, PanelLeftClose, Shield, Sparkles } from 'lucide-react';
+import { CircuitBoard, PanelLeftClose, Shield } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +31,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
       }}
       transition={{ type: 'spring', stiffness: 170, damping: 22 }}
       className={cn(
-        'surface-secondary fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-hidden border-r border-[color:var(--border)] p-4 will-change-transform',
+        'surface-secondary fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-hidden border-y-0 border-l-0 border-r border-[color:var(--border)] p-3 will-change-transform',
         compact
           ? sidebarOpen
             ? 'translate-x-0'
@@ -40,16 +40,18 @@ export function Sidebar({ compact = false }: SidebarProps) {
         'xl:translate-x-0 xl:opacity-100',
       )}
     >
-      <div className="relative flex items-center justify-between gap-3 px-1 pb-4">
+      <span className="instrument-rail" aria-hidden />
+
+      <div className="relative flex items-center justify-between gap-3 border-b border-[color:var(--border)] px-2 pb-4 pt-1">
         <div className="flex items-center gap-3">
-          <div className="surface-tertiary relative flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)]">
-            <Sparkles className="h-5 w-5 text-[color:var(--text)]" />
+          <div className="relative flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] border border-[color:var(--border-strong)] bg-[color:var(--surface-3)]">
+            <CircuitBoard className="h-5 w-5 text-[color:var(--accent)]" strokeWidth={1.75} />
           </div>
           <div>
-            <p className="type-label text-[color:var(--muted)]">
+            <p className="type-data text-[0.625rem] font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
               {t('product.name')}
             </p>
-            <p className="type-card text-[color:var(--text)]">
+            <p className="ds-subsection leading-tight text-[color:var(--text)]">
               {t('sidebar.foundation')}
             </p>
           </div>
@@ -59,7 +61,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
           <Button
             type="button"
             variant="ghost"
-            className="h-10 w-10 rounded-2xl p-0 xl:hidden"
+            className="h-11 w-11 rounded-[var(--radius-md)] p-0 xl:hidden"
             onClick={() => setSidebarOpen(false)}
             aria-label={t('sidebar.close')}
           >
@@ -68,13 +70,13 @@ export function Sidebar({ compact = false }: SidebarProps) {
         ) : null}
       </div>
 
-      <Badge className="mb-4 w-fit bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[color:var(--text)]">
+      <Badge className="mx-2 mb-3 mt-4 w-fit rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent)_40%,var(--border))] bg-transparent font-mono text-[color:var(--accent)]">
         {t('sidebar.badge')}
       </Badge>
 
-      <Separator className="mb-4 opacity-60" />
+      <Separator className="mb-3 opacity-60" />
 
-      <nav className="flex-1 space-y-2 overflow-y-auto pr-1">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-1 pr-2" aria-label={t('sidebar.foundation')}>
         {NAVIGATION_ITEMS.map((item) => {
           const active = pathname.startsWith(item.href);
           const Icon = item.icon;
@@ -83,50 +85,48 @@ export function Sidebar({ compact = false }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? 'page' : undefined}
               className={cn(
-                'group micro-interaction relative flex items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border px-3 py-2.5 focus-ring',
+                'group micro-interaction relative flex min-h-12 items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border px-2.5 py-2 focus-ring',
                 active
-                  ? 'border-[color-mix(in_srgb,var(--accent)_44%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_18px_42px_rgba(0,0,0,0.24)]'
-                  : 'border-transparent bg-transparent hover:border-[color-mix(in_srgb,var(--accent)_20%,var(--border))] hover:bg-white/5 hover:shadow-[0_16px_38px_rgba(0,0,0,0.22)]',
+                  ? 'border-[color-mix(in_srgb,var(--accent)_48%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_10%,var(--surface-2))]'
+                  : 'border-transparent bg-transparent hover:border-[color:var(--border)] hover:bg-[color:var(--control-hover)]',
               )}
             >
-              <span className="pointer-events-none absolute inset-0 opacity-0 transition duration-300 group-hover:opacity-100">
-                <span className="absolute inset-y-2 left-0 w-px bg-gradient-to-b from-transparent via-[color:var(--accent)] to-transparent" />
-                <span className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,color-mix(in_srgb,var(--accent)_10%,transparent),transparent_38%)]" />
-              </span>
               {active ? (
                 <motion.span
                   layoutId="sidebar-active-indicator"
-                  className="absolute left-0 top-1/2 h-9 w-1 -translate-y-1/2 rounded-r-full bg-[color:var(--accent)] shadow-[0_0_22px_var(--glow)]"
+                  className="absolute inset-y-2 left-0 w-0.5 bg-[color:var(--accent)]"
                   transition={{ type: 'spring', stiffness: 260, damping: 30 }}
                 />
               ) : null}
               <span
                 className={cn(
-                  'relative flex h-10 w-10 items-center justify-center rounded-2xl transition duration-300',
+                  'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border transition duration-200',
                   active
-                    ? 'bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] text-[color:var(--text)] shadow-[0_0_35px_var(--glow)]'
-                    : 'bg-white/5 text-[color:var(--muted)] group-hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] group-hover:text-[color:var(--text)]',
+                    ? 'border-[color-mix(in_srgb,var(--accent)_55%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_14%,var(--surface-3))] text-[color:var(--accent)]'
+                    : 'border-[color:var(--border)] bg-[color:var(--surface-3)] text-[color:var(--muted)] group-hover:text-[color:var(--text)]',
                 )}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-4 w-4" strokeWidth={1.75} />
               </span>
               <span className="relative min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-[color:var(--text)]">
+                <span className="block text-sm font-semibold leading-5 text-[color:var(--text)]">
                   {t(item.labelKey)}
                 </span>
-                <span className="block text-xs text-[color:var(--muted)]">
-                  {t(item.descriptionKey)}
-                </span>
+                {active ? (
+                  <span className="mt-0.5 block text-xs leading-4 text-[color:var(--muted)]">
+                    {t(item.descriptionKey)}
+                  </span>
+                ) : null}
               </span>
-              <ChevronRight className={cn('relative h-4 w-4 transition duration-300', active ? 'translate-x-0 opacity-100' : '-translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100')} />
             </Link>
           );
         })}
       </nav>
 
-      <div className="surface-tertiary mt-4 rounded-[var(--radius-xl)] p-4">
-        <div className="type-label mb-2 flex items-center gap-2 text-[color:var(--muted)]">
+      <div className="surface-tertiary mx-1 mt-3 rounded-[var(--radius-md)] p-3">
+        <div className="ds-caption mb-2 flex items-center gap-2 text-[color:var(--muted)]">
           <Shield className="h-4 w-4" />
           {t('sidebar.rules')}
         </div>

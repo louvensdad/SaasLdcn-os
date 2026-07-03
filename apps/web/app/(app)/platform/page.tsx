@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 
-import { PlatformMap } from '@/components/platform/platform-map';
+import { PlatformOverview } from '@/components/platform/platform-overview';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
 import { useLocale } from '@/hooks/use-locale';
 
@@ -32,7 +32,7 @@ export default function PlatformPage() {
 
   return (
     <div className="py-4">
-      <PlatformMap />
+      <PlatformOverview />
     </div>
   );
 }

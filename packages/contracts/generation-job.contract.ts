@@ -4,6 +4,7 @@ export type GenerationJobStatus =
   | 'DATABASE_PLANNING' | 'DATABASE_GENERATING' | 'DATABASE_VALIDATING'
   | 'BACKEND_PLANNING' | 'BACKEND_GENERATING' | 'BACKEND_VALIDATING'
   | 'FRONTEND_PLANNING' | 'FRONTEND_GENERATING' | 'FRONTEND_VALIDATING'
+  | 'MOBILE_PLANNING' | 'MOBILE_GENERATING' | 'MOBILE_VALIDATING'
   | 'SECURITY_PLANNING' | 'SECURITY_VALIDATING'
   | 'TESTS_GENERATING' | 'TESTS_RUNNING'
   | 'DOCUMENTATION_GENERATING' | 'BUILD_RUNNING' | 'PACKAGE_CREATING'
@@ -27,6 +28,7 @@ export interface GenerationArtifact {
 export interface GenerationCheckpoint {
   id: string;
   stage: string;
+  chunk?: string | null;
   status: GenerationStageStatus;
   attempt: number;
   artifact_ids: string[];

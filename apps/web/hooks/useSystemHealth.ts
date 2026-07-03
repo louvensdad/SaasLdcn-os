@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { apiClient } from '@/lib/api/client';
@@ -93,7 +93,10 @@ export function useSystemHealth() {
     retry: 1,
   });
 
-  const lastChecked = useMemo(() => new Date(query.dataUpdatedAt || Date.now()), [query.dataUpdatedAt]);
+  // Fallback for the first render, before any fetch resolves: captured once via
+  // lazy init so the render stays pure (no clock read on every render).
+  const [mountedAt] = useState(() => Date.now());
+  const lastChecked = useMemo(() => new Date(query.dataUpdatedAt || mountedAt), [query.dataUpdatedAt, mountedAt]);
 
   const items = useMemo(
     () => buildHealthItems(query.data, query.isError, lastChecked),

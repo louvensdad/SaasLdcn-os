@@ -32,6 +32,53 @@ class _FakeRouter:
         )
 
 
+def test_deterministic_docs_cite_the_real_ecosystem():
+    root = _make_project_dir({})
+    try:
+        project = _project(root)
+        project["technology_graph"] = {"language": {"name": "Go"}, "framework": {"name": "Gin"}}
+        writer = DocumentationAiWriter()
+        result = writer.generate(project, doc_ids=["readme", "testing", "deployment"])
+        by_id = {doc["id"]: doc["content"] for doc in result["docs"]}
+        assert "`go.mod`" in by_id["readme"]  # Run & build section with the real manifest
+        assert "go test ./..." in by_id["testing"]  # toolchain from the specialist profile
+        assert "go build" in by_id["deployment"]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_deterministic_docs_stay_generic_for_unknown_language():
+    root = _make_project_dir({})
+    try:
+        project = _project(root)
+        project["technology_graph"] = {"language": {"name": "COBOL"}}
+        writer = DocumentationAiWriter()
+        result = writer.generate(project, doc_ids=["readme"])
+        assert "Run & build" not in result["docs"][0]["content"]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+class _CaptureRouter(_FakeRouter):
+    def route(self, req, *, user_choice=None, agent_role=None, api_key=None):
+        self.last_system = req.system
+        return super().route(req, user_choice=user_choice, agent_role=agent_role, api_key=api_key)
+
+
+def test_llm_writer_receives_ecosystem_specialist_brief():
+    root = _make_project_dir({})
+    try:
+        project = _project(root)
+        project["technology_graph"] = {"language": {"name": "PHP"}, "framework": {"name": "Laravel"}}
+        router = _CaptureRouter("# Doc")
+        writer = DocumentationAiWriter(router=router)
+        writer.generate(project, doc_ids=["readme"], api_key="user-key")
+        assert '<ecosystem_knowledge language="php"' in router.last_system
+        assert "composer install" in router.last_system
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def test_generate_deterministic_fallback_is_honest():
     root = _make_project_dir({})
     try:

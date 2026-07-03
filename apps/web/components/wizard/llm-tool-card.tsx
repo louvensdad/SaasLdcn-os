@@ -69,7 +69,7 @@ export function LlmToolCard({
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="type-label text-[color:var(--muted)]">{stateLabel}</p>
+          <p className="ds-caption text-[color:var(--muted)]">{stateLabel}</p>
           <h3 className="mt-2 text-lg font-semibold text-[color:var(--text)]">{title}</h3>
           <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{description}</p>
         </div>

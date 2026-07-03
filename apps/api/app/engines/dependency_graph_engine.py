@@ -455,7 +455,6 @@ def _build_edges(nodes: list[dict[str, Any]], rules: list[dict[str, Any]], propa
                 edges.append(_edge(trigger, target, "conflicts_with", "conflict"))
 
     # Always connect the technology spine for visual grounding.
-    spine = [node_id for node_id in ("language", "runtime", "framework", "architecture")]
     selection_spine = [node["id"] for node in nodes if node["id"] in node_ids and node["type"] in {"language", "runtime", "framework", "architecture"}]
     if len(selection_spine) == 4:
         edges.extend(

@@ -6,7 +6,6 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.deps import CurrentUser
-from app.data.model_registry import MODEL_REGISTRY
 from app.engines.documentation_ai_writer import DocumentationAiWriter
 from app.engines.documentation_engine import DocumentationEngine
 from app.engines.llm.base import LLMError

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 from app.data.model_registry import MODEL_REGISTRY
 from app.engines.agent_prompts import AGENT_PROMPTS
@@ -22,9 +23,20 @@ from app.schemas.llm import LLMRequest, LLMResponse, Provider
 # file stays inside the agent's territory (app.data.agent_territories), so the
 # territory validator passes exactly as it would for a real model.
 
-# Reverse map: the factory passes AGENT_PROMPTS[role] verbatim as req.system, so an
-# exact lookup recovers the role without changing the LLMAdapter interface.
+# Reverse map: the factory passes the role prompt as req.system — either verbatim
+# or with a `<language_specialist>` block APPENDED (agent_prompts.system_prompt_for),
+# so the base prompt is always a stable PREFIX of req.system.
 _SYSTEM_TO_ROLE: dict[str, str] = {prompt: role for role, prompt in AGENT_PROMPTS.items()}
+
+
+def _role_for_system(system: str) -> str:
+    role = _SYSTEM_TO_ROLE.get(system)
+    if role is not None:
+        return role
+    for prompt, known_role in _SYSTEM_TO_ROLE.items():
+        if system.startswith(prompt):
+            return known_role
+    return "backend"
 
 MOCK_STOPPED_BY = "mock_fallback"
 
@@ -64,7 +76,7 @@ class MockAdapter(LLMAdapter):
             )
 
         # Factory agent call: emit a stack-aware skeleton for the detected role.
-        role = _SYSTEM_TO_ROLE.get(req.system, "backend")
+        role = _role_for_system(req.system)
         spec = _parse_mega(req.user)
         files = _build_role_files(role, spec)
         text = _render_protocol(files, entrypoint=_entrypoint_for(role, spec))
@@ -365,8 +377,22 @@ def _parse_mega(mega: str) -> dict:
 
 def _infer_stack(text: str) -> tuple[str, str, str, str]:
     t = (text or "").lower()
-    if any(k in t for k in ("spring", "java", "kotlin", "jvm")):
+    # Explicit language requests win, for EVERY specialist ecosystem — an offline
+    # user asking for Go/PHP/Rust/... must never silently receive Python.
+    if any(k in t for k in ("kotlin", "ktor")):
+        return "kotlin", "jvm", "ktor", "modular_monolith"
+    if any(k in t for k in ("spring", "java", "jvm")):
         return "java", "jvm", "spring_boot", "modular_monolith"
+    if any(k in t for k in ("c#", "csharp", ".net", "dotnet", "aspnet", "asp.net")):
+        return "csharp", "dotnet", "aspnet_core", "modular_monolith"
+    if re.search(r"\bgo\b|\bgolang\b|\bgin\b", t):
+        return "go", "go_runtime", "gin", "modular_monolith"
+    if any(k in t for k in ("rust", "axum", "actix")):
+        return "rust", "rust_runtime", "axum", "modular_monolith"
+    if any(k in t for k in ("php", "laravel", "slim framework")):
+        return "php", "php_runtime", "slim", "modular_monolith"
+    if any(k in t for k in ("ruby", "rails", "sinatra")):
+        return "ruby", "ruby_runtime", "sinatra", "modular_monolith"
     if any(k in t for k in ("nest", "nestjs")):
         return "typescript", "nodejs", "nestjs", "modular_monolith"
     if any(k in t for k in ("express",)):
@@ -472,12 +498,17 @@ def _entrypoint_for(role: str, spec: dict) -> str:
 
 
 def _backend_entrypoint(spec: dict) -> str:
-    lang = spec["language"]
-    if lang == "java":
-        return "apps/api/src/main/java/com/ldcn/generated/Application.java"
-    if lang in ("typescript", "javascript"):
-        return "apps/api/src/main.ts"
-    return "apps/api/app/main.py"
+    return {
+        "java": "apps/api/src/main/java/com/ldcn/generated/Application.java",
+        "typescript": "apps/api/src/main.ts",
+        "javascript": "apps/api/src/main.ts",
+        "go": "apps/api/cmd/app/main.go",
+        "php": "apps/api/public/index.php",
+        "rust": "apps/api/src/main.rs",
+        "ruby": "apps/api/app.rb",
+        "csharp": "apps/api/Program.cs",
+        "kotlin": "apps/api/src/main/kotlin/Main.kt",
+    }.get(spec["language"], "apps/api/app/main.py")
 
 
 # --------------------------------------------------------------------------- #
@@ -573,6 +604,8 @@ def _files_backend(spec: dict) -> list[tuple[str, str]]:
         return _files_backend_java(spec)
     if lang in ("typescript", "javascript"):
         return _files_backend_node(spec)
+    if lang in _ECOSYSTEM_BACKENDS:
+        return _files_backend_ecosystem(spec)
     return _files_backend_python(spec)
 
 
@@ -732,6 +765,223 @@ def _files_backend_java(spec: dict) -> list[tuple[str, str]]:
     ]
 
 
+# --------------------------------------------------------------------------- #
+# Generic ecosystem backends (Go/PHP/Rust/Ruby/C#/Kotlin): minimal but VALID
+# single-file APIs — manifest + /v1/health + list/create for the first entity —
+# so the offline mode honors the requested language instead of forcing Python.
+# --------------------------------------------------------------------------- #
+
+def _eco_go(res: str, cls: str) -> list[tuple[str, str]]:
+    main = (
+        "package main\n\n"
+        "import (\n\t\"net/http\"\n\n\t\"github.com/gin-gonic/gin\"\n)\n\n"
+        f"type {cls} struct {{\n"
+        "\tID   string `json:\"id\"`\n"
+        "\tName string `json:\"name\"`\n"
+        "}\n\n"
+        f"var items = []{cls}{{}}\n\n"
+        "func main() {\n"
+        "\tr := gin.Default()\n"
+        "\tr.GET(\"/v1/health\", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{\"status\": \"ok\"}) })\n"
+        f"\tr.GET(\"/v1/{res}\", func(c *gin.Context) {{ c.JSON(http.StatusOK, items) }})\n"
+        f"\tr.POST(\"/v1/{res}\", func(c *gin.Context) {{\n"
+        f"\t\tvar item {cls}\n"
+        "\t\tif err := c.ShouldBindJSON(&item); err != nil {\n"
+        "\t\t\tc.JSON(http.StatusUnprocessableEntity, gin.H{\"error\": \"validation\"})\n"
+        "\t\t\treturn\n"
+        "\t\t}\n"
+        "\t\titems = append(items, item)\n"
+        "\t\tc.JSON(http.StatusCreated, item)\n"
+        "\t})\n"
+        "\tr.Run(\":8000\")\n"
+        "}\n"
+    )
+    return [
+        ("apps/api/go.mod", "module github.com/ldcn/generated-api\n\ngo 1.23\n\nrequire github.com/gin-gonic/gin v1.10.0\n"),
+        ("apps/api/cmd/app/main.go", main),
+    ]
+
+
+def _eco_php(res: str, cls: str) -> list[tuple[str, str]]:
+    index = (
+        "<?php\n\n"
+        "use Psr\\Http\\Message\\ResponseInterface as Response;\n"
+        "use Psr\\Http\\Message\\ServerRequestInterface as Request;\n"
+        "use Slim\\Factory\\AppFactory;\n\n"
+        "require __DIR__ . '/../vendor/autoload.php';\n\n"
+        "$app = AppFactory::create();\n"
+        "$app->addBodyParsingMiddleware();\n\n"
+        "$items = [];\n\n"
+        "$app->get('/v1/health', function (Request $request, Response $response) {\n"
+        "    $response->getBody()->write(json_encode(['status' => 'ok']));\n"
+        "    return $response->withHeader('Content-Type', 'application/json');\n"
+        "});\n\n"
+        f"$app->get('/v1/{res}', function (Request $request, Response $response) use (&$items) {{\n"
+        "    $response->getBody()->write(json_encode($items));\n"
+        "    return $response->withHeader('Content-Type', 'application/json');\n"
+        "});\n\n"
+        f"$app->post('/v1/{res}', function (Request $request, Response $response) use (&$items) {{\n"
+        "    $item = (array) $request->getParsedBody();\n"
+        "    $items[] = $item;\n"
+        "    $response->getBody()->write(json_encode($item));\n"
+        "    return $response->withStatus(201)->withHeader('Content-Type', 'application/json');\n"
+        "});\n\n"
+        "$app->run();\n"
+    )
+    composer = json.dumps({
+        "name": "ldcn/generated-api",
+        "require": {"php": ">=8.2", "slim/slim": "^4.13", "slim/psr7": "^1.6"},
+        "autoload": {"psr-4": {"App\\": "src/"}},
+    }, indent=2) + "\n"
+    return [("apps/api/composer.json", composer), ("apps/api/public/index.php", index)]
+
+
+def _eco_rust(res: str, cls: str) -> list[tuple[str, str]]:
+    main = (
+        "use std::sync::{LazyLock, Mutex};\n\n"
+        "use axum::{http::StatusCode, routing::get, Json, Router};\n"
+        "use serde::{Deserialize, Serialize};\n\n"
+        "#[derive(Clone, Serialize, Deserialize)]\n"
+        f"struct {cls} {{\n    id: String,\n    name: String,\n}}\n\n"
+        f"static ITEMS: LazyLock<Mutex<Vec<{cls}>>> = LazyLock::new(|| Mutex::new(Vec::new()));\n\n"
+        "#[tokio::main]\n"
+        "async fn main() {\n"
+        "    let app = Router::new()\n"
+        "        .route(\"/v1/health\", get(|| async { Json(serde_json::json!({\"status\": \"ok\"})) }))\n"
+        f"        .route(\"/v1/{res}\", get(list_items).post(create_item));\n"
+        "    let listener = tokio::net::TcpListener::bind(\"0.0.0.0:8000\").await.unwrap();\n"
+        "    axum::serve(listener, app).await.unwrap();\n"
+        "}\n\n"
+        f"async fn list_items() -> Json<Vec<{cls}>> {{\n"
+        "    Json(ITEMS.lock().unwrap().clone())\n"
+        "}\n\n"
+        f"async fn create_item(Json(item): Json<{cls}>) -> (StatusCode, Json<{cls}>) {{\n"
+        "    ITEMS.lock().unwrap().push(item.clone());\n"
+        "    (StatusCode::CREATED, Json(item))\n"
+        "}\n"
+    )
+    cargo = (
+        "[package]\nname = \"generated-api\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n"
+        "[dependencies]\naxum = \"0.7\"\ntokio = { version = \"1\", features = [\"full\"] }\n"
+        "serde = { version = \"1\", features = [\"derive\"] }\nserde_json = \"1\"\n"
+    )
+    return [("apps/api/Cargo.toml", cargo), ("apps/api/src/main.rs", main)]
+
+
+def _eco_ruby(res: str, cls: str) -> list[tuple[str, str]]:
+    app = (
+        "require 'sinatra'\nrequire 'json'\n\n"
+        "set :bind, '0.0.0.0'\nset :port, ENV.fetch('API_PORT', 8000)\n\n"
+        "items = []\n\n"
+        "get '/v1/health' do\n  content_type :json\n  { status: 'ok' }.to_json\nend\n\n"
+        f"get '/v1/{res}' do\n  content_type :json\n  items.to_json\nend\n\n"
+        f"post '/v1/{res}' do\n"
+        "  content_type :json\n"
+        "  item = JSON.parse(request.body.read)\n"
+        "  items << item\n"
+        "  status 201\n"
+        "  item.to_json\nend\n"
+    )
+    gemfile = "source 'https://rubygems.org'\n\nruby '>= 3.2'\n\ngem 'sinatra', '~> 4.0'\ngem 'puma', '~> 6.4'\ngem 'rackup', '~> 2.1'\n"
+    return [("apps/api/Gemfile", gemfile), ("apps/api/app.rb", app)]
+
+
+def _eco_csharp(res: str, cls: str) -> list[tuple[str, str]]:
+    program = (
+        "var builder = WebApplication.CreateBuilder(args);\n"
+        "var app = builder.Build();\n\n"
+        f"var items = new List<{cls}>();\n\n"
+        "app.MapGet(\"/v1/health\", () => Results.Ok(new { status = \"ok\" }));\n"
+        f"app.MapGet(\"/v1/{res}\", () => Results.Ok(items));\n"
+        f"app.MapPost(\"/v1/{res}\", ({cls} item) =>\n"
+        "{\n"
+        "    items.Add(item);\n"
+        f"    return Results.Created($\"/v1/{res}\", item);\n"
+        "});\n\n"
+        "app.Run(\"http://0.0.0.0:8000\");\n\n"
+        f"public record {cls}(string Id, string Name);\n"
+    )
+    csproj = (
+        "<Project Sdk=\"Microsoft.NET.Sdk.Web\">\n"
+        "  <PropertyGroup>\n"
+        "    <TargetFramework>net8.0</TargetFramework>\n"
+        "    <Nullable>enable</Nullable>\n"
+        "    <ImplicitUsings>enable</ImplicitUsings>\n"
+        "  </PropertyGroup>\n"
+        "</Project>\n"
+    )
+    return [("apps/api/App.csproj", csproj), ("apps/api/Program.cs", program)]
+
+
+def _eco_kotlin(res: str, cls: str) -> list[tuple[str, str]]:
+    main = (
+        "import io.ktor.http.*\n"
+        "import io.ktor.serialization.kotlinx.json.*\n"
+        "import io.ktor.server.application.*\n"
+        "import io.ktor.server.engine.*\n"
+        "import io.ktor.server.netty.*\n"
+        "import io.ktor.server.plugins.contentnegotiation.*\n"
+        "import io.ktor.server.request.*\n"
+        "import io.ktor.server.response.*\n"
+        "import io.ktor.server.routing.*\n"
+        "import kotlinx.serialization.Serializable\n\n"
+        "@Serializable\n"
+        f"data class {cls}(val id: String, val name: String)\n\n"
+        f"val items = mutableListOf<{cls}>()\n\n"
+        "fun main() {\n"
+        "    embeddedServer(Netty, port = 8000) {\n"
+        "        install(ContentNegotiation) { json() }\n"
+        "        routing {\n"
+        "            get(\"/v1/health\") { call.respond(mapOf(\"status\" to \"ok\")) }\n"
+        f"            get(\"/v1/{res}\") {{ call.respond(items) }}\n"
+        f"            post(\"/v1/{res}\") {{\n"
+        f"                val item = call.receive<{cls}>()\n"
+        "                items.add(item)\n"
+        "                call.respond(HttpStatusCode.Created, item)\n"
+        "            }\n"
+        "        }\n"
+        "    }.start(wait = true)\n"
+        "}\n"
+    )
+    gradle = (
+        "plugins {\n"
+        "    kotlin(\"jvm\") version \"2.0.0\"\n"
+        "    kotlin(\"plugin.serialization\") version \"2.0.0\"\n"
+        "    application\n"
+        "}\n\n"
+        "repositories { mavenCentral() }\n\n"
+        "dependencies {\n"
+        "    implementation(\"io.ktor:ktor-server-netty:2.3.12\")\n"
+        "    implementation(\"io.ktor:ktor-server-content-negotiation:2.3.12\")\n"
+        "    implementation(\"io.ktor:ktor-serialization-kotlinx-json:2.3.12\")\n"
+        "}\n\n"
+        "application { mainClass.set(\"MainKt\") }\n"
+    )
+    return [
+        ("apps/api/build.gradle.kts", gradle),
+        ("apps/api/settings.gradle.kts", 'rootProject.name = "generated-api"\n'),
+        ("apps/api/src/main/kotlin/Main.kt", main),
+    ]
+
+
+_ECOSYSTEM_BACKENDS: dict[str, Any] = {
+    "go": _eco_go,
+    "php": _eco_php,
+    "rust": _eco_rust,
+    "ruby": _eco_ruby,
+    "csharp": _eco_csharp,
+    "kotlin": _eco_kotlin,
+}
+
+
+def _files_backend_ecosystem(spec: dict) -> list[tuple[str, str]]:
+    entity = spec["entities"][0]
+    files = _ECOSYSTEM_BACKENDS[spec["language"]](_slug(entity), _pascal(entity))
+    files.append(("apps/api/.env.example", "# Nunca commite valores reais.\nAPI_PORT=8000\nJWT_SECRET=change-me\n"))
+    files.append(("docs/traceability.md", _traceability(spec)))
+    return files
+
+
 def _files_frontend(spec: dict) -> list[tuple[str, str]]:
     entity = spec["entities"][0]
     res = _slug(entity)
@@ -774,19 +1024,50 @@ def _files_frontend(spec: dict) -> list[tuple[str, str]]:
     ]
 
 
+# Health-contract test file per ecosystem: idiomatic name + syntax that never
+# breaks the ecosystem's build (kept out of the compiled source tree or ignored
+# by the build tool, exercised by the test tool).
+_QA_HEALTH_TESTS: dict[str, tuple[str, str]] = {
+    "go": ("apps/api/tests/health_test.go",
+           "package tests\n\nimport \"testing\"\n\nfunc TestHealthContract(t *testing.T) {\n"
+           "\tif \"ok\" != \"ok\" {\n\t\tt.Fatal(\"health contract\")\n\t}\n}\n"),
+    "php": ("apps/api/tests/HealthTest.php",
+            "<?php\n\n// Substitua pelo client real; valida o contrato /v1/health.\nassert('ok' === 'ok');\n"),
+    "rust": ("apps/api/tests/health_test.rs",
+             "#[test]\nfn health_contract() {\n    assert_eq!(\"ok\", \"ok\");\n}\n"),
+    "ruby": ("apps/api/tests/health_spec.rb",
+             "# Substitua pelo client real; valida o contrato /v1/health.\nraise 'health contract' unless 'ok' == 'ok'\n"),
+    "csharp": ("apps/api/tests/HealthTests.cs",
+               "// Substitua por xUnit no projeto de testes real; valida o contrato /v1/health.\n"
+               "public static class HealthTests\n{\n    public static bool HealthOk() => true;\n}\n"),
+    "kotlin": ("apps/api/tests/HealthTest.kt",
+               "// Substitua por JUnit no source set de teste real; valida o contrato /v1/health.\n"
+               "fun healthOk(): Boolean = true\n"),
+    "java": ("apps/api/tests/HealthContractTest.java",
+             "// Substitua por JUnit em src/test/java; valida o contrato /v1/health.\n"
+             "public class HealthContractTest {\n    public boolean healthOk() { return true; }\n}\n"),
+}
+
+
 def _files_qa(spec: dict) -> list[tuple[str, str]]:
     entity = spec["entities"][0]
     res = _slug(entity)
-    return [
+    health_path, health_content = _QA_HEALTH_TESTS.get(
+        spec["language"],
         ("apps/api/tests/test_health.py",
          "def test_health_contract():\n"
          "    # Substitua pelo client real; valida o contrato /v1/health.\n"
          "    expected = {\"status\": \"ok\"}\n"
          "    assert expected[\"status\"] == \"ok\"\n"),
-        (f"apps/api/tests/test_{res}_auth.py",
+    )
+    return [
+        (health_path, health_content),
+        (f"apps/api/tests/test_{res}_auth.py" if spec["language"] not in _QA_HEALTH_TESTS else f"apps/api/tests/{res}_auth_notes.md",
          "def test_requires_auth():\n"
          "    # 401 sem token (regra: apenas autenticados alteram registros).\n"
-         "    assert 401 == 401\n"),
+         "    assert 401 == 401\n"
+         if spec["language"] not in _QA_HEALTH_TESTS
+         else f"# Cobertura de auth para {res}\n\nGaranta um teste real de 401 sem token no framework de teste do ecossistema.\n"),
         ("deploy/postman/collection.json", json.dumps({
             "info": {"name": "LDCN Generated API", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
             "item": [{"name": "health", "request": {"method": "GET", "url": "{{baseUrl}}/v1/health"}}],
@@ -799,17 +1080,24 @@ def _files_qa(spec: dict) -> list[tuple[str, str]]:
     ]
 
 
+_DOCKER_RUNTIMES: dict[str, tuple[str, str]] = {
+    "java": ("eclipse-temurin:21-jre-alpine", 'CMD ["java", "-jar", "app.jar"]'),
+    "typescript": ("node:20-alpine", 'CMD ["node", "dist/main.js"]'),
+    "javascript": ("node:20-alpine", 'CMD ["node", "dist/main.js"]'),
+    "go": ("golang:1.23-alpine", 'CMD ["go", "run", "./cmd/app"]'),
+    "php": ("php:8.3-cli-alpine", 'CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]'),
+    "rust": ("rust:1.80-slim", 'CMD ["cargo", "run", "--release"]'),
+    "ruby": ("ruby:3.3-alpine", 'CMD ["ruby", "app.rb"]'),
+    "csharp": ("mcr.microsoft.com/dotnet/sdk:8.0", 'CMD ["dotnet", "run", "--urls", "http://0.0.0.0:8000"]'),
+    "kotlin": ("gradle:8-jdk17", 'CMD ["gradle", "run"]'),
+}
+
+
 def _files_devops(spec: dict) -> list[tuple[str, str]]:
-    lang = spec["language"]
-    if lang == "java":
-        run = "CMD [\"java\", \"-jar\", \"app.jar\"]"
-        base_img = "eclipse-temurin:21-jre-alpine"
-    elif lang in ("typescript", "javascript"):
-        run = "CMD [\"node\", \"dist/main.js\"]"
-        base_img = "node:20-alpine"
-    else:
-        run = "CMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]"
-        base_img = "python:3.12-slim"
+    base_img, run = _DOCKER_RUNTIMES.get(
+        spec["language"],
+        ("python:3.12-slim", 'CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]'),
+    )
     dockerfile = (
         f"FROM {base_img}\n"
         "WORKDIR /app\nCOPY . .\n"

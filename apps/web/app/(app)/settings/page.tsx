@@ -135,7 +135,7 @@ function AccountTab() {
             {initials}
           </span>
           <div className="min-w-0">
-            <h2 className="t-h2 text-[color:var(--text)]">{name}</h2>
+            <h2 className="ds-section text-[color:var(--text)]">{name}</h2>
             <p className="mt-1 t-mono text-sm text-[color:var(--muted)]">{user?.email ?? '—'}</p>
           </div>
           <Badge tone="accent" className="ml-auto capitalize">{user?.role ?? '—'}</Badge>
@@ -144,7 +144,7 @@ function AccountTab() {
         <div className="grid gap-3 sm:grid-cols-2">
           <Metric label={t('settings.privacy.consent')} value={user?.consent_policy_version ?? t('settings.privacy.notRecorded')} />
           <label className="grid gap-2 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)] p-3">
-            <span className="t-caption">{t('settings.interfaceLanguage')}</span>
+            <span className="ds-caption">{t('settings.interfaceLanguage')}</span>
             <LocaleSelector />
           </label>
         </div>
@@ -237,7 +237,7 @@ function GitProviderCard({ provider }: { readonly provider: 'github' | 'gitlab' 
       ) : (
         <div className="space-y-3">
           <Input type="password" aria-label={t('settings.integrations.tokenLabel', { provider: label })} placeholder={t('settings.integrations.tokenLabel', { provider: label })} value={token} onChange={(event) => setToken(event.target.value)} />
-          <p className="t-caption">{t('settings.integrations.tokenDescription')}</p>
+          <p className="ds-caption">{t('settings.integrations.tokenDescription')}</p>
           <Button variant="primary" disabled={!token.trim()} loading={connect.isPending} onClick={() => void submit()}>{t('settings.integrations.connect', { provider: label })}</Button>
         </div>
       )}
@@ -259,16 +259,16 @@ function InterfaceTab() {
     <div className="space-y-6">
       <section className="space-y-4">
         <div>
-          <h2 className="t-h2 text-[color:var(--text)]">{t('settings.theme.title')}</h2>
-          <p className="mt-2 t-body text-[color:var(--muted)]">{t('settings.theme.description')}</p>
+          <h2 className="ds-section text-[color:var(--text)]">{t('settings.theme.title')}</h2>
+          <p className="mt-2 ds-body ds-text-muted">{t('settings.theme.description')}</p>
         </div>
         <ThemeGallery />
       </section>
 
       <Card className="space-y-5 p-6">
         <div>
-          <h3 className="t-h3 text-[color:var(--text)]">{t('settings.localization.title')}</h3>
-          <p className="mt-2 t-body text-[color:var(--muted)]">{t('settings.localization.description')}</p>
+          <h3 className="ds-subsection text-[color:var(--text)]">{t('settings.localization.title')}</h3>
+          <p className="mt-2 ds-body ds-text-muted">{t('settings.localization.description')}</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <LocaleField label={t('settings.generatedProjectLanguage')}><PreferenceSelect value={preferences.generatedProjectLocale} onChange={preferences.setGeneratedProjectLocale} /></LocaleField>
@@ -351,6 +351,7 @@ function HealthCard({ score, checks, lastCheckedAt, offline, locale }: {
 
   let relChecked = '—';
   if (lastCheckedAt) {
+    // eslint-disable-next-line react-hooks/purity -- relative "checked N minutes ago" label must read the clock; drift across re-renders is the desired behavior
     const minutes = Math.round((lastCheckedAt - Date.now()) / 60000);
     try {
       relChecked = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(minutes, 'minute');
@@ -381,7 +382,7 @@ function HealthCard({ score, checks, lastCheckedAt, offline, locale }: {
         ))}
       </ul>
 
-      <p className="mt-5 t-caption">{t('settings.health.lastCheck')} · {relChecked}</p>
+      <p className="mt-5 ds-caption">{t('settings.health.lastCheck')} · {relChecked}</p>
     </Card>
   );
 }
@@ -402,8 +403,8 @@ function AdvancedTab() {
     <div className="space-y-6">
       <Card className="flex flex-wrap items-center justify-between gap-4 p-6">
         <div>
-          <h2 className="t-h2 text-[color:var(--text)]">{t('settings.advanced.title')}</h2>
-          <p className="mt-2 max-w-xl t-body text-[color:var(--muted)]">{t('settings.advanced.description')}</p>
+          <h2 className="ds-section text-[color:var(--text)]">{t('settings.advanced.title')}</h2>
+          <p className="mt-2 max-w-xl ds-body ds-text-muted">{t('settings.advanced.description')}</p>
         </div>
         <button
           type="button"
@@ -430,7 +431,7 @@ function AdvancedTab() {
           ]}
         />
       ) : (
-        <p className="t-caption">{t('settings.advanced.devModeHint')}</p>
+        <p className="ds-caption">{t('settings.advanced.devModeHint')}</p>
       )}
     </div>
   );
@@ -443,7 +444,7 @@ function AdvancedTab() {
 function Metric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)] p-3">
-      <p className="t-caption">{label}</p>
+      <p className="ds-caption">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-[color:var(--text)]">{value}</p>
     </div>
   );

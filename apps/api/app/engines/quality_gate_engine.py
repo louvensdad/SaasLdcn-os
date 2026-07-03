@@ -28,6 +28,21 @@ _FAILED_CHECK_MAP: dict[str, tuple[str | None, str, str]] = {
     "fastapi_requirements": ("requirements_missing", "Projeto Python sem requirements.txt.", "Criar requirements.txt com as dependências base."),
     "nestjs_tsconfig": ("tsconfig_missing", "Projeto TypeScript sem tsconfig.json.", "Criar tsconfig.json base."),
     "spring_pom": ("pom_missing", "Projeto Java sem pom.xml.", "Criar pom.xml mínimo do Spring Boot."),
+    # Generic ecosystem manifest checks ({language}_manifest) emitted by the
+    # quality engine for frameworks beyond the hardcoded set — each maps to a
+    # deterministic minimal-manifest fixer.
+    "python_manifest": ("requirements_missing", "Projeto Python sem requirements.txt.", "Criar requirements.txt com as dependências base."),
+    "typescript_manifest": ("package_json_missing", "Projeto Node/TypeScript sem package.json.", "Criar package.json mínimo com scripts básicos."),
+    "java_manifest": ("pom_missing", "Projeto Java sem pom.xml.", "Criar pom.xml mínimo."),
+    "go_manifest": ("go_mod_missing", "Projeto Go sem go.mod.", "Criar go.mod mínimo (module + versão do Go)."),
+    "php_manifest": ("composer_json_missing", "Projeto PHP sem composer.json.", "Criar composer.json mínimo."),
+    "rust_manifest": ("cargo_toml_missing", "Projeto Rust sem Cargo.toml.", "Criar Cargo.toml mínimo."),
+    "ruby_manifest": ("gemfile_missing", "Projeto Ruby sem Gemfile.", "Criar Gemfile mínimo."),
+    "csharp_manifest": ("csproj_missing", "Projeto .NET sem arquivo .csproj.", "Criar .csproj mínimo (net8.0)."),
+    "kotlin_manifest": ("gradle_kts_missing", "Projeto Kotlin sem build.gradle.kts.", "Criar build.gradle.kts mínimo."),
+    "expo_app_json": ("expo_app_json_missing", "Projeto Expo sem app.json.", "Criar apps/mobile/app.json com configuracao base."),
+    "expo_readme": ("expo_readme_missing", "App mobile sem instrucoes de execucao.", "Criar apps/mobile/README.md com setup Expo."),
+    "expo_gitignore": ("expo_gitignore_missing", "App mobile sem .gitignore proprio.", "Criar apps/mobile/.gitignore com artefatos nativos e npm."),
 }
 
 # security finding code -> (auto_fix_id | None, severity, root cause, suggested fix)
@@ -50,12 +65,10 @@ class QualityGateEngine:
             validation = generation_validation_engine.validate(project)
             quality = validation.quality if isinstance(validation.quality, dict) else {}
             build_ok = validation.build.ok
-            build_logs = validation.build.logs_tail
             dependency = validation.dependency_audit
         else:
             quality = self._quality.quality_check(project)
             build_ok = None
-            build_logs = ""
             dependency = None
 
         issues: list[QualityIssue] = []
@@ -168,7 +181,12 @@ class QualityGateEngine:
         readme = root / "README.md"
         if readme.is_file():
             text = readme.read_text(encoding="utf-8", errors="ignore").lower()
-            if not any(token in text for token in ("npm run", "docker", "uvicorn", "mvn", "## como rodar", "## run", "yarn")):
+            run_tokens = (
+                "npm run", "docker", "uvicorn", "mvn", "## como rodar", "## run", "yarn",
+                "go run", "cargo run", "dotnet run", "php artisan", "bundle exec",
+                "gradle", "composer install", "rails server",
+            )
+            if not any(token in text for token in run_tokens):
                 out.append(QualityIssue(
                     id="readme_no_run", title="README sem instruções de execução", severity="WARNING",
                     category="readme", file="README.md",

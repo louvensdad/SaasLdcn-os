@@ -64,6 +64,8 @@ class ProjectRoomRepository:
         locale: str = "pt-BR",
         raw_intent: str = "",
         workspace_id: str | None = None,
+        delivery_type: str = "web",
+        preferred_language: str = "",
     ) -> dict[str, Any]:
         now = self._now()
         room_id = f"room_{uuid4().hex[:12]}"
@@ -73,6 +75,8 @@ class ProjectRoomRepository:
             "workspace_id": workspace_id,
             "title": (title or "Nova CriaÃ§Ã£o").strip()[:200] or "Nova CriaÃ§Ã£o",
             "status": "DRAFT",
+            "delivery_type": delivery_type or "web",
+            "preferred_language": preferred_language or "",
             "raw_intent": redact_text(raw_intent or ""),
             "locale": locale or "pt-BR",
             "confidence": 0.0,
@@ -95,12 +99,12 @@ class ProjectRoomRepository:
             conn.execute(
                 """
                 INSERT INTO project_rooms (
-                    room_id, owner_user_id, workspace_id, title, status, raw_intent, locale,
+                    room_id, owner_user_id, workspace_id, title, status, delivery_type, preferred_language, raw_intent, locale,
                     confidence, degraded, spec_json, messages_json, prompt_master_md,
                     prompt_master_versions_json, architecture_blueprint_json, blueprint_versions_json, active_blueprint_version,
                     generation_handoff_json, history_json, operational_log_json, last_failure_json, created_at, updated_at
                 ) VALUES (
-                    :room_id, :owner_user_id, :workspace_id, :title, :status, :raw_intent, :locale,
+                    :room_id, :owner_user_id, :workspace_id, :title, :status, :delivery_type, :preferred_language, :raw_intent, :locale,
                     :confidence, :degraded, :spec_json, :messages_json, :prompt_master_md,
                     :prompt_master_versions_json, :architecture_blueprint_json, :blueprint_versions_json, :active_blueprint_version,
                     :generation_handoff_json, :history_json, :operational_log_json, :last_failure_json, :created_at, :updated_at
@@ -329,6 +333,8 @@ class ProjectRoomRepository:
             "workspace_id": row.get("workspace_id"),
             "title": row["title"],
             "status": row["status"],
+            "delivery_type": row.get("delivery_type") or "web",
+            "preferred_language": row.get("preferred_language") or "",
             "raw_intent": row.get("raw_intent") or "",
             "locale": row["locale"],
             "confidence": float(row.get("confidence") or 0.0),

@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { LlmProviderInline } from '@/components/llm/llm-gated-action';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 import {
   engineeringLabClient,
@@ -64,6 +65,7 @@ export default function EngineeringLaboratoryPage() {
 }
 
 function EngineeringLaboratoryInner() {
+  const { t } = useLocale();
   const searchParams = useSearchParams();
   const initialProjectId = searchParams.get('projectId') ?? '';
   const [projectId, setProjectId] = useState(initialProjectId);
@@ -122,47 +124,47 @@ function EngineeringLaboratoryInner() {
           <div className="max-w-3xl space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--accent)]">
               <Layers3 className="h-3.5 w-3.5" aria-hidden />
-              Engineering Laboratory
+              {t('lab.badge')}
             </div>
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-[color:var(--text)] md:text-5xl">
-                Bancada real de auditoria, teste e correcao antes do deploy.
+                {t('lab.title')}
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--muted)] md:text-base">
-                Analises, terminal e modulos usam o projeto materializado no backend. Quando uma ferramenta externa ainda nao esta conectada, o modulo declara isso explicitamente.
+                {t('lab.subtitle')}
               </p>
             </div>
           </div>
           <div className="w-full max-w-xl rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/30 p-3 backdrop-blur">
-            <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">Project ID</label>
+            <label className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">{t('lab.projectId')}</label>
             <div className="mt-2 flex gap-2">
               <Input
                 value={projectId}
                 onChange={(event) => setProjectId(event.target.value)}
-                placeholder="ex: meta-factory-project-a1b2c3"
+                placeholder={t('lab.projectIdPlaceholder')}
                 className="font-mono"
               />
               <Button type="button" variant="primary" loading={loading} onClick={() => void load()}>
-                Analisar
+                {t('lab.analyze')}
               </Button>
             </div>
             <p className="mt-2 text-xs text-[color:var(--muted-2)]">
-              Use o `projectId` gerado pela Meta-Fabrica ou recebido por importacao.
+              {t('lab.projectIdHint')}
             </p>
           </div>
         </div>
       </section>
 
-      {error ? <PageError title="Laboratorio indisponivel" description={error} onRetry={() => void load()} /> : null}
+      {error ? <PageError title={t('lab.unavailable')} description={error} onRetry={() => void load()} /> : null}
       {loading ? <CardLoading className="h-96" /> : null}
 
       {!loading && !overview ? (
         <Card className="grid min-h-80 place-items-center text-center">
           <div className="max-w-md space-y-3">
             <Search className="mx-auto h-8 w-8 text-[color:var(--accent)]" aria-hidden />
-            <h2 className="text-lg font-semibold text-[color:var(--text)]">Nenhum projeto carregado</h2>
+            <h2 className="text-lg font-semibold text-[color:var(--text)]">{t('lab.noProject')}</h2>
             <p className="text-sm leading-6 text-[color:var(--muted)]">
-              Informe um `projectId` real para abrir o laboratorio. Esta tela nao usa dados falsos.
+              {t('lab.noProjectHint')}
             </p>
           </div>
         </Card>
@@ -211,7 +213,7 @@ function EngineeringLaboratoryInner() {
             {activeModule === 'security' ? <SecurityPanel overview={overview} /> : null}
             {activeModule === 'quality' ? <QualityPanel overview={overview} /> : null}
             {activeModule === 'architecture' ? <ArchitecturePanel overview={overview} /> : null}
-            {activeModule === 'database' ? <EvidencePanel title="Database" items={overview.databases} empty="Nenhum banco detectado nos arquivos." icon={Database} /> : null}
+            {activeModule === 'database' ? <EvidencePanel title={t('lab.database')} items={overview.databases} empty="Nenhum banco detectado nos arquivos." icon={Database} /> : null}
             {activeModule === 'performance' ? <UnavailablePanel label="Performance" reason="Benchmark real exige ferramenta e alvo configurados. Nenhum P95/P99 foi inventado." /> : null}
             {activeModule === 'tests' ? <TestsPanel overview={overview} /> : null}
             {activeModule === 'dependencies' ? <DependenciesPanel overview={overview} /> : null}
@@ -221,13 +223,12 @@ function EngineeringLaboratoryInner() {
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="flex items-center gap-2 text-lg font-semibold">
                     <Bot className="h-5 w-5 text-[color:var(--accent)]" />
-                    AI Assistant
+                    {t('lab.aiAssistant')}
                   </h2>
                   <LlmProviderInline />
                 </div>
                 <p className="text-sm text-[color:var(--muted)]">
-                  O AI Assistant usa o provider configurado nas Configurações. Toda ação de IA pede confirmação antes de
-                  executar e marca claramente quando cai em modo determinístico.
+                  {t('lab.aiAssistantHint')}
                 </p>
               </section>
             ) : null}
@@ -274,10 +275,11 @@ function ModuleBanner({ module }: { readonly module?: EngineeringLabModule }) {
 }
 
 function OverviewPanel({ overview }: { readonly overview: EngineeringLabOverview }) {
+  const { t } = useLocale();
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card className="space-y-4">
-        <h2 className="text-lg font-semibold">Projeto</h2>
+        <h2 className="text-lg font-semibold">{t('lab.project')}</h2>
         <KeyValue label="Nome" value={overview.project_name} />
         <KeyValue label="Stack" value={overview.stack} />
         <KeyValue label="Linguagem principal" value={overview.primary_language} />
@@ -285,7 +287,7 @@ function OverviewPanel({ overview }: { readonly overview: EngineeringLabOverview
         <KeyValue label="Ultima analise" value={overview.last_analysis} mono />
       </Card>
       <Card className="space-y-4">
-        <h2 className="text-lg font-semibold">Linguagens</h2>
+        <h2 className="text-lg font-semibold">{t('lab.languages')}</h2>
         {Object.entries(overview.languages).length ? Object.entries(overview.languages).map(([language, count]) => (
           <div key={language}>
             <div className="flex justify-between text-sm">
@@ -296,7 +298,7 @@ function OverviewPanel({ overview }: { readonly overview: EngineeringLabOverview
               <div className="h-full rounded-full bg-[color:var(--accent)]" style={{ width: `${Math.min(100, (count / overview.file_count) * 100)}%` }} />
             </div>
           </div>
-        )) : <p className="text-sm text-[color:var(--muted)]">Nenhuma linguagem detectada.</p>}
+        )) : <p className="text-sm text-[color:var(--muted)]">{t('lab.noLanguages')}</p>}
       </Card>
     </div>
   );
@@ -315,28 +317,29 @@ function TerminalPanel({
   readonly onCommandChange: (value: string) => void;
   readonly onRun: () => void;
 }) {
+  const { t } = useLocale();
   return (
     <Card className="overflow-hidden p-0">
       <div className="flex flex-col gap-3 border-b border-[color:var(--border)] bg-black/30 p-4 md:flex-row">
         <Input value={command} onChange={(event) => onCommandChange(event.target.value)} className="font-mono" />
         <Button type="button" variant="primary" loading={busy} onClick={onRun}>
           <Play className="h-4 w-4" aria-hidden />
-          Executar
+          {t('lab.run')}
         </Button>
       </div>
-      <div className="min-h-96 bg-[#05070a] p-4 font-mono text-xs text-slate-200">
+      <div className="min-h-96 bg-[#05070a] p-4 font-mono text-xs ds-text-primary">
         {runs.length === 0 ? (
-          <p className="text-slate-500">Aguardando comando real do backend.</p>
+          <p className="ds-text-muted">{t('lab.waitingCommand')}</p>
         ) : runs.map((run) => (
           <div key={`${run.command}-${run.duration_ms}-${run.exit_code}`} className="mb-5 border-b border-white/10 pb-4 last:border-0">
-            <div className="mb-2 flex flex-wrap items-center gap-3 text-slate-400">
+            <div className="mb-2 flex flex-wrap items-center gap-3 ds-text-secondary">
               <span>$ {run.command}</span>
-              <span>exit {run.exit_code}</span>
-              <span>{run.duration_ms}ms</span>
+              <span>{`exit ${run.exit_code}`}</span>
+              <span>{`${run.duration_ms}ms`}</span>
               <span className="truncate">{run.cwd}</span>
             </div>
             {run.output.map((chunk, index) => (
-              <pre key={index} className={cn('whitespace-pre-wrap', chunk.kind === 'stderr' ? 'text-rose-300' : 'text-slate-100')}>{chunk.text}</pre>
+              <pre key={index} className={cn('whitespace-pre-wrap', chunk.kind === 'stderr' ? 'text-rose-300' : 'ds-text-primary')}>{chunk.text}</pre>
             ))}
           </div>
         ))}
@@ -346,9 +349,10 @@ function TerminalPanel({
 }
 
 function ApiExplorerPanel({ overview }: { readonly overview: EngineeringLabOverview }) {
+  const { t } = useLocale();
   return (
     <Card className="space-y-4">
-      <h2 className="text-lg font-semibold">Endpoints detectados</h2>
+      <h2 className="text-lg font-semibold">{t('lab.endpoints')}</h2>
       {overview.api_endpoints.length ? (
         <div className="space-y-2">
           {overview.api_endpoints.map((endpoint, index) => (
@@ -359,49 +363,52 @@ function ApiExplorerPanel({ overview }: { readonly overview: EngineeringLabOverv
             </div>
           ))}
         </div>
-      ) : <p className="text-sm text-[color:var(--muted)]">Nenhum Swagger, OpenAPI, FastAPI ou rota Express/Nest detectada.</p>}
+      ) : <p className="text-sm text-[color:var(--muted)]">{t('lab.noEndpoints')}</p>}
     </Card>
   );
 }
 
 function SecurityPanel({ overview }: { readonly overview: EngineeringLabOverview }) {
+  const { t } = useLocale();
   const findings = overview.diagnosis.security_findings;
   return (
     <Card className="space-y-4">
-      <h2 className="flex items-center gap-2 text-lg font-semibold"><ShieldAlert className="h-5 w-5 text-[color:var(--warning)]" />Security Center</h2>
+      <h2 className="flex items-center gap-2 text-lg font-semibold"><ShieldAlert className="h-5 w-5 text-[color:var(--warning)]" />{t('lab.securityCenter')}</h2>
       {findings.length ? findings.map((finding) => (
         <IssueRow key={`${finding.code}-${finding.path}-${finding.line ?? 0}`} severity={finding.severity} title={finding.message} detail={`${finding.path}${finding.line ? `:${finding.line}` : ''}`} />
-      )) : <p className="text-sm text-[color:var(--muted)]">Nenhum segredo ou padrao critico detectado pela varredura local.</p>}
+      )) : <p className="text-sm text-[color:var(--muted)]">{t('lab.noSecurityFindings')}</p>}
     </Card>
   );
 }
 
 function QualityPanel({ overview }: { readonly overview: EngineeringLabOverview }) {
+  const { t } = useLocale();
   const smells = overview.diagnosis.smells;
   return (
     <Card className="space-y-4">
-      <h2 className="text-lg font-semibold">Code Quality</h2>
+      <h2 className="text-lg font-semibold">{t('lab.codeQuality')}</h2>
       {smells.length ? smells.map((smell) => (
         <IssueRow key={smell.code} severity="medium" title={smell.message} detail={smell.related_paths.join(', ') || smell.code} />
-      )) : <p className="text-sm text-[color:var(--muted)]">Nenhum smell estrutural detectado pela heuristica local.</p>}
+      )) : <p className="text-sm text-[color:var(--muted)]">{t('lab.noSmells')}</p>}
     </Card>
   );
 }
 
 function ArchitecturePanel({ overview }: { readonly overview: EngineeringLabOverview }) {
+  const { t } = useLocale();
   return (
     <Card className="space-y-4">
-      <h2 className="text-lg font-semibold">Architecture Graph</h2>
+      <h2 className="text-lg font-semibold">{t('lab.architectureGraph')}</h2>
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">Nodes</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">{t('lab.nodes')}</p>
           {overview.architecture_nodes.map((node) => <Pill key={node.id} label={node.label} />)}
         </div>
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">Edges</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">{t('lab.edges')}</p>
           {overview.architecture_edges.length ? overview.architecture_edges.map((edge) => (
             <Pill key={`${edge.source}-${edge.target}`} label={`${edge.source} -> ${edge.target} (${edge.label})`} />
-          )) : <p className="text-sm text-[color:var(--muted)]">Nenhum acoplamento por import detectado entre modulos top-level.</p>}
+          )) : <p className="text-sm text-[color:var(--muted)]">{t('lab.noEdges')}</p>}
         </div>
       </div>
     </Card>
@@ -409,13 +416,15 @@ function ArchitecturePanel({ overview }: { readonly overview: EngineeringLabOver
 }
 
 function TestsPanel({ overview }: { readonly overview: EngineeringLabOverview }) {
-  return <EvidencePanel title="Tests" items={[overview.coverage]} empty="Nenhuma suite de testes detectada." icon={FlaskConical} />;
+  const { t } = useLocale();
+  return <EvidencePanel title={t('lab.tests')} items={[overview.coverage]} empty="Nenhuma suite de testes detectada." icon={FlaskConical} />;
 }
 
 function DependenciesPanel({ overview }: { readonly overview: EngineeringLabOverview }) {
+  const { t } = useLocale();
   return (
     <Card className="space-y-4">
-      <h2 className="text-lg font-semibold">Dependencies</h2>
+      <h2 className="text-lg font-semibold">{t('lab.dependencies')}</h2>
       {overview.dependencies.length ? (
         <div className="grid gap-2 md:grid-cols-2">
           {overview.dependencies.map((dependency) => (
@@ -425,26 +434,28 @@ function DependenciesPanel({ overview }: { readonly overview: EngineeringLabOver
             </div>
           ))}
         </div>
-      ) : <p className="text-sm text-[color:var(--muted)]">Nenhum manifesto de dependencia suportado foi encontrado.</p>}
+      ) : <p className="text-sm text-[color:var(--muted)]">{t('lab.noManifests')}</p>}
     </Card>
   );
 }
 
 function DevOpsPanel({ overview }: { readonly overview: EngineeringLabOverview }) {
+  const { t } = useLocale();
   return (
     <div className="grid gap-4 lg:grid-cols-3">
-      <EvidencePanel title="Containers" items={overview.containers} empty="Sem Dockerfile ou compose." icon={Package} />
-      <EvidencePanel title="Cloud" items={overview.cloud} empty="Sem provider cloud detectado." icon={Cloud} />
-      <EvidencePanel title="Build" items={[overview.build]} empty="Build nao configurado." icon={ServerCog} />
+      <EvidencePanel title={t('lab.containers')} items={overview.containers} empty="Sem Dockerfile ou compose." icon={Package} />
+      <EvidencePanel title={t('lab.cloud')} items={overview.cloud} empty="Sem provider cloud detectado." icon={Cloud} />
+      <EvidencePanel title={t('lab.build')} items={[overview.build]} empty="Build nao configurado." icon={ServerCog} />
     </div>
   );
 }
 
 function ExportPanel({ overview }: { readonly overview: EngineeringLabOverview }) {
+  const { t } = useLocale();
   return (
     <Card className="space-y-4">
-      <h2 className="text-lg font-semibold">Export</h2>
-      <p className="text-sm text-[color:var(--muted)]">Payload real disponivel para PDF, Markdown, HTML, JSON, SARIF, JUnit XML, OpenAPI, Postman e Insomnia conforme conectores forem adicionados.</p>
+      <h2 className="text-lg font-semibold">{t('lab.export')}</h2>
+      <p className="text-sm text-[color:var(--muted)]">{t('lab.exportHint')}</p>
       <pre className="max-h-72 overflow-auto rounded-[var(--radius-md)] bg-black/40 p-4 text-xs">{JSON.stringify({
         project_id: overview.project_id,
         health_score: overview.health_score,

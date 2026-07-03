@@ -59,7 +59,7 @@ export function PlatformMap() {
     <div className="space-y-8">
       <header className="text-center">
         <p className="t-overline">{t('platform.title')}</p>
-        <h1 className="mx-auto mt-3 max-w-2xl t-h1 text-[color:var(--text)]">{t('platform.subtitle')}</h1>
+        <h1 className="mx-auto mt-3 max-w-2xl ds-page-title text-[color:var(--text)]">{t('platform.subtitle')}</h1>
       </header>
 
       {/* Desktop: cinematic radial stage */}
@@ -103,7 +103,7 @@ export function PlatformMap() {
         >
           <div className="ai-orb grid h-32 w-32 place-items-center rounded-full text-center">
             <div>
-              <p className="t-mono text-[0.6rem] uppercase tracking-[0.24em] text-[color:var(--accent)]">{t('platform.core')}</p>
+              <p className="t-overline tracking-[0.24em] text-[color:var(--accent)]">{t('platform.core')}</p>
             </div>
           </div>
         </motion.div>
@@ -155,7 +155,7 @@ export function PlatformMap() {
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-[color:var(--text)]">{t(`platform.node.${node.key}`)}</span>
-                <span className="mt-0.5 block t-caption">{t(`platform.node.${node.key}.desc`)}</span>
+                <span className="mt-0.5 block ds-caption">{t(`platform.node.${node.key}.desc`)}</span>
               </span>
             </button>
           );

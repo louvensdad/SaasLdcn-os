@@ -87,6 +87,54 @@ _POM = """<project xmlns="http://maven.apache.org/POM/4.0.0">
 </project>
 """
 
+# Minimal ecosystem manifest stubs. Each is the smallest VALID manifest for its
+# toolchain: enough to unblock install/build detection; the repair agent or the
+# user completes real dependencies afterwards.
+_GO_MOD = "module generated-app\n\ngo 1.23\n"
+
+_COMPOSER_JSON = json.dumps(
+    {"name": "ldcn/generated-app", "require": {"php": ">=8.2"}},
+    indent=2,
+) + "\n"
+
+_CARGO_TOML = """[package]
+name = "generated-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+"""
+
+_GEMFILE = 'source "https://rubygems.org"\n\nruby ">= 3.2"\n'
+
+_CSPROJ = """<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>
+"""
+
+_GRADLE_KTS = """plugins {
+    kotlin("jvm") version "2.0.0"
+}
+
+repositories {
+    mavenCentral()
+}
+"""
+
+_PACKAGE_JSON = json.dumps(
+    {
+        "name": "generated-app",
+        "version": "1.0.0",
+        "private": True,
+        "scripts": {"dev": "node src/index.js", "start": "node src/index.js"},
+    },
+    indent=2,
+) + "\n"
+
 _HEALTH = """from fastapi import APIRouter
 
 router = APIRouter()
@@ -111,6 +159,42 @@ __pycache__/
 .DS_Store
 """
 
+_EXPO_APP_JSON = json.dumps(
+    {
+        "expo": {
+            "name": "Generated Mobile App",
+            "slug": "generated-mobile-app",
+            "version": "1.0.0",
+            "orientation": "portrait",
+            "platforms": ["ios", "android"],
+        }
+    },
+    indent=2,
+) + "\n"
+
+_EXPO_README = """# Mobile app
+
+## Como rodar
+
+```bash
+npm install
+npm run start
+```
+
+O app usa Expo e consome o contrato OpenAPI compartilhado do projeto.
+"""
+
+_EXPO_GITIGNORE = """node_modules/
+.expo/
+dist/
+web-build/
+ios/
+android/
+.env
+.env.local
+*.log
+"""
+
 
 class AutoRepairEngine:
     def __init__(self, writer: ProjectWriter | None = None) -> None:
@@ -122,11 +206,21 @@ class AutoRepairEngine:
             "requirements_missing": self._fix_requirements,
             "tsconfig_missing": self._fix_tsconfig,
             "pom_missing": self._fix_pom,
+            "go_mod_missing": lambda p, i: self._write(p, i, "go.mod", _GO_MOD),
+            "composer_json_missing": lambda p, i: self._write(p, i, "composer.json", _COMPOSER_JSON),
+            "cargo_toml_missing": lambda p, i: self._write(p, i, "Cargo.toml", _CARGO_TOML),
+            "gemfile_missing": lambda p, i: self._write(p, i, "Gemfile", _GEMFILE),
+            "csproj_missing": lambda p, i: self._write(p, i, "App.csproj", _CSPROJ),
+            "gradle_kts_missing": lambda p, i: self._write(p, i, "build.gradle.kts", _GRADLE_KTS),
+            "package_json_missing": lambda p, i: self._write(p, i, "package.json", _PACKAGE_JSON),
             "package_scripts_missing": self._fix_package_scripts,
             "health_endpoint_missing": self._fix_health,
             "src_missing": self._fix_src,
             "gitignore_missing": self._fix_gitignore,
             "real_env_file": self._fix_remove_secret_file,
+            "expo_app_json_missing": self._fix_expo_app_json,
+            "expo_readme_missing": self._fix_expo_readme,
+            "expo_gitignore_missing": self._fix_expo_gitignore,
         }
 
     def plan(self, report: QualityGateReport) -> RepairPlan:
@@ -201,6 +295,15 @@ class AutoRepairEngine:
 
     def _fix_gitignore(self, project: dict[str, Any], issue: QualityIssue) -> RepairAction:
         return self._write(project, issue, ".gitignore", _GITIGNORE)
+
+    def _fix_expo_app_json(self, project: dict[str, Any], issue: QualityIssue) -> RepairAction:
+        return self._write(project, issue, "apps/mobile/app.json", _EXPO_APP_JSON)
+
+    def _fix_expo_readme(self, project: dict[str, Any], issue: QualityIssue) -> RepairAction:
+        return self._write(project, issue, "apps/mobile/README.md", _EXPO_README)
+
+    def _fix_expo_gitignore(self, project: dict[str, Any], issue: QualityIssue) -> RepairAction:
+        return self._write(project, issue, "apps/mobile/.gitignore", _EXPO_GITIGNORE)
 
     def _fix_package_scripts(self, project: dict[str, Any], issue: QualityIssue) -> RepairAction:
         root = self._root(project)

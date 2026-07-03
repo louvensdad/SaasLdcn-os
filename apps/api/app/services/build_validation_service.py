@@ -95,20 +95,81 @@ class BuildValidationService:
         return report
 
     def _dispatch(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
-        python_root = self._manifest_parent(root, "requirements.txt", ["", "apps/api", "backend"])
-        if python_root is not None:
-            return self._python(python_root, collector, sink)
-        node_root = self._manifest_parent(root, "package.json", ["", "apps/api", "apps/web", "frontend", "backend"])
-        if node_root is not None:
-            return self._node(node_root, collector, sink)
-        maven_root = self._manifest_parent(root, "pom.xml", ["", "apps/api", "backend"])
-        if maven_root is not None:
-            return self._maven(maven_root, collector, sink)
+        targets: list[tuple[str, Path]] = []
+        seen: set[tuple[str, Path]] = set()
+        backend_candidates = ["", "apps/api", "backend"]
+        catalogs = [
+            ("python", "requirements.txt", backend_candidates),
+            ("node", "package.json", ["", "apps/api", "apps/web", "frontend", "backend", "apps/mobile"]),
+            ("maven", "pom.xml", backend_candidates),
+            ("gradle", "build.gradle", backend_candidates),
+            ("gradle", "build.gradle.kts", backend_candidates),
+            ("go", "go.mod", backend_candidates),
+            ("composer", "composer.json", backend_candidates),
+            ("cargo", "Cargo.toml", backend_candidates),
+        ]
+        for ecosystem, manifest, candidates in catalogs:
+            for candidate in candidates:
+                candidate_root = (root / candidate).resolve()
+                key = (ecosystem, candidate_root)
+                if key not in seen and (candidate_root / manifest).is_file():
+                    targets.append(key)
+                    seen.add(key)
+        # .NET manifests are project-named (*.sln / *.csproj), so detection is a
+        # glob rather than a fixed filename.
+        for candidate in backend_candidates:
+            candidate_root = (root / candidate).resolve()
+            key = ("dotnet", candidate_root)
+            if key not in seen and candidate_root.is_dir() and (
+                next(candidate_root.glob("*.sln"), None) or next(candidate_root.glob("*.csproj"), None)
+            ):
+                targets.append(key)
+                seen.add(key)
+
+        if targets:
+            runners = {
+                "python": self._python, "node": self._node, "maven": self._maven,
+                "gradle": self._gradle, "go": self._go, "composer": self._composer,
+                "cargo": self._cargo, "dotnet": self._dotnet,
+            }
+            reports: list[tuple[str, Path, BuildValidationReport]] = []
+            for ecosystem, target in targets:
+                reports.append((ecosystem, target, runners[ecosystem](target, collector, sink)))
+            return self._combine_reports(root, reports)
         return BuildValidationReport(
             installed="skipped",
             built="skipped",
             ok=True,
             skipped_reason="No supported build manifest was emitted.",
+        )
+
+    def _combine_reports(
+        self,
+        root: Path,
+        reports: list[tuple[str, Path, BuildValidationReport]],
+    ) -> BuildValidationReport:
+        def aggregate(field: str) -> str:
+            values = [getattr(report, field) for _, _, report in reports]
+            if "failed" in values:
+                return "failed"
+            if "passed" in values:
+                return "passed"
+            return "skipped"
+
+        logs = []
+        skipped = []
+        for ecosystem, target, report in reports:
+            label = target.relative_to(root).as_posix() or "."
+            logs.append(f"[{ecosystem}:{label}]\n{report.logs_tail}")
+            if report.skipped_reason:
+                skipped.append(f"{ecosystem}:{label}: {report.skipped_reason}")
+        ok = all(report.ok and not (report.skipped_reason and report.installed == "skipped") for _, _, report in reports)
+        return BuildValidationReport(
+            installed=aggregate("installed"),
+            built=aggregate("built"),
+            ok=ok,
+            skipped_reason="; ".join(skipped) if not ok and skipped else None,
+            logs_tail=self._tail("\n".join(logs)),
         )
 
     def _python(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
@@ -153,11 +214,55 @@ class BuildValidationService:
         )
 
     def _maven(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
-        if not shutil.which("mvn"):
-            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": "mvn compile",
-                              "cwd": str(root), "message": "mvn nao esta disponivel no servidor; build pulado.", "exitCode": 127})
-            return self._skipped("mvn is unavailable on the server.")
-        result = self._run(["mvn", "-q", "-DskipTests", "compile"], root, collector, "build", sink)
+        return self._compile_ecosystem(root, collector, sink, tool="mvn", command=["mvn", "-q", "-DskipTests", "compile"])
+
+    def _gradle(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+        wrapper = root / ("gradlew.bat" if sys.platform.startswith("win") else "gradlew")
+        if wrapper.is_file():
+            command = [str(wrapper), "build", "-x", "test"]
+            return self._compile_ecosystem(root, collector, sink, tool=str(wrapper), command=command, tool_available=True)
+        return self._compile_ecosystem(root, collector, sink, tool="gradle", command=["gradle", "build", "-x", "test"])
+
+    def _go(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+        # `go build` resolves modules on demand, so install and build pass together.
+        return self._compile_ecosystem(root, collector, sink, tool="go", command=["go", "build", "./..."])
+
+    def _cargo(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+        return self._compile_ecosystem(root, collector, sink, tool="cargo", command=["cargo", "build"])
+
+    def _dotnet(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+        # `dotnet build` restores packages by default (install + build in one pass).
+        return self._compile_ecosystem(root, collector, sink, tool="dotnet", command=["dotnet", "build", "--nologo"])
+
+    def _composer(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+        if not shutil.which("composer"):
+            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": "composer install",
+                              "cwd": str(root), "message": "composer nao esta disponivel no servidor; build pulado.", "exitCode": 127})
+            return self._skipped("composer is unavailable on the server.")
+        install = self._run(["composer", "install", "--no-interaction", "--no-progress"], root, collector, "install", sink)
+        if install.returncode != 0:
+            return self._failed_install(install)
+        return BuildValidationReport(installed="passed", built="skipped", ok=True, logs_tail=self._tail(install.stdout + install.stderr))
+
+    def _compile_ecosystem(
+        self,
+        root: Path,
+        collector: _MetricsCollector,
+        sink: EventSink | None,
+        *,
+        tool: str,
+        command: list[str],
+        tool_available: bool | None = None,
+    ) -> BuildValidationReport:
+        """Shared compile-style runner (maven/gradle/go/cargo/dotnet): dependency
+        resolution and compilation happen in one command, so install/built pass or
+        fail together. Missing toolchain skips gracefully, never fails the stage."""
+        available = tool_available if tool_available is not None else bool(shutil.which(tool))
+        if not available:
+            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": subprocess.list2cmdline(command),
+                              "cwd": str(root), "message": f"{tool} nao esta disponivel no servidor; build pulado.", "exitCode": 127})
+            return self._skipped(f"{tool} is unavailable on the server.")
+        result = self._run(command, root, collector, "build", sink)
         if result.returncode != 0:
             return BuildValidationReport(installed="failed", built="failed", ok=False, logs_tail=self._tail(result.stdout + result.stderr))
         return BuildValidationReport(installed="passed", built="passed", ok=True, logs_tail=self._tail(result.stdout + result.stderr))

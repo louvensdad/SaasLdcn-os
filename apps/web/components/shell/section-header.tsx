@@ -9,11 +9,11 @@ interface SectionHeaderProps {
 export function SectionHeader({ title, description, className }: SectionHeaderProps) {
   return (
     <div className={cn('mb-8 flex flex-col gap-3', className)}>
-      <h1 className="type-page text-[color:var(--text)]">
+      <h1 className="ds-page-title text-[color:var(--text)]">
         {title}
       </h1>
       {description ? (
-        <p className="type-body max-w-3xl text-[color:var(--muted)]">{description}</p>
+        <p className="ds-body max-w-3xl text-[color:var(--muted)]">{description}</p>
       ) : null}
     </div>
   );

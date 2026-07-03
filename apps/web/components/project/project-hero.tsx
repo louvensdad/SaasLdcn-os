@@ -32,7 +32,7 @@ export function ProjectHero({ project }: { readonly project: Project }) {
       <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--accent)_22%,transparent),transparent_70%)] blur-3xl" />
       <div className="relative">
         <p className="t-overline">{t('projectHero.eyebrow')}</p>
-        <h1 className="mt-3 t-h1 text-[color:var(--text)]">{project.project_name}</h1>
+        <h1 className="mt-3 ds-page-title text-[color:var(--text)]">{project.project_name}</h1>
         <p className="mt-2 t-mono text-sm text-[color:var(--muted)]">
           {tg.language.name} · {tg.runtime.name} · {tg.framework.name} · {tg.architecture.name}
         </p>

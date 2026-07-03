@@ -110,14 +110,14 @@ function ArchitectChooser() {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="t-h2 text-[color:var(--text)]">{t('architect.chooser.title')}</h2>
-        <p className="mt-2 t-body text-[color:var(--muted)]">{t('architect.chooser.hint')}</p>
+        <h2 className="ds-section text-[color:var(--text)]">{t('architect.chooser.title')}</h2>
+        <p className="mt-2 ds-body ds-text-muted">{t('architect.chooser.hint')}</p>
       </div>
 
       {rooms.length === 0 ? (
         <Card className="glass noise space-y-4 p-8 text-center">
           <Compass className="mx-auto h-8 w-8 text-[color:var(--muted)]" aria-hidden />
-          <p className="t-body text-[color:var(--muted)]">{t('architect.chooser.empty')}</p>
+          <p className="ds-body ds-text-muted">{t('architect.chooser.empty')}</p>
           <div>
             <Link href="/project-rooms/new"><Button variant="primary">{t('architect.chooser.newRoom')}</Button></Link>
           </div>
@@ -211,8 +211,8 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
     return (
       <Card className="glass noise space-y-4 p-8 text-center">
         <ShieldCheck className="mx-auto h-8 w-8 text-[color:var(--warning)]" aria-hidden />
-        <h2 className="t-h3 text-[color:var(--text)]">{t('architect.blocked.title')}</h2>
-        <p className="mx-auto max-w-md t-body text-[color:var(--muted)]">{t('architect.blocked.desc')}</p>
+        <h2 className="ds-subsection text-[color:var(--text)]">{t('architect.blocked.title')}</h2>
+        <p className="mx-auto max-w-md ds-body ds-text-muted">{t('architect.blocked.desc')}</p>
         <div>
           <Link href={`/project-rooms/${roomId}`}><Button variant="primary">{t('architect.blocked.cta')}</Button></Link>
         </div>
@@ -227,7 +227,7 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="t-overline">{t('architect.blueprint.title')}</p>
-            <h2 className="mt-2 t-h2 text-[color:var(--text)]">{room.title}</h2>
+            <h2 className="mt-2 ds-section text-[color:var(--text)]">{room.title}</h2>
           </div>
           <RoomStatusBadge status={room.status} />
         </div>
@@ -241,7 +241,7 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
             <Badge>{t('architect.generatedAt')}: {new Date(blueprint.generated_at).toLocaleString(locale)}</Badge>
           </div>
         ) : (
-          <p className="mt-4 max-w-2xl t-body text-[color:var(--muted)]">{t('architect.generateHint')}</p>
+          <p className="mt-4 max-w-2xl ds-body ds-text-muted">{t('architect.generateHint')}</p>
         )}
 
         <div className="mt-5 flex flex-wrap gap-3">
@@ -265,7 +265,7 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
           )}
         </div>
 
-        {error ? <p className="mt-3 t-caption text-[color:var(--danger)]" role="alert">{error}</p> : null}
+        {error ? <p className="mt-3 ds-caption text-[color:var(--danger)]" role="alert">{error}</p> : null}
       </Card>
 
       {blueprint ? (
@@ -287,13 +287,13 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
               id: 'model',
               label: 'Modelo',
               icon: Boxes,
-              content: model ? <ArchitectureModelTab model={model} /> : <p className="t-caption text-[color:var(--muted-2)]">Modelo de arquitetura indisponÃ­vel.</p>,
+              content: model ? <ArchitectureModelTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">Modelo de arquitetura indisponÃ­vel.</p>,
             },
             {
               id: 'strategies',
               label: 'Estratégias',
               icon: Layers,
-              content: model ? <ArchitectureStrategiesTab model={model} /> : <p className="t-caption text-[color:var(--muted-2)]">Estratégias indisponÃ­veis.</p>,
+              content: model ? <ArchitectureStrategiesTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">Estratégias indisponÃ­veis.</p>,
             },
             ...(blueprint.responseDiagnostics
               ? [{
@@ -354,17 +354,17 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
       right={<ConfidenceBadge value={decision.confidence} />}
     >
     <div className="space-y-3">
-      {decision.context ? <p className="t-caption text-[color:var(--muted-2)]">{decision.context}</p> : null}
+      {decision.context ? <p className="ds-caption text-[color:var(--muted-2)]">{decision.context}</p> : null}
 
       <div>
-        <p className="t-caption font-semibold text-[color:var(--text)]">{t('architect.decision.justification')}</p>
-        <p className="mt-1 t-body text-[color:var(--muted)]">{decision.justification}</p>
+        <p className="ds-caption font-semibold text-[color:var(--text)]">{t('architect.decision.justification')}</p>
+        <p className="mt-1 ds-body ds-text-muted">{decision.justification}</p>
       </div>
 
       {decision.impact ? (
         <div>
-          <p className="t-caption font-semibold text-[color:var(--text)]">Impacto</p>
-          <p className="mt-1 t-caption text-[color:var(--muted)]">{decision.impact}</p>
+          <p className="ds-caption font-semibold text-[color:var(--text)]">Impacto</p>
+          <p className="mt-1 ds-caption text-[color:var(--muted)]">{decision.impact}</p>
         </div>
       ) : null}
 
@@ -373,7 +373,7 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
           {impacts.filter(([, v]) => v).map(([k, v]) => (
             <div key={k} className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-2.5">
               <p className="t-overline">{k}</p>
-              <p className="mt-0.5 t-caption text-[color:var(--muted)]">{v}</p>
+              <p className="mt-0.5 ds-caption text-[color:var(--muted)]">{v}</p>
             </div>
           ))}
         </div>
@@ -381,8 +381,8 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
 
       {decision.tradeoffs?.length ? (
         <div>
-          <p className="t-caption font-semibold text-[color:var(--text)]">Trade-offs</p>
-          <ul className="mt-1 ml-4 list-disc space-y-0.5 t-caption text-[color:var(--muted)]">
+          <p className="ds-caption font-semibold text-[color:var(--text)]">Trade-offs</p>
+          <ul className="mt-1 ml-4 list-disc space-y-0.5 ds-caption text-[color:var(--muted)]">
             {decision.tradeoffs.map((item, index) => <li key={index}>{item}</li>)}
           </ul>
         </div>
@@ -390,8 +390,8 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
 
       {decision.risks?.length ? (
         <div>
-          <p className="t-caption font-semibold text-[color:var(--text)]">Riscos</p>
-          <ul className="mt-1 ml-4 list-disc space-y-0.5 t-caption text-[color:var(--muted)]">
+          <p className="ds-caption font-semibold text-[color:var(--text)]">Riscos</p>
+          <ul className="mt-1 ml-4 list-disc space-y-0.5 ds-caption text-[color:var(--muted)]">
             {decision.risks.map((item, index) => <li key={index}>{item}</li>)}
           </ul>
         </div>
@@ -399,19 +399,19 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
 
       {decision.when_to_reconsider ? (
         <div>
-          <p className="t-caption font-semibold text-[color:var(--text)]">Quando reconsiderar</p>
-          <p className="mt-1 t-caption text-[color:var(--muted)]">{decision.when_to_reconsider}</p>
+          <p className="ds-caption font-semibold text-[color:var(--text)]">Quando reconsiderar</p>
+          <p className="mt-1 ds-caption text-[color:var(--muted)]">{decision.when_to_reconsider}</p>
         </div>
       ) : null}
 
       <div>
-        <p className="t-caption font-semibold text-[color:var(--text)]">{t('architect.decision.alternatives')}</p>
+        <p className="ds-caption font-semibold text-[color:var(--text)]">{t('architect.decision.alternatives')}</p>
         {decision.alternatives_considered.length ? (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {decision.alternatives_considered.map((alt) => <Badge key={alt} tone="neutral">{alt}</Badge>)}
           </div>
         ) : (
-          <p className="mt-1 t-caption">{t('architect.decision.noAlternatives')}</p>
+          <p className="mt-1 ds-caption">{t('architect.decision.noAlternatives')}</p>
         )}
       </div>
 
@@ -426,7 +426,7 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
           {decision.requirement_links?.length ? (
             <div>
               <p className="t-overline">Requisitos da spec</p>
-              <ul className="mt-1 space-y-0.5 t-caption text-[color:var(--muted)]">{decision.requirement_links.map((req, index) => <li key={index}>â€¢ {req}</li>)}</ul>
+              <ul className="mt-1 space-y-0.5 ds-caption text-[color:var(--muted)]">{decision.requirement_links.map((req, index) => <li key={index}>â€¢ {req}</li>)}</ul>
             </div>
           ) : null}
         </div>
@@ -435,7 +435,7 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
       {decision.evidence?.length ? (
         <div>
           <p className="t-overline">EvidÃªncias utilizadas</p>
-          <ul className="mt-1 space-y-0.5 t-caption text-[color:var(--muted)]">{decision.evidence.map((ev, index) => <li key={index}>â€¢ {ev}</li>)}</ul>
+          <ul className="mt-1 space-y-0.5 ds-caption text-[color:var(--muted)]">{decision.evidence.map((ev, index) => <li key={index}>â€¢ {ev}</li>)}</ul>
         </div>
       ) : null}
     </div>

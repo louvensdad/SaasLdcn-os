@@ -100,7 +100,6 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
     requirements = blueprint["project_requirements"]
 
     warnings = [item["message"] for item in validation["warnings"]]
-    suggestion_lines = validation.get("suggestions", [])
     recommendation_lines = [item["message"] for item in recommendations]
 
     sections = [

@@ -235,8 +235,8 @@ function AutoFixInner() {
           <Wrench className="h-7 w-7" aria-hidden />
         </span>
         <div className="space-y-2">
-          <h1 className="t-h2 text-[color:var(--text)]">{t('autoFix.empty.title')}</h1>
-          <p className="t-body max-w-md text-[color:var(--muted)]">{t('autoFix.empty.body')}</p>
+          <h1 className="ds-section text-[color:var(--text)]">{t('autoFix.empty.title')}</h1>
+          <p className="ds-body ds-text-muted max-w-md">{t('autoFix.empty.body')}</p>
         </div>
         <Button variant="primary" onClick={() => router.push('/modernize')}>
           {t('autoFix.empty.cta')} <ArrowRight className="h-4 w-4" />
@@ -254,8 +254,8 @@ function AutoFixInner() {
       {/* Analysis not processed yet (ingested but never analyzed). */}
       {!report ? (
         <Card surface="primary" className="space-y-4 p-6">
-          <h2 className="t-h3 text-[color:var(--text)]">{t('autoFix.pending.title')}</h2>
-          <p className="t-body text-[color:var(--muted)]">{t('autoFix.pending.body')}</p>
+          <h2 className="ds-subsection text-[color:var(--text)]">{t('autoFix.pending.title')}</h2>
+          <p className="ds-body ds-text-muted">{t('autoFix.pending.body')}</p>
           <Button variant="primary" loading={busy === 'analyze'} onClick={() => void runAnalysis()}>
             <Sparkles className="h-4 w-4" /> {busy === 'analyze' ? t('autoFix.pending.running') : t('autoFix.pending.cta')}
           </Button>
@@ -292,9 +292,9 @@ function AutoFixInner() {
           {/* Center — grouped fixes + execution + results */}
           <div className="min-w-0 space-y-6">
             <Card className="space-y-3 p-6">
-              <h2 className="t-h3 text-[color:var(--text)]">{t('autoFix.fixes.title')}</h2>
+              <h2 className="ds-subsection text-[color:var(--text)]">{t('autoFix.fixes.title')}</h2>
               {visibleIssues.length === 0 ? (
-                <p className="flex items-center gap-2 t-body text-[color:var(--muted)]">
+                <p className="flex items-center gap-2 ds-body ds-text-muted">
                   <CheckCircle2 className="h-4 w-4 text-[color:var(--success)]" />
                   {t('autoFix.fixes.empty')}
                 </p>
@@ -316,7 +316,7 @@ function AutoFixInner() {
             {!refactor ? (
               <Card surface="primary" className="space-y-4 p-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="t-h3 text-[color:var(--text)]">{t('autoFix.run.title')}</h2>
+                  <h2 className="ds-subsection text-[color:var(--text)]">{t('autoFix.run.title')}</h2>
                   <div className="flex flex-wrap gap-2">
                     <PresetButton label={t('autoFix.select.all')} onClick={presetAll} />
                     <PresetButton label={t('autoFix.select.critical')} onClick={presetCritical} />
@@ -325,7 +325,7 @@ function AutoFixInner() {
                 </div>
 
                 {phases.length === 0 ? (
-                  <p className="t-body text-[color:var(--muted)]">{t('autoFix.run.noPhases')}</p>
+                  <p className="ds-body ds-text-muted">{t('autoFix.run.noPhases')}</p>
                 ) : (
                   <div className="space-y-2">
                     {phases.map((phase) => {
@@ -350,7 +350,7 @@ function AutoFixInner() {
                             />
                             <span>
                               <span className="block text-sm font-semibold text-[color:var(--text)]">{phase.title}</span>
-                              <span className="mt-0.5 block t-caption">
+                              <span className="mt-0.5 block ds-caption">
                                 {phase.actions.length} {t('autoFix.run.actions')} · {auto} {t('autoFix.run.autoSafe')}
                               </span>
                             </span>
@@ -362,7 +362,7 @@ function AutoFixInner() {
                 )}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--border)] pt-4">
-                  <p className="t-caption">
+                  <p className="ds-caption">
                     <span className="font-semibold text-[color:var(--text)]">{selectedPhases.size}</span>{' '}
                     {t('autoFix.run.phasesSelected')} ·{' '}
                     <span className="font-semibold text-[color:var(--text)]">{selectedActionCount}</span>{' '}
@@ -381,7 +381,7 @@ function AutoFixInner() {
                     )}
                   </LlmGatedAction>
                 </div>
-                <p className="flex items-start gap-2 t-caption">
+                <p className="flex items-start gap-2 ds-caption">
                   <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--accent)]" />
                   {t('autoFix.run.hint')}
                 </p>
@@ -406,7 +406,7 @@ function AutoFixInner() {
             {/* Git — only after a corrected copy exists */}
             {refactor?.materialized_project_id ? (
               <Card className="space-y-3 p-6">
-                <h2 className="flex items-center gap-2 t-h3 text-[color:var(--text)]">
+                <h2 className="flex items-center gap-2 ds-subsection text-[color:var(--text)]">
                   <GitBranch className="h-5 w-5 text-[color:var(--accent)]" /> {t('autoFix.git.title')}
                 </h2>
                 <ExportPanel
@@ -475,7 +475,7 @@ function ProjectHeader({
               </Badge>
             ))}
           </div>
-          <p className="t-caption">
+          <p className="ds-caption">
             {summary.file_count.toLocaleString()} {t('autoFix.header.files')}
             {findings !== null ? <> · {findings} Findings</> : null}
           </p>
@@ -502,7 +502,7 @@ function ScorePill({ label, value }: { readonly label: string; readonly value: n
       {measured ? (
         <p className="mt-1 t-mono text-lg font-bold text-[color:var(--text)]">{value}</p>
       ) : (
-        <p className="mt-1 t-caption">{t('autoFix.header.notRun')}</p>
+        <p className="mt-1 ds-caption">{t('autoFix.header.notRun')}</p>
       )}
       {measured ? (
         <Badge tone={scoreTone(value)} className="mt-1">
@@ -575,21 +575,21 @@ function FindingCard({
       <button
         type="button"
         onClick={onToggle}
-        className="focus-ring mt-2 inline-flex items-center gap-1.5 t-caption font-medium text-[color:var(--accent)]"
+        className="focus-ring mt-2 inline-flex items-center gap-1.5 ds-caption font-medium text-[color:var(--accent)]"
       >
         {t('autoFix.fix.details')}
         <ChevronDown className={cn('h-3.5 w-3.5 transition', open && 'rotate-180')} />
       </button>
       {open ? (
         <div className="mt-3 space-y-2 border-t border-[color:var(--border)] pt-3">
-          <p className="t-caption">
+          <p className="ds-caption">
             <span className="font-semibold text-[color:var(--text)]">{t('autoFix.fix.why')}:</span> {issue.root_cause}
           </p>
-          <p className="t-caption">
+          <p className="ds-caption">
             <span className="font-semibold text-[color:var(--text)]">{t('autoFix.fix.recommendation')}:</span>{' '}
             {issue.recommendation}
           </p>
-          <p className="flex items-start gap-1.5 t-caption text-[color:var(--muted-2)]">
+          <p className="flex items-start gap-1.5 ds-caption text-[color:var(--muted-2)]">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {t('autoFix.fix.unavailable')}
           </p>
@@ -628,7 +628,7 @@ function ResultsCard({
     <Card surface="primary" className="space-y-4 p-6">
       <div className="flex flex-wrap items-center gap-2">
         <CheckCircle2 className="h-5 w-5 text-[color:var(--success)]" />
-        <h2 className="t-h3 text-[color:var(--text)]">{t('autoFix.result.title')}</h2>
+        <h2 className="ds-subsection text-[color:var(--text)]">{t('autoFix.result.title')}</h2>
         <Badge tone="success">
           {t('autoFix.result.applied')}: {refactor.applied_count}
         </Badge>
@@ -652,7 +652,7 @@ function ResultsCard({
                 key={dim}
                 className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)] p-3"
               >
-                <p className="t-caption capitalize">{dim.replaceAll('_', ' ')}</p>
+                <p className="ds-caption capitalize">{dim.replaceAll('_', ' ')}</p>
                 <p className="mt-1 flex items-center gap-2 t-mono text-sm">
                   <span className="text-[color:var(--muted)]">{before}</span>
                   <ArrowRight className="h-3.5 w-3.5 text-[color:var(--muted-2)]" />
@@ -667,12 +667,12 @@ function ResultsCard({
           })}
         </div>
       ) : (
-        <p className="t-caption">{t('autoFix.result.noDelta')}</p>
+        <p className="ds-caption">{t('autoFix.result.noDelta')}</p>
       )}
 
       {diff && diff.changed_paths.length ? (
         <div>
-          <p className="t-caption font-semibold text-[color:var(--text)]">
+          <p className="ds-caption font-semibold text-[color:var(--text)]">
             {t('autoFix.result.changed')} ({diff.changed_paths.length})
           </p>
           <ul className="mt-1 space-y-0.5 t-mono text-xs text-[color:var(--muted)]">
@@ -699,7 +699,7 @@ function PlaceholderCard({ icon: Icon, title, note }: { readonly icon: LucideIco
         <Icon className="h-4 w-4 text-[color:var(--muted)]" aria-hidden />
         {title}
       </p>
-      <p className="t-caption">{note}</p>
+      <p className="ds-caption">{note}</p>
       <Badge tone="neutral">{t('autoFix.soon')}</Badge>
     </Card>
   );

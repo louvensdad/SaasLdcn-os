@@ -36,6 +36,7 @@ SECRET_VALUE_PATTERN = re.compile(
     r"(secret|token|password|api[_-]?key|private[_-]?key|credential)\s*[:=]\s*['\"]?([A-Za-z0-9_\-./+=]{12,})",
     re.IGNORECASE,
 )
+EXCLUDED_BUILD_DIRECTORIES = frozenset({"node_modules", "ios", "android"})
 
 
 class GeneratedProjectService:
@@ -172,6 +173,8 @@ class GeneratedProjectService:
         blocked: list[str] = []
         for item in sorted(root.rglob("*")):
             relative_path = item.relative_to(root).as_posix()
+            if any(part in EXCLUDED_BUILD_DIRECTORIES for part in item.relative_to(root).parts):
+                continue
             if self._is_secret_candidate(root, item):
                 blocked.append(relative_path)
                 continue

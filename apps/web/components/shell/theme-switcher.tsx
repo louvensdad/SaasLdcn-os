@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import { THEMES, type ThemeId } from '@/lib/themes';
+import { THEMES } from '@/lib/themes';
 import { useShellStore } from '@/stores/use-shell-store';
 
 export function ThemeSwitcher() {
@@ -25,7 +25,7 @@ export function ThemeSwitcher() {
               'h-9 min-w-0 rounded-[var(--radius-xl)] px-3 text-xs font-semibold xl:flex-none xl:rounded-full',
               active && 'shadow-none',
             )}
-            onClick={() => setThemeId(theme.id as ThemeId)}
+            onClick={() => setThemeId(theme.id)}
           >
             <motion.span
               animate={{ opacity: active ? 1 : 0.75 }}

@@ -26,6 +26,14 @@ export const useShellStore = create<ShellState>()(
     }),
     {
       name: 'ldcn-shell-v4',
+      version: 1,
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<ShellState> | undefined;
+        return {
+          ...state,
+          themeId: state?.themeId === 'light' ? 'light' : DEFAULT_THEME_ID,
+        };
+      },
       partialize: (state) => ({ themeId: state.themeId }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);

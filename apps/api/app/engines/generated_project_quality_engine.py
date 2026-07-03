@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import BASE_DIR
 from app.data.foundation import CONTRACT_VERSION
+from app.data.language_agent_profiles import LANGUAGE_AGENT_PROFILES, resolve_language_id
 from app.services.generated_project_service import DOWNLOAD_DIR
 
 TEXT_EXTENSIONS = {
@@ -62,8 +63,15 @@ class GeneratedProjectQualityEngine:
         warnings: list[str] = []
         security_findings: list[dict[str, Any]] = []
 
-        self._manifest_checks(root, manifest, checks, missing_files)
-        self._framework_checks(root, framework, profile_id, checks, missing_files)
+        language = str(
+            manifest.get("language")
+            or ((project.get("technology_graph") or {}).get("language") or {}).get("id")
+            or ""
+        )
+        self._manifest_checks(root, manifest, framework, checks, missing_files)
+        self._framework_checks(root, framework, language, profile_id, checks, missing_files)
+        if framework not in {"expo", "react_native"} and (root / "apps" / "mobile").is_dir():
+            self._mobile_checks(root, "apps/mobile", checks, missing_files)
         self._readme_check(root, checks, warnings)
         self._env_example_check(root, checks, warnings, missing_files)
         self._blueprint_check(project, manifest, framework, checks, warnings)
@@ -117,8 +125,10 @@ class GeneratedProjectQualityEngine:
             return manifest_framework
         return str(((project.get("technology_graph") or {}).get("framework") or {}).get("id") or "unknown")
 
-    def _manifest_checks(self, root: Path, manifest: dict[str, Any], checks: list[dict[str, Any]], missing_files: list[str]) -> None:
+    def _manifest_checks(self, root: Path, manifest: dict[str, Any], framework: str, checks: list[dict[str, Any]], missing_files: list[str]) -> None:
         self._require_file(root, ".ldcn-generation.json", "manifest_base", "Base generation manifest exists", "manifest", checks, missing_files)
+        if framework in {"expo", "react_native"}:
+            return
         self._require_file(root, ".ldcn-backend-generation.json", "manifest_backend", "Backend generation manifest exists", "manifest", checks, missing_files)
         safe_flags = all(bool(manifest.get(flag)) for flag in ["deterministic", "no_ai", "no_agents", "no_shell_execution", "no_external_access"])
         self._check(
@@ -137,6 +147,7 @@ class GeneratedProjectQualityEngine:
         self,
         root: Path,
         framework: str,
+        language: str,
         profile_id: str | None,
         checks: list[dict[str, Any]],
         missing_files: list[str],
@@ -170,6 +181,32 @@ class GeneratedProjectQualityEngine:
             self._require_file(root, "tsconfig.json", "nestjs_tsconfig", "NestJS tsconfig.json exists", "structure", checks, missing_files)
             return
 
+        if framework in {"expo", "react_native"}:
+            prefix = "apps/mobile" if (root / "apps" / "mobile").is_dir() else ""
+            self._mobile_checks(root, prefix, checks, missing_files)
+            return
+
+        # Any other framework: resolve the LANGUAGE specialist profile and run
+        # generic ecosystem structure checks instead of hard-failing. A Go/PHP/
+        # Rust/Ruby/C#/Kotlin project (or Django/Laravel/etc. on a known language)
+        # is validated by its ecosystem's real requirements, never blocked as
+        # "unsupported".
+        language_id = resolve_language_id(language) or resolve_language_id(framework)
+        if language_id is not None:
+            self._ecosystem_checks(root, language_id, checks, missing_files)
+            self._check(
+                checks,
+                "framework_supported",
+                "Framework is supported by Generated Project Quality Gate",
+                "structure",
+                True,
+                True,
+                f"Framework '{framework}' validated via the {LANGUAGE_AGENT_PROFILES[language_id]['label']} ecosystem checks.",
+                "Framework is not supported.",
+                [framework],
+            )
+            return
+
         self._check(
             checks,
             "framework_supported",
@@ -181,6 +218,94 @@ class GeneratedProjectQualityEngine:
             f"Unsupported generated backend framework: {framework}.",
             [framework],
         )
+
+    def _ecosystem_checks(
+        self,
+        root: Path,
+        language_id: str,
+        checks: list[dict[str, Any]],
+        missing_files: list[str],
+    ) -> None:
+        profile = LANGUAGE_AGENT_PROFILES[language_id]
+        manifest = str(profile["manifest"])
+        extensions = tuple(profile["source_extensions"])
+
+        if manifest.startswith("*"):
+            # Project-named manifests (*.csproj): glob at root and one level down.
+            suffix = manifest[1:]
+            manifest_ok = bool(
+                next(root.glob(f"*{suffix}"), None) or next(root.glob(f"*/*{suffix}"), None)
+            )
+        else:
+            manifest_ok = (root / manifest).is_file() or bool(next(root.glob(f"*/{manifest}"), None))
+        if not manifest_ok:
+            missing_files.append(manifest)
+        self._check(
+            checks,
+            f"{language_id}_manifest",
+            f"{profile['label']} dependency manifest exists ({manifest})",
+            "structure",
+            manifest_ok,
+            True,
+            f"{manifest} exists.",
+            f"{manifest} is missing.",
+            [manifest],
+        )
+
+        source_ok = any(
+            item.is_file() and item.suffix.lower() in extensions for item in root.rglob("*")
+        )
+        if not source_ok:
+            missing_files.append(f"*{extensions[0]}")
+        self._check(
+            checks,
+            f"{language_id}_source",
+            f"{profile['label']} source files exist ({', '.join(extensions)})",
+            "structure",
+            source_ok,
+            True,
+            "Source files for the ecosystem exist.",
+            f"No source files ({', '.join(extensions)}) were generated.",
+            [f"*{ext}" for ext in extensions],
+        )
+
+        tests_ok = any(
+            ("test" in item.name.lower() or "spec" in item.name.lower()) and item.is_file()
+            for item in root.rglob("*")
+        )
+        self._check(
+            checks,
+            "generic_tests",
+            "Test files exist",
+            "structure",
+            tests_ok,
+            False,  # advisory for generic ecosystems: warns, never blocks alone
+            "Test files were generated.",
+            "No test files detected in the generated project.",
+            ["tests"],
+        )
+
+    def _mobile_checks(
+        self,
+        root: Path,
+        prefix: str,
+        checks: list[dict[str, Any]],
+        missing_files: list[str],
+    ) -> None:
+        def path(value: str) -> str:
+            return f"{prefix}/{value}" if prefix else value
+
+        self._require_file(root, path("app.json"), "expo_app_json", "Expo app.json exists", "structure", checks, missing_files)
+        self._require_file(root, path("package.json"), "expo_package", "Expo package.json exists", "structure", checks, missing_files)
+        self._require_file(root, path("tsconfig.json"), "expo_tsconfig", "Expo tsconfig.json exists", "structure", checks, missing_files)
+        self._require_file(root, path("App.tsx"), "expo_entrypoint", "Expo App.tsx exists", "structure", checks, missing_files)
+        self._require_dir_with_file(root, path("src/api"), "expo_api_client", "Mobile typed API client exists", "structure", checks, missing_files)
+        self._require_dir_with_file(root, path("src/screens"), "expo_screens", "Mobile screens exist", "structure", checks, missing_files)
+        self._require_dir_with_file(root, path("src/navigation"), "expo_navigation", "Mobile navigation exists", "structure", checks, missing_files)
+        self._require_dir_with_file(root, path("tests"), "expo_tests", "Mobile tests exist", "structure", checks, missing_files)
+        self._require_file(root, path("README.md"), "expo_readme", "Mobile README exists", "readme", checks, missing_files)
+        self._require_file(root, path(".env.example"), "expo_env_example", "Mobile .env.example exists", "env", checks, missing_files)
+        self._require_file(root, path(".gitignore"), "expo_gitignore", "Mobile .gitignore exists", "structure", checks, missing_files)
 
     def _readme_check(self, root: Path, checks: list[dict[str, Any]], warnings: list[str]) -> None:
         path = root / "README.md"
@@ -210,8 +335,9 @@ class GeneratedProjectQualityEngine:
     ) -> None:
         if (root / "pom.xml").is_file():
             return
-        self._require_file(root, ".env.example", "env_example_exists", ".env.example exists", "env", checks, missing_files)
-        path = root / ".env.example"
+        relative_path = "apps/mobile/.env.example" if not (root / ".env.example").is_file() and (root / "apps/mobile/.env.example").is_file() else ".env.example"
+        self._require_file(root, relative_path, "env_example_exists", ".env.example exists", "env", checks, missing_files)
+        path = root / relative_path
         if not path.is_file():
             return
         content = path.read_text(encoding="utf-8", errors="ignore").strip()
@@ -320,7 +446,7 @@ class GeneratedProjectQualityEngine:
                 if normalized.startswith("/") or normalized.startswith("../") or "/../" in normalized:
                     zip_ok = False
                     self._finding(security_findings, "zip_path_traversal", "critical", "ZIP entry contains path traversal.", normalized)
-                if normalized.startswith(("apps/", "packages/", ".git/", "reports/")):
+                if normalized.startswith((".git/", ".agents/", ".codex/", "reports/")):
                     zip_ok = False
                     self._finding(security_findings, "zip_workspace_root", "critical", "ZIP appears to contain LDCN OS workspace root content.", normalized)
         self._check(

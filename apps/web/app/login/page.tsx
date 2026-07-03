@@ -71,17 +71,17 @@ export default function LoginPage() {
         <section className="glass noise relative hidden overflow-hidden p-8 lg:block">
           <div className="pointer-events-none absolute -right-12 -top-16 h-52 w-52 rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--accent)_22%,transparent),transparent_70%)] blur-2xl" />
           <p className="t-overline">{t('login.hero.eyebrow')}</p>
-          <h2 className="mt-4 max-w-md t-h1 leading-[1.1] text-[color:var(--text)]">
+          <h2 className="mt-4 max-w-md ds-page-title leading-[1.1] text-[color:var(--text)]">
             {t('login.hero.title')}
           </h2>
-          <p className="mt-4 max-w-md t-body text-[color:var(--muted)]">{t('login.hero.subtitle')}</p>
+          <p className="mt-4 max-w-md ds-body ds-text-muted">{t('login.hero.subtitle')}</p>
 
           <ol className="mt-8 flex flex-wrap items-center gap-y-4">
             {STAGES.map((stage, index) => (
               <li key={stage} className="flex items-center">
                 <div className="flex flex-col items-center gap-2">
                   <span className="live-dot" style={{ background: 'var(--accent)' }} aria-hidden />
-                  <span className="t-mono text-[0.625rem] uppercase tracking-[0.12em] text-[color:var(--muted-2)]">
+                  <span className="t-overline tracking-[0.12em] text-[color:var(--muted-2)]">
                     {t(`dashboard.stage.${stage}`)}
                   </span>
                 </div>

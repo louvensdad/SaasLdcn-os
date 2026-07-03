@@ -24,7 +24,7 @@ export function Tooltip({ label, children, side = 'top', className }: TooltipPro
         role="tooltip"
         className={cn(
           'pointer-events-none absolute left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-sm)]',
-          'border border-[color:var(--border-strong)] bg-[color:var(--surface-2)] px-2.5 py-1.5 t-caption text-[color:var(--text)]',
+          'border border-[color:var(--border-strong)] bg-[color:var(--surface-2)] px-2.5 py-1.5 ds-caption text-[color:var(--text)]',
           'shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur',
           'opacity-0 transition duration-150 ease-out group-hover/tt:opacity-100 group-focus-within/tt:opacity-100',
           side === 'top'

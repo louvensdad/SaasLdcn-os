@@ -20,7 +20,21 @@ BLUEPRINT_AREAS = [
     "observability",
     "tests",
     "deploy",
+    "mobile",
 ]
+
+_AREAS_REQUIRING_MOBILE_DELIVERY = {"mobile"}
+_DELIVERY_TYPES_WITH_MOBILE = {"mobile", "full_stack"}
+
+
+def relevant_areas(delivery_type: str | None) -> list[str]:
+    """The subset of BLUEPRINT_AREAS a project of this delivery_type is actually
+    expected to decide -- "mobile" only counts for mobile/full_stack projects, so
+    a web-only project's readiness/score denominators aren't penalized for an
+    area it will never (and shouldn't) decide."""
+    if delivery_type in _DELIVERY_TYPES_WITH_MOBILE:
+        return list(BLUEPRINT_AREAS)
+    return [area for area in BLUEPRINT_AREAS if area not in _AREAS_REQUIRING_MOBILE_DELIVERY]
 
 
 class BlueprintDecision(ApiModel):

@@ -23,11 +23,25 @@ def _spec() -> ProjectSpec:
 def test_deterministic_blueprint_covers_all_areas_with_justifications():
     bp = build_blueprint(_spec(), project_id="room_abc")
     areas = {d.area for d in bp.decisions}
-    assert set(BLUEPRINT_AREAS) <= areas  # every architectural area is decided
+    # _spec() has no delivery_type (defaults to "web"): every area EXCEPT "mobile"
+    # is decided -- mobile is conditional on delivery_type (Mobile Factory Phase 2).
+    assert set(BLUEPRINT_AREAS) - {"mobile"} <= areas
+    assert "mobile" not in areas
     assert all(d.choice.strip() for d in bp.decisions)
     assert all(d.justification.strip() for d in bp.decisions)  # nothing chosen without a reason
     assert bp.degraded is True  # no key -> deterministic, honestly flagged
     assert bp.project_id == "room_abc"
+
+
+def test_deterministic_blueprint_covers_mobile_area_when_delivery_type_requires_it():
+    spec = _spec()
+    spec.delivery_type = "mobile"
+    bp = build_blueprint(spec, project_id="room_abc")
+    areas = {d.area for d in bp.decisions}
+    assert set(BLUEPRINT_AREAS) <= areas  # now every area, including mobile, is decided
+    mobile = next(d for d in bp.decisions if d.area == "mobile")
+    assert mobile.choice.strip() and mobile.justification.strip()
+    assert "Expo" in mobile.choice  # default stack, no native-performance NFR signal in _spec()
 
 
 def test_blueprint_reflects_spec_domain():

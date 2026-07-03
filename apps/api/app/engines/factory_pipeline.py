@@ -7,10 +7,8 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
-logger = logging.getLogger("ldcn.meta_factory")
-
 from app.engines.agent_executor import submit_agent
-from app.engines.agent_prompts import AGENT_PROMPTS
+from app.engines.agent_prompts import system_prompt_for
 from app.engines.context_pack_builder import (
     budget_for,
     build_agent_context,
@@ -20,14 +18,22 @@ from app.engines.context_pack_builder import (
     summarize_contract,
 )
 from app.engines.llm.base import LLMError
-from app.repositories.redaction import redact_text
 from app.engines.llm.router import LLMRouter
+from app.repositories.redaction import redact_text
 from app.schemas.llm import LLMRequest, LLMResponse, ReasoningLevel
-from app.schemas.orchestrator import ProjectSpec
 from app.services.file_protocol import ParsedAgentOutput, parse_agent_output
 
-# API-First execution order. Backend and frontend both consume the contract.
-PIPELINE_ORDER = ["contracts", "backend", "frontend", "qa", "devops", "docs"]
+logger = logging.getLogger("ldcn.meta_factory")
+
+# Complete API-First role catalog. Execution remains delivery-type aware so the
+# legacy streaming route does not add mobile work to existing web projects.
+PIPELINE_ORDER = ["contracts", "backend", "frontend", "mobile", "qa", "devops", "docs"]
+
+
+def pipeline_order_for(delivery_type: str | None) -> list[str]:
+    if delivery_type in {"mobile", "full_stack"}:
+        return PIPELINE_ORDER
+    return [role for role in PIPELINE_ORDER if role != "mobile"]
 
 # Each agent is a single blocking LLM call that emits nothing until it returns.
 # We run it on a worker thread and emit a heartbeat every few seconds so the SSE
@@ -66,6 +72,7 @@ _ROLE_EFFORT: dict[str, tuple[ReasoningLevel, int]] = {
     "contracts": (ReasoningLevel.high, 24_000),
     "backend": (ReasoningLevel.max, 48_000),
     "frontend": (ReasoningLevel.max, 40_000),
+    "mobile": (ReasoningLevel.max, 40_000),
     "qa": (ReasoningLevel.high, 32_000),
     "devops": (ReasoningLevel.medium, 20_000),
     "docs": (ReasoningLevel.high, 20_000),
@@ -125,6 +132,8 @@ def _run_agent(
     context: str,
     user_model_choice: str | None,
     api_key: str | None,
+    language: str | None = None,
+    framework: str | None = None,
 ) -> tuple[LLMResponse, ParsedAgentOutput]:
     """Route one agent call and parse it with the tolerant parser.
 
@@ -172,7 +181,7 @@ def _run_agent(
         started = time.perf_counter()
         try:
             response = router.route(
-                _agent_request(AGENT_PROMPTS[role], prompt_context, role),
+                _agent_request(system_prompt_for(role, language, framework), prompt_context, role),
                 user_choice=user_model_choice,
                 agent_role=role,
                 api_key=api_key,
@@ -268,6 +277,8 @@ def iter_single_agent(
     user_model_choice: str | None = None,
     api_key: str | None = None,
     pack_diagnostics: dict | None = None,
+    language: str | None = None,
+    framework: str | None = None,
 ) -> Iterator[dict]:
     """Run one factory agent and yield progress events plus a result sentinel."""
     router = router or LLMRouter()
@@ -277,7 +288,7 @@ def iter_single_agent(
     # Shared, bounded pool (audit B5): no per-call executor to spawn/tear down. On
     # hard timeout we stop waiting and best-effort cancel; a running worker is bounded
     # by the adapter's own request timeout, and the global pool caps total workers.
-    future = submit_agent(_run_agent, router, role, context, user_model_choice, api_key)
+    future = submit_agent(_run_agent, router, role, context, user_model_choice, api_key, language, framework)
     started = time.monotonic()
     deadline = started + AGENT_TIMEOUT_MS / 1000
     while True:
@@ -373,6 +384,9 @@ def iter_factory_pipeline(
     router: LLMRouter | None = None,
     user_model_choice: str | None = None,
     api_key: str | None = None,
+    delivery_type: str | None = None,
+    language: str | None = None,
+    framework: str | None = None,
 ) -> Iterator[dict]:
     """Run the API-First agent chain, yielding progress events as they happen.
 
@@ -393,7 +407,7 @@ def iter_factory_pipeline(
     contract_summary = ""
     emitted_so_far: list[str] = []
 
-    for role in PIPELINE_ORDER:
+    for role in pipeline_order_for(delivery_type):
         # Per-agent Context Pack: only the role's sections + relevant blueprint
         # areas + a SUMMARY of the contract (never the full raw bodies) + the
         # emitted-file list. Built within the role's budget so a complex project
@@ -414,6 +428,8 @@ def iter_factory_pipeline(
             user_model_choice=user_model_choice,
             api_key=api_key,
             pack_diagnostics=pack_diag.as_dict(),
+            language=language,
+            framework=framework,
         ):
             if event.get("type") == "result":
                 parsed = event["parsed"]
@@ -446,6 +462,9 @@ def run_factory_pipeline(
     router: LLMRouter | None = None,
     user_model_choice: str | None = None,
     api_key: str | None = None,
+    delivery_type: str | None = None,
+    language: str | None = None,
+    framework: str | None = None,
     on_event: Callable[[dict], None] | None = None,
 ) -> PipelineResult:
     """Run the API-First agent chain to completion.
@@ -456,7 +475,8 @@ def run_factory_pipeline(
     """
     result = PipelineResult()
     for event in iter_factory_pipeline(
-        mega_prompt, router=router, user_model_choice=user_model_choice, api_key=api_key
+        mega_prompt, router=router, user_model_choice=user_model_choice, api_key=api_key,
+        delivery_type=delivery_type, language=language, framework=framework,
     ):
         if event.get("type") == "result":
             result = event["result"]

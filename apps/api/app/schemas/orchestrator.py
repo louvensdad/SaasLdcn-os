@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -50,6 +52,11 @@ class ProjectSpec(BaseModel):
     core_workflows: list[str] = Field(default_factory=list)
     non_functional: dict[str, str] = Field(default_factory=dict)  # perf, security, scale, compliance
     suggested_stack: SuggestedStack = Field(default_factory=SuggestedStack)
+    # Carried from the Project Room's delivery_type (decided before generation
+    # begins, not LLM-inferred). mobile_stack is undecided (None) until the
+    # Architect Engine confirms Expo vs. Flutter (Mobile Factory Phase 2).
+    delivery_type: str = "web"
+    mobile_stack: Literal["react_native_expo", "flutter"] | None = None
     locale: str = "pt-BR"
     assumptions: list[Assumption] = Field(default_factory=list)
     open_questions: list[ClarifyingQuestion] = Field(default_factory=list)

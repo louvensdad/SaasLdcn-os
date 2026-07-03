@@ -60,7 +60,7 @@ export default function TemplatesPage() {
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,color-mix(in_srgb,var(--accent)_16%,transparent),transparent_36%)]" />
             <div className="relative grid gap-5 xl:grid-cols-[1fr_auto] xl:items-end">
               <div>
-                <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-[color:var(--accent)]" /><p className="type-label text-[color:var(--muted)]">{t('templates.featured')}</p></div>
+                <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-[color:var(--accent)]" /><p className="ds-caption text-[color:var(--muted)]">{t('templates.featured')}</p></div>
                 <h2 className="mt-3 text-2xl font-semibold text-[color:var(--text)]">{t('templates.featured.title')}</h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">{t('templates.featured.description')}</p>
               </div>
@@ -98,7 +98,7 @@ export default function TemplatesPage() {
                   <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[color:var(--accent)] to-transparent opacity-60" />
                   <div className="relative space-y-5">
                     <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div><p className="type-label text-[color:var(--muted)]">{formatStatus(template.category)}</p><h3 className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{template.name}</h3></div>
+                      <div><p className="ds-caption text-[color:var(--muted)]">{formatStatus(template.category)}</p><h3 className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{template.name}</h3></div>
                       <div className="flex flex-wrap gap-2">
                         {index < 2 ? <Badge>{t('templates.recommended')}</Badge> : null}
                         {template.maturity === 'mature' ? <Badge>{t('templates.enterpriseReady')}</Badge> : null}

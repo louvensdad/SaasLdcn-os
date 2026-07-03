@@ -1,11 +1,4 @@
-export type ThemeId =
-  | 'engineering-runtime'
-  | 'assembly-line'
-  | 'obsidian-blue'
-  | 'graphite-cyan'
-  | 'titanium-violet'
-  | 'emerald-matrix'
-  | 'crimson-pulse';
+export type ThemeId = 'dark' | 'light';
 
 export interface ThemeDefinition {
   readonly id: ThemeId;
@@ -17,57 +10,22 @@ export interface ThemeDefinition {
 
 export const THEMES: readonly ThemeDefinition[] = [
   {
-    id: 'engineering-runtime',
-    name: 'Engineering Runtime',
-    accent: '#06b6d4',
-    accentSecondary: '#3b82f6',
-    description: 'Near-black navy, glass surfaces, cyan→electric-blue accent.',
+    id: 'dark',
+    name: 'Dark',
+    accent: '#a78bfa',
+    accentSecondary: '#22b8c7',
+    description: 'Aubergine instrument surfaces with an ultraviolet operational signal.',
   },
   {
-    id: 'assembly-line',
-    name: 'Assembly Line',
-    accent: '#34e5a0',
-    accentSecondary: '#57d6c8',
-    description: 'Matte board-green with an emerald signal that runs the line.',
-  },
-  {
-    id: 'obsidian-blue',
-    name: 'Obsidian Blue',
-    accent: '#7ba7ff',
-    accentSecondary: '#65d6ff',
-    description: 'Cold blue precision with deep obsidian surfaces.',
-  },
-  {
-    id: 'graphite-cyan',
-    name: 'Graphite Cyan',
-    accent: '#67d9eb',
-    accentSecondary: '#9df3ff',
-    description: 'Graphite tones with a restrained cyan edge.',
-  },
-  {
-    id: 'titanium-violet',
-    name: 'Titanium Violet',
-    accent: '#b69cff',
-    accentSecondary: '#8fc6ff',
-    description: 'Titanium depth with violet intelligence.',
-  },
-  {
-    id: 'emerald-matrix',
-    name: 'Emerald Matrix',
-    accent: '#7cf0b9',
-    accentSecondary: '#76c9ff',
-    description: 'Emerald control with a calm operational glow.',
-  },
-  {
-    id: 'crimson-pulse',
-    name: 'Crimson Pulse',
-    accent: '#ff8aa3',
-    accentSecondary: '#f2ab62',
-    description: 'A controlled crimson signal for higher urgency.',
+    id: 'light',
+    name: 'Light',
+    accent: '#6d28d9',
+    accentSecondary: '#087f8c',
+    description: 'Cool drafting surfaces with a high-contrast ultraviolet signal.',
   },
 ] as const;
 
-export const DEFAULT_THEME_ID: ThemeId = 'engineering-runtime';
+export const DEFAULT_THEME_ID: ThemeId = 'dark';
 
 export function isThemeId(value: string): value is ThemeId {
   return THEMES.some((theme) => theme.id === value);

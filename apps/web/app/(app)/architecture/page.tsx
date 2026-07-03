@@ -62,7 +62,7 @@ export default function ArchitecturePage() {
         <div className="relative space-y-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="type-label text-[color:var(--muted)]">{t('architecture.graph.eyebrow')}</p>
+              <p className="ds-caption text-[color:var(--muted)]">{t('architecture.graph.eyebrow')}</p>
               <h2 className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{t('architecture.graph.title')}</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">{t('architecture.graph.description')}</p>
             </div>
@@ -113,7 +113,7 @@ export default function ArchitecturePage() {
         <Card className="space-y-5 p-5">
           <Boxes className="h-6 w-6 text-[color:var(--accent)]" aria-hidden />
           <div>
-            <p className="type-label text-[color:var(--muted)]">{t('architecture.summary.eyebrow')}</p>
+            <p className="ds-caption text-[color:var(--muted)]">{t('architecture.summary.eyebrow')}</p>
             <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{t('architecture.summary.title')}</h3>
             <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('architecture.summary.description')}</p>
           </div>
@@ -127,8 +127,8 @@ export default function ArchitecturePage() {
         <div className="grid gap-4 md:grid-cols-3">
           {['runtime', 'engines', 'registries'].map((item) => (
             <Card key={item} className="space-y-3 p-5">
-              <p className="type-card text-[color:var(--text)]">{t(`architecture.advanced.${item}`)}</p>
-              <p className="type-caption text-[color:var(--muted)]">{t(`architecture.advanced.${item}.detail`)}</p>
+              <p className="ds-subsection text-[color:var(--text)]">{t(`architecture.advanced.${item}`)}</p>
+              <p className="ds-caption text-[color:var(--muted)]">{t(`architecture.advanced.${item}.detail`)}</p>
               <Badge>{t('architecture.ready')}</Badge>
             </Card>
           ))}

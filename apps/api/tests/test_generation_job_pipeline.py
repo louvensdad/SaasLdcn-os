@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import tempfile
 import time
+import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -12,13 +13,17 @@ from app.core.database import Base, database_url_for, get_engine, session_factor
 import app.models  # noqa: F401
 from app.engines.context_pack_builder import build_agent_context
 from app.engines.factory_pipeline import _run_agent
+from app.engines.generated_project_quality_engine import GeneratedProjectQualityEngine
 from app.engines.generation_job_engine import (
     BACKEND_CHUNKS,
+    MOBILE_CHUNKS,
     STEPS,
     GenerationJobEngine,
     JobPaused,
     StageFailure,
     _usage_totals,
+    logical_stages_for,
+    steps_for,
 )
 from app.engines.llm.base import LLMError
 from app.engines.warning_policy import classify, classify_one
@@ -26,6 +31,7 @@ from app.models.tenant import WorkspaceMembership
 from app.repositories.generation_job_repository import GenerationJobRepository
 from app.schemas.orchestrator import ProjectSpec
 from app.services.file_protocol import EmittedFile, ParsedAgentOutput, parse_agent_output
+from app.services.generated_project_service import DOWNLOAD_DIR
 
 
 @pytest.fixture
@@ -85,6 +91,17 @@ def _create(engine: GenerationJobEngine) -> dict:
     )
 
 
+def _create_mobile(engine: GenerationJobEngine) -> dict:
+    spec = _spec()
+    spec.delivery_type = "mobile"
+    return engine.create_job(
+        owner_user_id="user-1", project_id="room-1", workspace_id="enterprise",
+        project_name="Orders", spec=spec, blueprint={"decisions": []},
+        blueprint_version=4, provider="anthropic", provider_label="Claude",
+        model="claude-sonnet-4",
+    )
+
+
 def test_generation_creates_persistent_job(isolated_engine):
     engine, repository, _ = isolated_engine
     job = _create(engine)
@@ -136,6 +153,32 @@ def test_backend_has_required_small_chunks():
     assert [step.chunk for step in backend_steps] == BACKEND_CHUNKS
 
 
+def test_steps_for_web_delivery_type_is_unchanged():
+    assert steps_for("web") is STEPS
+    assert steps_for(None) is STEPS
+    assert steps_for("backend") is STEPS  # "backend"-only delivery has no UI at all, web or mobile
+
+
+def test_steps_for_mobile_delivery_type_inserts_chunked_mobile_stage_after_frontend():
+    for delivery_type in ("mobile", "full_stack"):
+        steps = steps_for(delivery_type)
+        assert steps is not STEPS
+        states = [step.state for step in steps]
+        frontend_validating = states.index("FRONTEND_VALIDATING")
+        mobile_steps = steps[frontend_validating + 1 : frontend_validating + len(MOBILE_CHUNKS) + 3]
+        assert mobile_steps[0].state == "MOBILE_PLANNING"
+        assert [step.chunk for step in mobile_steps[1:-1]] == MOBILE_CHUNKS
+        assert all(step.state == "MOBILE_GENERATING" for step in mobile_steps[1:-1])
+        assert mobile_steps[-1].state == "MOBILE_VALIDATING"
+        assert steps[frontend_validating + len(MOBILE_CHUNKS) + 3].state == "SECURITY_PLANNING"
+        # The web steps themselves are untouched, just spliced around.
+        assert [s for s in steps if s.logical != "mobile"] == STEPS
+        assert logical_stages_for(steps) == [
+            "contracts", "database", "backend", "frontend", "mobile",
+            "security", "tests", "docs", "build", "package",
+        ]
+
+
 def test_backend_context_pack_is_smaller_and_scoped():
     mega = (
         "## Summary\nOrders\n## Entities\nOrder\n"
@@ -147,7 +190,21 @@ def test_backend_context_pack_is_smaller_and_scoped():
     context, diagnostics = build_agent_context("backend", mega)
     assert len(context.encode()) < len(mega.encode())
     assert diagnostics.chars <= diagnostics.budget_chars
+
+
+def test_mobile_role_receives_the_contract_summary_like_frontend_does():
+    mega = "## Summary\nOrders\n## Core workflows\nCriar pedido\n"
+    contract_summary = "<openapi_summary>GET /orders</openapi_summary>"
+    context, _diag = build_agent_context("mobile", mega, contract_summary=contract_summary)
+    assert contract_summary in context
     assert "frontend: Next.js" not in context
+
+
+def test_mobile_has_required_small_chunks():
+    assert MOBILE_CHUNKS == [
+        "structure", "package_config", "screens", "navigation",
+        "state_management", "api_client", "native_modules", "tests",
+    ]
 
 
 def test_markdown_output_becomes_valid_artifact():
@@ -412,7 +469,7 @@ def test_pipeline_advances_through_backend_to_frontend_and_completes(isolated_en
     engine, repository, _ = isolated_engine
     job = _create(engine)
 
-    def _fake_agent(router, role, context, model, api_key):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
             parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))
@@ -440,6 +497,136 @@ def test_pipeline_advances_through_backend_to_frontend_and_completes(isolated_en
     assert result["stageStatuses"]["backend"] == "success"
     assert result["stageStatuses"]["frontend"] == "success"  # next stage ran after backend
     assert progresses == sorted(progresses)  # monotonic, never goes backwards
+
+
+def test_mobile_delivery_type_pipeline_advances_through_mobile_stage_and_completes(isolated_engine, monkeypatch):
+    """Mobile Factory Phase 1 walking skeleton: a job whose spec.delivery_type is
+    'mobile' runs the extra MOBILE_PLANNING/GENERATING/VALIDATING trio (inserted
+    by steps_for) and reaches READY, same as the web-only pipeline."""
+    engine, repository, _ = isolated_engine
+    job = _create_mobile(engine)
+    assert "mobile" in job["stageStatuses"]  # stageStatuses already reflects the mobile-inclusive step list
+
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+        parsed = ParsedAgentOutput(raw_response="ok")
+        if role == "contracts":
+            parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))
+        elif role == "mobile":
+            parsed.files.extend([
+                EmittedFile("apps/mobile/app.json", '{"expo":{"name":"Orders","slug":"orders"}}'),
+                EmittedFile("apps/mobile/package.json", '{"scripts":{"build":"tsc --noEmit"}}'),
+                EmittedFile("apps/mobile/tsconfig.json", '{"compilerOptions":{"strict":true}}'),
+                EmittedFile("apps/mobile/App.tsx", "export default function App() { return null; }"),
+                EmittedFile("apps/mobile/.env.example", "EXPO_PUBLIC_API_URL=http://localhost:8000"),
+                EmittedFile("apps/mobile/src/api/client.ts", "export const api = {};"),
+            ])
+        else:
+            parsed.files.append(EmittedFile(f"src/{role}/main.ts", "export const x = 1;"))
+        return None, parsed
+
+    monkeypatch.setattr("app.engines.generation_job_engine._run_agent", _fake_agent)
+    monkeypatch.setattr(engine, "_build", lambda job, owner: None)
+    monkeypatch.setattr(engine, "_package", lambda job, owner: None)
+    engine.execute(job["id"], "user-1", api_key="secret", user_model_choice="m")
+
+    result = repository.get(job["id"], "user-1")
+    assert result["status"] == "READY"
+    assert result["progress"] == 100
+    assert result["stageStatuses"]["mobile"] == "success"
+    assert result["stageStatuses"]["frontend"] == "success"
+    assert result["stageStatuses"]["security"] == "success"  # pipeline continued past mobile
+    mobile_artifacts = [a for a in result["artifacts"] if a["stage"].startswith("mobile.") and a["kind"] == "generated"]
+    assert any(a["name"] == "apps/mobile/App.tsx" for a in mobile_artifacts)
+
+
+def test_mobile_job_resume_and_retry_use_the_mobile_inclusive_step_list(isolated_engine):
+    """resume()/retry_stage() resolve the job's own step list (via
+    _steps_for_job) rather than the web-only default -- otherwise a stalled or
+    failed mobile job would resume/retry at the wrong index."""
+    engine, _, _ = isolated_engine
+    job = _create_mobile(engine)
+
+    steps = engine._steps_for_job(job["id"], "user-1")
+    target_chunk = "api_client"
+    job["currentStage"] = "MOBILE_GENERATING"
+    job["checkpoints"].append({"stage": "MOBILE_GENERATING", "chunk": target_chunk, "status": "failed"})
+    retry_index = engine._recovery_index(job, steps, "MOBILE_GENERATING")
+    assert steps[retry_index].chunk == target_chunk
+
+    resume_index = engine._step_index("MOBILE_VALIDATING", engine._steps_for_job(job["id"], "user-1"))
+    assert steps_for("mobile")[resume_index].state == "MOBILE_VALIDATING"
+
+
+def test_flutter_job_is_rejected_until_phase_5(isolated_engine):
+    engine, _, _ = isolated_engine
+    spec = _spec()
+    spec.delivery_type = "mobile"
+    spec.mobile_stack = "flutter"
+    with pytest.raises(ValueError, match="Phase 5"):
+        engine.create_job(
+            owner_user_id="user-1", project_id="room-1", workspace_id="enterprise",
+            project_name="Orders", spec=spec, blueprint={"decisions": []},
+            blueprint_version=4, provider="anthropic", provider_label="Claude",
+            model="claude-sonnet-4",
+        )
+
+
+def test_mobile_job_reaches_ready_and_packages_real_mobile_zip(isolated_engine, monkeypatch):
+    engine, repository, _ = isolated_engine
+    job = _create_mobile(engine)
+
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+        parsed = ParsedAgentOutput(raw_response="ok")
+        if role == "contracts":
+            parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: Orders\n  version: 1.0.0\npaths: {}\n"))
+        elif role == "mobile":
+            parsed.files.extend([
+                EmittedFile("apps/mobile/app.json", '{"expo":{"name":"Orders","slug":"orders"}}'),
+                EmittedFile("apps/mobile/package.json", '{"scripts":{"start":"expo start","build":"node -p \\"1\\""}}'),
+                EmittedFile("apps/mobile/tsconfig.json", '{"compilerOptions":{"strict":true}}'),
+                EmittedFile("apps/mobile/App.tsx", "export default function App() { return null; }"),
+                EmittedFile("apps/mobile/src/api/client.ts", "export const api = {};"),
+                EmittedFile("apps/mobile/src/screens/Home.tsx", "export const Home = () => null;"),
+                EmittedFile("apps/mobile/src/navigation/index.ts", "export const navigation = {};"),
+                EmittedFile("apps/mobile/tests/app.test.ts", "export {};"),
+                EmittedFile("apps/mobile/README.md", "# Mobile\n\nRun with npm run start."),
+                EmittedFile("apps/mobile/.env.example", "EXPO_PUBLIC_API_URL=http://localhost:8000"),
+                EmittedFile("apps/mobile/.gitignore", "node_modules/\nios/\nandroid/\n"),
+            ])
+        elif role == "docs":
+            parsed.files.extend([
+                EmittedFile("README.md", "# Orders\n\nGenerated by LDCN OS. Run the mobile app with npm run start."),
+                EmittedFile(".ldcn-backend-generation.json", '{"framework":"expo"}'),
+            ])
+        else:
+            parsed.files.append(EmittedFile(f"generated/{role}/main.txt", "generated"))
+        return None, parsed
+
+    monkeypatch.setattr("app.engines.generation_job_engine._run_agent", _fake_agent)
+    engine.execute(job["id"], "user-1", api_key="secret", user_model_choice="m")
+
+    result = repository.get(job["id"], "user-1")
+    generated_root = Path(result["resultPath"]) if result.get("resultPath") else None
+    zip_path = DOWNLOAD_DIR / f"{result.get('generatedProjectId')}.zip"
+    try:
+        assert result["status"] == "READY", (result.get("error") or {}).get("message")
+        assert zip_path.is_file()
+        with zipfile.ZipFile(zip_path) as archive:
+            names = set(archive.namelist())
+        assert "apps/mobile/App.tsx" in names
+        assert "apps/mobile/package.json" in names
+        assert not any("node_modules" in name.split("/") for name in names)
+        revalidated = GeneratedProjectQualityEngine().quality_check(
+            {"project_id": result["generatedProjectId"], "generated_project_path": str(generated_root)}
+        )
+        assert any(
+            check["id"] == "zip_root_safe" and check["status"] == "passed"
+            for check in revalidated["checks"]
+        )
+    finally:
+        if generated_root is not None:
+            shutil.rmtree(generated_root, ignore_errors=True)
+        zip_path.unlink(missing_ok=True)
 
 
 def test_execution_events_recorded_for_artifacts_and_build_sink(isolated_engine):

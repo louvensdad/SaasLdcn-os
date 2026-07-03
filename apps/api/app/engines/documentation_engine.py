@@ -76,7 +76,6 @@ class DocumentationEngine:
         docs, findings = self._discover_and_validate(root)
 
         missing_required = [doc["title"] for doc in docs if doc["required"] and not doc["present"]]
-        present_required = [doc for doc in docs if doc["required"] and doc["present"]]
         inconsistent = [doc for doc in docs if doc["status"] == "inconsistent"]
         unsafe = [doc for doc in docs if doc["status"] == "unsafe"]
         drafts = [doc for doc in docs if doc["status"] == "draft"]
@@ -328,11 +327,20 @@ class DocumentationEngine:
         }
 
     def _dependency_haystack(self, root: Path, index: dict[str, str]) -> str:
+        # Every specialist ecosystem's manifest feeds the consistency signals —
+        # otherwise a Go project using pgx (go.mod) would be falsely flagged as
+        # "documents PostgreSQL but the project has no PostgreSQL configuration".
         chunks: list[str] = []
-        for filename in ("requirements.txt", "pyproject.toml", "package.json", "docker-compose.yml", "docker-compose.yaml", ".env.example", "pom.xml"):
-            relative = index.get(filename)
-            if relative is None:
-                continue
+        manifests = (
+            "requirements.txt", "pyproject.toml", "package.json",
+            "docker-compose.yml", "docker-compose.yaml", ".env.example",
+            "pom.xml", "go.mod", "composer.json", "cargo.toml", "gemfile",
+            "build.gradle", "build.gradle.kts",
+        )
+        relatives = [index[name] for name in manifests if name in index]
+        # .NET manifests are project-named; the index is keyed by basename.
+        relatives += [rel for name, rel in index.items() if name.endswith((".csproj", ".sln"))]
+        for relative in relatives:
             try:
                 chunks.append((root / relative).read_text(encoding="utf-8", errors="ignore").lower())
             except OSError:

@@ -39,7 +39,7 @@ export function AccordionItem({ title, subtitle, icon: Icon, right, defaultOpen 
         ) : null}
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold text-[color:var(--text)]">{title}</span>
-          {subtitle ? <span className="block truncate t-caption">{subtitle}</span> : null}
+          {subtitle ? <span className="block truncate ds-caption">{subtitle}</span> : null}
         </span>
         {right}
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-[color:var(--muted)] transition-transform', open && 'rotate-180')} aria-hidden />

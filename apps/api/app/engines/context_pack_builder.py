@@ -27,6 +27,7 @@ ROLE_BUDGET_CHARS: dict[str, int] = {
     "contracts": 60_000,
     "backend": 52_000,
     "frontend": 48_000,
+    "mobile": 48_000,
     "qa": 44_000,
     "devops": 32_000,
     "docs": 40_000,
@@ -44,6 +45,7 @@ ROLE_SECTIONS: dict[str, set[str] | None] = {
     "contracts": _ALWAYS | {"Target users", "Entities", "Core workflows", "Non-functional", "Assumptions (resolved silently-missing fields)"},
     "backend": _ALWAYS | {"Entities", "Core workflows", "Non-functional", "Assumptions (resolved silently-missing fields)"},
     "frontend": _ALWAYS | {"Target users", "Core workflows"},
+    "mobile": _ALWAYS | {"Target users", "Core workflows"},
     "qa": _ALWAYS | {"Core workflows", "Entities"},
     "devops": _ALWAYS | {"Non-functional"},
     "docs": None,
@@ -55,6 +57,7 @@ ROLE_BLUEPRINT_AREAS: dict[str, set[str]] = {
     "contracts": {"apis", "backend", "database", "auth", "authorization"},
     "backend": {"backend", "database", "auth", "authorization", "apis", "integrations", "observability"},
     "frontend": {"frontend", "apis", "auth"},
+    "mobile": {"mobile", "frontend", "apis", "auth"},
     "qa": {"tests", "apis", "backend"},
     "devops": {"deploy", "observability"},
     "docs": {"frontend", "backend", "database", "apis", "auth", "deploy"},
@@ -348,7 +351,7 @@ def build_agent_context(
     selected, kept_titles = select_sections(mega_prompt, role)
 
     parts = [selected]
-    if contract_summary and role in {"backend", "frontend", "qa", "devops", "docs", "security"}:
+    if contract_summary and role in {"backend", "frontend", "mobile", "qa", "devops", "docs", "security"}:
         parts.append(contract_summary)
     if emitted_files and role in {"qa", "devops", "docs"}:
         shown = list(emitted_files)[:60]

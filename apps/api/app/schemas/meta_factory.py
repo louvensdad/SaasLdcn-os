@@ -14,6 +14,9 @@ class OrchestrateRequest(ApiModel):
     # flows into the builder agents (diagnosis H4). 16k chars is ample for an intent.
     raw_intent: str = Field(min_length=1, max_length=16_000)
     prior_answers: list[dict] = Field(default_factory=list, max_length=50)
+    # Explicit user decision for the backend language ("" / None = auto). Enforced
+    # deterministically onto the resulting spec — never left to the LLM.
+    preferred_language: str | None = Field(default=None, max_length=40)
     user_model_choice: str | None = None
     # When true, use the caller's own LLM key (from the ephemeral vault) instead
     # of the server's. A user-key run never silently falls back to the mock.

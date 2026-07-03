@@ -298,7 +298,9 @@ def _acceptance(rules: list[str], workflows: list[str]) -> list[str]:
 
 
 def _backend_body(stack: Any, nf: dict[str, str]) -> str:
-    return (
+    from app.data.language_agent_profiles import LANGUAGE_AGENT_PROFILES, resolve_language_id
+
+    body = (
         f"Linguagem: **{stack.language or 'a definir'}** · Runtime: "
         f"**{stack.runtime or 'a definir'}** · Framework: **{stack.framework or 'a definir'}** · "
         f"Arquitetura: **{stack.architecture or 'monólito modular'}**.\n\n"
@@ -306,6 +308,11 @@ def _backend_body(stack: Any, nf: dict[str, str]) -> str:
         "infraestrutura (repositórios). Regra de negócio vive na camada de aplicação/"
         f"domínio, nunca no controller. {nf.get('performance', '')}".strip()
     )
+    language_id = resolve_language_id(stack.language)
+    if language_id is not None:
+        profile = LANGUAGE_AGENT_PROFILES[language_id]
+        body += f"\n\nEcossistema ({profile['label']}): {profile['ecosystem_notes']}"
+    return body
 
 
 def _frontend_body(stack: Any, locale: str) -> str:
@@ -345,8 +352,13 @@ def _folder_structure(stack: Any) -> str:
 
 
 def _expected_files(stack: Any) -> list[str]:
+    from app.data.language_agent_profiles import language_manifest
+
+    manifest = language_manifest(stack.language)
     return [
         "openapi.yaml (contrato da API).",
+        f"`{manifest}` (manifesto de dependências do backend)." if manifest
+        else "Manifesto de dependências do backend (conforme a stack).",
         "Backend: entrypoint, controllers, use-cases, domínio, repositórios.",
         "Frontend: páginas, componentes e camada de repositório tipada.",
         "Testes automatizados (unitários e integração).",
@@ -376,6 +388,7 @@ def author_prompt_master_md(
 
     if api_key or ai_available():
         try:
+            from app.data.language_agent_profiles import ecosystem_brief
             from app.engines.agent_prompts import PROMPTMASTER_AUTHOR_PROMPT
             from app.engines.llm.router import LLMRouter
             from app.schemas.llm import LLMRequest
@@ -384,8 +397,13 @@ def author_prompt_master_md(
                 {"spec": spec.model_dump(mode="json"), "required_sections": [title for _id, title in SECTION_ORDER]},
                 ensure_ascii=False,
             )
+            # Language specialist layer: the same ecosystem rules the builder agents
+            # receive, so Backend/Testes/Estrutura de Pastas/Arquivos Esperados
+            # describe the REAL stack instead of generic prose.
+            brief = ecosystem_brief(spec.suggested_stack.language, spec.suggested_stack.framework)
+            system = f"{PROMPTMASTER_AUTHOR_PROMPT}\n\n{brief}" if brief else PROMPTMASTER_AUTHOR_PROMPT
             response = LLMRouter().route(
-                LLMRequest(system=PROMPTMASTER_AUTHOR_PROMPT, user=payload, max_output_tokens=16000),
+                LLMRequest(system=system, user=payload, max_output_tokens=16000),
                 user_choice=user_model_choice,
                 api_key=api_key,
             )

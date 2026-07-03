@@ -60,6 +60,9 @@ export function useDeleteProject(projectId: string) {
     invalidateKeys: [queryKeys.projects],
     logLabel: 'projects.delete',
     onSuccess: () => {
+      queryClient.setQueryData<Project[]>(queryKeys.projects, (current = []) =>
+        current.filter((project) => project.project_id !== projectId),
+      );
       queryClient.removeQueries({ queryKey: queryKeys.project(projectId) });
     },
   });

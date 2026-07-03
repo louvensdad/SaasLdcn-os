@@ -94,7 +94,7 @@ export function LiveExecutionConsole({ events, currentStage, running }: LiveExec
           </span>
           <div>
             <p className="text-sm font-semibold text-[color:var(--text)]">Console de execução</p>
-            <p className="t-caption">Etapa: {currentStage || '—'}</p>
+            <p className="ds-caption">Etapa: {currentStage || '—'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

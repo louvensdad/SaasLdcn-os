@@ -52,6 +52,10 @@ def _context_diagram(areas: set, has_integrations: bool) -> dict[str, Any]:
         {"from_id": "api", "to_id": "backend", "label": "invoca"},
         {"from_id": "backend", "to_id": "db", "label": "lê/grava"},
     ]
+    if "mobile" in areas:
+        nodes.append({"id": "mobile", "label": "App Mobile", "kind": "layer"})
+        edges.append({"from_id": "user", "to_id": "mobile", "label": "usa"})
+        edges.append({"from_id": "mobile", "to_id": "api", "label": "HTTP"})
     if has_integrations:
         nodes.append({"id": "external", "label": "Serviços externos", "kind": "external"})
         edges.append({"from_id": "backend", "to_id": "external", "label": "integra"})

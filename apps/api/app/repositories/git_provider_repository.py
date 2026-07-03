@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import connection as database_connection, database_url_for, session_factory

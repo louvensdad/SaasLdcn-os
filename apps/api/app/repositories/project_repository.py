@@ -199,7 +199,7 @@ class ProjectRepository:
             "updated_at": now,
         }
         with self.connection() as conn:
-            result = conn.execute(
+            conn.execute(
                 """
                 INSERT INTO projects (
                     project_id, owner_user_id, workspace_id, project_key, project_name, description, objective, stack_id, project_locale,

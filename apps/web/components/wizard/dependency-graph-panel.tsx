@@ -73,7 +73,7 @@ export function DependencyGraphPanel({
               <ShieldAlert className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('dependencyGraph.title')}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('dependencyGraph.title')}</p>
               <h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{t('dependencyGraph.unavailable')}</h3>
             </div>
           </div>
@@ -100,7 +100,7 @@ export function DependencyGraphPanel({
             </div>
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('dependencyGraph.title')}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('dependencyGraph.title')}</p>
                 <Badge className="border-white/10 text-[color:var(--muted)]">
                   {t('dependencyGraph.requiredCount', { count: snapshot?.propagation.required_node_ids.length ?? 0 })}
                 </Badge>
@@ -152,7 +152,7 @@ export function DependencyGraphPanel({
               <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('dependencyGraph.nodeGraph')}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('dependencyGraph.nodeGraph')}</p>
                     <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{t('dependencyGraph.nodeGraphDetail')}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -299,7 +299,7 @@ export function DependencyGraphPanel({
               <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.03] p-4">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-[color:var(--accent)]" />
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('dependencyGraph.riskSurface')}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('dependencyGraph.riskSurface')}</p>
                 </div>
                 <div className="mt-3 space-y-2">
                   {(risks?.issues ?? snapshot?.risk_profile.issues ?? []).slice(0, 3).map((issue) => (

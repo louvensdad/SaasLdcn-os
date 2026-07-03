@@ -13,7 +13,6 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser
-from app.data.model_registry import MODEL_REGISTRY
 from app.engines.auto_repair_engine import auto_repair_engine
 from app.engines.quality_gate_engine import quality_gate_engine
 from app.repositories.user_repository import AuditLogRepository
@@ -239,6 +238,8 @@ def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser
         )
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     generation_job_engine.start(
         job["id"],
         user["user_id"],
@@ -500,6 +501,7 @@ def orchestrate(payload: OrchestrateRequest, user: CurrentUser) -> OrchestrateRe
             payload.prior_answers,
             api_key=api_key,
             user_model_choice=payload.user_model_choice,
+            preferred_language=payload.preferred_language,
         )
     except LLMError as exc:
         raise _llm_http_error(exc) from exc
@@ -520,7 +522,14 @@ def generate(payload: GenerateRequest, user: CurrentUser) -> GenerateResponse:
     api_key = _resolve_api_key(user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice)
     mega = compile_mega_prompt(payload.spec, payload.blueprint)
     try:
-        pipeline = run_factory_pipeline(mega, user_model_choice=payload.user_model_choice, api_key=api_key)
+        pipeline = run_factory_pipeline(
+            mega,
+            user_model_choice=payload.user_model_choice,
+            api_key=api_key,
+            delivery_type=payload.spec.delivery_type,
+            language=payload.spec.suggested_stack.language,
+            framework=payload.spec.suggested_stack.framework,
+        )
     except LLMError as exc:
         raise _llm_http_error(exc) from exc
 
@@ -708,7 +717,14 @@ def generate_stream(payload: GenerateRequest, user: CurrentUser) -> StreamingRes
     def event_source():
         result = None
         try:
-            for event in iter_factory_pipeline(mega, user_model_choice=payload.user_model_choice, api_key=api_key):
+            for event in iter_factory_pipeline(
+                mega,
+                user_model_choice=payload.user_model_choice,
+                api_key=api_key,
+                delivery_type=payload.spec.delivery_type,
+                language=payload.spec.suggested_stack.language,
+                framework=payload.spec.suggested_stack.framework,
+            ):
                 if event.get("type") == "result":
                     result = event["result"]
                     continue
@@ -778,6 +794,8 @@ def generate_stage_stream(payload: StageGenerateRequest, user: CurrentUser) -> S
                 context,
                 user_model_choice=payload.user_model_choice,
                 api_key=api_key,
+                language=payload.spec.suggested_stack.language,
+                framework=payload.spec.suggested_stack.framework,
             ):
                 if event.get("type") == "result":
                     parsed = event["parsed"]

@@ -270,6 +270,7 @@ function CockpitPanel({
 }
 
 function ScoreCard({ label, value, detail }: { readonly label: string; readonly value: number | null; readonly detail: string }) {
+  const { t } = useLocale();
   const measured = value !== null && value > 0;
   const safeValue = measured ? clamp(value) : 0;
   // Grow the bar from 0 to its real value on mount/update for a premium feel.
@@ -283,7 +284,7 @@ function ScoreCard({ label, value, detail }: { readonly label: string; readonly 
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{label}</p>
         <Badge tone={measured ? toneForScore(safeValue) : 'neutral'}>
-          {measured ? <AnimatedNumber value={safeValue} suffix="%" /> : 'Nao medido'}
+          {measured ? <AnimatedNumber value={safeValue} suffix="%" /> : t('modernize.score.notMeasured')}
         </Badge>
       </div>
       <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
@@ -311,6 +312,7 @@ function MetricTile({ icon: Icon, label, value, detail, tone = 'neutral' }: { re
 }
 
 function SeverityDashboard({ summary, active, onActive }: { readonly summary: ModernizeExecutiveSummary['findings']; readonly active: FindingGroup; readonly onActive: (group: FindingGroup) => void }) {
+  const { t } = useLocale();
   const cards: { id: FindingGroup; label: string; value: number; tone: BadgeTone }[] = [
     { id: 'critical', label: 'Critical', value: summary.critical, tone: 'danger' },
     { id: 'high', label: 'High', value: summary.high, tone: 'danger' },
@@ -327,7 +329,7 @@ function SeverityDashboard({ summary, active, onActive }: { readonly summary: Mo
             <span className="text-sm font-medium text-[color:var(--text)]">{card.label}</span>
             <Badge tone={card.tone}>{card.value}</Badge>
           </div>
-          <p className="mt-3 text-xs text-[color:var(--muted)]">Clique para filtrar os achados desta categoria.</p>
+          <p className="mt-3 text-xs text-[color:var(--muted)]">{t('modernize.findings.clickFilter')}</p>
         </button>
       ))}
     </div>
@@ -335,6 +337,7 @@ function SeverityDashboard({ summary, active, onActive }: { readonly summary: Mo
 }
 
 function FindingRow({ title, severity, file, line, explanation, fix, autoFixable = false }: { readonly title: string; readonly severity: string; readonly file?: string | null; readonly line?: number | null; readonly explanation: string; readonly fix: string; readonly autoFixable?: boolean }) {
+  const { t } = useLocale();
   return (
     <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-white/5 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -344,11 +347,11 @@ function FindingRow({ title, severity, file, line, explanation, fix, autoFixable
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge tone={severityTone(severity)}>{severity}</Badge>
-          <Badge tone={autoFixable ? 'accent' : 'neutral'}>{autoFixable ? 'Auto fix disponivel' : 'Revisao manual'}</Badge>
+          <Badge tone={autoFixable ? 'accent' : 'neutral'}>{autoFixable ? t('modernize.findings.autoFix') : t('modernize.findings.manualReview')}</Badge>
         </div>
       </div>
       <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">{explanation}</p>
-      <p className="mt-2 text-sm leading-6 text-[color:var(--text)]"><span className="font-semibold">Correcao sugerida:</span> {fix}</p>
+      <p className="mt-2 text-sm leading-6 text-[color:var(--text)]"><span className="font-semibold">{t('modernize.findings.suggestedFix')}</span> {fix}</p>
     </div>
   );
 }
@@ -369,6 +372,7 @@ function TechnologyPill({ tech }: { readonly tech: ModernizeDetectedTechnology }
 }
 
 function PlanTimeline({ steps }: { readonly steps: readonly string[] }) {
+  const { t } = useLocale();
   const labels = steps.length ? steps : ['Projeto ainda nao analisado'];
   return (
     <div className="grid gap-3">
@@ -377,9 +381,9 @@ function PlanTimeline({ steps }: { readonly steps: readonly string[] }) {
           <span className="grid h-9 w-9 place-items-center rounded-full border border-[color:var(--border)] bg-[color:var(--surface-3)] font-mono text-sm text-[color:var(--text)]">{index + 1}</span>
           <div>
             <p className="text-sm font-semibold text-[color:var(--text)]">{step}</p>
-            <p className="mt-1 text-xs text-[color:var(--muted)]">Tempo e risco sao derivados do plano retornado pela API; execucao manual exige confirmacao.</p>
+            <p className="mt-1 text-xs text-[color:var(--muted)]">{t('modernize.plan.derivedNote')}</p>
           </div>
-          <Badge tone={index < 2 ? 'success' : 'neutral'}>{index < 2 ? 'Preparado' : 'Pendente'}</Badge>
+          <Badge tone={index < 2 ? 'success' : 'neutral'}>{index < 2 ? t('modernize.plan.prepared') : t('common.pending')}</Badge>
         </div>
       ))}
     </div>
@@ -603,18 +607,18 @@ export default function ModernizePage() {
           <div className="space-y-5">
             <div className="flex items-center gap-3">
               <LDCNCoreBadge className="h-11 w-11 shrink-0" />
-              <Badge tone="accent">Engineering Cockpit</Badge>
+              <Badge tone="accent">{t('modernize.hero.badge')}</Badge>
             </div>
             <div>
-              <h1 className="max-w-4xl text-4xl font-semibold tracking-[-0.02em] text-[color:var(--text)] md:text-6xl">Modernize</h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-[color:var(--muted)] md:text-lg">Cockpit enterprise para ingestao, diagnostico, modernizacao e entrega de codebases existentes. Tudo exibido a partir da analise real do backend.</p>
+              <h1 className="max-w-4xl text-4xl font-semibold tracking-[-0.02em] text-[color:var(--text)] md:text-6xl">{t('modernize.hero.title')}</h1>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-[color:var(--muted)] md:text-lg">{t('modernize.hero.description')}</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <Button type="button" variant="primary" disabled={!result || busy !== null} loading={busy === 'generate'} onClick={() => void handleModernize()}>
-                <RefreshCw className="h-4 w-4" aria-hidden /> Modernizar Projeto
+                <RefreshCw className="h-4 w-4" aria-hidden /> {t('modernize.actions.modernize')}
               </Button>
               <Button type="button" variant="secondary" onClick={() => document.getElementById('modernize-ingestion')?.scrollIntoView({ behavior: 'smooth' })}>
-                <Upload className="h-4 w-4" aria-hidden /> Ingerir projeto
+                <Upload className="h-4 w-4" aria-hidden /> {t('modernize.actions.ingest')}
               </Button>
             </div>
           </div>
@@ -644,32 +648,32 @@ export default function ModernizePage() {
             <div className="flex items-center gap-3">
               <CheckCircle2 className="h-6 w-6 text-[color:var(--success)]" aria-hidden />
               <div>
-                <h2 className="text-lg font-semibold text-[color:var(--text)]">Análise concluída.</h2>
+                <h2 className="text-lg font-semibold text-[color:var(--text)]">{t('modernize.analysis.done')}</h2>
                 <p className="text-sm text-[color:var(--muted)]">
-                  {result.inventory.file_count.toLocaleString()} arquivos analisados · diagnóstico e plano prontos para a fase de execução.
+                  {t('modernize.analysis.filesReady', { count: result.inventory.file_count.toLocaleString() })}
                 </p>
               </div>
             </div>
             <Button type="button" variant="primary" loading={openingAutoFix} onClick={() => void openAutoFix()}>
-              <Wrench className="h-4 w-4" aria-hidden /> Abrir Auto-Fix
+              <Wrench className="h-4 w-4" aria-hidden /> {t('modernize.actions.openAutoFix')}
               <ArrowRight className="h-4 w-4" aria-hidden />
             </Button>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button type="button" variant="ghost" onClick={() => router.push('/projects')}>
-              <PackageCheck className="h-4 w-4" aria-hidden /> Exportar
+              <PackageCheck className="h-4 w-4" aria-hidden /> {t('modernize.actions.export')}
             </Button>
             <Button type="button" variant="ghost" onClick={() => router.push('/documentation')}>
-              <FileText className="h-4 w-4" aria-hidden /> Documentação
+              <FileText className="h-4 w-4" aria-hidden /> {t('modernize.actions.documentation')}
             </Button>
             <Button type="button" variant="ghost" onClick={() => router.push('/engineering-review')}>
-              <SearchCode className="h-4 w-4" aria-hidden /> Engineering Review
+              <SearchCode className="h-4 w-4" aria-hidden /> {t('modernize.actions.engineeringReview')}
             </Button>
             <Button type="button" variant="ghost" onClick={() => router.push('/settings#integrations')}>
-              <GitBranch className="h-4 w-4" aria-hidden /> Git
+              <GitBranch className="h-4 w-4" aria-hidden /> {t('modernize.actions.git')}
             </Button>
             <Button type="button" variant="ghost" onClick={() => router.push('/analytics')}>
-              <Activity className="h-4 w-4" aria-hidden /> Analytics
+              <Activity className="h-4 w-4" aria-hidden /> {t('modernize.actions.analytics')}
             </Button>
           </div>
         </section>
@@ -678,9 +682,9 @@ export default function ModernizePage() {
       <CockpitPanel
         id="executive"
         icon={Gauge}
-        title="Executive Summary"
+        title={t('modernize.panels.executive')}
         summary={summary ? `${summary.health_label} | ${summary.overall_health}% | ${findings?.total ?? 0} achados` : 'Aguardando ingestao real do projeto.'}
-        badge={<Badge tone={summary ? toneForScore(summary.overall_health) : 'neutral'}>{summary ? `${summary.overall_health}%` : 'Pendente'}</Badge>}
+        badge={<Badge tone={summary ? toneForScore(summary.overall_health) : 'neutral'}>{summary ? `${summary.overall_health}%` : t('common.pending')}</Badge>}
         openPanels={openPanels}
         onToggle={toggle}
       >
@@ -706,16 +710,16 @@ export default function ModernizePage() {
             </div>
           </div>
         ) : (
-          <EmptyCockpitState title="Nenhum projeto analisado" detail="Use ZIP ou Git para gerar o resumo executivo real." />
+          <EmptyCockpitState title={t('modernize.empty.noProject')} detail="Use ZIP ou Git para gerar o resumo executivo real." />
         )}
       </CockpitPanel>
 
       <CockpitPanel
         id="ingestion"
         icon={Upload}
-        title="Ingestao"
+        title={t('modernize.panels.ingestion')}
         summary={result ? `${result.inventory.file_count} arquivos | ${Object.keys(result.inventory.languages).join(', ') || 'sem linguagem detectada'}` : 'Upload ZIP ou repositorio Git.'}
-        badge={<Badge tone={result ? 'success' : 'neutral'}>{result ? 'Analisado' : 'Entrada'}</Badge>}
+        badge={<Badge tone={result ? 'success' : 'neutral'}>{result ? t('modernize.ingest.analyzed') : t('modernize.ingest.input')}</Badge>}
         openPanels={openPanels}
         onToggle={toggle}
       >
@@ -724,7 +728,7 @@ export default function ModernizePage() {
             <div className="inline-flex rounded-[var(--radius-md)] border border-[color:var(--border)] p-1">
               {(['zip', 'git'] as const).map((value) => (
                 <button key={value} type="button" onClick={() => setTab(value)} className={cn('focus-ring rounded-[var(--radius-sm)] px-3 py-1.5 text-sm font-medium transition', tab === value ? 'accent-fill' : 'text-[color:var(--muted)] hover:bg-white/5')}>
-                  {value === 'zip' ? 'Upload ZIP' : 'Repositorio Git'}
+                  {value === 'zip' ? t('modernize.ingest.uploadZip') : t('modernize.ingest.gitRepo')}
                 </button>
               ))}
             </div>
@@ -732,15 +736,15 @@ export default function ModernizePage() {
               <div className="space-y-3">
                 <input ref={fileRef} type="file" accept=".zip" className="hidden" onChange={(event) => handleZip(event.target.files?.[0])} />
                 <Button type="button" variant="primary" loading={busy === 'ingest'} onClick={() => fileRef.current?.click()}>
-                  <Upload className="h-4 w-4" aria-hidden /> {busy === 'ingest' ? 'Analisando ZIP' : 'Selecionar ZIP'}
+                  <Upload className="h-4 w-4" aria-hidden /> {busy === 'ingest' ? t('modernize.ingest.analyzingZip') : t('modernize.ingest.selectZip')}
                 </Button>
-                <p className="text-sm text-[color:var(--muted)]">A API aplica Smart Ignore, limites de tamanho e protecao contra zip slip.</p>
+                <p className="text-sm text-[color:var(--muted)]">{t('modernize.ingest.apiNote')}</p>
               </div>
             ) : (
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Input value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} placeholder="https://github.com/org/repo.git" className="flex-1" />
+                <Input value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} placeholder={t('modernize.ingest.gitPlaceholder')} className="flex-1" />
                 <Button type="button" variant="primary" disabled={busy !== null || gitUrl.trim().length < 4} loading={busy === 'ingest'} onClick={() => void ingest(modernizeClient.createProjectGit(gitUrl.trim()))}>
-                  <GitBranch className="h-4 w-4" aria-hidden /> Analisar
+                  <GitBranch className="h-4 w-4" aria-hidden /> {t('modernize.ingest.analyze')}
                 </Button>
               </div>
             )}
@@ -756,9 +760,9 @@ export default function ModernizePage() {
       <CockpitPanel
         id="ai-review"
         icon={Bot}
-        title="AI Executive Review"
+        title={t('modernize.panels.aiReview')}
         summary={summary ? `${summary.risk_level} risk | confidence ${summary.analysis_confidence}%` : 'Review deterministico aguardando projeto.'}
-        badge={<Badge tone={summary ? toneForRisk(summary.risk_level) : 'neutral'}>{summary ? `${summary.analysis_confidence}% confianca` : 'Pendente'}</Badge>}
+        badge={<Badge tone={summary ? toneForRisk(summary.risk_level) : 'neutral'}>{summary ? `${summary.analysis_confidence}% confianca` : t('common.pending')}</Badge>}
         openPanels={openPanels}
         onToggle={toggle}
       >
@@ -768,12 +772,12 @@ export default function ModernizePage() {
               <div className="flex items-center gap-3">
                 <Sparkles className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
                 <div>
-                  <h2 className="text-lg font-semibold text-[color:var(--text)]">Software Architect Review</h2>
-                  <p className="text-sm text-[color:var(--muted)]">Modo {degraded || !useUserKey ? 'deterministico' : 'LLM real quando provider estiver ativo'}.</p>
+                  <h2 className="text-lg font-semibold text-[color:var(--text)]">{t('modernize.aiReview.title')}</h2>
+                  <p className="text-sm text-[color:var(--muted)]">{t('modernize.aiReview.mode')} {degraded || !useUserKey ? t('modernize.aiReview.deterministic') : t('modernize.aiReview.llmActive')}.</p>
                 </div>
               </div>
               <p className="text-sm leading-7 text-[color:var(--text)]">{summary.review}</p>
-              <p className="text-sm leading-7 text-[color:var(--muted)]">Recomendacao: {summary.priority}</p>
+              <p className="text-sm leading-7 text-[color:var(--muted)]">{t('modernize.aiReview.recommendation')} {summary.priority}</p>
             </Card>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <MetricTile icon={ClockIcon} label="Tempo estimado" value={summary.modernization_estimate} detail="Calculado no backend a partir do tamanho analisavel e achados." />
@@ -781,18 +785,18 @@ export default function ModernizePage() {
               <MetricTile icon={ShieldAlert} label="Nivel de risco" value={summary.risk_level} detail="Derivado de severidades e score de seguranca." tone={toneForRisk(summary.risk_level)} />
             </div>
           </div>
-        ) : <EmptyCockpitState title="Review indisponivel" detail="A IA nao finge analise. Envie um projeto para obter review baseado no backend." />}
+        ) : <EmptyCockpitState title={t('modernize.empty.reviewUnavailable')} detail="A IA nao finge analise. Envie um projeto para obter review baseado no backend." />}
       </CockpitPanel>
 
-      <CockpitPanel id="radar" icon={Activity} title="Health Radar" summary={summary ? 'Security, performance, architecture, quality, maintainability e testing.' : 'Radar aparece apos analise.'} badge={<Badge>{radarAxes.length ? '8 eixos' : 'Pendente'}</Badge>} openPanels={openPanels} onToggle={toggle}>
-        {summary ? <ComplexityRadar title="Health Radar" score={summary.overall_health} axes={radarAxes} /> : <EmptyCockpitState title="Radar pendente" detail="Nenhum eixo e calculado sem resposta do backend." />}
+      <CockpitPanel id="radar" icon={Activity} title={t('modernize.panels.radar')} summary={summary ? 'Security, performance, architecture, quality, maintainability e testing.' : 'Radar aparece apos analise.'} badge={<Badge>{radarAxes.length ? t('modernize.radar.axes') : t('common.pending')}</Badge>} openPanels={openPanels} onToggle={toggle}>
+        {summary ? <ComplexityRadar title={t('modernize.panels.radar')} score={summary.overall_health} axes={radarAxes} /> : <EmptyCockpitState title={t('modernize.empty.radarPending')} detail="Nenhum eixo e calculado sem resposta do backend." />}
       </CockpitPanel>
 
-      <CockpitPanel id="diagnosis" icon={SearchCode} title="Diagnostico" summary={findings ? `${findings.total} achados agrupados, sem parede de erros.` : 'Sem diagnostico carregado.'} badge={<Badge tone={findings?.total ? 'warning' : 'success'}>{findings?.total ?? 0} achados</Badge>} openPanels={openPanels} onToggle={toggle}>
-        {findings ? <SeverityDashboard summary={findings} active={activeFindingGroup} onActive={setActiveFindingGroup} /> : <EmptyCockpitState title="Diagnostico pendente" detail="Envie um projeto para obter severidades reais." />}
+      <CockpitPanel id="diagnosis" icon={SearchCode} title={t('modernize.panels.diagnosis')} summary={findings ? `${findings.total} achados agrupados, sem parede de erros.` : 'Sem diagnostico carregado.'} badge={<Badge tone={findings?.total ? 'warning' : 'success'}>{t('modernize.diagnosis.findingsCount', { count: findings?.total ?? 0 })}</Badge>} openPanels={openPanels} onToggle={toggle}>
+        {findings ? <SeverityDashboard summary={findings} active={activeFindingGroup} onActive={setActiveFindingGroup} /> : <EmptyCockpitState title={t('modernize.empty.diagnosisPending')} detail="Envie um projeto para obter severidades reais." />}
       </CockpitPanel>
 
-      <CockpitPanel id="findings" icon={AlertTriangle} title="Intelligent Findings" summary={result ? `${filteredFindings.length} item(ns) no filtro atual.` : 'Achados agrupados por dominio.'} badge={<Badge>{activeFindingGroup}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="findings" icon={AlertTriangle} title={t('modernize.panels.findings')} summary={result ? `${filteredFindings.length} item(ns) no filtro atual.` : 'Achados agrupados por dominio.'} badge={<Badge>{activeFindingGroup}</Badge>} openPanels={openPanels} onToggle={toggle}>
         {result ? (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
@@ -809,10 +813,10 @@ export default function ModernizePage() {
                   return <FindingRow key={`${row.smell.code}-${index}`} title={row.smell.message} severity="medium" file={row.smell.related_paths[0]} explanation="A analise de arquitetura encontrou um cheiro estrutural no inventario." fix="Aplicar a etapa correspondente do plano de modernizacao antes de gerar o projeto final." />;
                 }
                 return <FindingRow key={`${row.note}-${index}`} title={row.note} severity="medium" explanation="A analise de dependencias encontrou risco de versao ou manutencao." fix="Atualizar dependencia em branch separada e validar breaking changes com testes." />;
-              }) : <EmptyCockpitState title="Sem itens nesta categoria" detail="O filtro atual nao possui achados retornados pela API." />}
+              }) : <EmptyCockpitState title={t('modernize.empty.categoryEmpty')} detail="O filtro atual nao possui achados retornados pela API." />}
             </div>
           </div>
-        ) : <EmptyCockpitState title="Achados pendentes" detail="Nenhum achado e mostrado antes da ingestao." />}
+        ) : <EmptyCockpitState title={t('modernize.empty.findingsPending')} detail="Nenhum achado e mostrado antes da ingestao." />}
       </CockpitPanel>
 
       {result ? (
@@ -823,48 +827,48 @@ export default function ModernizePage() {
         />
       ) : null}
 
-      <CockpitPanel id="plan" icon={Workflow} title="Plano de Modernizacao" summary={result ? `${result.plan.steps.length} etapas | ${result.plan.mappings.length} mapeamentos` : 'Timeline gerada pela API.'} badge={<Badge>{result?.plan.target_architecture ?? 'Pendente'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="plan" icon={Workflow} title={t('modernize.panels.plan')} summary={result ? `${result.plan.steps.length} etapas | ${result.plan.mappings.length} mapeamentos` : 'Timeline gerada pela API.'} badge={<Badge>{result?.plan.target_architecture ?? 'Pendente'}</Badge>} openPanels={openPanels} onToggle={toggle}>
         {result ? (
           <div className="space-y-5">
             <PlanTimeline steps={result.plan.steps} />
             <Card className="p-5">
-              <p className="text-sm font-semibold text-[color:var(--text)]">Logica preservada</p>
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t('modernize.plan.preservedLogic')}</p>
               <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{result.plan.preserved_logic_note}</p>
             </Card>
           </div>
-        ) : <EmptyCockpitState title="Plano pendente" detail="A timeline sera criada apos ingestao e diagnostico." />}
+        ) : <EmptyCockpitState title={t('modernize.empty.planPending')} detail="A timeline sera criada apos ingestao e diagnostico." />}
       </CockpitPanel>
 
-      <CockpitPanel id="architecture" icon={Network} title="Architecture Graph" summary={result ? `${architectureNodes.filter((node) => node.status === 'Detectado').length} no(s) detectado(s).` : 'Grafo derivado do inventario.'} badge={<Badge>{selectedArchitectureNode?.label ?? 'Grafo'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="architecture" icon={Network} title={t('modernize.panels.architecture')} summary={result ? `${architectureNodes.filter((node) => node.status === 'Detectado').length} no(s) detectado(s).` : 'Grafo derivado do inventario.'} badge={<Badge>{selectedArchitectureNode?.label ?? 'Grafo'}</Badge>} openPanels={openPanels} onToggle={toggle}>
         <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
           <ArchitectureGraph nodes={architectureNodes} selectedId={selectedNode} onSelect={setSelectedNode} />
           <Card className="p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted-2)]">No selecionado</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted-2)]">{t('modernize.architecture.selectedNode')}</p>
             <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{selectedArchitectureNode?.label}</h3>
             <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">{selectedArchitectureNode?.detail}</p>
-            <p className="mt-3 text-sm text-[color:var(--text)]">Status: {selectedArchitectureNode?.status}</p>
+            <p className="mt-3 text-sm text-[color:var(--text)]">{t('modernize.architecture.status')} {selectedArchitectureNode?.status}</p>
           </Card>
         </div>
       </CockpitPanel>
 
-      <CockpitPanel id="stack" icon={Layers3} title="Stack Intelligence" summary={summary ? `${summary.technologies.length} tecnologia(s) detectada(s).` : 'Deteccao automatica pelo backend.'} badge={<Badge>{result?.diagnosis.primary_language ?? 'Pendente'}</Badge>} openPanels={openPanels} onToggle={toggle}>
-        {summary?.technologies.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{summary.technologies.map((tech) => <TechnologyPill key={`${tech.category}-${tech.name}`} tech={tech} />)}</div> : <EmptyCockpitState title="Stack pendente" detail="Nenhuma tecnologia foi retornada ainda." />}
+      <CockpitPanel id="stack" icon={Layers3} title={t('modernize.panels.stack')} summary={summary ? `${summary.technologies.length} tecnologia(s) detectada(s).` : 'Deteccao automatica pelo backend.'} badge={<Badge>{result?.diagnosis.primary_language ?? 'Pendente'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+        {summary?.technologies.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{summary.technologies.map((tech) => <TechnologyPill key={`${tech.category}-${tech.name}`} tech={tech} />)}</div> : <EmptyCockpitState title={t('modernize.empty.stackPending')} detail="Nenhuma tecnologia foi retornada ainda." />}
       </CockpitPanel>
 
-      <CockpitPanel id="runtime" icon={Cpu} title="Runtime Analysis" summary={runtime ? `${runtime.runtime} · ${runtime.metrics.filter((m) => m.kind === 'measured').length} métricas medidas` : 'Perfil de runtime computado do código real (sem executar).'} badge={<Badge tone={runtime ? 'success' : result ? 'neutral' : 'neutral'}>{runtime ? runtime.runtime : result ? 'Computando' : 'Aguardando'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="runtime" icon={Cpu} title={t('modernize.panels.runtime')} summary={runtime ? `${runtime.runtime} · ${runtime.metrics.filter((m) => m.kind === 'measured').length} métricas medidas` : 'Perfil de runtime computado do código real (sem executar).'} badge={<Badge tone={runtime ? 'success' : result ? 'neutral' : 'neutral'}>{runtime ? runtime.runtime : result ? t('modernize.runtime.computing') : t('modernize.runtime.waiting')}</Badge>} openPanels={openPanels} onToggle={toggle}>
         {runtime ? (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <Badge tone="accent">{runtime.runtime}</Badge>
-              <Badge tone={runtime.container_ready ? 'success' : 'neutral'}>{runtime.container_ready ? 'Container pronto' : 'Sem container'}</Badge>
-              <Badge tone="neutral">Não executado (seguro)</Badge>
+              <Badge tone={runtime.container_ready ? 'success' : 'neutral'}>{runtime.container_ready ? t('modernize.runtime.containerReady') : t('modernize.runtime.noContainer')}</Badge>
+              <Badge tone="neutral">{t('modernize.runtime.notExecuted')}</Badge>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {runtime.metrics.map((metric) => (
                 <div key={metric.id} className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_44%,transparent)] p-4">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs uppercase tracking-[0.16em] text-[color:var(--muted-2)]">{metric.label}</span>
-                    <Badge tone={metric.kind === 'measured' ? 'success' : 'warning'}>{metric.kind === 'measured' ? 'Medido' : 'Estimativa'}</Badge>
+                    <Badge tone={metric.kind === 'measured' ? 'success' : 'warning'}>{metric.kind === 'measured' ? t('modernize.runtime.measured') : t('modernize.runtime.estimate')}</Badge>
                   </div>
                   <p className="mt-3 text-lg font-semibold text-[color:var(--text)]">{metric.value}</p>
                   <p className="mt-1 line-clamp-2 text-xs leading-5 text-[color:var(--muted)]">{metric.basis}</p>
@@ -880,14 +884,14 @@ export default function ModernizePage() {
             {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[104px]" />)}
           </div>
         ) : (
-          <EmptyCockpitState title="Runtime pendente" detail="O perfil de runtime é computado a partir do código após a ingestão." />
+          <EmptyCockpitState title={t('modernize.empty.runtimePending')} detail="O perfil de runtime é computado a partir do código após a ingestão." />
         )}
 
         {validationReport?.build.metrics ? (
           <div className="mt-5 rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--success)_30%,var(--border))] bg-[color-mix(in_srgb,var(--success)_8%,transparent)] p-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[color:var(--text)]">Execução do build modernizado · medido</p>
-              <Badge tone="success">{validationReport.build.metrics.sampler === 'psutil' ? 'psutil' : 'wall-clock'}</Badge>
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t('modernize.build.title')}</p>
+              <Badge tone="success">{validationReport.build.metrics.sampler === 'psutil' ? t('modernize.build.samplerPsutil') : t('modernize.build.samplerWallClock')}</Badge>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricTile icon={Activity} label="Build (total)" value={`${(validationReport.build.metrics.total_ms / 1000).toFixed(1)} s`} detail="Tempo de parede real do install+build no sandbox." tone="success" />
@@ -895,12 +899,12 @@ export default function ModernizePage() {
               <MetricTile icon={Server} label="Pico de memória" value={validationReport.build.metrics.peak_memory_mb != null ? `${validationReport.build.metrics.peak_memory_mb.toFixed(0)} MB` : 'Indisponível'} detail={validationReport.build.metrics.peak_memory_mb != null ? 'RSS de pico do processo de build (real).' : 'psutil indisponível no servidor.'} tone={validationReport.build.metrics.peak_memory_mb != null ? 'success' : 'neutral'} />
               <MetricTile icon={Cpu} label="CPU" value={validationReport.build.metrics.cpu_seconds != null ? `${validationReport.build.metrics.cpu_seconds.toFixed(1)} s` : 'Indisponível'} detail={validationReport.build.metrics.cpu_seconds != null ? 'Tempo de CPU real do build.' : 'psutil indisponível no servidor.'} tone={validationReport.build.metrics.cpu_seconds != null ? 'success' : 'neutral'} />
             </div>
-            <p className="mt-3 text-xs leading-5 text-[color:var(--muted)]">Estas métricas são medidas executando o build do projeto MODERNIZADO no nosso sandbox controlado — não o código legado.</p>
+            <p className="mt-3 text-xs leading-5 text-[color:var(--muted)]">{t('modernize.build.sandboxNote')}</p>
           </div>
         ) : null}
       </CockpitPanel>
 
-      <CockpitPanel id="auto-fix" icon={Zap} title="Auto Fix Center" summary={result ? `${fixes.length} acao(oes) candidatas | ${selectedFixCount} selecionada(s)` : 'Acoes aparecem apos o plano.'} badge={<Badge>{selectedFixCount} ligadas</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="auto-fix" icon={Zap} title={t('modernize.panels.autoFix')} summary={result ? `${fixes.length} acao(oes) candidatas | ${selectedFixCount} selecionada(s)` : 'Acoes aparecem apos o plano.'} badge={<Badge>{t('modernize.autoFix.enabledCount', { count: selectedFixCount })}</Badge>} openPanels={openPanels} onToggle={toggle}>
         {result ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {fixes.map((fix) => {
@@ -910,16 +914,16 @@ export default function ModernizePage() {
                   <input type="checkbox" checked={checked} onChange={(event) => setSelectedFixes((current) => { const next = new Set(current); if (event.target.checked) next.add(fix.id); else next.delete(fix.id); return next; })} className="mt-1 h-4 w-4 accent-[color:var(--accent)]" />
                   <span>
                     <span className="block text-sm font-semibold text-[color:var(--text)]">{fix.title}</span>
-                    <span className="mt-1 block text-xs text-[color:var(--muted)]">{fix.safe ? 'Seguro para preparacao automatica quando suportado.' : 'Requer confirmacao extra e revisao humana.'}</span>
+                    <span className="mt-1 block text-xs text-[color:var(--muted)]">{fix.safe ? t('modernize.autoFix.safe') : t('modernize.autoFix.manual')}</span>
                   </span>
                 </label>
               );
             })}
           </div>
-        ) : <EmptyCockpitState title="Auto Fix pendente" detail="Nenhuma correcao e sugerida antes da analise real." />}
+        ) : <EmptyCockpitState title={t('modernize.empty.autoFixPending')} detail="Nenhuma correcao e sugerida antes da analise real." />}
       </CockpitPanel>
 
-      <CockpitPanel id="security" icon={ShieldAlert} title="Security Center" summary={result ? `${result.diagnosis.security_findings.length} achado(s) de seguranca.` : 'OWASP/secrets/JWT aparecem quando detectados.'} badge={<Badge tone={result?.diagnosis.security_findings.length ? 'danger' : 'success'}>{result?.diagnosis.security_findings.length ?? 0}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="security" icon={ShieldAlert} title={t('modernize.panels.security')} summary={result ? `${result.diagnosis.security_findings.length} achado(s) de seguranca.` : 'OWASP/secrets/JWT aparecem quando detectados.'} badge={<Badge tone={result?.diagnosis.security_findings.length ? 'danger' : 'success'}>{result?.diagnosis.security_findings.length ?? 0}</Badge>} openPanels={openPanels} onToggle={toggle}>
         {result ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {['OWASP', 'Secrets', 'JWT', 'Headers', 'SQL Injection', 'XSS', 'CSRF', 'SSRF', 'Rate Limit', 'Dependency Scan', 'CVE'].map((label) => {
@@ -927,19 +931,19 @@ export default function ModernizePage() {
               return <MetricTile key={label} icon={ShieldCheck} label={label} value={count ? String(count) : 'Nao detectado'} detail={count ? 'Evidencia retornada pela analise backend.' : 'Nenhuma evidencia especifica retornada pela API.'} tone={count ? 'warning' : 'success'} />;
             })}
           </div>
-        ) : <EmptyCockpitState title="Seguranca pendente" detail="A varredura de seguranca roda durante a ingestao." />}
+        ) : <EmptyCockpitState title={t('modernize.empty.securityPending')} detail="A varredura de seguranca roda durante a ingestao." />}
       </CockpitPanel>
 
-      <CockpitPanel id="api" icon={Route} title="API Explorer" summary={generated ? `Projeto ${generated.project} pronto para API Explorer.` : `${endpointFiles.length} arquivo(s) com evidencia de endpoint.`} badge={<Badge tone={generated ? 'success' : 'neutral'}>{generated ? 'Ativo' : 'Aguardando geracao'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="api" icon={Route} title={t('modernize.panels.api')} summary={generated ? `Projeto ${generated.project} pronto para API Explorer.` : `${endpointFiles.length} arquivo(s) com evidencia de endpoint.`} badge={<Badge tone={generated ? 'success' : 'neutral'}>{generated ? t('modernize.api.active') : t('modernize.api.waitingGeneration')}</Badge>} openPanels={openPanels} onToggle={toggle}>
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-4">
             {['GET', 'POST', 'PUT', 'DELETE'].map((method) => <MetricTile key={method} icon={Braces} label={method} value="Nao executado" detail="Teste real fica disponivel apos gerar o projeto modernizado." />)}
           </div>
-          {generated ? <ApiTestPanel surface="modernize" projectId={generated.project} /> : <EmptyCockpitState title="API Explorer aguardando projeto" detail={`${endpointFiles.length} arquivo(s) sugerem endpoints, mas testes reais exigem projeto gerado.`} />}
+          {generated ? <ApiTestPanel surface="modernize" projectId={generated.project} /> : <EmptyCockpitState title={t('modernize.empty.apiWaiting')} detail={`${endpointFiles.length} arquivo(s) sugerem endpoints, mas testes reais exigem projeto gerado.`} />}
         </div>
       </CockpitPanel>
 
-      <CockpitPanel id="git" icon={GitBranch} title="Git Center" summary={generated ? 'Exportacao Git disponivel para o projeto gerado.' : 'Git publish aparece apos modernizacao.'} badge={<Badge tone={generated ? 'success' : 'neutral'}>{generated ? 'Pronto' : 'Pendente'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="git" icon={GitBranch} title={t('modernize.panels.git')} summary={generated ? 'Exportacao Git disponivel para o projeto gerado.' : 'Git publish aparece apos modernizacao.'} badge={<Badge tone={generated ? 'success' : 'neutral'}>{generated ? t('modernize.git.ready') : t('common.pending')}</Badge>} openPanels={openPanels} onToggle={toggle}>
         {generated ? (
           <ExportPanel surface="modernize" projectId={generated.project} defaultRepoName={(projectName.trim() || 'modernized-project').toLowerCase().replace(/[^a-z0-9_.-]+/g, '-')} />
         ) : (
@@ -952,7 +956,7 @@ export default function ModernizePage() {
         )}
       </CockpitPanel>
 
-      <CockpitPanel id="documentation" icon={FileText} title="Documentation" summary={`${docsFiles.length} arquivo(s) de documentacao detectado(s).`} badge={<Badge tone={docsFiles.length ? 'success' : 'warning'}>{docsFiles.length ? 'Evidencia' : 'Faltando'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="documentation" icon={FileText} title={t('modernize.panels.documentation')} summary={`${docsFiles.length} arquivo(s) de documentacao detectado(s).`} badge={<Badge tone={docsFiles.length ? 'success' : 'warning'}>{docsFiles.length ? t('modernize.docs.evidence') : t('modernize.docs.missing')}</Badge>} openPanels={openPanels} onToggle={toggle}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricTile icon={FileText} label="Score" value={docsFiles.length ? '70%' : '0%'} detail="Baseado apenas em arquivos de documentacao detectados no inventario." tone={docsFiles.length ? 'success' : 'warning'} />
           <MetricTile icon={FileCode2} label="Arquivos" value={String(docsFiles.length)} detail={docsFiles.slice(0, 3).map((file) => file.path).join(', ') || 'Nenhum README/docs/ADR detectado.'} />
@@ -961,7 +965,7 @@ export default function ModernizePage() {
         </div>
       </CockpitPanel>
 
-      <CockpitPanel id="metrics" icon={Activity} title="Engineering Metrics" summary={stats ? `${stats.lines_of_code.toLocaleString()} LOC | ${result?.inventory.file_count ?? 0} arquivos` : 'Metricas aparecem apos ingestao.'} badge={<Badge>{stats?.complexity ?? 'Pendente'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="metrics" icon={Activity} title={t('modernize.panels.metrics')} summary={stats ? `${stats.lines_of_code.toLocaleString()} LOC | ${result?.inventory.file_count ?? 0} arquivos` : 'Metricas aparecem apos ingestao.'} badge={<Badge>{stats?.complexity ?? 'Pendente'}</Badge>} openPanels={openPanels} onToggle={toggle}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricTile icon={Code2} label="Linhas de codigo" value={stats ? stats.lines_of_code.toLocaleString() : '0'} detail="Contadas pelo Smart Ingest." />
           <MetricTile icon={Layers3} label="Linguagens" value={result ? String(Object.keys(result.inventory.languages).length) : '0'} detail={Object.keys(result?.inventory.languages ?? {}).join(', ') || 'Nenhuma.'} />
@@ -974,7 +978,7 @@ export default function ModernizePage() {
         </div>
       </CockpitPanel>
 
-      <CockpitPanel id="pipeline" icon={Workflow} title="Build Pipeline" summary={validationReport ? `${validationReport.passed ? 'Passou' : 'Falhou'} | score ${validationReport.score}` : 'Pipeline real roda apos geracao.'} badge={<Badge tone={validationReport?.passed ? 'success' : validationReport ? 'danger' : 'neutral'}>{validationReport ? 'Executado' : 'Nao executado'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="pipeline" icon={Workflow} title={t('modernize.panels.pipeline')} summary={validationReport ? `${validationReport.passed ? 'Passou' : 'Falhou'} | score ${validationReport.score}` : 'Pipeline real roda apos geracao.'} badge={<Badge tone={validationReport?.passed ? 'success' : validationReport ? 'danger' : 'neutral'}>{validationReport ? t('modernize.pipeline.executed') : t('modernize.pipeline.notExecuted')}</Badge>} openPanels={openPanels} onToggle={toggle}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           {[
             ['Lint', validationReport ? 'Validado' : 'Nao executado'],
@@ -988,29 +992,29 @@ export default function ModernizePage() {
         {validationReport ? <ValidationReportPanel report={validationReport} /> : null}
       </CockpitPanel>
 
-      <CockpitPanel id="terminal" icon={TerminalSquare} title="Live Terminal" summary="Logs reais de comandos aparecem quando a API executa geracao/validacao." badge={<Badge tone={busy ? 'accent' : 'neutral'}>{busy ? 'Executando' : 'Idle'}</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="terminal" icon={TerminalSquare} title={t('modernize.panels.terminal')} summary="Logs reais de comandos aparecem quando a API executa geracao/validacao." badge={<Badge tone={busy ? 'accent' : 'neutral'}>{busy ? t('modernize.terminal.running') : t('modernize.terminal.idle')}</Badge>} openPanels={openPanels} onToggle={toggle}>
         <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/40 p-4 font-mono text-xs text-[color:var(--muted)]">
-          <p>$ modernize ingest --source {result?.inventory.source ?? 'pending'}</p>
-          <p>{result ? `indexed ${result.inventory.file_count} files, skipped ${result.inventory.skipped_count}` : 'waiting for project input'}</p>
-          <p>{generated ? `generated ${generated.project} with ${generated.count} files` : 'no generated artifact yet'}</p>
+          <p>{t('modernize.terminal.cmd')} {result?.inventory.source ?? 'pending'}</p>
+          <p>{result ? `indexed ${result.inventory.file_count} files, skipped ${result.inventory.skipped_count}` : t('modernize.terminal.waitingInput')}</p>
+          <p>{generated ? `generated ${generated.project} with ${generated.count} files` : t('modernize.terminal.noArtifact')}</p>
           {validationReport?.build.logs_tail ? <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap">{validationReport.build.logs_tail}</pre> : null}
         </div>
       </CockpitPanel>
 
-      <CockpitPanel id="conversation" icon={MessageSquareText} title="AI Conversation" summary="Respostas ficam restritas aos dados do projeto e ao modo deterministico quando nao ha provider real." badge={<Badge tone="accent">Deterministico</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="conversation" icon={MessageSquareText} title={t('modernize.panels.conversation')} summary="Respostas ficam restritas aos dados do projeto e ao modo deterministico quando nao ha provider real." badge={<Badge tone="accent">{t('modernize.chat.deterministic')}</Badge>} openPanels={openPanels} onToggle={toggle}>
         <div className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
           <Card className="p-5">
-            <p className="text-sm font-semibold text-[color:var(--text)]">Pergunte sobre este projeto</p>
+            <p className="text-sm font-semibold text-[color:var(--text)]">{t('modernize.chat.ask')}</p>
             <div className="mt-3 flex gap-2">
               <Input
                 value={chatQuestion}
                 onChange={(event) => setChatQuestion(event.target.value)}
                 onKeyDown={(event) => { if (event.key === 'Enter') void handleAsk(); }}
-                placeholder="O que esta errado?"
+                placeholder={t('modernize.chat.placeholder')}
                 disabled={!result}
               />
               <Button type="button" variant="secondary" loading={chatBusy} disabled={!result || !chatQuestion.trim()} onClick={() => void handleAsk()}>
-                Enviar
+                {t('modernize.chat.send')}
               </Button>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-[color:var(--muted)]">
@@ -1020,12 +1024,12 @@ export default function ModernizePage() {
                 </button>
               ))}
             </div>
-            <p className="mt-3 text-xs leading-5 text-[color:var(--muted)]">As respostas usam apenas os dados reais deste projeto. Sem chave, o modo e explicitamente deterministico.</p>
+            <p className="mt-3 text-xs leading-5 text-[color:var(--muted)]">{t('modernize.chat.note')}</p>
           </Card>
           <Card className="p-5">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[color:var(--text)]">Resposta</p>
-              {chat ? <Badge tone={chat.mode === 'llm' ? 'accent' : 'neutral'}>{chat.mode === 'llm' ? 'IA' : 'Deterministico'}</Badge> : null}
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t('modernize.chat.answer')}</p>
+              {chat ? <Badge tone={chat.mode === 'llm' ? 'accent' : 'neutral'}>{chat.mode === 'llm' ? t('modernize.chat.ai') : t('modernize.chat.deterministic')}</Badge> : null}
             </div>
             <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[color:var(--muted)]">
               {chat?.answer ?? summary?.review ?? 'Envie um projeto para obter contexto real antes de conversar.'}
@@ -1034,22 +1038,22 @@ export default function ModernizePage() {
         </div>
       </CockpitPanel>
 
-      <CockpitPanel id="artifacts" icon={PackageCheck} title="Artefatos" summary={generated ? `Projeto gerado ${generated.project}` : 'Artefatos aparecem apos modernizar.'} badge={<Badge tone={generated ? 'success' : 'neutral'}>{generated ? generated.count : 0} arquivos</Badge>} openPanels={openPanels} onToggle={toggle}>
+      <CockpitPanel id="artifacts" icon={PackageCheck} title={t('modernize.panels.artifacts')} summary={generated ? `Projeto gerado ${generated.project}` : 'Artefatos aparecem apos modernizar.'} badge={<Badge tone={generated ? 'success' : 'neutral'}>{t('modernize.artifacts.filesCount', { count: generated ? generated.count : 0 })}</Badge>} openPanels={openPanels} onToggle={toggle}>
         <div className="space-y-4">
           <UserKeyPanel enabled={useUserKey} onEnabledChange={setUseUserKey} />
           <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-white/5 p-4 md:flex-row md:items-center">
             <label className="flex flex-1 flex-col gap-1 text-sm text-[color:var(--muted)]">
-              Nome do projeto
+              {t('modernize.artifacts.projectName')}
               <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} />
             </label>
-            {degraded ? <Badge tone="warning">Modo degradado</Badge> : null}
+            {degraded ? <Badge tone="warning">{t('modernize.artifacts.degraded')}</Badge> : null}
             <Button type="button" variant="primary" disabled={!result || busy !== null} loading={busy === 'generate'} onClick={() => void handleModernize()}>
-              <RefreshCw className="h-4 w-4" aria-hidden /> Modernizar Projeto
+              <RefreshCw className="h-4 w-4" aria-hidden /> {t('modernize.actions.modernize')}
             </Button>
           </div>
           {generated ? (
             <div className="rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--success)_34%,transparent)] bg-[color-mix(in_srgb,var(--success)_12%,transparent)] p-4 text-sm text-[color:var(--success)]">
-              Projeto modernizado gerado: {generated.project} ({generated.count} arquivos).
+              {t('modernize.artifacts.generated', { project: generated.project, count: generated.count })}
             </div>
           ) : null}
         </div>

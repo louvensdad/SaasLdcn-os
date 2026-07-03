@@ -24,7 +24,7 @@ export function GlobalSearch({ onOpen }: GlobalSearchProps) {
           <Search className="h-4 w-4 transition duration-300 group-hover:text-[color:var(--accent)]" />
           {t('search.placeholder')}
         </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-[color:var(--muted)] transition duration-300 group-hover:border-[color-mix(in_srgb,var(--accent)_26%,transparent)] group-hover:text-[color:var(--text)]">
+        <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-xs text-[color:var(--muted)] transition duration-300 group-hover:border-[color-mix(in_srgb,var(--accent)_26%,transparent)] group-hover:text-[color:var(--text)]">
           <Command className="h-3 w-3" /> K
         </span>
       </button>

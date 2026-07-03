@@ -97,7 +97,7 @@ export function ArchitectureGraph({
             >
               <span className="flex flex-col items-center gap-1">
                 <Icon className={cn('h-4 w-4', isDetected ? 'text-[color:var(--accent)]' : 'text-[color:var(--muted-2)]')} aria-hidden />
-                <span className="text-[11px] font-medium leading-none text-[color:var(--text)]">{node.label}</span>
+                <span className="text-xs font-medium leading-none text-[color:var(--text)]">{node.label}</span>
               </span>
             </button>
           );

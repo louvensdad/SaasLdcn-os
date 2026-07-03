@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.schemas.architecture_blueprint import relevant_areas
+
 # Engineering Review Engine: a technical-committee critique layered over the
 # Architect's blueprint. It is intentionally DETERMINISTIC and runs without an
 # LLM/key so the Engineering Review Center always renders — but it never invents
@@ -13,7 +15,11 @@ from typing import Any
 # the gaps, risks, inconsistencies, scalability/security impact, and the actions
 # to take before the Meta-Factory.
 
-SECURITY_AREAS = {"auth", "authorization"}
+SECURITY_AREAS = {"auth", "authorization", "mobile"}
+
+
+def _security_areas(delivery_type: str | None) -> set[str]:
+    return SECURITY_AREAS if delivery_type in {"mobile", "full_stack"} else SECURITY_AREAS - {"mobile"}
 
 
 def _finding(title: str, detail: str = "", area: str | None = None) -> dict[str, Any]:
@@ -104,7 +110,8 @@ def build_engineering_review(room: dict[str, Any], readiness_checks: list[dict[s
         )
 
     # Impact summaries — real text or an honest "indisponivel".
-    security_decisions = [d for d in decisions if d.get("area") in SECURITY_AREAS]
+    relevant_security_areas = _security_areas(spec.get("delivery_type"))
+    security_decisions = [d for d in decisions if d.get("area") in relevant_security_areas]
     security_impact = (
         "; ".join(f"{d['area']}: {d.get('choice', '')}" for d in security_decisions)
         if security_decisions
@@ -134,9 +141,10 @@ def build_engineering_review(room: dict[str, Any], readiness_checks: list[dict[s
     if not recommendations:
         recommendations.append("Nenhuma acao critica pendente. Pronto para revisao final e envio.")
 
+    total_areas = len(relevant_areas(spec.get("delivery_type")))
     score = _build_score(spec, blueprint, areas, decisions, required, passed, degraded)
     dimensions = _dimensions(spec, areas, score, len(passed), len(required))
-    committee = _committee(areas, score, dimensions, degraded)
+    committee = _committee(areas, score, dimensions, degraded, total_areas)
     final_opinion = _final_opinion(spec, score, committee, len(open_questions), degraded)
 
     return {
@@ -258,10 +266,10 @@ def _member(role: str, score: int | None, rationale: str, signals: list[str]) ->
     return {"role": role, "rating": _stars(score), "verdict": verdict, "rationale": rationale, "signals": signals}
 
 
-def _committee(areas: set, score: dict[str, Any], dimensions: list[dict[str, Any]], degraded: bool) -> list[dict[str, Any]]:
+def _committee(areas: set, score: dict[str, Any], dimensions: list[dict[str, Any]], degraded: bool, total_areas: int) -> list[dict[str, Any]]:
     dim = {d["key"]: d for d in dimensions}
     members = [
-        _member("Architect", _cat(score, "architecture"), "Cobertura das áreas arquiteturais.", [f"{len([a for a in areas if a])}/10 áreas decididas"]),
+        _member("Architect", _cat(score, "architecture"), "Cobertura das áreas arquiteturais.", [f"{len([a for a in areas if a])}/{total_areas} áreas decididas"]),
         _member("Security", dim["security"]["score"], "Controles de autenticação e autorização.", dim["security"]["findings"][:2]),
         _member("Performance", dim["performance"]["score"], "Sinais de performance e cacheabilidade.", dim["performance"]["findings"][:2]),
         _member("QA", dim["quality"]["score"], "Estratégia de testes e qualidade.", dim["quality"]["findings"][:2]),
@@ -331,7 +339,10 @@ def _build_score(
     degraded: bool,
 ) -> dict[str, Any]:
     nf = spec.get("non_functional") or {}
-    total_areas = 10  # the canonical BLUEPRINT_AREAS count
+    # Only areas relevant to this project's delivery_type count toward the
+    # denominator -- "mobile" shouldn't cap a web-only project's readiness below
+    # 100%, and a mobile/full_stack project needs it decided to reach 100%.
+    total_areas = len(relevant_areas(spec.get("delivery_type")))
 
     categories: list[dict[str, Any]] = []
 
@@ -342,9 +353,11 @@ def _build_score(
     )
 
     # Security Readiness — auth + authorization both decided.
-    sec_decided = len(SECURITY_AREAS & areas)
+    relevant_security_areas = _security_areas(spec.get("delivery_type"))
+    sec_decided = len(relevant_security_areas & areas)
+    security_total = len(relevant_security_areas)
     categories.append(
-        _category("security", "Security Readiness", round(sec_decided / 2 * 100), f"{sec_decided}/2 controles (auth, authorization)")
+        _category("security", "Security Readiness", round(sec_decided / security_total * 100), f"{sec_decided}/{security_total} controles ({', '.join(sorted(relevant_security_areas))})")
     )
 
     # Scalability Readiness — deploy + observability + an explicit NFR.

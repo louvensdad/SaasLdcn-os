@@ -22,6 +22,26 @@ export type ProjectRoomStatus =
   | 'FAILED'
   | 'ARCHIVED';
 
+// Decided at room creation, before PromptMaster generation begins (LDCN OS spec
+// section 7, step 1). "full_stack" means web + mobile together; "backend" means
+// an API-only delivery with no UI at all (web or mobile).
+export type DeliveryType = 'web' | 'backend' | 'mobile' | 'full_stack';
+
+// Backend language the USER picked at room creation ('' = auto: the orchestrator
+// suggests one). Values mirror the backend language-specialist profile ids —
+// the pipeline enforces this choice onto every compiled spec.
+export type PreferredLanguage =
+  | ''
+  | 'python'
+  | 'typescript'
+  | 'java'
+  | 'csharp'
+  | 'go'
+  | 'rust'
+  | 'php'
+  | 'ruby'
+  | 'kotlin';
+
 export type ProjectRoomMessageRole = 'user' | 'assistant' | 'system';
 export type ReadinessStatus = 'passed' | 'failed' | 'pending';
 export type OperationStatus = 'pending' | 'running' | 'success' | 'failed' | 'rollback';
@@ -209,6 +229,8 @@ export interface ProjectRoomSpec {
   core_workflows: string[];
   non_functional: Record<string, string>;
   suggested_stack: Record<string, string>;
+  delivery_type: DeliveryType;
+  mobile_stack?: 'react_native_expo' | 'flutter' | null;
   locale: string;
   assumptions: { field: string; assumed_value: string; reason: string }[];
   open_questions: ProjectRoomClarifyingQuestion[];
@@ -220,6 +242,8 @@ export interface ProjectRoom {
   workspace_id?: string | null;
   title: string;
   status: ProjectRoomStatus;
+  delivery_type: DeliveryType;
+  preferred_language?: PreferredLanguage;
   raw_intent: string;
   locale: string;
   confidence: number;
@@ -248,6 +272,8 @@ export interface ProjectRoomSummary {
   room_id: string;
   title: string;
   status: ProjectRoomStatus;
+  delivery_type: DeliveryType;
+  preferred_language?: PreferredLanguage;
   locale: string;
   degraded: boolean;
   has_prompt_master: boolean;
@@ -259,6 +285,9 @@ export interface CreateProjectRoomRequest {
   title: string;
   raw_intent?: string;
   locale?: string;
+  workspace_id?: string | null;
+  delivery_type?: DeliveryType;
+  preferred_language?: PreferredLanguage;
   user_model_choice?: string | null;
   use_user_key?: boolean;
 }

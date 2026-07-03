@@ -32,6 +32,18 @@ MessageRole = Literal["user", "assistant", "system"]
 ReadinessStatus = Literal["passed", "failed", "pending"]
 OperationStatus = Literal["pending", "running", "success", "failed", "rollback"]
 
+# Decided at room creation, before PromptMaster generation begins (LDCN OS spec
+# section 7, step 1). "full_stack" means web + mobile together; "backend" means
+# an API-only delivery with no UI at all (web or mobile).
+DeliveryType = Literal["web", "backend", "mobile", "full_stack"]
+
+# Backend language the USER picked at room creation ("" = auto: the orchestrator
+# suggests one). Values are the language-specialist profile ids
+# (app/data/language_agent_profiles.py) — the stacks the factory is proven on.
+PreferredLanguage = Literal[
+    "", "python", "typescript", "java", "csharp", "go", "rust", "php", "ruby", "kotlin"
+]
+
 
 class ProjectRoomMessage(ApiModel):
     id: str
@@ -216,6 +228,8 @@ class ProjectRoom(ApiModel):
     workspace_id: str | None = None
     title: str
     status: ProjectRoomStatus
+    delivery_type: DeliveryType = "web"
+    preferred_language: PreferredLanguage = ""
     raw_intent: str = ""
     locale: str = "pt-BR"
     confidence: float = 0.0
@@ -245,6 +259,8 @@ class ProjectRoomSummary(ApiModel):
     workspace_id: str | None = None
     title: str
     status: ProjectRoomStatus
+    delivery_type: DeliveryType = "web"
+    preferred_language: PreferredLanguage = ""
     locale: str = "pt-BR"
     degraded: bool = False
     has_prompt_master: bool = False
@@ -257,6 +273,8 @@ class CreateRoomRequest(ApiModel):
     raw_intent: str = ""
     locale: str = "pt-BR"
     workspace_id: str | None = None
+    delivery_type: DeliveryType = "web"
+    preferred_language: PreferredLanguage = ""
     user_model_choice: str | None = None
     use_user_key: bool = False
 

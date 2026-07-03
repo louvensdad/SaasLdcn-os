@@ -148,6 +148,15 @@ def modernize_with_factory(
     api_key: str | None = None,
 ):
     """Run the API-First factory over the modernization Mega-Prompt. Falls back to
-    the deterministic mock when no LLM is available (same as greenfield)."""
+    the deterministic mock when no LLM is available (same as greenfield).
+
+    The DETECTED stack activates the matching language-specialist agents: the
+    modernized project stays in the legacy project's own ecosystem."""
     mega = compile_modernization_prompt(ingest_id, inventory, diagnosis, plan, service, locale=locale)
-    return run_factory_pipeline(mega, user_model_choice=user_model_choice, api_key=api_key)
+    return run_factory_pipeline(
+        mega,
+        user_model_choice=user_model_choice,
+        api_key=api_key,
+        language=diagnosis.primary_language,
+        framework=diagnosis.detected_stack,
+    )

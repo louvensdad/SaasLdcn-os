@@ -5,7 +5,7 @@ import pytest
 from app.core.config import get_settings
 from app.data.agent_territories import territory_violations
 from app.engines.agent_prompts import ORCHESTRATOR_SYSTEM_PROMPT
-from app.engines.factory_pipeline import PIPELINE_ORDER, run_factory_pipeline
+from app.engines.factory_pipeline import pipeline_order_for, run_factory_pipeline
 from app.engines.llm.base import LLMAdapter, LLMError
 from app.engines.llm.mock_adapter import MockAdapter
 from app.engines.llm.router import LLMRouter
@@ -81,7 +81,8 @@ def test_factory_pipeline_via_mock_emits_all_roles_within_territory(fallback_ena
     result = run_factory_pipeline(mega, router=router)
 
     assert result.ok, result.errors
-    assert {run.role for run in result.runs} == set(PIPELINE_ORDER)
+    # Web delivery (spec default): every role except mobile runs.
+    assert {run.role for run in result.runs} == set(pipeline_order_for(spec.delivery_type))
     # Every emitted file must respect the agent's territory and the run must be a
     # signalled fallback (never disguised as a real model run).
     for run in result.runs:
@@ -136,9 +137,9 @@ def test_generate_stream_emits_progress_events(client):
         types = {e["type"] for e in events}
         assert {"agent_started", "file_emitted", "gate_check", "agent_finished", "written", "done"} <= types
 
-        # Each pipeline role announces a start.
+        # Each pipeline role for a web delivery announces a start.
         started = {e["role"] for e in events if e["type"] == "agent_started"}
-        assert set(PIPELINE_ORDER) <= started
+        assert set(pipeline_order_for(orchestrate["spec"].get("delivery_type"))) <= started
 
         done = next(e for e in events if e["type"] == "done")
         assert done["ok"] is True

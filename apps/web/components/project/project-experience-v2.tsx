@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { CardLoading } from '@/components/feedback/loading-system';
 import { PageError } from '@/components/feedback/error-system';
+import { ProjectDeleteButton } from '@/components/project/project-delete-button';
 import { useProject } from '@/hooks/use-projects';
 import { useGeneratedFiles } from '@/hooks/use-generated-files';
 import { useGeneratedFileContent } from '@/hooks/use-generated-file-content';
@@ -339,7 +340,7 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
 
   if (projectQuery.isLoading) return <CardLoading className="h-96" />;
   if (projectQuery.isError || !project || !derived) {
-    return <PageError title="Projeto indisponivel" description={getApiErrorMessage(projectQuery.error, t('projectDetail.unavailableDetail'))} onRetry={() => void projectQuery.refetch()} />;
+    return <PageError title={t('projectXp.unavailable')} description={getApiErrorMessage(projectQuery.error, t('projectDetail.unavailableDetail'))} onRetry={() => void projectQuery.refetch()} />;
   }
 
   const filesUnavailable = generatedFilesQuery.error instanceof ApiClientError;
@@ -354,7 +355,7 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
       <ProjectHeroV2 project={project} category={derived.category} signature={derived.signature} generated={generated} deployReady={deployReady} quality={quality} />
 
       <section id="live-preview" className="scroll-mt-24 space-y-4">
-        <SectionTitle eyebrow="01" title="Live Project Preview" description="Preview seguro dos arquivos realmente gerados. Quando nao ha runtime de preview, a pagina mostra o artefato indexado em vez de simular uma aplicacao." />
+        <SectionTitle eyebrow="01" title={t('projectXp.preview.title')} description="Preview seguro dos arquivos realmente gerados. Quando nao ha runtime de preview, a pagina mostra o artefato indexado em vez de simular uma aplicacao." />
         <Card className="overflow-hidden p-0">
           <div className="flex flex-col gap-3 border-b border-[color:var(--border)] p-4 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap gap-2">
@@ -367,42 +368,42 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
                 );
               })}
             </div>
-            <Badge tone={generated ? 'success' : 'warning'}>{generated ? `${generatedFiles.length} arquivos indexados` : 'preview nao gerado'}</Badge>
+            <Badge tone={generated ? 'success' : 'warning'}>{generated ? t('projectXp.preview.filesIndexed', { count: generatedFiles.length }) : t('projectXp.preview.notGenerated')}</Badge>
           </div>
           {filesUnavailable ? (
-            <InlineState title="Preview indisponivel" detail={getApiErrorMessage(generatedFilesQuery.error, 'Arquivos gerados nao foram encontrados.')} />
+            <InlineState title={t('projectXp.preview.unavailable')} detail={getApiErrorMessage(generatedFilesQuery.error, 'Arquivos gerados nao foram encontrados.')} />
           ) : generated ? (
             <div className="grid gap-0 xl:grid-cols-[300px_minmax(0,1fr)]">
               <FileRail files={generatedFiles} selectedPath={selectedPath} onSelect={setSelectedPath} />
               <div className="bg-[#05070a] p-4 md:p-8">
                 <div className={cn('mx-auto overflow-hidden rounded-[28px] border border-white/15 bg-black shadow-2xl transition-all', previewFrameClass)}>
-                  <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-4 py-2 text-xs text-slate-400">
+                  <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-4 py-2 text-xs ds-text-secondary">
                     <span>{selectedPath ?? 'sem arquivo selecionado'}</span>
                     <span>{selectedPreview.data?.content_type ?? 'loading'}</span>
                   </div>
                   {selectedPreview.isLoading ? (
-                    <div className="grid h-full place-items-center text-sm text-slate-500">Carregando preview real...</div>
+                    <div className="grid h-full place-items-center text-sm ds-text-muted">{t('projectXp.preview.loading')}</div>
                   ) : previewContent ? (
-                    selectedPath?.endsWith('.html') ? <iframe title="Generated HTML preview" srcDoc={previewContent} className="h-full w-full bg-white" /> : <pre id="code" className="h-full overflow-auto p-5 text-xs leading-relaxed text-slate-100">{previewContent}</pre>
+                    selectedPath?.endsWith('.html') ? <iframe title={t('projectXp.preview.iframeTitle')} srcDoc={previewContent} className="h-full w-full bg-white" /> : <pre id="code" className="h-full overflow-auto p-5 text-xs leading-relaxed ds-text-primary">{previewContent}</pre>
                   ) : (
-                    <div className="grid h-full place-items-center p-8 text-center text-sm text-slate-500">Preview bloqueado para arquivo binario, grande ou sensivel. Nenhum conteudo foi fabricado.</div>
+                    <div className="grid h-full place-items-center p-8 text-center text-sm ds-text-muted">{t('projectXp.preview.blocked')}</div>
                   )}
                 </div>
               </div>
             </div>
           ) : (
-            <InlineState title="Projeto ainda sem preview indexado" detail="Gere o projeto ou conecte um artefato real para habilitar desktop, tablet e mobile." />
+            <InlineState title={t('projectXp.preview.noIndex')} detail="Gere o projeto ou conecte um artefato real para habilitar desktop, tablet e mobile." />
           )}
         </Card>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1fr_0.85fr]">
         <div className="space-y-5">
-          <SectionTitle eyebrow="02" title="Technology Verified" description="Matriz automatica baseada nos arquivos gerados e no quality gate. Ausencias ficam visiveis." />
+          <SectionTitle eyebrow="02" title={t('projectXp.tech.title')} description="Matriz automatica baseada nos arquivos gerados e no quality gate. Ausencias ficam visiveis." />
           <Card className="space-y-4"><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{derived.verification.map((item) => <VerificationRow key={`${item.group}-${item.id}`} item={item} />)}</div></Card>
         </div>
         <div className="space-y-5">
-          <SectionTitle eyebrow="03" title="Project Health" description="Indicadores derivados. Sem score manual." />
+          <SectionTitle eyebrow="03" title={t('projectXp.health.title')} description="Indicadores derivados. Sem score manual." />
           <Card className="grid gap-3 sm:grid-cols-2">
             <Metric label="Arquivos" value={derived.metrics.files} />
             <Metric label="Endpoints" value={derived.metrics.endpoints} />
@@ -415,7 +416,7 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
       </section>
 
       <section className="space-y-5">
-        <SectionTitle eyebrow="04" title="Architecture Experience" description="Digital twin clicavel derivado do blueprint e dos arquivos indexados." />
+        <SectionTitle eyebrow="04" title={t('projectXp.arch.title')} description="Digital twin clicavel derivado do blueprint e dos arquivos indexados." />
         <Card className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="overflow-x-auto pb-3">
             <div className="flex min-w-[820px] items-center gap-3">
@@ -434,18 +435,18 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
       </section>
 
       <section className="space-y-5">
-        <SectionTitle eyebrow="05" title="Engineering Dashboard" description="Paineis compactos por dominio, substituindo a pagina infinita de cards." />
+        <SectionTitle eyebrow="05" title={t('projectXp.dashboard.title')} description="Paineis compactos por dominio, substituindo a pagina infinita de cards." />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{derived.panels.map((panel) => <DashboardPanel key={panel.title} {...panel} />)}</div>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card className="space-y-5 border-[color-mix(in_srgb,var(--accent)_30%,var(--border))]">
-          <SectionTitle eyebrow="06" title="Laboratory" description="A continuacao natural da jornada de engenharia." compact />
-          <p className="text-sm leading-6 text-[color:var(--muted)]">Abra o laboratorio para terminal real, Security Center, API Explorer, quality, arquitetura, logs e exportacoes tecnicas.</p>
-          <LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare} large>Abrir Laboratorio</LinkButton>
+          <SectionTitle eyebrow="06" title={t('projectXp.lab.title')} description="A continuacao natural da jornada de engenharia." compact />
+          <p className="text-sm leading-6 text-[color:var(--muted)]">{t('projectXp.lab.description')}</p>
+          <LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare} large>{t('projectXp.lab.open')}</LinkButton>
         </Card>
         <Card id="deploy" className="space-y-5 scroll-mt-24">
-          <SectionTitle eyebrow="07" title="Deploy Center" description="Somente provedores suportados aparecem habilitados." compact />
+          <SectionTitle eyebrow="07" title={t('projectXp.deploy.title')} description="Somente provedores suportados aparecem habilitados." compact />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <DeployItem label="GitHub" ready={githubConnection.data?.status === 'connected'} detail={githubConnection.data?.status ?? 'conectar em Settings'} />
             <DeployItem label="GitLab" ready={gitlabConnection.data?.status === 'connected'} detail={gitlabConnection.data?.status ?? 'conectar em Settings'} />
@@ -453,35 +454,45 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
             {['AWS', 'Azure', 'Google', 'Railway', 'Render', 'Fly', 'Vercel', 'Netlify'].map((provider) => <DeployItem key={provider} label={provider} ready={derived.verification.some((item) => item.id.toLowerCase().includes(provider.toLowerCase()) && item.status === 'verified')} detail="aguardando evidencia" />)}
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button type="button" variant="primary" disabled={!generated || prepareDownloadMutation.isPending} onClick={() => prepareDownloadMutation.mutate()}><Download className="h-4 w-4" aria-hidden />Preparar ZIP seguro</Button>
-            {prepareDownloadMutation.data ? <button type="button" onClick={() => void downloadAuthenticated(apiEndpoints.localGeneration.download(project.project_id), `${project.project_id}.zip`)} className="focus-ring inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[color:var(--border)] px-4 py-2 text-sm font-semibold text-[color:var(--text)]"><Download className="h-4 w-4" aria-hidden />Download ZIP</button> : null}
+            <Button type="button" variant="primary" disabled={!generated || prepareDownloadMutation.isPending} onClick={() => prepareDownloadMutation.mutate()}><Download className="h-4 w-4" aria-hidden />{t('projectXp.deploy.prepareZip')}</Button>
+            {prepareDownloadMutation.data ? <button type="button" onClick={() => void downloadAuthenticated(apiEndpoints.localGeneration.download(project.project_id), `${project.project_id}.zip`)} className="focus-ring inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[color:var(--border)] px-4 py-2 text-sm font-semibold text-[color:var(--text)]"><Download className="h-4 w-4" aria-hidden />{t('projectXp.deploy.downloadZip')}</button> : null}
           </div>
         </Card>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-2">
-        <Card className="space-y-5"><SectionTitle eyebrow="08" title="Documentation" description="Documentos detectados no projeto gerado." compact />{derived.docs.length ? <FileList files={derived.docs} /> : <InlineState title="Documentacao nao encontrada" detail="README, OpenAPI, ADR, diagrams ou changelog nao foram encontrados nos artefatos indexados." compact />}</Card>
-        <Card className="space-y-5"><SectionTitle eyebrow="09" title="Logs" description="Eventos reais disponiveis e fontes ainda nao conectadas." compact /><LogLine label="Project created" value={project.created_at} /><LogLine label="Project updated" value={project.updated_at} /><LogLine label="File index" value={generated ? `${generatedFiles.length} arquivos` : 'sem arquivos indexados'} /><LogLine label="Quality gate" value={quality ? (quality.passed ? 'passed' : 'failed') : 'nao executado'} /><p className="text-xs text-[color:var(--muted)]">Logs em tempo real de backend, frontend, Docker, banco e cloud ainda precisam de fontes conectadas.</p></Card>
+        <Card className="space-y-5"><SectionTitle eyebrow="08" title={t('projectXp.docs.title')} description="Documentos detectados no projeto gerado." compact />{derived.docs.length ? <FileList files={derived.docs} /> : <InlineState title={t('projectXp.docs.notFound')} detail="README, OpenAPI, ADR, diagrams ou changelog nao foram encontrados nos artefatos indexados." compact />}</Card>
+        <Card className="space-y-5"><SectionTitle eyebrow="09" title={t('projectXp.logs.title')} description="Eventos reais disponiveis e fontes ainda nao conectadas." compact /><LogLine label="Project created" value={project.created_at} /><LogLine label="Project updated" value={project.updated_at} /><LogLine label="File index" value={generated ? `${generatedFiles.length} arquivos` : 'sem arquivos indexados'} /><LogLine label="Quality gate" value={quality ? (quality.passed ? 'passed' : 'failed') : 'nao executado'} /><p className="text-xs text-[color:var(--muted)]">{t('projectXp.logs.pendingSources')}</p></Card>
       </section>
 
       <Card className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3"><SectionTitle eyebrow="AI" title="IA explica o projeto" description="Sem chave configurada nesta tela, a explicacao usa modo deterministico e declara isso." compact /><Button type="button" variant="secondary" onClick={() => setExplanationOpen((value) => !value)}><Bot className="h-4 w-4" />Explicar Projeto</Button></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><SectionTitle eyebrow="AI" title={t('projectXp.ai.title')} description="Sem chave configurada nesta tela, a explicacao usa modo deterministico e declara isso." compact /><Button type="button" variant="secondary" onClick={() => setExplanationOpen((value) => !value)}><Bot className="h-4 w-4" />{t('projectXp.ai.explain')}</Button></div>
         {explanationOpen ? <DeterministicExplanation project={project} verification={derived.verification} /> : null}
+      </Card>
+
+      <Card className="flex flex-col gap-5 border-[color-mix(in_srgb,var(--danger)_32%,var(--border))] sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="type-eyebrow text-[color:var(--danger)]">{t('projects.delete.zone')}</p>
+          <h2 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{t('projects.delete.zoneTitle')}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">{t('projects.delete.zoneDescription')}</p>
+        </div>
+        <ProjectDeleteButton projectId={project.project_id} projectName={project.project_name} onDeleted={() => window.location.assign('/projects')} />
       </Card>
     </div>
   );
 }
 
 function ProjectHeroV2({ project, category, signature, generated, deployReady, quality }: { readonly project: Project; readonly category: string; readonly signature: { title: string; chips: readonly string[] }; readonly generated: boolean; readonly deployReady: boolean; readonly quality?: GeneratedProjectQualityResponse | null }) {
+  const { t } = useLocale();
   return (
     <section className="relative overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[linear-gradient(140deg,#061016,#101827_48%,#0b1016)] p-5 shadow-2xl md:p-8">
       <CinematicBackground signature={signature} />
       <div className="relative z-10 grid gap-8 xl:grid-cols-[1.05fr_0.95fr] xl:items-end">
         <div className="space-y-6">
-          <div className="flex flex-wrap gap-2"><Badge tone="accent">{category}</Badge><Badge tone={project.status === 'generated' ? 'success' : 'warning'}>{formatStatus(project.status)}</Badge><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? 'Pronto para deploy' : 'Deploy pendente'}</Badge></div>
-          <div><p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--accent)]">LDCN Engine / Project Experience V2</p><h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-white md:text-6xl">{project.project_name}</h1><p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">Software gerado com blueprint, arquitetura, gatekeeper e verificacao baseada nos artefatos reais disponiveis.</p></div>
+          <div className="flex flex-wrap gap-2"><Badge tone="accent">{category}</Badge><Badge tone={project.status === 'generated' ? 'success' : 'warning'}>{formatStatus(project.status)}</Badge><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? t('projectXp.hero.deployReady') : t('projectXp.hero.deployPending')}</Badge></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--accent)]">{t('projectXp.hero.eyebrow')}</p><h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-white md:text-6xl">{project.project_name}</h1><p className="mt-4 max-w-2xl text-base leading-7 ds-text-secondary">{t('projectXp.hero.description')}</p></div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><HeroDatum label="Stack" value={`${project.technology_graph.language.name} / ${project.technology_graph.framework.name}`} /><HeroDatum label="Build" value={quality ? (quality.passed ? 'validado' : 'falhou') : generated ? 'verificando' : 'sem artefatos'} /><HeroDatum label="Confidence" value="nao informado" /><HeroDatum label="Empresa" value="nao informada" /></div>
-          <div className="flex flex-wrap gap-3"><AnchorButton href="#live-preview" icon={Monitor}>Abrir Preview</AnchorButton><AnchorButton href="#code" icon={Code2}>Abrir Codigo</AnchorButton><LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare}>Abrir Laboratorio</LinkButton><LinkButton href={`/meta-factory?projectId=${project.project_id}`} icon={Layers3}>Abrir Meta-Fabrica</LinkButton><LinkButton href="/settings#integrations" icon={GitBranch}>Abrir GitHub</LinkButton><AnchorButton href="#deploy" icon={Rocket}>Abrir Deploy</AnchorButton></div>
+          <div className="flex flex-wrap gap-3"><AnchorButton href="#live-preview" icon={Monitor}>{t('projectXp.hero.openPreview')}</AnchorButton><AnchorButton href="#code" icon={Code2}>{t('projectXp.hero.openCode')}</AnchorButton><LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare}>{t('projectXp.lab.open')}</LinkButton><LinkButton href={`/meta-factory?projectId=${project.project_id}`} icon={Layers3}>{t('projectXp.hero.openMetaFactory')}</LinkButton><LinkButton href="/settings#integrations" icon={GitBranch}>{t('projectXp.hero.openGitHub')}</LinkButton><AnchorButton href="#deploy" icon={Rocket}>{t('projectXp.hero.openDeploy')}</AnchorButton></div>
         </div>
         <JourneyConsole project={project} generated={generated} deployReady={deployReady} />
       </div>
@@ -490,19 +501,21 @@ function ProjectHeroV2({ project, category, signature, generated, deployReady, q
 }
 
 function CinematicIntro({ projectName }: { readonly projectName: string }) {
-  return <div className="fixed inset-0 z-[100] grid place-items-center bg-[#03070b]/95 backdrop-blur-md"><div className="w-full max-w-xl space-y-5 px-6"><p className="text-center text-xs font-semibold uppercase tracking-[0.45em] text-[color:var(--accent)]">LDCN ENGINE</p><h2 className="text-center text-3xl font-semibold text-white">Loading Project</h2><p className="text-center text-sm text-slate-400">{projectName}</p><div className="space-y-2">{INTRO_STAGES.map((stage, index) => <div key={stage} className="grid grid-cols-[110px_1fr] items-center gap-3 text-xs text-slate-400"><span>{stage}</span><span className="h-2 overflow-hidden rounded-full bg-white/10"><span className="block h-full rounded-full bg-[color:var(--accent)]" style={{ width: `${30 + index * 9}%` }} /></span></div>)}</div></div></div>;
+  const { t } = useLocale();
+  return <div className="fixed inset-0 z-[100] grid place-items-center bg-[#03070b]/95 backdrop-blur-md"><div className="w-full max-w-xl space-y-5 px-6"><p className="text-center text-xs font-semibold uppercase tracking-[0.45em] text-[color:var(--accent)]">{t('projectXp.intro.engine')}</p><h2 className="text-center text-3xl font-semibold text-white">{t('projectXp.intro.loading')}</h2><p className="text-center text-sm ds-text-secondary">{projectName}</p><div className="space-y-2">{INTRO_STAGES.map((stage, index) => <div key={stage} className="grid grid-cols-[110px_1fr] items-center gap-3 text-xs ds-text-secondary"><span>{stage}</span><span className="h-2 overflow-hidden rounded-full bg-white/10"><span className="block h-full rounded-full bg-[color:var(--accent)]" style={{ width: `${30 + index * 9}%` }} /></span></div>)}</div></div></div>;
 }
 
 function CinematicBackground({ signature }: { readonly signature: { title: string; chips: readonly string[] } }) {
-  return <div className="pointer-events-none absolute inset-0 overflow-hidden"><div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,color-mix(in_srgb,var(--accent)_22%,transparent),transparent_28%),radial-gradient(circle_at_80%_10%,color-mix(in_srgb,var(--success)_14%,transparent),transparent_24%)]" /><div className="absolute right-8 top-8 hidden w-[420px] rotate-[-4deg] rounded-[32px] border border-white/10 bg-white/[0.04] p-5 shadow-2xl xl:block"><p className="text-xs uppercase tracking-[0.28em] text-slate-500">{signature.title}</p><div className="mt-5 grid grid-cols-2 gap-3">{signature.chips.map((chip) => <div key={chip} className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-300">{chip}</div>)}</div></div></div>;
+  return <div className="pointer-events-none absolute inset-0 overflow-hidden"><div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,color-mix(in_srgb,var(--accent)_22%,transparent),transparent_28%),radial-gradient(circle_at_80%_10%,color-mix(in_srgb,var(--success)_14%,transparent),transparent_24%)]" /><div className="absolute right-8 top-8 hidden w-[420px] rotate-[-4deg] rounded-[32px] border border-white/10 bg-white/[0.04] p-5 shadow-2xl xl:block"><p className="text-xs uppercase tracking-[0.28em] ds-text-muted">{signature.title}</p><div className="mt-5 grid grid-cols-2 gap-3">{signature.chips.map((chip) => <div key={chip} className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm ds-text-secondary">{chip}</div>)}</div></div></div>;
 }
 
 function JourneyConsole({ project, generated, deployReady }: { readonly project: Project; readonly generated: boolean; readonly deployReady: boolean }) {
-  return <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/35 p-5 backdrop-blur"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Engineering Timeline</p><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? 'deploy ready' : 'in progress'}</Badge></div><div className="mt-5 space-y-3">{JOURNEY_STEPS.map(([label, state]) => <div key={label} className="flex items-center gap-3"><span className={cn('grid h-7 w-7 place-items-center rounded-full border', state === 'done' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : state === 'current' ? 'border-[color:var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'border-white/15 text-slate-500')}>{state === 'done' ? <CheckCircle2 className="h-4 w-4" /> : state === 'current' ? <Activity className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}</span><span className="text-sm text-slate-200">{label}</span></div>)}</div><div className="mt-5 grid grid-cols-2 gap-3 text-xs text-slate-400"><span>Readiness: {formatStatus(project.readiness_status)}</span><span>Arquivos: {generated ? 'indexados' : 'pendente'}</span></div></div>;
+  const { t } = useLocale();
+  return <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/35 p-5 backdrop-blur"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[0.28em] ds-text-secondary">{t('projectXp.journey.title')}</p><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? t('projectXp.journey.deployReady') : t('projectXp.journey.inProgress')}</Badge></div><div className="mt-5 space-y-3">{JOURNEY_STEPS.map(([label, state]) => <div key={label} className="flex items-center gap-3"><span className={cn('grid h-7 w-7 place-items-center rounded-full border', state === 'done' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : state === 'current' ? 'border-[color:var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'border-white/15 ds-text-muted')}>{state === 'done' ? <CheckCircle2 className="h-4 w-4" /> : state === 'current' ? <Activity className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}</span><span className="text-sm ds-text-primary">{label}</span></div>)}</div><div className="mt-5 grid grid-cols-2 gap-3 text-xs ds-text-secondary"><span>{t('projectXp.journey.readiness')} {formatStatus(project.readiness_status)}</span><span>{t('projectXp.journey.files')} {generated ? t('projectXp.journey.indexed') : t('projectXp.journey.pending')}</span></div></div>;
 }
 
 function HeroDatum({ label, value }: { readonly label: string; readonly value: string }) {
-  return <div className="rounded-[var(--radius-lg)] border border-white/10 bg-white/[0.04] p-3"><p className="text-xs uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 truncate text-sm font-semibold text-white">{value}</p></div>;
+  return <div className="rounded-[var(--radius-lg)] border border-white/10 bg-white/[0.04] p-3"><p className="text-xs uppercase tracking-wide ds-text-muted">{label}</p><p className="mt-1 truncate text-sm font-semibold text-white">{value}</p></div>;
 }
 
 function SectionTitle({ eyebrow, title, description, compact = false }: { readonly eyebrow: string; readonly title: string; readonly description: string; readonly compact?: boolean }) {
@@ -522,7 +535,8 @@ function FileRail({ files, selectedPath, onSelect }: { readonly files: readonly 
 }
 
 function VerificationRow({ item }: { readonly item: VerificationItem }) {
-  return <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/[0.03] p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-xs uppercase tracking-wide text-[color:var(--muted-2)]">{item.group}</p><p className="mt-1 text-sm font-semibold text-[color:var(--text)]">{item.label}</p></div><Badge tone={statusTone(item.status)}>{verificationLabel(item.status)}</Badge></div>{item.evidence.length ? <p className="mt-2 truncate font-mono text-xs text-[color:var(--muted)]">{item.evidence[0]}</p> : <p className="mt-2 text-xs text-[color:var(--muted)]">Sem evidencia real encontrada.</p>}</div>;
+  const { t } = useLocale();
+  return <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/[0.03] p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-xs uppercase tracking-wide text-[color:var(--muted-2)]">{item.group}</p><p className="mt-1 text-sm font-semibold text-[color:var(--text)]">{item.label}</p></div><Badge tone={statusTone(item.status)}>{verificationLabel(item.status)}</Badge></div>{item.evidence.length ? <p className="mt-2 truncate font-mono text-xs text-[color:var(--muted)]">{item.evidence[0]}</p> : <p className="mt-2 text-xs text-[color:var(--muted)]">{t('projectXp.verification.noEvidence')}</p>}</div>;
 }
 
 function Metric({ label, value }: { readonly label: string; readonly value: string | number }) {
@@ -535,7 +549,8 @@ function TwinIcon({ kind }: { readonly kind: TwinNodeKind }) {
 }
 
 function TwinDetails({ node }: { readonly node: TwinNode }) {
-  return <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/10 p-4"><p className="text-xs uppercase tracking-wide text-[color:var(--muted)]">No selecionado</p><h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{node.label}</h3><p className="mt-2 text-sm text-[color:var(--muted)]">{node.responsibility}</p><KeyValue label="Tecnologia" value={node.technology} /><KeyValue label="Dependencias" value={node.dependencies.join(', ') || 'nenhuma'} /><KeyValue label="Arquivos" value={node.files.join(', ') || 'sem evidencia'} mono /><KeyValue label="Logs" value={node.logs.join(' ')} /></div>;
+  const { t } = useLocale();
+  return <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/10 p-4"><p className="text-xs uppercase tracking-wide text-[color:var(--muted)]">{t('projectXp.twin.selectedNode')}</p><h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{node.label}</h3><p className="mt-2 text-sm text-[color:var(--muted)]">{node.responsibility}</p><KeyValue label="Tecnologia" value={node.technology} /><KeyValue label="Dependencias" value={node.dependencies.join(', ') || 'nenhuma'} /><KeyValue label="Arquivos" value={node.files.join(', ') || 'sem evidencia'} mono /><KeyValue label="Logs" value={node.logs.join(' ')} /></div>;
 }
 
 function KeyValue({ label, value, mono = false }: { readonly label: string; readonly value: string; readonly mono?: boolean }) {
@@ -543,8 +558,9 @@ function KeyValue({ label, value, mono = false }: { readonly label: string; read
 }
 
 function DashboardPanel({ title, icon: Icon, items }: { readonly title: string; readonly icon: LucideIcon; readonly items: readonly string[] }) {
+  const { t } = useLocale();
   const visible = items.filter(Boolean);
-  return <details className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-2)_64%,transparent)] p-4" open><summary className="flex cursor-pointer list-none items-center gap-3"><Icon className="h-5 w-5 text-[color:var(--accent)]" /><span className="font-semibold text-[color:var(--text)]">{title}</span></summary><div className="mt-3 flex flex-wrap gap-2">{visible.length ? visible.map((item) => <Badge key={item}>{item}</Badge>) : <span className="text-sm text-[color:var(--muted)]">Sem evidencia configurada.</span>}</div></details>;
+  return <details className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-2)_64%,transparent)] p-4" open><summary className="flex cursor-pointer list-none items-center gap-3"><Icon className="h-5 w-5 text-[color:var(--accent)]" /><span className="font-semibold text-[color:var(--text)]">{title}</span></summary><div className="mt-3 flex flex-wrap gap-2">{visible.length ? visible.map((item) => <Badge key={item}>{item}</Badge>) : <span className="text-sm text-[color:var(--muted)]">{t('projectXp.panel.noEvidence')}</span>}</div></details>;
 }
 
 function DeployItem({ label, ready, detail }: { readonly label: string; readonly ready: boolean; readonly detail: string }) {
@@ -564,6 +580,7 @@ function InlineState({ title, detail, compact = false }: { readonly title: strin
 }
 
 function DeterministicExplanation({ project, verification }: { readonly project: Project; readonly verification: readonly VerificationItem[] }) {
+  const { t } = useLocale();
   const missing = verification.filter((item) => item.status === 'missing');
-  return <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/10 p-4"><Badge tone="warning">Modo deterministico</Badge><p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">A arquitetura combina {project.technology_graph.framework.name}, {project.technology_graph.runtime.name} e {project.technology_graph.architecture.name} porque estes itens estao no blueprint salvo. As vantagens e limitacoes abaixo foram derivadas de selecoes e evidencias, nao de um LLM.</p><div className="mt-4 grid gap-3 md:grid-cols-2"><KeyValue label="Padroes" value={[project.technology_graph.architecture.name, ...project.selected_capabilities].join(', ')} /><KeyValue label="Melhorias futuras" value={missing.length ? missing.map((item) => item.label).join(', ') : 'Nenhuma ausencia detectada pela verificacao atual.'} /></div></div>;
+  return <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/10 p-4"><Badge tone="warning">{t('projectXp.explain.deterministic')}</Badge><p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">{t('projectXp.explain.combinesPrefix')} {project.technology_graph.framework.name}, {project.technology_graph.runtime.name}, {project.technology_graph.architecture.name} — {t('projectXp.explain.combinesSuffix')}</p><div className="mt-4 grid gap-3 md:grid-cols-2"><KeyValue label="Padroes" value={[project.technology_graph.architecture.name, ...project.selected_capabilities].join(', ')} /><KeyValue label="Melhorias futuras" value={missing.length ? missing.map((item) => item.label).join(', ') : 'Nenhuma ausencia detectada pela verificacao atual.'} /></div></div>;
 }

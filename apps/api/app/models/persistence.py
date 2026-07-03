@@ -49,6 +49,10 @@ class ProjectRoom(Base):
     workspace_id: Mapped[str | None] = mapped_column(String)
     title: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    delivery_type: Mapped[str] = mapped_column(String, nullable=False, default="web", server_default="web")
+    # "" = auto (orchestrator/LLM decides); otherwise a language profile id the
+    # user explicitly chose at room creation — enforced onto every compiled spec.
+    preferred_language: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
     raw_intent: Mapped[str] = mapped_column(Text, nullable=False, default="")
     locale: Mapped[str] = mapped_column(String, nullable=False, default="pt-BR")
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

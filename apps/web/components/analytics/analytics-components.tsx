@@ -45,7 +45,7 @@ export function DataFreshnessBadge({ generatedAt }: { readonly generatedAt: stri
   const date = new Date(generatedAt);
   const valid = !Number.isNaN(date.getTime());
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/[0.07] px-3 py-1.5 font-mono text-[0.68rem] uppercase tracking-[0.14em] text-emerald-200">
+    <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/[0.07] px-3 py-1.5 font-mono text-xs uppercase tracking-[0.14em] text-emerald-200">
       <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,.7)]" />
       {valid ? `Atualizado ${date.toLocaleString('pt-BR')}` : 'Atualização registrada'}
     </span>
@@ -78,10 +78,10 @@ export function AnalyticsMetricCard({
         <span className="text-xs font-medium leading-5 text-[color:var(--muted)]">{metric.label}</span>
         <ArrowRight className="h-3.5 w-3.5 text-[color:var(--muted)] transition group-hover:translate-x-0.5 group-hover:text-[color:var(--accent)]" />
       </span>
-      <span className="mt-4 block font-mono text-[1.7rem] font-semibold tracking-[-0.05em] text-[color:var(--text)]">
+      <span className="mt-4 block font-mono text-2xl font-semibold tracking-[-0.05em] text-[color:var(--text)]">
         {displayValue(metric)}
       </span>
-      <span className="mt-3 flex min-h-5 items-center gap-2 font-mono text-[0.68rem] text-[color:var(--muted)]">
+      <span className="mt-3 flex min-h-5 items-center gap-2 font-mono text-xs text-[color:var(--muted)]">
         {metric.change !== null && metric.change !== undefined ? (
           <span className={metric.change >= 0 ? 'text-emerald-300' : 'text-red-300'}>
             {metric.change >= 0 ? '+' : ''}{NUMBER_FORMAT.format(metric.change)}%
@@ -124,14 +124,14 @@ export function AnalyticsTrendChart({ points }: { readonly points: readonly Anal
     <div className="flex h-48 items-end gap-2" role="img" aria-label="Gráfico de tendência">
       {points.map((point, index) => (
         <div key={`${point.label}-${point.series ?? ''}-${index}`} className="group flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
-          <span className="font-mono text-[0.64rem] text-[color:var(--muted)] opacity-0 transition group-hover:opacity-100">
+          <span className="font-mono text-xs text-[color:var(--muted)] opacity-0 transition group-hover:opacity-100">
             {NUMBER_FORMAT.format(point.value)}
           </span>
           <div
             className="w-full min-w-2 rounded-t-sm bg-gradient-to-t from-[color:var(--accent-2)] to-[color:var(--accent)] opacity-70 transition group-hover:opacity-100"
             style={{ height: `${Math.max((point.value / max) * 132, 3)}px` }}
           />
-          <span className="max-w-full truncate font-mono text-[0.6rem] text-[color:var(--muted)]">{point.label}</span>
+          <span className="max-w-full truncate font-mono text-xs text-[color:var(--muted)]">{point.label}</span>
         </div>
       ))}
     </div>
@@ -289,10 +289,10 @@ export function AnalyticsFilterBar({
     <Card className="p-4" data-testid="analytics-filter-bar">
       <div className="mb-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[0.66rem] uppercase tracking-[0.2em] text-[color:var(--muted)]">Escopo da análise</span>
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Escopo da análise</span>
           {pending ? <RefreshCw className="h-3 w-3 animate-spin text-[color:var(--accent)]" /> : null}
         </div>
-        <button type="button" onClick={onReset} className="focus-ring text-xs text-[color:var(--muted)] hover:text-[color:var(--text)]">Limpar filtros</button>
+        <button type="button" onClick={onReset} className="focus-ring min-h-11 text-xs text-[color:var(--muted)] hover:text-[color:var(--text)]">Limpar filtros</button>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
         {FILTERS.map(([key, label, optionKey]) => key === 'period' ? (
@@ -338,7 +338,7 @@ export function EmptyStatePremium() {
         <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[color:var(--border)] bg-white/[0.025]">
           <Clock3 className="h-5 w-5 text-[color:var(--accent)]" />
         </span>
-        <p className="mt-7 font-mono text-[0.68rem] uppercase tracking-[0.24em] text-[color:var(--accent)]">Coleta aguardando fonte</p>
+        <p className="mt-7 font-mono text-xs uppercase tracking-[0.24em] text-[color:var(--accent)]">Coleta aguardando fonte</p>
         <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--text)]">Analytics ainda está coletando dados.</h2>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
           Execute uma geração, modernização ou laboratório para popular este painel. Somente telemetria persistida pelo backend será exibida.
@@ -368,7 +368,7 @@ export function AnalyticsDrilldownDrawer({
       <aside className="absolute inset-y-0 right-0 w-full max-w-xl overflow-y-auto border-l border-[color:var(--border)] bg-[color:var(--surface)] p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--border)] pb-5">
           <div>
-            <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-[color:var(--accent)]">Drill-down</p>
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-[color:var(--accent)]">Drill-down</p>
             <h2 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{title}</h2>
           </div>
           <Button variant="ghost" onClick={onClose} className="h-9 w-9 p-0" aria-label="Fechar"><X className="h-4 w-4" /></Button>
@@ -379,7 +379,7 @@ export function AnalyticsDrilldownDrawer({
               <div key={record.id} className="rounded-lg border border-[color:var(--border)] bg-white/[0.02] p-4">
                 {Object.entries(record).map(([key, value]) => (
                   <div key={key} className="grid grid-cols-[9rem_1fr] gap-3 border-b border-white/[0.04] py-2 last:border-0">
-                    <span className="font-mono text-[0.68rem] uppercase text-[color:var(--muted)]">{key}</span>
+                    <span className="font-mono text-xs uppercase text-[color:var(--muted)]">{key}</span>
                     <span className="break-words text-xs text-[color:var(--text)]">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
                   </div>
                 ))}

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 from app.services.build_validation_service import BuildValidationService, _MetricsCollector
+from app.schemas.generation_validation import BuildValidationReport
 
 
 def test_build_run_measures_real_wallclock_and_resources():
@@ -61,3 +63,29 @@ def test_run_missing_binary_emits_command_skipped_without_crashing():
     result = svc._run(["ldcn-nonexistent-binary-zzz", "--version"], Path("."), None, "build", events.append)
     assert result.returncode == 127
     assert any(event["type"] == "command_skipped" for event in events)
+
+
+def test_dispatch_validates_backend_web_and_mobile_manifests(monkeypatch):
+    root = Path(tempfile.mkdtemp(prefix="ldcn-multi-build-"))
+    try:
+        for relative in ["apps/api/requirements.txt", "apps/web/package.json", "apps/mobile/package.json"]:
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}" if path.name == "package.json" else "", encoding="utf-8")
+
+        service = BuildValidationService()
+        visited: list[Path] = []
+
+        def passed(target, *_args):  # noqa: ANN001
+            visited.append(target)
+            return BuildValidationReport(installed="passed", built="passed", ok=True)
+
+        monkeypatch.setattr(service, "_python", passed)
+        monkeypatch.setattr(service, "_node", passed)
+        report = service._dispatch(root, _MetricsCollector())
+
+        assert report.ok is True
+        assert {path.relative_to(root).as_posix() for path in visited} == {"apps/api", "apps/web", "apps/mobile"}
+    finally:
+        import shutil
+        shutil.rmtree(root, ignore_errors=True)

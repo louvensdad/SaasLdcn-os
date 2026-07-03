@@ -26,9 +26,9 @@ export function Disclosure({
     >
       <summary className="focus-ring micro-interaction flex cursor-pointer items-center justify-between gap-4 rounded-[var(--radius-xl)] px-5 py-4">
         <span className="min-w-0">
-          <span className="type-card block text-[color:var(--text)]">{title}</span>
+          <span className="ds-subsection block text-[color:var(--text)]">{title}</span>
           {description ? (
-            <span className="type-caption mt-1 block text-[color:var(--muted)]">{description}</span>
+            <span className="ds-caption mt-1 block text-[color:var(--muted)]">{description}</span>
           ) : null}
         </span>
         <span className="flex shrink-0 items-center gap-3">

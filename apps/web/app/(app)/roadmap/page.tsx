@@ -216,12 +216,14 @@ function GaugeCard({ gauge }: { readonly gauge: GaugeItem }) {
 }
 
 function ModuleCard({ item, onOpen }: { readonly item: RoadmapItem; readonly onOpen: (item: RoadmapItem) => void }) {
+  const { t } = useLocale();
   const Icon = iconFor(item);
   return (
     <article className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-2)_74%,transparent)] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.12)]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/5 text-[color:var(--accent)]">
+            {/* eslint-disable-next-line react-hooks/static-components -- iconFor is a stable lookup into a module-level table, not a component created per render */}
             <Icon className="h-4 w-4" aria-hidden />
           </span>
           <div className="min-w-0">
@@ -233,38 +235,39 @@ function ModuleCard({ item, onOpen }: { readonly item: RoadmapItem; readonly onO
       </div>
       <div className="mt-4 space-y-2">
         <div className="flex items-center justify-between text-xs text-[color:var(--muted)]">
-          <span>Progresso</span>
+          <span>{t('roadmap.card.progress')}</span>
           <span className="font-mono text-[color:var(--text)]">{percent(item.progress)}</span>
         </div>
         <ProgressBar value={item.progress} />
       </div>
       <div className="mt-4 grid gap-2 text-xs text-[color:var(--muted)] sm:grid-cols-2">
-        <span>Release: <strong className="text-[color:var(--text)]">{item.release || 'nao informado'}</strong></span>
-        <span>Owner: <strong className="text-[color:var(--text)]">{item.owner || 'nao informado'}</strong></span>
-        <span>Atualizacao: <strong className="text-[color:var(--text)]">{item.updated_at || 'nao informado'}</strong></span>
-        <span>Deps: <strong className="text-[color:var(--text)]">{(item.dependencies ?? []).length}</strong></span>
+        <span>{t('roadmap.card.release')} <strong className="text-[color:var(--text)]">{item.release || 'nao informado'}</strong></span>
+        <span>{t('roadmap.card.owner')} <strong className="text-[color:var(--text)]">{item.owner || 'nao informado'}</strong></span>
+        <span>{t('roadmap.card.updated')} <strong className="text-[color:var(--text)]">{item.updated_at || 'nao informado'}</strong></span>
+        <span>{t('roadmap.card.deps')} <strong className="text-[color:var(--text)]">{(item.dependencies ?? []).length}</strong></span>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Badge tone={priorityTone[item.priority] ?? 'neutral'}>{formatLabel(item.priority)}</Badge>
-        <Badge tone={riskTone[item.risk] ?? 'neutral'}>Risco {formatLabel(item.risk)}</Badge>
+        <Badge tone={riskTone[item.risk] ?? 'neutral'}>{t('roadmap.card.risk')} {formatLabel(item.risk)}</Badge>
         <Badge>{formatLabel(item.maturity)}</Badge>
-        <Button type="button" variant="ghost" className="ml-auto h-8 px-3" onClick={() => onOpen(item)}>Abrir</Button>
+        <Button type="button" variant="ghost" className="ml-auto h-8 px-3" onClick={() => onOpen(item)}>{t('roadmap.card.open')}</Button>
       </div>
     </article>
   );
 }
 
 function EdgeMap({ title, edges, items, selectedId, onSelect }: { readonly title: string; readonly edges: readonly Edge[]; readonly items: readonly RoadmapItem[]; readonly selectedId?: string; readonly onSelect: (id: string) => void }) {
+  const { t } = useLocale();
   const label = useMemo(() => new Map(items.map((item) => [item.id, item.title])), [items]);
   const visible = edges.slice(0, 12);
   return (
     <Card className="space-y-4 p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Mapa</p>
+          <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.map.eyebrow')}</p>
           <h2 className="text-lg font-semibold text-[color:var(--text)]">{title}</h2>
         </div>
-        <Badge>{edges.length} relacoes</Badge>
+        <Badge>{t('roadmap.map.relations', { count: edges.length })}</Badge>
       </div>
       <div className="grid gap-2">
         {visible.length ? visible.map((edge) => (
@@ -278,20 +281,21 @@ function EdgeMap({ title, edges, items, selectedId, onSelect }: { readonly title
             )}
           >
             <span className="truncate text-sm font-medium text-[color:var(--text)]">{label.get(edge.source) ?? edge.source}</span>
-            <span className="text-xs text-[color:var(--muted)] md:text-center">impacta</span>
+            <span className="text-xs text-[color:var(--muted)] md:text-center">{t('roadmap.map.impacts')}</span>
             <span className="truncate text-sm font-medium text-[color:var(--text)]">{label.get(edge.target) ?? edge.target}</span>
           </button>
-        )) : <p className="text-sm text-[color:var(--muted)]">Nenhuma relacao foi enviada pelo backend.</p>}
+        )) : <p className="text-sm text-[color:var(--muted)]">{t('roadmap.map.empty')}</p>}
       </div>
     </Card>
   );
 }
 
 function DetailPanel({ item }: { readonly item?: RoadmapItem }) {
+  const { t } = useLocale();
   if (!item) {
     return (
       <Card className="p-5">
-        <p className="text-sm text-[color:var(--muted)]">Selecione um modulo na timeline, mapa ou roadmap para ver dependencias, APIs, skills, contratos e documentacao.</p>
+        <p className="text-sm text-[color:var(--muted)]">{t('roadmap.detail.empty')}</p>
       </Card>
     );
   }
@@ -307,23 +311,23 @@ function DetailPanel({ item }: { readonly item?: RoadmapItem }) {
     <Card className="space-y-5 p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Modulo aberto</p>
+          <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.detail.openModule')}</p>
           <h2 className="mt-1 text-xl font-semibold text-[color:var(--text)]">{item.title}</h2>
           <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{item.summary}</p>
         </div>
         <Badge tone={statusTone(item.status)}>{statusLabel[item.status] ?? item.status}</Badge>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <div><span className="text-xs text-[color:var(--muted)]">Release</span><p className="font-mono text-sm text-[color:var(--text)]">{item.release}</p></div>
-        <div><span className="text-xs text-[color:var(--muted)]">Prioridade</span><p className="font-mono text-sm text-[color:var(--text)]">{formatLabel(item.priority)}</p></div>
-        <div><span className="text-xs text-[color:var(--muted)]">Maturidade</span><p className="font-mono text-sm text-[color:var(--text)]">{formatLabel(item.maturity)}</p></div>
+        <div><span className="text-xs text-[color:var(--muted)]">{t('roadmap.detail.release')}</span><p className="font-mono text-sm text-[color:var(--text)]">{item.release}</p></div>
+        <div><span className="text-xs text-[color:var(--muted)]">{t('roadmap.detail.priority')}</span><p className="font-mono text-sm text-[color:var(--text)]">{formatLabel(item.priority)}</p></div>
+        <div><span className="text-xs text-[color:var(--muted)]">{t('roadmap.detail.maturity')}</span><p className="font-mono text-sm text-[color:var(--text)]">{formatLabel(item.maturity)}</p></div>
       </div>
       <div>
-        <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">Impacto</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.detail.impact')}</p>
         <p className="mt-2 text-sm leading-6 text-[color:var(--text)]">{item.impact}</p>
       </div>
       <div>
-        <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">Base do risco</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.detail.riskBasis')}</p>
         <ul className="mt-2 space-y-1 text-sm text-[color:var(--muted)]">
           {(item.risk_basis ?? []).map((basis) => <li key={basis}>- {basis}</li>)}
         </ul>
@@ -332,7 +336,7 @@ function DetailPanel({ item }: { readonly item?: RoadmapItem }) {
         {groups.map(([title, values]) => (
           <div key={title} className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/5 p-3">
             <p className="text-xs font-medium uppercase tracking-[0.16em] text-[color:var(--muted-2)]">{title}</p>
-            <p className="mt-2 text-sm text-[color:var(--text)]">{values.length ? values.join(', ') : 'Nao informado pelo backend'}</p>
+            <p className="mt-2 text-sm text-[color:var(--text)]">{values.length ? values.join(', ') : t('roadmap.detail.notInformed')}</p>
           </div>
         ))}
       </div>
@@ -456,14 +460,14 @@ export default function RoadmapPage() {
         <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--accent),transparent)]" />
         <div className="relative grid gap-8 xl:grid-cols-[1.1fr_1fr]">
           <div className="space-y-6">
-            <Badge tone="accent">Centro executivo</Badge>
+            <Badge tone="accent">{t('roadmap.hero.eyebrow')}</Badge>
             <div>
-              <h1 className="max-w-4xl text-4xl font-semibold tracking-[-0.02em] text-[color:var(--text)] md:text-6xl">Roadmap Center</h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-[color:var(--muted)] md:text-lg">Centro de planejamento estrategico da plataforma. Releases, dependencias, riscos e impacto em uma unica superficie governada.</p>
+              <h1 className="max-w-4xl text-4xl font-semibold tracking-[-0.02em] text-[color:var(--text)] md:text-6xl">{t('roadmap.hero.title')}</h1>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-[color:var(--muted)] md:text-lg">{t('roadmap.hero.description')}</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Button type="button" variant="primary" onClick={() => document.getElementById('roadmap-executivo')?.scrollIntoView({ behavior: 'smooth' })}>Abrir roadmap</Button>
-              <Button type="button" variant="secondary" onClick={() => document.getElementById('dependency-map')?.scrollIntoView({ behavior: 'smooth' })}>Ver dependencias</Button>
+              <Button type="button" variant="primary" onClick={() => document.getElementById('roadmap-executivo')?.scrollIntoView({ behavior: 'smooth' })}>{t('roadmap.hero.open')}</Button>
+              <Button type="button" variant="secondary" onClick={() => document.getElementById('dependency-map')?.scrollIntoView({ behavior: 'smooth' })}>{t('roadmap.hero.viewDeps')}</Button>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -482,10 +486,10 @@ export default function RoadmapPage() {
         <Card className="space-y-5 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Releases</p>
-              <h2 className="text-xl font-semibold text-[color:var(--text)]">Linha de entrega</h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.releases.eyebrow')}</p>
+              <h2 className="text-xl font-semibold text-[color:var(--text)]">{t('roadmap.releases.title')}</h2>
             </div>
-            <Badge>{releases.length} releases</Badge>
+            <Badge>{t('roadmap.releases.count', { count: releases.length })}</Badge>
           </div>
           <div className="overflow-x-auto pb-2">
             <div className="flex min-w-max items-center gap-3">
@@ -500,7 +504,7 @@ export default function RoadmapPage() {
                     </span>
                     <span className="text-xs text-[color:var(--muted)]">{release.title}</span>
                     <ProgressBar value={release.progress} />
-                    {index < releases.length - 1 ? <span className="sr-only">proxima release</span> : null}
+                    {index < releases.length - 1 ? <span className="sr-only">{t('roadmap.releases.next')}</span> : null}
                   </button>
                 );
               })}
@@ -511,13 +515,13 @@ export default function RoadmapPage() {
               <div className="space-y-2">
                 <Badge tone={releaseTone(selectedRelease.status)}>{formatLabel(selectedRelease.status)}</Badge>
                 <h3 className="text-lg font-semibold text-[color:var(--text)]">{selectedRelease.title}</h3>
-                <p className="text-sm text-[color:var(--muted)]">Data: {selectedRelease.date}</p>
+                <p className="text-sm text-[color:var(--muted)]">{t('roadmap.releases.date')} {selectedRelease.date}</p>
                 <ProgressBar value={selectedRelease.progress} />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">Funcionalidades</p><p className="mt-2 text-sm text-[color:var(--text)]">{releaseItems.map((item) => item.title).join(', ') || 'Nao informado'}</p></div>
-                <div><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">Dependencias</p><p className="mt-2 text-sm text-[color:var(--text)]">{(selectedRelease.dependencies ?? []).join(', ') || 'Sem dependencias registradas'}</p></div>
-                <div className="sm:col-span-2"><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">Riscos</p><p className="mt-2 text-sm text-[color:var(--text)]">{(selectedRelease.risks ?? []).join(' ') || 'Sem risco registrado pelo backend.'}</p></div>
+                <div><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.releases.features')}</p><p className="mt-2 text-sm text-[color:var(--text)]">{releaseItems.map((item) => item.title).join(', ') || 'Nao informado'}</p></div>
+                <div><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.releases.deps')}</p><p className="mt-2 text-sm text-[color:var(--text)]">{(selectedRelease.dependencies ?? []).join(', ') || 'Sem dependencias registradas'}</p></div>
+                <div className="sm:col-span-2"><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.releases.risks')}</p><p className="mt-2 text-sm text-[color:var(--text)]">{(selectedRelease.risks ?? []).join(' ') || 'Sem risco registrado pelo backend.'}</p></div>
               </div>
             </div>
           ) : null}
@@ -527,8 +531,8 @@ export default function RoadmapPage() {
           <div className="flex items-center gap-3">
             <CalendarDays className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Sprints</p>
-              <h2 className="text-xl font-semibold text-[color:var(--text)]">Execucao atual</h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.sprints.eyebrow')}</p>
+              <h2 className="text-xl font-semibold text-[color:var(--text)]">{t('roadmap.sprints.title')}</h2>
             </div>
           </div>
           {sprints.length ? sprints.map((sprint) => (
@@ -539,12 +543,12 @@ export default function RoadmapPage() {
               </div>
               <div className="mt-3 flex items-end justify-between gap-3">
                 <span className="text-3xl font-semibold text-[color:var(--text)]">{sprint.progress}%</span>
-                <span className="text-sm text-[color:var(--muted)]">{sprint.completed} concluidas / {sprint.in_progress} em andamento</span>
+                <span className="text-sm text-[color:var(--muted)]">{t('roadmap.sprints.progress', { completed: sprint.completed, inProgress: sprint.in_progress })}</span>
               </div>
               <ProgressBar value={sprint.progress} className="mt-3" />
-              <p className="mt-2 text-xs text-[color:var(--muted)]">{sprint.tasks} tarefas governadas pelo roadmap.</p>
+              <p className="mt-2 text-xs text-[color:var(--muted)]">{t('roadmap.sprints.tasks', { count: sprint.tasks })}</p>
             </div>
-          )) : <p className="text-sm text-[color:var(--muted)]">Sprints nao enviadas pelo backend.</p>}
+          )) : <p className="text-sm text-[color:var(--muted)]">{t('roadmap.sprints.empty')}</p>}
         </Card>
       </section>
 
@@ -552,10 +556,10 @@ export default function RoadmapPage() {
         <Card className="space-y-5 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Timeline da plataforma</p>
-              <h2 className="text-xl font-semibold text-[color:var(--text)]">Fluxo de engenharia</h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.timeline.eyebrow')}</p>
+              <h2 className="text-xl font-semibold text-[color:var(--text)]">{t('roadmap.timeline.title')}</h2>
             </div>
-            <Badge>{timeline.length} etapas</Badge>
+            <Badge>{t('roadmap.timeline.steps', { count: timeline.length })}</Badge>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
             {timeline.map((step, index) => {
@@ -583,24 +587,24 @@ export default function RoadmapPage() {
           <div className="flex items-center gap-3">
             <Gauge className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Health executivo</p>
-              <h2 className="text-xl font-semibold text-[color:var(--text)]">Saude da plataforma</h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.health.eyebrow')}</p>
+              <h2 className="text-xl font-semibold text-[color:var(--text)]">{t('roadmap.health.title')}</h2>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            {health.length ? health.map((gauge) => <GaugeCard key={gauge.id} gauge={gauge} />) : <p className="text-sm text-[color:var(--muted)]">Health nao enviado pelo backend.</p>}
+            {health.length ? health.map((gauge) => <GaugeCard key={gauge.id} gauge={gauge} />) : <p className="text-sm text-[color:var(--muted)]">{t('roadmap.health.empty')}</p>}
           </div>
         </Card>
         <Card className="space-y-4 p-5">
           <div className="flex items-center gap-3">
             <Target className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Cobertura</p>
-              <h2 className="text-xl font-semibold text-[color:var(--text)]">Areas governadas</h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.coverage.eyebrow')}</p>
+              <h2 className="text-xl font-semibold text-[color:var(--text)]">{t('roadmap.coverage.title')}</h2>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            {coverage.length ? coverage.map((gauge) => <GaugeCard key={gauge.id} gauge={gauge} />) : <p className="text-sm text-[color:var(--muted)]">Cobertura nao enviada pelo backend.</p>}
+            {coverage.length ? coverage.map((gauge) => <GaugeCard key={gauge.id} gauge={gauge} />) : <p className="text-sm text-[color:var(--muted)]">{t('roadmap.coverage.empty')}</p>}
           </div>
         </Card>
       </section>
@@ -608,14 +612,14 @@ export default function RoadmapPage() {
       <section id="roadmap-executivo" className="space-y-5">
         <div className="flex flex-col gap-4 rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-2)_78%,transparent)] p-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Roadmap executivo</p>
-            <h2 className="text-2xl font-semibold text-[color:var(--text)]">Modulos por maturidade de entrega</h2>
-            <p className="mt-1 text-sm text-[color:var(--muted)]">Accordions iniciam fechados e mostram apenas quantidades ate voce abrir.</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.exec.eyebrow')}</p>
+            <h2 className="text-2xl font-semibold text-[color:var(--text)]">{t('roadmap.exec.title')}</h2>
+            <p className="mt-1 text-sm text-[color:var(--muted)]">{t('roadmap.exec.hint')}</p>
           </div>
           <div className="flex w-full flex-col gap-3 lg:w-auto lg:min-w-[420px]">
             <label className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted)]" aria-hidden />
-              <Input aria-label="Pesquisar roadmap" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar PromptMaster, Blueprint, Laboratorio..." className="pl-10" />
+              <Input aria-label={t('roadmap.exec.searchAria')} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('roadmap.exec.searchPlaceholder')} className="pl-10" />
             </label>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {filters.map((filter) => (
@@ -637,13 +641,13 @@ export default function RoadmapPage() {
                     <span className="text-sm text-[color:var(--muted)]">{section.detail}</span>
                   </span>
                   <span className="flex items-center gap-3">
-                    <Badge>{sectionItems.length} itens</Badge>
+                    <Badge>{t('roadmap.exec.items', { count: sectionItems.length })}</Badge>
                     <span className={cn('text-sm text-[color:var(--muted)] transition', isOpen && 'rotate-90')}>›</span>
                   </span>
                 </button>
                 {isOpen ? (
                   <div className="mt-4 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-                    {sectionItems.length ? sectionItems.map((item) => <ModuleCard key={item.id} item={item} onOpen={(next) => setSelectedItemId(next.id)} />) : <p className="p-3 text-sm text-[color:var(--muted)]">Nenhum item real encontrado para os filtros atuais.</p>}
+                    {sectionItems.length ? sectionItems.map((item) => <ModuleCard key={item.id} item={item} onOpen={(next) => setSelectedItemId(next.id)} />) : <p className="p-3 text-sm text-[color:var(--muted)]">{t('roadmap.exec.emptyFilter')}</p>}
                   </div>
                 ) : null}
               </div>
@@ -653,18 +657,18 @@ export default function RoadmapPage() {
       </section>
 
       <section id="dependency-map" className="grid gap-5 xl:grid-cols-2">
-        <EdgeMap title="Mapa de Dependencias" edges={dependencyEdges} items={items} selectedId={selectedItem?.id} onSelect={setSelectedItemId} />
-        <EdgeMap title="Mapa de Impacto" edges={impactEdges} items={items} selectedId={selectedItem?.id} onSelect={setSelectedItemId} />
+        <EdgeMap title={t('roadmap.maps.dependencies')} edges={dependencyEdges} items={items} selectedId={selectedItem?.id} onSelect={setSelectedItemId} />
+        <EdgeMap title={t('roadmap.maps.impact')} edges={impactEdges} items={items} selectedId={selectedItem?.id} onSelect={setSelectedItemId} />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
         <Card className="space-y-5 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Roadmap visual</p>
-              <h2 className="text-xl font-semibold text-[color:var(--text)]">Fluxo tipo GitHub Projects</h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.visual.eyebrow')}</p>
+              <h2 className="text-xl font-semibold text-[color:var(--text)]">{t('roadmap.visual.title')}</h2>
             </div>
-            <Badge>{filteredItems.length} itens filtrados</Badge>
+            <Badge>{t('roadmap.visual.filtered', { count: filteredItems.length })}</Badge>
           </div>
           <div className="grid gap-4 lg:grid-cols-4">
             {visualColumns.map((column) => (
@@ -680,7 +684,7 @@ export default function RoadmapPage() {
                       <span className="mt-1 flex items-center justify-between gap-2 text-xs text-[color:var(--muted)]"><span>{item.release}</span><span>{percent(item.progress)}</span></span>
                     </button>
                   ))}
-                  {column.items.length > 8 ? <p className="text-xs text-[color:var(--muted)]">+{column.items.length - 8} itens ocultos pelo limite visual.</p> : null}
+                  {column.items.length > 8 ? <p className="text-xs text-[color:var(--muted)]">{t('roadmap.visual.hidden', { count: column.items.length - 8 })}</p> : null}
                 </div>
               </div>
             ))}
@@ -691,8 +695,8 @@ export default function RoadmapPage() {
           <div className="flex items-center gap-3">
             <Activity className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Estatisticas</p>
-              <h2 className="text-xl font-semibold text-[color:var(--text)]">Painel executivo</h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.stats.eyebrow')}</p>
+              <h2 className="text-xl font-semibold text-[color:var(--text)]">{t('roadmap.stats.title')}</h2>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -702,7 +706,7 @@ export default function RoadmapPage() {
                 <p className="mt-1 text-2xl font-semibold text-[color:var(--text)]">{metric.value}</p>
                 <p className="mt-1 line-clamp-2 text-xs leading-5 text-[color:var(--muted)]">{metric.detail}</p>
               </div>
-            )) : <p className="text-sm text-[color:var(--muted)]">Estatisticas nao enviadas pelo backend.</p>}
+            )) : <p className="text-sm text-[color:var(--muted)]">{t('roadmap.stats.empty')}</p>}
           </div>
         </Card>
       </section>
@@ -712,8 +716,8 @@ export default function RoadmapPage() {
           <div className="flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-[color:var(--warning)]" aria-hidden />
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Prioridades e riscos</p>
-              <h2 className="text-xl font-semibold text-[color:var(--text)]">Itens que exigem atencao</h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.risks.eyebrow')}</p>
+              <h2 className="text-xl font-semibold text-[color:var(--text)]">{t('roadmap.risks.title')}</h2>
             </div>
           </div>
           <div className="space-y-3">
@@ -721,7 +725,7 @@ export default function RoadmapPage() {
               <button key={`risk-${item.id}`} type="button" onClick={() => setSelectedItemId(item.id)} className="focus-ring flex w-full items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/5 p-3 text-left">
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-[color:var(--text)]">{item.title}</span>
-                  <span className="text-xs text-[color:var(--muted)]">{formatLabel(item.priority)} · risco {formatLabel(item.risk)}</span>
+                  <span className="text-xs text-[color:var(--muted)]">{formatLabel(item.priority)} {t('roadmap.risks.riskInfix')} {formatLabel(item.risk)}</span>
                 </span>
                 <Badge tone={riskTone[item.risk] ?? 'neutral'}>{percent(item.progress)}</Badge>
               </button>
@@ -733,8 +737,8 @@ export default function RoadmapPage() {
           <div className="flex items-center gap-3">
             <CalendarDays className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">Historico</p>
-              <h2 className="text-xl font-semibold text-[color:var(--text)]">Atualizacoes do roadmap</h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--muted-2)]">{t('roadmap.history.eyebrow')}</p>
+              <h2 className="text-xl font-semibold text-[color:var(--text)]">{t('roadmap.history.title')}</h2>
             </div>
           </div>
           <div className="space-y-3">

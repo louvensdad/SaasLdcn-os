@@ -75,7 +75,7 @@ export function NotificationCenter() {
                           {notification.unread ? <Badge>{t('notifications.new')}</Badge> : null}
                         </div>
                         <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">{notification.description}</p>
-                        <p className="mt-2 text-[11px] uppercase tracking-[0.18em] text-[color:var(--muted)]">{notification.timestamp}</p>
+                        <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[color:var(--muted)]">{notification.timestamp}</p>
                       </div>
                     </div>
                   </div>

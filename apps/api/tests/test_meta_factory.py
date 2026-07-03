@@ -13,6 +13,7 @@ from app.engines.orchestrator_engine import compile_mega_prompt, localization_ru
 from app.schemas.llm import LLMRequest, LLMResponse, Provider, ReasoningLevel
 from app.services.file_protocol import EmittedFile, parse_agent_output
 from app.services.project_writer import ProjectWriter, ProjectWriteError
+from app.services.generated_project_service import GeneratedProjectService
 
 
 # --- file protocol parser -------------------------------------------------
@@ -88,6 +89,14 @@ def test_territory_rules():
     assert path_in_territory("backend", "apps/api/src/domain/x.py")
     assert not path_in_territory("backend", "apps/web/page.tsx")
     assert territory_violations("contracts", ["openapi.yaml", "apps/api/x.py"]) == ["apps/api/x.py"]
+
+
+def test_mobile_territory_is_scoped_to_apps_mobile():
+    assert path_in_territory("mobile", "apps/mobile/App.tsx")
+    assert path_in_territory("mobile", "packages/contracts/api.contract.ts")
+    assert not path_in_territory("mobile", "apps/web/page.tsx")
+    assert not path_in_territory("mobile", "apps/api/src/main.py")
+    assert territory_violations("mobile", ["apps/mobile/App.tsx", "apps/web/page.tsx"]) == ["apps/web/page.tsx"]
 
 
 # --- model registry -------------------------------------------------------
@@ -209,6 +218,21 @@ def test_pipeline_runs_all_agents_and_threads_contract():
     assert "openapi.yaml" in backend_ctx  # traceability to the contract is preserved
 
 
+def test_mobile_delivery_runs_mobile_agent_in_streaming_pipeline():
+    contract = '<<<FILE path="openapi.yaml">>>\nopenapi: 3.1.0\n<<<END>>>'
+    mobile = '<<<FILE path="apps/mobile/App.tsx">>>\nexport default function App() { return null; }\n<<<END>>>'
+    generic = '<<<FILE path="docs/x.md">>>\n# x\n<<<END>>>'
+    stub = _StubAdapter({
+        "Agente de Contratos": contract,
+        "Agente Mobile Specialist": mobile,
+        "Tech-Writer": generic,
+    })
+    result = run_factory_pipeline(
+        "# spec", router=LLMRouter(adapters={"anthropic": stub}), delivery_type="mobile"
+    )
+    assert "mobile" in [run.role for run in result.runs]
+
+
 # --- project writer -------------------------------------------------------
 
 def test_writer_writes_files_and_marker():
@@ -248,6 +272,31 @@ def test_writer_blocks_path_traversal():
             writer.write([EmittedFile(path="../escape.txt", content="nope")])
     finally:
         shutil.rmtree(base, ignore_errors=True)
+
+
+def test_mobile_download_excludes_installed_and_native_build_directories():
+    import shutil
+    from pathlib import Path
+
+    result = ProjectWriter().write(
+        [
+            EmittedFile("apps/mobile/src/App.tsx", "export const App = () => null;"),
+            EmittedFile("apps/mobile/node_modules/pkg/index.js", "module.exports = {};"),
+            EmittedFile("apps/mobile/ios/build.bin", "generated"),
+            EmittedFile("apps/mobile/android/build.bin", "generated"),
+        ],
+        project_name="mobile-export-filter",
+    )
+    root = Path(result.root_path)
+    try:
+        files = GeneratedProjectService().export_files(
+            {"project_id": result.project_id, "generated_project_path": result.root_path}
+        )
+        names = {item["relative_path"] for item in files}
+        assert "apps/mobile/src/App.tsx" in names
+        assert not any(part in name.split("/") for name in names for part in {"node_modules", "ios", "android"})
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 # --- route registration ---------------------------------------------------

@@ -311,11 +311,11 @@ function StepShell({
       <div className="relative space-y-8 p-6 md:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
-            <p className="type-label text-[color:var(--muted)]">
+            <p className="ds-caption text-[color:var(--muted)]">
               {step.eyebrow}
             </p>
-            <h2 className="type-page mt-3 text-[color:var(--text)]">{step.title}</h2>
-            <p className="type-body mt-3 max-w-xl text-[color:var(--muted)]">{step.description}</p>
+            <h2 className="ds-page-title mt-3 text-[color:var(--text)]">{step.title}</h2>
+            <p className="ds-body mt-3 max-w-xl text-[color:var(--muted)]">{step.description}</p>
           </div>
           <StepStatusBadge state={stepState} />
         </div>
@@ -663,10 +663,10 @@ export default function WizardPage() {
 
   const groupedModules = useMemo(() => {
     const groups = new Map<string, BusinessModule[]>();
-    for (const module of sortedModules) {
-      const currentGroup = groups.get(module.category) ?? [];
-      currentGroup.push(module);
-      groups.set(module.category, currentGroup);
+    for (const businessModule of sortedModules) {
+      const currentGroup = groups.get(businessModule.category) ?? [];
+      currentGroup.push(businessModule);
+      groups.set(businessModule.category, currentGroup);
     }
     return [...groups.entries()];
   }, [sortedModules]);

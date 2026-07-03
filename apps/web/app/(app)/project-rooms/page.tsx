@@ -76,7 +76,7 @@ export default function ProjectRoomsPage() {
     <div className="mx-auto w-full max-w-5xl px-6 py-10">
       <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="type-label mb-2 flex items-center gap-2 text-[color:var(--muted)]">
+          <div className="ds-caption mb-2 flex items-center gap-2 text-[color:var(--muted)]">
             <Sparkles className="h-4 w-4" />
             {t('projectRooms.title')}
           </div>

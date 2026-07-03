@@ -75,25 +75,25 @@ export function LlmConfirmationGate({ capability, usageLabel, onConfirmed, compa
           {/* Detail grid: model, action, last validated, status reason */}
           <dl className="mt-3 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
             <div>
-              <dt className="t-caption">Modelo</dt>
+              <dt className="ds-caption">Modelo</dt>
               <dd className="text-[color:var(--text)]">{llm.model ?? '—'}</dd>
             </div>
             <div>
-              <dt className="t-caption">Ação</dt>
+              <dt className="ds-caption">Ação</dt>
               <dd className="text-[color:var(--text)]">{usageLabel}</dd>
             </div>
             <div>
-              <dt className="t-caption">Última validação</dt>
+              <dt className="ds-caption">Última validação</dt>
               <dd className="text-[color:var(--text)]">{formatValidated(llm.lastValidatedAt)}</dd>
             </div>
             <div>
-              <dt className="t-caption">Status</dt>
+              <dt className="ds-caption">Status</dt>
               <dd className="text-[color:var(--text)]">{llm.reason ?? '—'}</dd>
             </div>
           </dl>
 
           {/* Security note — always present */}
-          <p className="mt-3 flex items-center gap-1.5 t-caption">
+          <p className="mt-3 flex items-center gap-1.5 ds-caption">
             <Lock className="h-3.5 w-3.5 text-[color:var(--muted)]" aria-hidden />
             A chave permanece no servidor — nunca é exposta ao frontend, logs, reports ou projetos gerados.
           </p>
@@ -142,7 +142,7 @@ export function LlmConfirmationGate({ capability, usageLabel, onConfirmed, compa
           </div>
 
           {/* Deterministic fallback warning — always visible so it is never silent */}
-          <p className="mt-3 flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warning)_30%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] px-3 py-2 t-caption text-[color:var(--text)]/80">
+          <p className="mt-3 flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warning)_30%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] px-3 py-2 ds-caption text-[color:var(--text)]/80">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[color:var(--warning)]" aria-hidden />
             O modo determinístico é um preview degradado, sem IA real — baseado em templates e regras.
           </p>

@@ -334,7 +334,7 @@ export default function DocumentationPage() {
               <div className="space-y-2">
                 <Badge>{t('documentation.score')}</Badge>
                 <div className="flex items-baseline gap-2">
-                  <span className="type-page text-[color:var(--text)]">{library.data.score}</span>
+                  <span className="ds-page-title text-[color:var(--text)]">{library.data.score}</span>
                   <span className="text-sm text-[color:var(--muted)]">/ 100</span>
                   <Badge tone={scoreTone(library.data.score)} className="ml-auto">
                     {t('documentation.present', {

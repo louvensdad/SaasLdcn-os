@@ -58,7 +58,7 @@ export function InfrastructureRecommendationsPanel({
               <ShieldAlert className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('infrastructure.title')}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('infrastructure.title')}</p>
               <h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{t('infrastructure.unavailable')}</h3>
             </div>
           </div>
@@ -85,7 +85,7 @@ export function InfrastructureRecommendationsPanel({
             </div>
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('infrastructure.title')}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('infrastructure.title')}</p>
                 <Badge className="border-white/10 text-[color:var(--muted)]">
                   {t('infrastructure.requiredCount', { count: recommendation?.required.length ?? 0 })}
                 </Badge>

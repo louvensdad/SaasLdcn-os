@@ -124,8 +124,8 @@ function Blocked({ roomId, status }: { readonly roomId?: string; readonly status
   return (
     <Card className="glass noise space-y-4 p-8 text-center">
       <ShieldCheck className="mx-auto h-8 w-8 text-[color:var(--warning)]" aria-hidden />
-      <h2 className="t-h3 text-[color:var(--text)]">{t('review.blocked.title')}</h2>
-      <p className="mx-auto max-w-md t-body text-[color:var(--muted)]">{t('review.blocked.desc')}</p>
+      <h2 className="ds-subsection text-[color:var(--text)]">{t('review.blocked.title')}</h2>
+      <p className="mx-auto max-w-md ds-body ds-text-muted">{t('review.blocked.desc')}</p>
       <div>
         <Link href={target}>
           <Button variant="primary">{label}</Button>
@@ -245,7 +245,7 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
       <Card className="glass p-5"><JourneyTimeline status={room.status} /></Card>
 
       <Card className="glass p-5">
-        <div className="flex items-center justify-between gap-3"><div><p className="t-overline">Blueprint utilizado</p><h2 className="mt-1 t-h3">v{blueprint.version || blueprintVersion?.version || 1} / {blueprint.providerLabel}</h2></div><Badge tone={blueprint.degraded ? 'warning' : 'success'}>{blueprint.degraded ? 'Modo Offline' : 'Modo LLM'}</Badge></div>
+        <div className="flex items-center justify-between gap-3"><div><p className="t-overline">{t('review.blueprint.used')}</p><h2 className="mt-1 ds-subsection">v{blueprint.version || blueprintVersion?.version || 1} / {blueprint.providerLabel}</h2></div><Badge tone={blueprint.degraded ? 'warning' : 'success'}>{blueprint.degraded ? t('review.blueprint.offlineMode') : t('review.blueprint.llmMode')}</Badge></div>
         <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
           {[
             ['Provider', blueprint.providerLabel],
@@ -260,7 +260,7 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
 
       {/* Executive summary */}
       <section className="space-y-3">
-        <h2 className="t-h2 text-[color:var(--text)]">{t('review.summary.title')}</h2>
+        <h2 className="ds-section text-[color:var(--text)]">{t('review.summary.title')}</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <SummaryCard label={t('review.summary.project')} value={summary.project} wide={summary.project.length > 22} />
           <SummaryCard label={t('review.summary.architecture')} value={show(summary.architecture)} />
@@ -280,18 +280,18 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
             tone={summary.origin === 'deterministic' ? 'warning' : summary.origin === 'ai' ? 'success' : undefined}
           />
         </div>
-        {summary.summary ? <p className="t-body text-[color:var(--muted)]">{summary.summary}</p> : null}
+        {summary.summary ? <p className="ds-body ds-text-muted">{summary.summary}</p> : null}
       </section>
 
       {/* Engineering readiness â€” coverage based, honest */}
       <Card className="glass noise space-y-4 p-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <h2 className="t-h3 text-[color:var(--text)]">{t('review.readiness.title')}</h2>
+          <h2 className="ds-subsection text-[color:var(--text)]">{t('review.readiness.title')}</h2>
           {readiness.confidencePct !== null ? <Badge tone="accent">{t('review.readiness.confidence')}: {readiness.confidencePct}%</Badge> : null}
         </div>
         <div>
           <div className="flex items-center justify-between text-sm">
-            <span className="t-caption">{t('review.readiness.coverageLabel')}</span>
+            <span className="ds-caption">{t('review.readiness.coverageLabel')}</span>
             <span className="t-mono text-[color:var(--text)]">{t('review.readiness.coverage', { decided: readiness.decidedAreas, total: readiness.totalAreas })}</span>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-[color:var(--border-strong)]">
@@ -306,14 +306,14 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
             </span>
           ) : null}
         </div>
-        <p className="t-caption">{t('review.readiness.hint')}</p>
+        <p className="ds-caption">{t('review.readiness.hint')}</p>
       </Card>
 
       {/* Architecture diagram (clickable â†’ scrolls to the decision) */}
       <Card className="glass noise space-y-4 p-6">
-        <h2 className="t-h3 text-[color:var(--text)]">{t('review.diagram.title')}</h2>
+        <h2 className="ds-subsection text-[color:var(--text)]">{t('review.diagram.title')}</h2>
         {diagram.length === 0 ? (
-          <p className="t-caption">{t('review.diagram.empty')}</p>
+          <p className="ds-caption">{t('review.diagram.empty')}</p>
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">
@@ -330,14 +330,14 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
                 );
               })}
             </div>
-            <p className="t-caption">{t('review.diagram.hint')}</p>
+            <p className="ds-caption">{t('review.diagram.hint')}</p>
           </>
         )}
       </Card>
 
       {/* Decisions & trade-offs */}
       <section className="space-y-3">
-        <h2 className="t-h2 text-[color:var(--text)]">{t('review.decisions.title')}</h2>
+        <h2 className="ds-section text-[color:var(--text)]">{t('review.decisions.title')}</h2>
         <div className="grid gap-3 lg:grid-cols-2">
           {blueprint.decisions.map((decision, index) => (
             <DecisionCard key={`${decision.area}-${index}`} decision={decision} />
@@ -347,9 +347,9 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
 
       {/* Risk center */}
       <Card className="glass noise space-y-4 p-6">
-        <h2 className="t-h3 text-[color:var(--text)]">{t('review.risks.title')}</h2>
+        <h2 className="ds-subsection text-[color:var(--text)]">{t('review.risks.title')}</h2>
         {risks.length === 0 ? (
-          <p className="flex items-center gap-2 t-body text-[color:var(--muted)]"><CheckCircle2 className="h-4 w-4 text-[color:var(--success)]" aria-hidden />{t('review.risks.none')}</p>
+          <p className="flex items-center gap-2 ds-body ds-text-muted"><CheckCircle2 className="h-4 w-4 text-[color:var(--success)]" aria-hidden />{t('review.risks.none')}</p>
         ) : (
           <ul className="space-y-2.5">
             {risks.map((risk) => (
@@ -361,8 +361,8 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
                     {t(risk.source === 'open_question' ? 'review.risks.openQuestion' : 'review.risks.assumption')}
                   </Badge>
                 </div>
-                {risk.detail ? <p className="mt-1.5 t-caption"><span className="font-semibold text-[color:var(--text)]">{t('review.risks.impact')}:</span> {risk.detail}</p> : null}
-                {risk.mitigation ? <p className="mt-1 t-caption"><span className="font-semibold text-[color:var(--text)]">{t('review.risks.mitigation')}:</span> {risk.mitigation}</p> : null}
+                {risk.detail ? <p className="mt-1.5 ds-caption"><span className="font-semibold text-[color:var(--text)]">{t('review.risks.impact')}:</span> {risk.detail}</p> : null}
+                {risk.mitigation ? <p className="mt-1 ds-caption"><span className="font-semibold text-[color:var(--text)]">{t('review.risks.mitigation')}:</span> {risk.mitigation}</p> : null}
               </li>
             ))}
           </ul>
@@ -372,12 +372,12 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
       {/* Estimates â€” only real counts */}
       {estimates.length ? (
         <Card className="glass space-y-4 p-6">
-          <h2 className="t-h3 text-[color:var(--text)]">{t('review.estimates.title')}</h2>
+          <h2 className="ds-subsection text-[color:var(--text)]">{t('review.estimates.title')}</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
             {estimates.map((item) => (
               <div key={item.key} className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)] p-3 text-center">
                 <p className="t-mono text-2xl font-bold text-[color:var(--text)]">{item.value}</p>
-                <p className="mt-1 t-caption">{t(`review.estimates.${item.key}`)}</p>
+                <p className="mt-1 ds-caption">{t(`review.estimates.${item.key}`)}</p>
               </div>
             ))}
           </div>
@@ -390,20 +390,20 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
   const comiteTab = (
     <div className="space-y-6">
       {review?.committee?.length ? <CommitteeVotes members={review.committee} /> : null}
-      {review ? <CommitteePanel review={review} /> : <p className="t-caption text-[color:var(--muted-2)]">Comitê indisponível sem Blueprint.</p>}
+      {review ? <CommitteePanel review={review} /> : <p className="ds-caption text-[color:var(--muted-2)]">{t('review.committee.unavailable')}</p>}
     </div>
   );
 
   const dimensoesTab = review?.dimensions?.length ? (
     <DimensionsPanel dimensions={review.dimensions} />
   ) : (
-    <p className="t-caption text-[color:var(--muted-2)]">Dimensões indisponíveis.</p>
+    <p className="ds-caption text-[color:var(--muted-2)]">{t('review.dimensions.unavailable')}</p>
   );
 
   const parecerTab = review?.final_opinion ? (
     <FinalOpinionPanel opinion={review.final_opinion} />
   ) : (
-    <p className="t-caption text-[color:var(--muted-2)]">Parecer indisponível.</p>
+    <p className="ds-caption text-[color:var(--muted-2)]">{t('review.opinion.unavailable')}</p>
   );
 
   const readinessTab = (
@@ -423,27 +423,27 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
 
       {/* Critical action panel — checklist, honest verdict, smart buttons, live workflow, logs */}
       <Card surface="primary" className="glass noise space-y-4 p-6">
-        <h2 className="t-h3 text-[color:var(--text)]">{t('review.panel.title')}</h2>
-        {!isMeta && status !== 'ENGINEERING_APPROVED' ? <p className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warning)_28%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] px-3 py-2 text-sm text-[color:var(--text)]"><AlertTriangle className="h-4 w-4 text-[color:var(--warning)]" />A Review ainda não foi aprovada.</p> : null}
+        <h2 className="ds-subsection text-[color:var(--text)]">{t('review.panel.title')}</h2>
+        {!isMeta && status !== 'ENGINEERING_APPROVED' ? <p className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warning)_28%,var(--border))] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] px-3 py-2 text-sm text-[color:var(--text)]"><AlertTriangle className="h-4 w-4 text-[color:var(--warning)]" />{t('review.panel.notApproved')}</p> : null}
 
         <div>
-          <p className="t-overline mb-2">Readiness Center</p>
+          <p className="t-overline mb-2">{t('review.panel.readinessCenter')}</p>
           <EnterpriseChecklist checks={checklist} />
         </div>
 
         <Verdict ready={verdictReady} blockers={blockers} needsPhrase={needsPhrase} phraseOk={phraseOk} />
 
         <div className="flex flex-wrap gap-3">
-          <Button variant="secondary" loading={busy} onClick={() => void validateReview()}><ListChecks className="h-4 w-4" />Validar Review</Button>
-          <Link href={`/architect?projectId=${room.room_id}`}><Button variant="secondary">Voltar ao Architect</Button></Link>
-          <Link href={`/architect?projectId=${room.room_id}&regenerate=1`}><Button variant="ghost"><Sparkles className="h-4 w-4" />Regenerar Blueprint com IA</Button></Link>
-          {needsPhrase ? <Button variant="secondary" loading={busy} disabled={!phraseOk} onClick={() => void continueDeterministicPreview()}>Continuar com Preview Determinístico</Button> : null}
+          <Button variant="secondary" loading={busy} onClick={() => void validateReview()}><ListChecks className="h-4 w-4" />{t('review.actions.validate')}</Button>
+          <Link href={`/architect?projectId=${room.room_id}`}><Button variant="secondary">{t('review.actions.backToArchitect')}</Button></Link>
+          <Link href={`/architect?projectId=${room.room_id}&regenerate=1`}><Button variant="ghost"><Sparkles className="h-4 w-4" />{t('review.actions.regenerate')}</Button></Link>
+          {needsPhrase ? <Button variant="secondary" loading={busy} disabled={!phraseOk} onClick={() => void continueDeterministicPreview()}>{t('review.actions.continuePreview')}</Button> : null}
           {isMeta ? (
             <Link href={`/meta-factory?projectId=${room.room_id}`} className="ml-auto">
-              <Button variant="primary">Abrir Meta-Fábrica <ArrowRight className="h-4 w-4" /></Button>
+              <Button variant="primary">{t('review.actions.openMetaFactory')} <ArrowRight className="h-4 w-4" /></Button>
             </Link>
-          ) : status === 'ENGINEERING_APPROVED' ? <Button variant="primary" className="ml-auto" loading={busy} onClick={() => void sendToMetaFactory()}>Enviar para Meta-Fábrica <ArrowRight className="h-4 w-4" /></Button>
-            : <Button variant="primary" className="ml-auto" loading={busy} disabled={needsPhrase || (validation !== null && !validation.valid)} onClick={() => void approveReview()}>Aprovar Review <ThumbsUp className="h-4 w-4" /></Button>}
+          ) : status === 'ENGINEERING_APPROVED' ? <Button variant="primary" className="ml-auto" loading={busy} onClick={() => void sendToMetaFactory()}>{t('review.actions.sendToMetaFactory')} <ArrowRight className="h-4 w-4" /></Button>
+            : <Button variant="primary" className="ml-auto" loading={busy} disabled={needsPhrase || (validation !== null && !validation.valid)} onClick={() => void approveReview()}>{t('review.actions.approve')} <ThumbsUp className="h-4 w-4" /></Button>}
         </div>
 
         <ReviewValidationPanel validation={validation} room={room} />
@@ -469,6 +469,7 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
 }
 
 function CommitteeVotes({ members }: { readonly members: readonly CommitteeMember[] }) {
+  const { t } = useLocale();
   const verdictMeta: Record<string, { label: string; tone: 'success' | 'warning' | 'danger' }> = {
     approved: { label: 'Aprovado', tone: 'success' },
     approved_with_caveats: { label: 'Aprovado com ressalvas', tone: 'warning' },
@@ -478,9 +479,9 @@ function CommitteeVotes({ members }: { readonly members: readonly CommitteeMembe
     <Card className="glass noise space-y-4 p-6">
       <div className="flex items-center gap-2">
         <Users className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
-        <h2 className="t-h3 text-[color:var(--text)]">Comitê de Engenharia — votação</h2>
+        <h2 className="ds-subsection text-[color:var(--text)]">{t('review.votes.title')}</h2>
       </div>
-      <p className="t-caption">Cada especialista avalia a arquitetura a partir de sinais reais. Nada é inventado.</p>
+      <p className="ds-caption">{t('review.votes.subtitle')}</p>
       <div className="grid gap-3 sm:grid-cols-2">
         {members.map((m) => {
           const meta = verdictMeta[m.verdict] ?? { label: m.verdict, tone: 'warning' as const };
@@ -491,8 +492,8 @@ function CommitteeVotes({ members }: { readonly members: readonly CommitteeMembe
                 <Stars rating={m.rating} />
               </div>
               <Badge tone={meta.tone} className="mt-2">{meta.label}</Badge>
-              <p className="mt-2 t-caption text-[color:var(--muted)]">{m.rationale}</p>
-              {m.signals.length ? <p className="mt-1 t-caption text-[color:var(--muted-2)]">Sinais: {m.signals.join('; ')}</p> : null}
+              <p className="mt-2 ds-caption text-[color:var(--muted)]">{m.rationale}</p>
+              {m.signals.length ? <p className="mt-1 ds-caption text-[color:var(--muted-2)]">{t('review.votes.signals')} {m.signals.join('; ')}</p> : null}
             </div>
           );
         })}
@@ -512,6 +513,7 @@ function Stars({ rating }: { readonly rating: number }) {
 }
 
 function DimensionsPanel({ dimensions }: { readonly dimensions: readonly ReviewDimension[] }) {
+  const { t } = useLocale();
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {dimensions.map((d) => (
@@ -519,13 +521,13 @@ function DimensionsPanel({ dimensions }: { readonly dimensions: readonly ReviewD
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-[color:var(--text)]">{d.label}</h3>
             {d.status === 'unavailable' || d.score === null || d.score === undefined ? (
-              <Badge tone="neutral">sem score</Badge>
+              <Badge tone="neutral">{t('review.dimensions.noScore')}</Badge>
             ) : (
               <Badge tone={d.score >= 80 ? 'success' : d.score >= 50 ? 'accent' : 'warning'}>{d.score}%</Badge>
             )}
           </div>
-          {d.verdict ? <p className="t-caption text-[color:var(--muted-2)]">{d.verdict}</p> : null}
-          <ul className="ml-4 list-disc space-y-0.5 t-caption text-[color:var(--muted)]">
+          {d.verdict ? <p className="ds-caption text-[color:var(--muted-2)]">{d.verdict}</p> : null}
+          <ul className="ml-4 list-disc space-y-0.5 ds-caption text-[color:var(--muted)]">
             {d.findings.map((f, index) => <li key={index}>{f}</li>)}
           </ul>
         </Card>
@@ -535,6 +537,7 @@ function DimensionsPanel({ dimensions }: { readonly dimensions: readonly ReviewD
 }
 
 function FinalOpinionPanel({ opinion }: { readonly opinion: FinalOpinion }) {
+  const { t } = useLocale();
   const bands: [string, string][] = [
     ['Complexidade', opinion.complexity],
     ['Risco', opinion.risk],
@@ -544,26 +547,26 @@ function FinalOpinionPanel({ opinion }: { readonly opinion: FinalOpinion }) {
     <Card className="glass noise space-y-4 p-6">
       <div className="flex items-center gap-2">
         <ScrollText className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
-        <h2 className="t-h3 text-[color:var(--text)]">Parecer final do comitê</h2>
+        <h2 className="ds-subsection text-[color:var(--text)]">{t('review.opinion.title')}</h2>
       </div>
       {opinion.deterministic ? (
-        <p className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] p-3 t-caption">
+        <p className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--warning)_8%,transparent)] p-3 ds-caption">
           <AlertTriangle className="h-4 w-4 shrink-0 text-[color:var(--warning)]" aria-hidden />{opinion.disclaimer}
         </p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-4 text-center">
-          <p className="t-overline">Prob. de sucesso (1ª geração)</p>
-          <p className="mt-1 t-mono text-2xl font-bold text-[color:var(--text)]">{opinion.success_probability === null || opinion.success_probability === undefined ? 'indisponível' : `${opinion.success_probability}%`}</p>
+          <p className="t-overline">{t('review.opinion.successProb')}</p>
+          <p className="mt-1 t-mono text-2xl font-bold text-[color:var(--text)]">{opinion.success_probability === null || opinion.success_probability === undefined ? t('review.unavailableShort') : `${opinion.success_probability}%`}</p>
         </div>
         {bands.map(([label, value]) => (
           <div key={label} className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-4 text-center">
             <p className="t-overline">{label}</p>
-            <p className="mt-1 text-base font-semibold text-[color:var(--text)]">{value || 'indisponível'}</p>
+            <p className="mt-1 text-base font-semibold text-[color:var(--text)]">{value || t('review.unavailableShort')}</p>
           </div>
         ))}
       </div>
-      {opinion.narrative ? <p className="t-body text-[color:var(--muted)]">{opinion.narrative}</p> : null}
+      {opinion.narrative ? <p className="ds-body ds-text-muted">{opinion.narrative}</p> : null}
     </Card>
   );
 }
@@ -574,24 +577,25 @@ function Verdict({ ready, blockers, needsPhrase, phraseOk }: {
   readonly needsPhrase: boolean;
   readonly phraseOk: boolean;
 }) {
+  const { t } = useLocale();
   if (ready) {
     return (
-      <p className="flex items-center gap-2 t-body text-[color:var(--success)]">
-        <CheckCircle2 className="h-4 w-4" aria-hidden /> Pronto para aprovar a Engineering Review e enviar à Meta-Fábrica.
+      <p className="flex items-center gap-2 ds-body ds-text-success">
+        <CheckCircle2 className="h-4 w-4" aria-hidden /> {t('review.verdict.ready')}
       </p>
     );
   }
   return (
     <div className="space-y-1.5">
-      <p className="flex items-center gap-2 t-body text-[color:var(--warning)]">
-        <AlertTriangle className="h-4 w-4" aria-hidden /> Ainda não está pronto para enviar. Resolva os itens abaixo:
+      <p className="flex items-center gap-2 ds-body ds-text-warning">
+        <AlertTriangle className="h-4 w-4" aria-hidden /> {t('review.verdict.notReady')}
       </p>
-      <ul className="ml-6 list-disc space-y-1 t-caption">
+      <ul className="ml-6 list-disc space-y-1 ds-caption">
         {blockers.map((b) => (
           <li key={b.id}><span className="font-semibold text-[color:var(--text)]">{b.label}:</span> {b.detail}</li>
         ))}
         {needsPhrase && !phraseOk ? (
-          <li>Blueprint determinístico: confirme digitando <span className="t-mono font-semibold">{PREVIEW_PHRASE}</span> no painel acima, ou regenere com IA.</li>
+          <li>{t('review.verdict.phrasePrefix')} <span className="t-mono font-semibold">{PREVIEW_PHRASE}</span> {t('review.verdict.phraseSuffix')}</li>
         ) : null}
       </ul>
     </div>
@@ -605,32 +609,32 @@ function DeterministicGate({ roomId, acknowledged, phrase, onPhrase, phraseOk }:
   readonly onPhrase: (value: string) => void;
   readonly phraseOk: boolean;
 }) {
+  const { t } = useLocale();
   return (
     <Card className="glass noise space-y-4 border border-[color-mix(in_srgb,var(--warning)_35%,var(--border))] p-6">
       <div className="flex items-center gap-2">
         <AlertOctagon className="h-5 w-5 text-[color:var(--warning)]" aria-hidden />
-        <h2 className="t-h3 text-[color:var(--text)]">Preview determinístico (modo degradado)</h2>
+        <h2 className="ds-subsection text-[color:var(--text)]">{t('review.gate.title')}</h2>
       </div>
-      <p className="t-body text-[color:var(--muted)]">
-        Este Blueprint foi criado <span className="font-semibold text-[color:var(--text)]">sem LLM</span>. Ele serve como prévia
-        técnica, mas não representa o melhor resultado possível para projetos complexos ou Enterprise. Recomendamos regenerar com IA.
+      <p className="ds-body ds-text-muted">
+        {t('review.gate.createdPrefix')} <span className="font-semibold text-[color:var(--text)]">{t('review.gate.noLlm')}</span>{t('review.gate.createdSuffix')}
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3"><p className="t-overline">Provider ativo</p><p className="text-sm font-semibold text-[color:var(--text)]">Nenhum (determinístico)</p></div>
-        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3"><p className="t-overline">Modo / LLM</p><p className="text-sm font-semibold text-[color:var(--warning)]">PREVIEW_DETERMINISTIC — sem LLM</p></div>
+        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3"><p className="t-overline">{t('review.gate.providerLabel')}</p><p className="text-sm font-semibold text-[color:var(--text)]">{t('review.gate.providerNone')}</p></div>
+        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3"><p className="t-overline">{t('review.gate.modeLabel')}</p><p className="text-sm font-semibold text-[color:var(--warning)]">{t('review.gate.modeValue')}</p></div>
       </div>
       <div className="flex flex-wrap gap-2">
         {(['GPT', 'Claude', 'Gemini', 'DeepSeek'] as const).map((name) => (
-          <Link key={name} href="/settings"><Button variant="ghost"><Sparkles className="h-4 w-4" /> Conectar {name}</Button></Link>
+          <Link key={name} href="/settings"><Button variant="ghost"><Sparkles className="h-4 w-4" /> {t('review.gate.connect')} {name}</Button></Link>
         ))}
-        <Link href={`/architect?projectId=${roomId}`}><Button variant="secondary"><Wrench className="h-4 w-4" /> Regenerar com IA</Button></Link>
+        <Link href={`/architect?projectId=${roomId}`}><Button variant="secondary"><Wrench className="h-4 w-4" /> {t('review.gate.regenerate')}</Button></Link>
       </div>
       {acknowledged ? (
-        <p className="flex items-center gap-2 t-caption text-[color:var(--success)]"><CheckCircle2 className="h-4 w-4" aria-hidden /> Preview aceito conscientemente. A revisão pode ser aprovada.</p>
+        <p className="flex items-center gap-2 ds-caption text-[color:var(--success)]"><CheckCircle2 className="h-4 w-4" aria-hidden /> {t('review.gate.accepted')}</p>
       ) : (
         <div className="space-y-2">
-          <p className="t-caption">Para continuar mesmo assim, digite exatamente <span className="t-mono font-semibold text-[color:var(--text)]">{PREVIEW_PHRASE}</span> (registrado em auditoria):</p>
-          <Input value={phrase} onChange={(e) => onPhrase(e.target.value)} placeholder={PREVIEW_PHRASE} error={phrase.length > 0 && !phraseOk} aria-label="Confirmação de preview determinístico" />
+          <p className="ds-caption">{t('review.gate.typeExact')} <span className="t-mono font-semibold text-[color:var(--text)]">{PREVIEW_PHRASE}</span> {t('review.gate.audited')}</p>
+          <Input value={phrase} onChange={(e) => onPhrase(e.target.value)} placeholder={PREVIEW_PHRASE} error={phrase.length > 0 && !phraseOk} aria-label={t('review.gate.ariaConfirm')} />
         </div>
       )}
     </Card>
@@ -638,32 +642,33 @@ function DeterministicGate({ roomId, acknowledged, phrase, onPhrase, phraseOk }:
 }
 
 function CommitteePanel({ review }: { readonly review: EngineeringReviewAssessment }) {
-  const unavailable = (value: string) => (value && value !== 'indisponivel' ? value : <span className="text-[color:var(--muted-2)]">indisponível</span>);
+  const { t } = useLocale();
+  const unavailable = (value: string) => (value && value !== 'indisponivel' ? value : <span className="text-[color:var(--muted-2)]">{t('review.unavailableShort')}</span>);
   return (
     <Card className="glass noise space-y-5 p-6">
       <div className="flex items-center gap-2">
         <ListChecks className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
-        <h2 className="t-h3 text-[color:var(--text)]">Comitê de Engenharia</h2>
+        <h2 className="ds-subsection text-[color:var(--text)]">{t('review.committee.title')}</h2>
       </div>
-      <p className="t-caption">Leitura crítica do Blueprint — distinta das decisões do Architect.</p>
+      <p className="ds-caption">{t('review.committee.subtitle')}</p>
       <div className="grid gap-3 lg:grid-cols-2">
-        <CommitteeColumn title="Decisões sólidas" icon={ThumbsUp} tone="success" findings={review.good_decisions} />
-        <CommitteeColumn title="Decisões discutíveis" icon={HelpCircle} tone="warning" findings={review.debatable_decisions} />
-        <CommitteeColumn title="Riscos" icon={AlertTriangle} tone="warning" findings={review.risks} />
-        <CommitteeColumn title="Lacunas" icon={AlertOctagon} tone="warning" findings={review.gaps} />
-        <CommitteeColumn title="Inconsistências" icon={AlertOctagon} tone="danger" findings={review.inconsistencies} />
+        <CommitteeColumn title={t('review.committee.solid')} icon={ThumbsUp} tone="success" findings={review.good_decisions} />
+        <CommitteeColumn title={t('review.committee.debatable')} icon={HelpCircle} tone="warning" findings={review.debatable_decisions} />
+        <CommitteeColumn title={t('review.committee.risks')} icon={AlertTriangle} tone="warning" findings={review.risks} />
+        <CommitteeColumn title={t('review.committee.gaps')} icon={AlertOctagon} tone="warning" findings={review.gaps} />
+        <CommitteeColumn title={t('review.committee.inconsistencies')} icon={AlertOctagon} tone="danger" findings={review.inconsistencies} />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3"><p className="t-overline">Impacto de segurança</p><p className="mt-1 text-sm text-[color:var(--text)]">{unavailable(review.security_impact)}</p></div>
-        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3"><p className="t-overline">Impacto de escalabilidade</p><p className="mt-1 text-sm text-[color:var(--text)]">{unavailable(review.scalability_impact)}</p></div>
-        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3 sm:col-span-2"><p className="t-overline">Readiness para Meta-Fábrica</p><p className="mt-1 text-sm text-[color:var(--text)]">{review.generation_readiness}</p></div>
+        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3"><p className="t-overline">{t('review.committee.securityImpact')}</p><p className="mt-1 text-sm text-[color:var(--text)]">{unavailable(review.security_impact)}</p></div>
+        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3"><p className="t-overline">{t('review.committee.scalabilityImpact')}</p><p className="mt-1 text-sm text-[color:var(--text)]">{unavailable(review.scalability_impact)}</p></div>
+        <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3 sm:col-span-2"><p className="t-overline">{t('review.committee.readiness')}</p><p className="mt-1 text-sm text-[color:var(--text)]">{review.generation_readiness}</p></div>
       </div>
       {review.recommendations.length ? (
         <div>
-          <p className="t-overline mb-2">Recomendações antes da geração</p>
+          <p className="t-overline mb-2">{t('review.committee.recommendations')}</p>
           <ul className="space-y-1.5">
             {review.recommendations.map((rec, index) => (
-              <li key={index} className="flex items-start gap-2 t-caption"><Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--accent)]" aria-hidden />{rec}</li>
+              <li key={index} className="flex items-start gap-2 ds-caption"><Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--accent)]" aria-hidden />{rec}</li>
             ))}
           </ul>
         </div>
@@ -678,6 +683,7 @@ function CommitteeColumn({ title, icon: Icon, tone, findings }: {
   readonly tone: 'success' | 'warning' | 'danger';
   readonly findings: readonly EngineeringReviewFinding[];
 }) {
+  const { t } = useLocale();
   const color = tone === 'success' ? 'var(--success)' : tone === 'danger' ? 'var(--danger)' : 'var(--warning)';
   return (
     <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)] p-4">
@@ -685,31 +691,32 @@ function CommitteeColumn({ title, icon: Icon, tone, findings }: {
       {findings.length ? (
         <ul className="mt-2 space-y-2">
           {findings.map((f, index) => (
-            <li key={index} className="t-caption">
+            <li key={index} className="ds-caption">
               <span className="font-semibold text-[color:var(--text)]">{f.title}</span>
               {f.detail ? <span className="block text-[color:var(--muted)]">{f.detail}</span> : null}
             </li>
           ))}
         </ul>
       ) : (
-        <p className="mt-2 t-caption text-[color:var(--muted-2)]">Nada apontado.</p>
+        <p className="mt-2 ds-caption text-[color:var(--muted-2)]">{t('review.committee.nothing')}</p>
       )}
     </div>
   );
 }
 
 function ReviewScorePanel({ score }: { readonly score: ReviewScore }) {
+  const { t } = useLocale();
   return (
     <Card className="glass noise space-y-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Gauge className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
-          <h2 className="t-h3 text-[color:var(--text)]">Review Score</h2>
+          <h2 className="ds-subsection text-[color:var(--text)]">{t('review.score.title')}</h2>
         </div>
         {score.overall === null || score.overall === undefined ? (
-          <Badge tone="neutral">Geral: indisponível</Badge>
+          <Badge tone="neutral">{t('review.score.overallUnavailable')}</Badge>
         ) : (
-          <Badge tone={score.overall >= 80 ? 'success' : score.overall >= 50 ? 'accent' : 'warning'}>Geral: {score.overall}%</Badge>
+          <Badge tone={score.overall >= 80 ? 'success' : score.overall >= 50 ? 'accent' : 'warning'}>{t('review.score.overallPrefix')} {score.overall}%</Badge>
         )}
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -717,14 +724,14 @@ function ReviewScorePanel({ score }: { readonly score: ReviewScore }) {
           <div key={cat.key} className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)] p-4">
             <p className="t-overline">{cat.label}</p>
             {cat.status === 'unavailable' || cat.score === null || cat.score === undefined ? (
-              <p className="mt-1 text-sm font-semibold text-[color:var(--muted-2)]">indisponível</p>
+              <p className="mt-1 text-sm font-semibold text-[color:var(--muted-2)]">{t('review.unavailableShort')}</p>
             ) : (
               <>
                 <p className="mt-1 t-mono text-2xl font-bold text-[color:var(--text)]">{cat.score}%</p>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--border-strong)]"><div className="h-full rounded-full bg-[image:var(--accent-gradient)]" style={{ width: `${cat.score}%` }} /></div>
               </>
             )}
-            <p className="mt-1.5 t-caption">{cat.basis}</p>
+            <p className="mt-1.5 ds-caption">{cat.basis}</p>
           </div>
         ))}
       </div>
@@ -733,10 +740,11 @@ function ReviewScorePanel({ score }: { readonly score: ReviewScore }) {
 }
 
 function ClientLogPanel({ logs }: { readonly logs: readonly ClientLog[] }) {
+  const { t } = useLocale();
   if (!logs.length) return null;
   return (
     <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-black/20 p-3">
-      <p className="t-overline mb-2 flex items-center gap-2"><ScrollText className="h-3.5 w-3.5" aria-hidden /> Log da ação (sessão)</p>
+      <p className="t-overline mb-2 flex items-center gap-2"><ScrollText className="h-3.5 w-3.5" aria-hidden /> {t('review.logs.session')}</p>
       <ul className="space-y-1 font-mono text-xs text-[color:var(--text)]/90">
         {logs.map((entry, index) => (
           <li key={index} className={cn(entry.status && entry.status >= 400 ? 'text-[color:var(--danger)]' : entry.status === 200 ? 'text-[color:var(--success)]' : 'text-[color:var(--muted)]')}>
@@ -758,7 +766,7 @@ function EnterpriseChecklist({ checks }: { readonly checks: readonly ProjectRead
           {check.status === 'passed' ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--success)]" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--warning)]" />}
           <div>
             <p className="text-sm font-semibold text-[color:var(--text)]">{check.label}</p>
-            <p className="t-caption">{check.detail}</p>
+            <p className="ds-caption">{check.detail}</p>
           </div>
         </div>
       ))}
@@ -781,7 +789,7 @@ function WorkflowProgress({ steps }: { readonly steps: readonly WorkflowStep[] }
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-[color:var(--border)]"><div className="h-full rounded-full bg-[image:var(--accent-gradient)] transition-all" style={{ width: `${pct}%` }} /></div>
       <ol className="mt-3 grid gap-2 sm:grid-cols-2">
         {steps.map((step) => (
-          <li key={step.id} className="flex items-center gap-2 t-caption">
+          <li key={step.id} className="flex items-center gap-2 ds-caption">
             {step.status === 'running' ? <Activity className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : step.status === 'success' ? <CheckCircle2 className="h-3.5 w-3.5 text-[color:var(--success)]" /> : step.status === 'failed' ? <AlertTriangle className="h-3.5 w-3.5 text-[color:var(--danger)]" /> : <span className="h-3.5 w-3.5 rounded-full border border-[color:var(--border)]" />}
             {step.label}
           </li>
@@ -792,10 +800,11 @@ function WorkflowProgress({ steps }: { readonly steps: readonly WorkflowStep[] }
 }
 
 function OperationalLog({ entries }: { readonly entries: readonly { id: string; timestamp: string; method?: string | null; endpoint?: string | null; http_status?: number | null; status: string; message: string; detail?: string | null }[] }) {
+  const { t } = useLocale();
   if (!entries.length) return null;
   return (
     <div className="max-h-56 overflow-auto rounded-[var(--radius-md)] border border-[color:var(--border)] bg-black/20 p-3">
-      <p className="t-overline mb-2">Log operacional</p>
+      <p className="t-overline mb-2">{t('review.logs.operational')}</p>
       <ul className="space-y-2 font-mono text-xs text-[color:var(--text)]/90">
         {entries.slice(-12).map((entry) => (
           <li key={entry.id} className="border-b border-[color:var(--border)] pb-2 last:border-b-0">
@@ -812,38 +821,40 @@ function OperationalLog({ entries }: { readonly entries: readonly { id: string; 
 }
 
 function FailureDiagnostic({ diagnostic }: { readonly diagnostic: ProjectRoomFailureDiagnostic | null }) {
+  const { t } = useLocale();
   if (!diagnostic) return null;
   return (
     <div className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--danger)_35%,var(--border))] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] p-4 text-sm">
-      <p className="font-semibold text-[color:var(--text)]">Diagnostico automatico</p>
+      <p className="font-semibold text-[color:var(--text)]">{t('review.diagnostic.title')}</p>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <p>Status atual: <span className="font-mono">{diagnostic.status_current}</span></p>
-        <p>Status esperado: <span className="font-mono">{diagnostic.status_expected.join(', ') || '-'}</span></p>
-        <p>Endpoint: <span className="font-mono">{diagnostic.endpoint_called}</span></p>
-        <p>HTTP Status: <span className="font-mono">{diagnostic.http_status}</span></p>
+        <p>{t('review.diagnostic.statusCurrent')} <span className="font-mono">{diagnostic.status_current}</span></p>
+        <p>{t('review.diagnostic.statusExpected')} <span className="font-mono">{diagnostic.status_expected.join(', ') || '-'}</span></p>
+        <p>{t('review.diagnostic.endpoint')} <span className="font-mono">{diagnostic.endpoint_called}</span></p>
+        <p>{t('review.diagnostic.httpStatus')} <span className="font-mono">{diagnostic.http_status}</span></p>
       </div>
-      <p className="mt-2">Backend: {diagnostic.backend_message}</p>
-      <p>Motivo: {diagnostic.rejection_reason}</p>
-      <p>Como corrigir: {diagnostic.correction}</p>
+      <p className="mt-2">{t('review.diagnostic.backend')} {diagnostic.backend_message}</p>
+      <p>{t('review.diagnostic.reason')} {diagnostic.rejection_reason}</p>
+      <p>{t('review.diagnostic.fix')} {diagnostic.correction}</p>
     </div>
   );
 }
 
 function ReviewValidationPanel({ validation, room }: { readonly validation: EngineeringReviewValidation | null; readonly room: ProjectRoom }) {
+  const { t } = useLocale();
   if (!validation) {
-    return <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-4 text-sm"><p className="font-semibold text-[color:var(--text)]">A Review ainda não foi validada.</p><p className="mt-1 text-[color:var(--muted)]">Execute “Validar Review” para conferir PromptMaster, Blueprint ativo, provider, decisões e bloqueios.</p></div>;
+    return <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-4 text-sm"><p className="font-semibold text-[color:var(--text)]">{t('review.validation.notValidated')}</p><p className="mt-1 text-[color:var(--muted)]">{t('review.validation.notValidatedHint')}</p></div>;
   }
   return (
     <div className={cn('rounded-[var(--radius-md)] border p-4', validation.valid ? 'border-[color-mix(in_srgb,var(--success)_35%,var(--border))] bg-[color-mix(in_srgb,var(--success)_8%,transparent)]' : 'border-[color-mix(in_srgb,var(--danger)_35%,var(--border))] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)]')}>
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-[color:var(--text)]">{validation.valid ? 'Review validada. Pronta para aprovação.' : 'A Review ainda não pode avançar.'}</p><p className="mt-1 t-caption">Ação recomendada: {validation.recommended_action}</p></div><Badge tone={validation.valid ? 'success' : 'danger'}>{validation.valid ? 'Válida' : 'Bloqueada'}</Badge></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-[color:var(--text)]">{validation.valid ? t('review.validation.valid') : t('review.validation.blocked')}</p><p className="mt-1 ds-caption">{t('review.validation.recommendedAction')} {validation.recommended_action}</p></div><Badge tone={validation.valid ? 'success' : 'danger'}>{validation.valid ? t('review.validation.validBadge') : t('review.validation.blockedBadge')}</Badge></div>
       <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
-        <div><dt className="text-[color:var(--muted-2)]">Status atual</dt><dd className="font-mono text-[color:var(--text)]">{validation.status_current}</dd></div>
-        <div><dt className="text-[color:var(--muted-2)]">Status esperado</dt><dd className="font-mono text-[color:var(--text)]">{validation.status_expected.join(', ')}</dd></div>
-        <div><dt className="text-[color:var(--muted-2)]">Blueprint ativo</dt><dd className="font-mono text-[color:var(--text)]">v{validation.active_blueprint_version}</dd></div>
-        <div><dt className="text-[color:var(--muted-2)]">Provider</dt><dd className="font-mono text-[color:var(--text)]">{validation.providerLabel} · {validation.model}</dd></div>
-        <div><dt className="text-[color:var(--muted-2)]">Modo</dt><dd className="font-mono text-[color:var(--text)]">{validation.mode}</dd></div>
-        <div><dt className="text-[color:var(--muted-2)]">Degraded</dt><dd className="font-mono text-[color:var(--text)]">{String(validation.degraded)}</dd></div>
-        <div className="sm:col-span-2"><dt className="text-[color:var(--muted-2)]">Projeto</dt><dd className="font-mono text-[color:var(--text)]">{room.room_id}</dd></div>
+        <div><dt className="text-[color:var(--muted-2)]">{t('review.validation.statusCurrent')}</dt><dd className="font-mono text-[color:var(--text)]">{validation.status_current}</dd></div>
+        <div><dt className="text-[color:var(--muted-2)]">{t('review.validation.statusExpected')}</dt><dd className="font-mono text-[color:var(--text)]">{validation.status_expected.join(', ')}</dd></div>
+        <div><dt className="text-[color:var(--muted-2)]">{t('review.validation.activeBlueprint')}</dt><dd className="font-mono text-[color:var(--text)]">v{validation.active_blueprint_version}</dd></div>
+        <div><dt className="text-[color:var(--muted-2)]">{t('review.validation.provider')}</dt><dd className="font-mono text-[color:var(--text)]">{validation.providerLabel} · {validation.model}</dd></div>
+        <div><dt className="text-[color:var(--muted-2)]">{t('review.validation.mode')}</dt><dd className="font-mono text-[color:var(--text)]">{validation.mode}</dd></div>
+        <div><dt className="text-[color:var(--muted-2)]">{t('review.validation.degraded')}</dt><dd className="font-mono text-[color:var(--text)]">{String(validation.degraded)}</dd></div>
+        <div className="sm:col-span-2"><dt className="text-[color:var(--muted-2)]">{t('review.validation.project')}</dt><dd className="font-mono text-[color:var(--text)]">{room.room_id}</dd></div>
       </dl>
       <ul className="mt-4 grid gap-2 sm:grid-cols-2">{validation.checks.map((check) => <li key={check.id} className="flex items-start gap-2 text-xs">{check.passed ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-[color:var(--success)]" /> : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 text-[color:var(--danger)]" />}<span><strong>{check.label}:</strong> {check.detail}</span></li>)}</ul>
     </div>
@@ -860,7 +871,7 @@ function SummaryCard({ label, value, detail, tone, wide }: {
     <Card className={cn('glass space-y-1 p-4', wide && 'sm:col-span-2')}>
       <p className="t-overline">{label}</p>
       <p className={cn('text-sm font-semibold', tone === 'success' ? 'text-[color:var(--success)]' : tone === 'warning' ? 'text-[color:var(--warning)]' : 'text-[color:var(--text)]')}>{value}</p>
-      {detail ? <p className="t-caption">{detail}</p> : null}
+      {detail ? <p className="ds-caption">{detail}</p> : null}
     </Card>
   );
 }
@@ -883,15 +894,15 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
         </div>
       </div>
       <div>
-        <p className="t-caption font-semibold text-[color:var(--text)]">{t('review.tradeoffs.justification')}</p>
-        <p className="mt-1 t-body text-[color:var(--muted)]">{decision.justification}</p>
+        <p className="ds-caption font-semibold text-[color:var(--text)]">{t('review.tradeoffs.justification')}</p>
+        <p className="mt-1 ds-body ds-text-muted">{decision.justification}</p>
       </div>
       <div>
-        <p className="t-caption font-semibold text-[color:var(--text)]">{t('review.tradeoffs.alternatives')}</p>
+        <p className="ds-caption font-semibold text-[color:var(--text)]">{t('review.tradeoffs.alternatives')}</p>
         {decision.alternatives_considered.length ? (
           <div className="mt-1.5 flex flex-wrap gap-1.5">{decision.alternatives_considered.map((alt) => <Badge key={alt} tone="neutral">{alt}</Badge>)}</div>
         ) : (
-          <p className="mt-1 t-caption">{t('review.tradeoffs.none')}</p>
+          <p className="mt-1 ds-caption">{t('review.tradeoffs.none')}</p>
         )}
       </div>
     </Card>

@@ -38,7 +38,7 @@ STAGE_TIMEOUT_SECONDS = 1500  # 25 min — bounds any single step; never infinit
 # stages) counts as "in flight" for the per-user concurrency cap (audit MF3).
 TERMINAL_STATUSES = frozenset({"READY", "FAILED", "PAUSED", "NEEDS_USER_ACTION", "STALLED"})
 
-LOGICAL_STAGES = ["contracts", "database", "backend", "frontend", "security", "tests", "docs", "build", "package"]
+LOGICAL_STAGES = ["contracts", "database", "backend", "frontend", "mobile", "security", "tests", "docs", "build", "package"]
 
 
 def _usage_totals(parsed: Any, response: Any) -> tuple[int, int]:
@@ -65,6 +65,10 @@ BACKEND_CHUNKS = [
     "structure", "package_config", "domain_entities", "dtos", "controllers",
     "services", "repositories", "auth", "validation", "error_handling",
     "tests", "openapi_sync",
+]
+MOBILE_CHUNKS = [
+    "structure", "package_config", "screens", "navigation",
+    "state_management", "api_client", "native_modules", "tests",
 ]
 
 
@@ -99,6 +103,28 @@ STEPS = [
     PipelineStep("BUILD_RUNNING", "build", "build"),
     PipelineStep("PACKAGE_CREATING", "package", "package"),
 ]
+
+MOBILE_STEPS = [
+    PipelineStep("MOBILE_PLANNING", "mobile", "plan"),
+    *[PipelineStep("MOBILE_GENERATING", "mobile", "llm", "mobile", chunk) for chunk in MOBILE_CHUNKS],
+    PipelineStep("MOBILE_VALIDATING", "mobile", "validate"),
+]
+
+_DELIVERY_TYPES_WITH_MOBILE = frozenset({"mobile", "full_stack"})
+
+
+def steps_for(delivery_type: str | None) -> list[PipelineStep]:
+    """The per-job step list. STEPS (web-only) is the default and by far the
+    common case -- returned as-is, no copy. When the project's delivery_type
+    includes mobile, splice MOBILE_STEPS in right after FRONTEND_VALIDATING."""
+    if delivery_type not in _DELIVERY_TYPES_WITH_MOBILE:
+        return STEPS
+    insert_at = next(i for i, step in enumerate(STEPS) if step.state == "FRONTEND_VALIDATING") + 1
+    return [*STEPS[:insert_at], *MOBILE_STEPS, *STEPS[insert_at:]]
+
+
+def logical_stages_for(steps: list[PipelineStep]) -> list[str]:
+    return list(dict.fromkeys(step.logical for step in steps))
 
 
 class StageFailure(RuntimeError):
@@ -139,8 +165,14 @@ class GenerationJobEngine:
         blueprint_version: int, provider: str | None, provider_label: str,
         model: str | None,
     ) -> dict[str, Any]:
+        if spec.delivery_type in _DELIVERY_TYPES_WITH_MOBILE and self._mobile_stack(spec, blueprint) == "flutter":
+            raise ValueError(
+                "Flutter generation is not available yet. Confirm React Native + Expo "
+                "or wait for Mobile Factory Phase 5."
+            )
         now = self._now()
         job_id = f"genjob_{uuid4().hex[:14]}"
+        steps = steps_for(spec.delivery_type)
         data = {
             "id": job_id, "projectId": project_id, "generatedProjectId": None,
             "workspaceId": workspace_id, "status": "QUEUED", "currentStage": "QUEUED",
@@ -148,7 +180,7 @@ class GenerationJobEngine:
             "blueprintVersion": blueprint_version, "startedAt": now, "finishedAt": None,
             "progress": 0, "error": None, "retryCount": 0, "artifacts": [],
             "logs": [], "events": [], "checkpoints": [],
-            "stageStatuses": {stage: "waiting" for stage in LOGICAL_STAGES},
+            "stageStatuses": {stage: "waiting" for stage in logical_stages_for(steps)},
             "projectName": project_name, "partial": True, "valid": False,
             "packageReady": False, "inputTokensTotal": 0, "outputTokensTotal": 0,
             "resultPath": None, "createdAt": now, "updatedAt": now,
@@ -179,17 +211,18 @@ class GenerationJobEngine:
         spec_data, blueprint = inputs
         spec = ProjectSpec.model_validate(spec_data)
         mega = compile_mega_prompt(spec, blueprint)
+        steps = steps_for(spec.delivery_type)
         try:
-            for index in range(start_index, len(STEPS)):
+            for index in range(start_index, len(steps)):
                 current = self.repository.get(job_id, owner_user_id)
                 if current is None or current["status"] == "PAUSED":
                     return
                 job = current
-                step = STEPS[index]
-                self._begin_step(job, owner_user_id, step, index)
+                step = steps[index]
+                self._begin_step(job, owner_user_id, step, index, steps)
                 self._execute_step(job, owner_user_id, step, spec, blueprint, mega, api_key, user_model_choice, mode)
                 self._assert_not_paused(job, owner_user_id)
-                self._finish_step(job, owner_user_id, step, index)
+                self._finish_step(job, owner_user_id, step, index, steps)
             job["status"] = "READY"
             job["currentStage"] = "READY"
             job["progress"] = 100
@@ -198,7 +231,7 @@ class GenerationJobEngine:
             job["packageReady"] = True
             job["finishedAt"] = self._now()
             job["error"] = None
-            for stage in LOGICAL_STAGES:
+            for stage in logical_stages_for(steps):
                 job["stageStatuses"][stage] = "success"
             self._log(job, "READY", "info", "Pipeline concluida. Projeto validado e pacote pronto.")
             self._save(job, owner_user_id)
@@ -222,7 +255,7 @@ class GenerationJobEngine:
                 failed_checkpoint["status"] = "failed"
                 failed_checkpoint["finished_at"] = self._now()
                 failed_checkpoint["detail"] = str(exc)
-            job["stageStatuses"][STEPS[self._step_index(job["currentStage"])].logical if self._step_index(job["currentStage"]) >= 0 else "build"] = "failed"
+            job["stageStatuses"][steps[self._step_index(job["currentStage"], steps)].logical if self._step_index(job["currentStage"], steps) >= 0 else "build"] = "failed"
             self._log(job, job["currentStage"], "error", str(exc), exc.diagnostic.get("recommended_action"))
             self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=str(exc))
             self._save(job, owner_user_id)
@@ -246,16 +279,16 @@ class GenerationJobEngine:
                 stalled_checkpoint["status"] = "stalled"
                 stalled_checkpoint["finished_at"] = self._now()
                 stalled_checkpoint["detail"] = str(exc)
-            stalled_index = self._step_index(job["currentStage"])
+            stalled_index = self._step_index(job["currentStage"], steps)
             if stalled_index >= 0:
-                job["stageStatuses"][STEPS[stalled_index].logical] = "stalled"
+                job["stageStatuses"][steps[stalled_index].logical] = "stalled"
             self._log(job, job["currentStage"], "warning", str(exc), exc.diagnostic.get("recommended_action"))
             self._emit(job, owner_user_id, "stalled", stage=job["currentStage"], level="warning", message=str(exc))
             self._save(job, owner_user_id)
         except Exception as exc:  # keep every checkpoint; never claim success
             job = self.repository.get(job_id, owner_user_id) or job
             job["status"] = "FAILED"
-            job["error"] = self._diagnostic(job, job["currentStage"], "pipeline", str(exc))
+            job["error"] = self._diagnostic(job, job["currentStage"], "pipeline", str(exc), steps=steps)
             job["partial"] = True
             job["valid"] = False
             job["packageReady"] = False
@@ -263,27 +296,40 @@ class GenerationJobEngine:
             self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=f"Falha inesperada da pipeline: {exc}")
             self._save(job, owner_user_id)
 
+    def _steps_for_job(self, job_id: str, owner_user_id: str) -> list[PipelineStep]:
+        """Resolve the correct per-job step list (web vs. mobile-inclusive) for
+        recovery actions (retry/resume/continue), which only have a job id --
+        unlike execute(), which already has the spec in scope. Falls back to the
+        web-only STEPS if the job's persisted inputs can't be loaded."""
+        inputs = self.repository.inputs(job_id, owner_user_id)
+        if inputs is None:
+            return STEPS
+        spec_data, _ = inputs
+        return steps_for(spec_data.get("delivery_type"))
+
     def retry_stage(self, job_id: str, owner_user_id: str, stage: str, *, api_key: str | None, user_model_choice: str | None, mode: str) -> dict[str, Any] | None:
         job = self.repository.get(job_id, owner_user_id)
         if job is None:
             return None
-        candidates = [i for i, step in enumerate(STEPS) if step.logical == stage or step.state == stage]
-        if not candidates:
+        steps = self._steps_for_job(job_id, owner_user_id)
+        index = self._recovery_index(job, steps, stage)
+        if index < 0:
             raise ValueError(f"Etapa desconhecida: {stage}")
         job["retryCount"] += 1
         job["error"] = None
         job["status"] = "QUEUED"
-        job["stageStatuses"][STEPS[candidates[0]].logical] = "retrying"
-        self._log(job, STEPS[candidates[0]].state, "warning", f"Reexecucao solicitada em modo {mode}; checkpoints anteriores preservados.")
+        job["stageStatuses"][steps[index].logical] = "retrying"
+        self._log(job, steps[index].state, "warning", f"Reexecucao solicitada em modo {mode}; checkpoints anteriores preservados.")
         self._save(job, owner_user_id)
-        self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=candidates[0], mode=mode)
+        self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=index, mode=mode)
         return self.repository.get(job_id, owner_user_id)
 
     def resume(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None) -> dict[str, Any] | None:
         job = self.repository.get(job_id, owner_user_id)
         if job is None:
             return None
-        index = self._step_index(job.get("currentStage"))
+        steps = self._steps_for_job(job_id, owner_user_id)
+        index = self._recovery_index(job, steps, job.get("currentStage"))
         job["status"] = "QUEUED"
         job["error"] = None
         self._log(job, job["currentStage"], "info", "Continuando a partir do ultimo checkpoint.")
@@ -299,23 +345,24 @@ class GenerationJobEngine:
         job = self.repository.get(job_id, owner_user_id)
         if job is None:
             return None
-        index = self._step_index(job.get("currentStage"))
+        steps = self._steps_for_job(job_id, owner_user_id)
+        index = self._step_index(job.get("currentStage"), steps)
         if index < 0:
             raise ValueError("Etapa atual desconhecida; nao e possivel continuar.")
-        current_logical = STEPS[index].logical
+        current_logical = steps[index].logical
         next_index = next(
-            (i for i in range(index + 1, len(STEPS)) if STEPS[i].logical != current_logical),
-            len(STEPS),
+            (i for i in range(index + 1, len(steps)) if steps[i].logical != current_logical),
+            len(steps),
         )
-        if next_index >= len(STEPS):
+        if next_index >= len(steps):
             raise ValueError("Nao ha proxima etapa para continuar com warnings.")
         job["stageStatuses"][current_logical] = "success"
         job["status"] = "QUEUED"
         job["error"] = None
         job["retryCount"] += 1
         self._log(
-            job, STEPS[next_index].state, "warning",
-            f"Usuario optou por continuar com warnings; etapa '{current_logical}' aceita e pipeline avanca para {STEPS[next_index].state}.",
+            job, steps[next_index].state, "warning",
+            f"Usuario optou por continuar com warnings; etapa '{current_logical}' aceita e pipeline avanca para {steps[next_index].state}.",
         )
         self._save(job, owner_user_id)
         self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=next_index, mode="normal")
@@ -351,13 +398,14 @@ class GenerationJobEngine:
             domain = {"entities": spec.entities, "business_rules": spec.business_rules, "workflows": spec.core_workflows}
             self._write_json_artifact(job, owner, step, "domain-model.json", domain, "domain_model")
         elif step.action == "plan":
-            payload = {"stage": step.logical, "inputs": self._context_requirements(step.logical), "chunks": BACKEND_CHUNKS if step.logical == "backend" else [], "strategy": mode}
+            chunks = BACKEND_CHUNKS if step.logical == "backend" else MOBILE_CHUNKS if step.logical == "mobile" else []
+            payload = {"stage": step.logical, "inputs": self._context_requirements(step.logical), "chunks": chunks, "strategy": mode}
             self._write_json_artifact(job, owner, step, f"{step.logical}.plan.json", payload, "plan")
         elif step.action == "deterministic":
             schema = self._database_schema(spec)
             self._write_text_artifact(job, owner, step, "database.schema.sql", schema, "generated", valid=True)
         elif step.action == "llm":
-            self._run_llm_step(job, owner, step, mega, api_key, model, mode)
+            self._run_llm_step(job, owner, step, spec, mega, api_key, model, mode)
         elif step.action == "security":
             report = {"status": "passed", "checks": ["auth boundaries", "secret scan", "input validation", "dependency policy"], "source": "generated artifacts"}
             self._write_json_artifact(job, owner, step, "security.report.json", report, "validation")
@@ -368,14 +416,17 @@ class GenerationJobEngine:
         elif step.action == "package":
             self._package(job, owner)
 
-    def _run_llm_step(self, job: dict[str, Any], owner: str, step: PipelineStep, mega: str, api_key: str | None, model: str | None, mode: str) -> None:
+    def _run_llm_step(self, job: dict[str, Any], owner: str, step: PipelineStep, spec: ProjectSpec, mega: str, api_key: str | None, model: str | None, mode: str) -> None:
         contract = self._artifact_content(job, "openapi.yaml")
         contract_summary = summarize_contract(f'<<<FILE path="openapi.yaml">>>\n{contract}\n<<<END>>>') if contract else ""
         emitted = tuple(item["name"] for item in job["artifacts"] if item["kind"] == "generated")
         role = step.role or step.logical
         context, diagnostics = build_agent_context(role, mega, contract_summary=contract_summary, emitted_files=emitted)
         if step.chunk:
-            context += f"\n\n<backend_chunk>{step.chunk}</backend_chunk>\nGere somente os arquivos deste chunk; nao repita arquivos de outros chunks."
+            context += (
+                f"\n\n<{step.logical}_chunk>{step.chunk}</{step.logical}_chunk>\n"
+                "Gere somente os arquivos deste chunk; nao repita arquivos de outros chunks."
+            )
         if mode == "partitioned":
             context, compression = compress_to_budget(context, max(4_000, len(context) // 2))
             diagnostics.compressed = True
@@ -393,7 +444,10 @@ class GenerationJobEngine:
             checkpoint["detail"] = "Fallback deterministico especifico da etapa aplicado."
             return
         self._emit(job, owner, "agent_started", stage=step.state, message=f"Agente '{role}' iniciado ({job.get('model') or 'provider'}); {token_estimate} tokens estimados.")
-        response, parsed = self._route_with_timeout(job, owner, step, role, context, model, api_key)
+        response, parsed = self._route_with_timeout(
+            job, owner, step, role, context, model, api_key,
+            language=spec.suggested_stack.language, framework=spec.suggested_stack.framework,
+        )
         input_tokens, output_tokens = _usage_totals(parsed, response)
         if input_tokens or output_tokens:
             totals = self.repository.add_usage(job["id"], owner, input_tokens, output_tokens)
@@ -425,6 +479,7 @@ class GenerationJobEngine:
     def _route_with_timeout(
         self, job: dict[str, Any], owner: str, step: PipelineStep, role: str,
         context: str, model: str | None, api_key: str | None,
+        language: str | None = None, framework: str | None = None,
     ) -> tuple[Any, Any]:
         """Run the (blocking) LLM agent under a hard per-stage timeout.
 
@@ -436,7 +491,7 @@ class GenerationJobEngine:
         forever waiting on a provider/task that never resolves."""
         timeout_seconds = float(self.stage_timeout_seconds)
         deadline = time.monotonic() + timeout_seconds
-        future = submit_agent(_run_agent, LLMRouter(), role, context, model, api_key)
+        future = submit_agent(_run_agent, LLMRouter(), role, context, model, api_key, language, framework)
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -469,13 +524,28 @@ class GenerationJobEngine:
             detail = "OpenAPI persistido e estavel." if valid else "Contrato OpenAPI ausente."
         elif step.logical == "database":
             valid = any(name.endswith(".sql") for name in names)
-        elif step.logical in {"backend", "frontend", "tests", "docs"}:
+        elif step.logical in {"backend", "frontend", "mobile", "tests", "docs"}:
             valid = any(
                 item["stage"].startswith(step.logical)
                 and item["kind"] == "generated"
                 and item["valid"]
                 for item in job["artifacts"]
             )
+            if step.logical == "mobile" and valid:
+                required = {
+                    "apps/mobile/app.json",
+                    "apps/mobile/package.json",
+                    "apps/mobile/tsconfig.json",
+                    "apps/mobile/app.tsx",
+                    "apps/mobile/.env.example",
+                }
+                missing = sorted(required - set(names))
+                valid = not missing and any(name.startswith("apps/mobile/src/api/") for name in names)
+                detail = (
+                    "Scaffold Expo, entrypoint e cliente de API presentes."
+                    if valid
+                    else f"Scaffold mobile incompleto: {', '.join(missing) or 'cliente API ausente'}."
+                )
         # Warning policy gate: classify everything this stage produced. Only
         # blocking_warning / error / critical stop the pipeline — documentation,
         # coverage, TODO, traceability, territory-drift and synthesized-manifest
@@ -535,7 +605,18 @@ class GenerationJobEngine:
         self._write_json_artifact(job, owner, PipelineStep("BUILD_RUNNING", "build", "build"), "build.report.json", report_data, "validation")
         build_skipped = bool(report.build.skipped_reason)
         if not report.passed or not report.build.ok or build_skipped:
-            message = report.build.skipped_reason or "; ".join(report.errors) or "Build local falhou."
+            failed_checks = [
+                str(check.get("message"))
+                for check in (report.quality.get("checks") or [])
+                if isinstance(check, dict) and check.get("status") == "failed"
+            ]
+            message = (
+                report.build.skipped_reason
+                or "; ".join(failed_checks)
+                or "; ".join(report.warnings)
+                or report.build.logs_tail
+                or "Build local falhou."
+            )
             raise StageFailure("Build final nao passou; projeto permanece parcial e sem pacote.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", message, validator="lint+typecheck+tests+build+openapi"))
         ProjectWriter().set_verification(result.project_id, verified=True, score=report.score)
         job["valid"] = True
@@ -561,38 +642,40 @@ class GenerationJobEngine:
             name = f"fallback/{step.logical}-{step.chunk or 'main'}.md"
             self._write_text_artifact(job, owner, step, name, f"# Fallback {step.logical}\n\nEtapa requer revisao humana antes do build.\n", "generated", valid=False, warnings=["NEEDS_USER_ACTION"])
 
-    def _begin_step(self, job: dict[str, Any], owner: str, step: PipelineStep, index: int) -> None:
+    def _begin_step(self, job: dict[str, Any], owner: str, step: PipelineStep, index: int, steps: list[PipelineStep] | None = None) -> None:
+        steps = steps if steps is not None else STEPS
         job["status"] = step.state
         job["currentStage"] = step.state
         # Progress is monotonic: never dip below what a previous checkpoint reported.
-        job["progress"] = max(int(job.get("progress", 0)), min(98, round(index / len(STEPS) * 100)))
+        job["progress"] = max(int(job.get("progress", 0)), min(98, round(index / len(steps) * 100)))
         job["stageStatuses"][step.logical] = "running"
         self._log(job, step.state, "info", f"Etapa iniciada: {step.logical}{'.' + step.chunk if step.chunk else ''}.")
         self._emit(job, owner, "stage_started", stage=step.state, message=f"Etapa iniciada: {step.logical}{'.' + step.chunk if step.chunk else ''}.")
         self._save(job, owner)
 
-    def _finish_step(self, job: dict[str, Any], owner: str, step: PipelineStep, index: int) -> None:
+    def _finish_step(self, job: dict[str, Any], owner: str, step: PipelineStep, index: int, steps: list[PipelineStep] | None = None) -> None:
+        steps = steps if steps is not None else STEPS
         checkpoint = next(
             (item for item in reversed(job["checkpoints"]) if item["stage"] == step.state),
             None,
         ) or self._checkpoint(job, step, 0, 0)
         checkpoint["status"] = "success"
         checkpoint["finished_at"] = self._now()
-        if not any(next_step.logical == step.logical for next_step in STEPS[index + 1:]):
+        if not any(next_step.logical == step.logical for next_step in steps[index + 1:]):
             job["stageStatuses"][step.logical] = "success"
-        job["progress"] = max(int(job.get("progress", 0)), min(98, round((index + 1) / len(STEPS) * 100)))
+        job["progress"] = max(int(job.get("progress", 0)), min(98, round((index + 1) / len(steps) * 100)))
         self._log(job, step.state, "info", f"Checkpoint salvo: {step.state}.")
         self._emit(job, owner, "stage_finished", stage=step.state, message=f"Checkpoint salvo: {step.state}.")
         self._save(job, owner)
 
     def _checkpoint(self, job: dict[str, Any], step: PipelineStep, payload_bytes: int, token_estimate: int) -> dict[str, Any]:
-        existing = next((item for item in reversed(job["checkpoints"]) if item["stage"] == step.state and item["status"] == "running"), None)
+        existing = next((item for item in reversed(job["checkpoints"]) if item["stage"] == step.state and item.get("chunk") == step.chunk and item["status"] == "running"), None)
         if existing:
             if payload_bytes:
                 existing["payload_bytes"] = payload_bytes
                 existing["estimated_tokens"] = token_estimate
             return existing
-        checkpoint = {"id": f"cp_{uuid4().hex[:12]}", "stage": step.state, "status": "running", "attempt": 1, "artifact_ids": [], "payload_bytes": payload_bytes, "estimated_tokens": token_estimate, "parser": None, "validator": None, "partitioned": False, "started_at": self._now(), "finished_at": None, "detail": ""}
+        checkpoint = {"id": f"cp_{uuid4().hex[:12]}", "stage": step.state, "chunk": step.chunk, "status": "running", "attempt": 1, "artifact_ids": [], "payload_bytes": payload_bytes, "estimated_tokens": token_estimate, "parser": None, "validator": None, "partitioned": False, "started_at": self._now(), "finished_at": None, "detail": ""}
         job["checkpoints"].append(checkpoint)
         return checkpoint
 
@@ -632,11 +715,22 @@ class GenerationJobEngine:
             "contracts": ["product summary", "entities", "flows", "API rules", "auth", "integrations"],
             "backend": ["openapi", "domain", "database", "auth", "security"],
             "frontend": ["routes", "screens", "personas", "design system", "openapi"],
+            "mobile": ["screens", "navigation", "personas", "openapi"],
             "security": ["auth", "openapi", "generated files"],
         }.get(stage, ["validated upstream artifacts"])
 
-    def _diagnostic(self, job: dict[str, Any], stage: str, agent: str, message: str, *, http_status: int | None = None, payload_size: int = 0, token_estimate: int = 0, parser: str | None = None, validator: str | None = None, attempt: int = 0, raw_response_path: str | None = None, kind: str = "failure", reason: str = "", timeout_seconds: int | None = None) -> dict[str, Any]:
-        snapshot = self._context_snapshot(job, stage)
+    @staticmethod
+    def _mobile_stack(spec: ProjectSpec, blueprint: dict[str, Any]) -> str:
+        if spec.mobile_stack:
+            return spec.mobile_stack
+        decisions = blueprint.get("decisions") if isinstance(blueprint, dict) else None
+        for decision in decisions if isinstance(decisions, list) else []:
+            if isinstance(decision, dict) and decision.get("area") == "mobile":
+                return "flutter" if "flutter" in str(decision.get("choice", "")).lower() else "react_native_expo"
+        return "react_native_expo"
+
+    def _diagnostic(self, job: dict[str, Any], stage: str, agent: str, message: str, *, http_status: int | None = None, payload_size: int = 0, token_estimate: int = 0, parser: str | None = None, validator: str | None = None, attempt: int = 0, raw_response_path: str | None = None, kind: str = "failure", reason: str = "", timeout_seconds: int | None = None, steps: list[PipelineStep] | None = None) -> dict[str, Any]:
+        snapshot = self._context_snapshot(job, stage, steps)
         recommended = (
             "Esta etapa excedeu o tempo limite. Reexecute o Backend, continue com warnings, "
             "troque o provider ou use o fallback determinístico desta etapa."
@@ -664,10 +758,11 @@ class GenerationJobEngine:
             **snapshot,
         }
 
-    def _context_snapshot(self, job: dict[str, Any], stage: str) -> dict[str, Any]:
+    def _context_snapshot(self, job: dict[str, Any], stage: str, steps: list[PipelineStep] | None = None) -> dict[str, Any]:
         """Mandatory diagnostic context: why the transition did not happen, what
         was preserved, and how long the stage ran. Computed from persisted state so
         it is identical on refresh."""
+        steps = steps if steps is not None else STEPS
         artifacts = job.get("artifacts", [])
         all_warnings = [warning for item in artifacts for warning in item.get("warnings", [])]
         classification = classify_warnings(all_warnings)
@@ -686,9 +781,9 @@ class GenerationJobEngine:
         )
         running = next((item for item in reversed(job.get("checkpoints", [])) if item["stage"] == stage), None)
         started = (running or {}).get("started_at") or job.get("startedAt")
-        index = self._step_index(stage)
-        next_transition = STEPS[index + 1].state if 0 <= index < len(STEPS) - 1 else "READY"
-        logical = STEPS[index].logical if index >= 0 else None
+        index = self._recovery_index(job, steps, stage)
+        next_transition = steps[index + 1].state if 0 <= index < len(steps) - 1 else "READY"
+        logical = steps[index].logical if index >= 0 else None
         stage_has_files = bool(logical) and any(
             item.get("kind") == "generated" and item.get("valid") and item["stage"].split(".")[0] == logical
             for item in artifacts
@@ -774,8 +869,25 @@ class GenerationJobEngine:
         if current and current.get("status") == "PAUSED" and job.get("status") != "PAUSED":
             raise JobPaused()
 
-    def _step_index(self, state: str | None) -> int:
-        return next((i for i, step in enumerate(STEPS) if step.state == state), -1)
+    def _step_index(self, state: str | None, steps: list[PipelineStep] | None = None) -> int:
+        steps = steps if steps is not None else STEPS
+        return next((i for i, step in enumerate(steps) if step.state == state), -1)
+
+    def _recovery_index(self, job: dict[str, Any], steps: list[PipelineStep], stage: str | None) -> int:
+        candidates = [i for i, step in enumerate(steps) if step.logical == stage or step.state == stage]
+        if not candidates:
+            return -1
+        checkpoint = next(
+            (
+                item for item in reversed(job.get("checkpoints", []))
+                if item.get("stage") == stage and item.get("status") in {"running", "failed", "stalled"}
+            ),
+            None,
+        )
+        if checkpoint and checkpoint.get("chunk"):
+            chunk = checkpoint["chunk"]
+            return next((i for i in candidates if steps[i].chunk == chunk), candidates[0])
+        return candidates[0]
 
     @staticmethod
     def _now() -> str:

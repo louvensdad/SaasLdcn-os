@@ -25,7 +25,7 @@ const STATUS_TEXT_CLASS: Record<SystemHealthStatus, string> = {
   healthy: 'text-emerald-300',
   degraded: 'text-amber-300',
   down: 'text-red-300',
-  unavailable: 'text-gray-400',
+  unavailable: 'ds-text-secondary',
 };
 
 export function SystemCard({ id, name, category, status, statusLabel }: SystemCardProps) {
@@ -51,12 +51,13 @@ export function SystemCard({ id, name, category, status, statusLabel }: SystemCa
         }}
         aria-hidden
       >
+        {/* eslint-disable-next-line react-hooks/static-components -- getSystemIcon is a stable lookup into a module-level icon table, not a component created per render */}
         <Icon className="h-4 w-4" strokeWidth={1.8} />
       </span>
 
-      <span className="min-w-0 flex-1 truncate font-mono text-sm text-gray-100">{name}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-sm ds-text-primary">{name}</span>
 
-      <span className={cn('flex shrink-0 items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em]', STATUS_TEXT_CLASS[status])}>
+      <span className={cn('flex shrink-0 items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em]', STATUS_TEXT_CLASS[status])}>
         <span className={cn('h-2 w-2 rounded-full', STATUS_DOT_CLASS[status])} aria-hidden />
         <span className="hidden sm:inline">{statusLabel}</span>
         <span className="sr-only">{statusLabel}</span>

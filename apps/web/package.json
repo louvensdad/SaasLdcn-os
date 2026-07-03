@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "audit:i18n": "node scripts/audit-hardcoded-i18n.mjs",
     "audit:i18n:check": "node scripts/audit-hardcoded-i18n.mjs --check",
@@ -39,6 +39,8 @@
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.184.1",
     "autoprefixer": "^10.0.0",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.10",
     "postcss": "^8.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.0.0"

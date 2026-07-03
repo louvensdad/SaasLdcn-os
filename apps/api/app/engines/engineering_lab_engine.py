@@ -25,12 +25,33 @@ from app.schemas.engineering_lab import (
     EngineeringLabTerminalChunk,
     EngineeringLabTerminalResponse,
 )
-from app.services.codebase_ingest_service import CodebaseIngestError, codebase_ingest_service
+from app.services.codebase_ingest_service import codebase_ingest_service
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT
 
 _SAFE_PROJECT_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 _IMPORT_RE = re.compile(r"^\s*(?:import|from)\s+([A-Za-z0-9_.@/\-]+)", re.MULTILINE)
 _API_ROUTE_RE = re.compile(r"(?:@(?:app|router)\.(get|post|put|patch|delete|head|options)\(['\"]([^'\"]+)['\"]|app\.(get|post|put|patch|delete|head|options)\(['\"]([^'\"]+)['\"])", re.I)
+
+# Per-ecosystem route declarations beyond the FastAPI/Express style above.
+# Each entry: (pattern, method group index or fixed method, path group index).
+# Every specialist ecosystem the factory generates must be inspectable here.
+_ECOSYSTEM_ROUTE_PATTERNS: list[tuple[re.Pattern[str], int | str, int]] = [
+    # Spring / Kotlin: @GetMapping("/x"), @RequestMapping("/x")
+    (re.compile(r"@(Get|Post|Put|Patch|Delete)Mapping\s*\(\s*(?:value\s*=\s*)?['\"]([^'\"]+)['\"]"), 1, 2),
+    (re.compile(r"@RequestMapping\s*\(\s*(?:value\s*=\s*)?['\"]([^'\"]+)['\"]"), "GET", 1),
+    # Go: gin/echo/fiber method calls and net/http|mux HandleFunc
+    (re.compile(r"\.\s*(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*\(\s*\"(/[^\"]*)\""), 1, 2),
+    (re.compile(r"\.HandleFunc\s*\(\s*\"(/[^\"]*)\""), "GET", 1),
+    # Laravel: Route::get('/x', ...)
+    (re.compile(r"Route::(get|post|put|patch|delete|options|any)\s*\(\s*['\"]([^'\"]+)['\"]"), 1, 2),
+    # ASP.NET: [HttpGet("x")] attributes and minimal APIs app.MapGet("/x", ...)
+    (re.compile(r"\[Http(Get|Post|Put|Patch|Delete)\s*\(\s*\"([^\"]+)\""), 1, 2),
+    (re.compile(r"\.Map(Get|Post|Put|Patch|Delete)\s*\(\s*\"([^\"]+)\""), 1, 2),
+]
+
+# Rails declares routes only in config/routes.rb; matching these verbs anywhere
+# else would flood the explorer with false positives.
+_RAILS_ROUTE_RE = re.compile(r"^\s*(get|post|put|patch|delete)\s+['\"]([^'\"]+)['\"]", re.MULTILINE)
 _DB_MARKERS = {
     "postgresql": re.compile(r"postgres|psycopg|pg_", re.I),
     "mysql": re.compile(r"mysql|mariadb", re.I),
@@ -46,8 +67,9 @@ _CLOUD_MARKERS = {
     "Kubernetes": re.compile(r"\bkubernetes\b|\bk8s\b|kind:\s*Deployment", re.I),
 }
 _ALLOWED_COMMANDS = {
-    "npm", "pnpm", "bun", "yarn", "maven", "mvn", "gradle", "java", "python", "python3",
-    "pip", "pip3", "go", "cargo", "dotnet", "docker", "kubectl", "git", "gh", "terraform",
+    "npm", "pnpm", "bun", "yarn", "node", "npx", "maven", "mvn", "gradle", "java",
+    "python", "python3", "pip", "pip3", "go", "cargo", "dotnet", "php", "composer",
+    "ruby", "bundle", "rails", "docker", "kubectl", "git", "gh", "terraform",
     "ansible", "powershell", "pwsh", "bash", "zsh", "fish", "sh", "cmd",
 }
 
@@ -57,6 +79,13 @@ _ALLOWED_COMMANDS = {
 # shell can only run a script inside the sandboxed project dir.
 _SHELL_INTERPRETERS = {"bash", "sh", "zsh", "fish", "powershell", "pwsh", "cmd"}
 _SHELL_EXEC_FLAGS = {"-c", "-command", "-encodedcommand", "-e", "-ec", "/c", "/k"}
+
+# Language runtimes get the same treatment: their inline-eval flags (node -e,
+# python -c, php -r, ruby -e) are the identical bypass in another spelling.
+# Running project scripts/tools stays allowed; evaluating arbitrary inline code
+# from the request does not.
+_RUNTIME_INTERPRETERS = {"node", "python", "python3", "ruby", "php"}
+_RUNTIME_EVAL_FLAGS = {"-e", "-c", "-r", "-p", "--eval", "--print", "--run"}
 
 # Hard ceiling on a single command so a request can't pin a worker thread.
 _TERMINAL_TIMEOUT_MAX = 120
@@ -146,6 +175,17 @@ class EngineeringLabEngine:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Inline shell execution (e.g. bash -c, cmd /c) is not allowed. Run a script or an allow-listed tool instead.",
             )
+        if executable in _RUNTIME_INTERPRETERS:
+            # Only the interpreter's own leading flags count: `python -c "..."` is
+            # inline eval, but `python -m pip install -r req.txt` passes -r to pip.
+            for arg in argv[1:]:
+                if not arg.startswith("-"):
+                    break
+                if arg.lower() in _RUNTIME_EVAL_FLAGS:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Inline code evaluation (e.g. node -e, python -c, php -r) is not allowed. Run a project script instead.",
+                    )
 
         try:
             completed = subprocess.run(
@@ -235,6 +275,64 @@ class EngineeringLabEngine:
             text = pom.read_text(encoding="utf-8", errors="ignore")
             for artifact in re.findall(r"<artifactId>([^<]+)</artifactId>", text):
                 deps.append(EngineeringLabDependency(name=artifact, source="pom.xml"))
+        deps.extend(self._ecosystem_dependencies(root))
+        return deps
+
+    def _ecosystem_dependencies(self, root: Path) -> list[EngineeringLabDependency]:
+        """Dependency extraction for the remaining specialist ecosystems (Go, PHP,
+        Rust, Ruby, .NET, Gradle) — always from the REAL manifests, never inferred."""
+        deps: list[EngineeringLabDependency] = []
+
+        go_mod = root / "go.mod"
+        if go_mod.is_file():
+            text = go_mod.read_text(encoding="utf-8", errors="ignore")
+            for module, version in re.findall(r"^\s+([\w./\-]+)\s+(v[\w.\-+]+)", text, re.MULTILINE):
+                deps.append(EngineeringLabDependency(name=module, version=version, source="go.mod"))
+
+        composer = root / "composer.json"
+        if composer.is_file():
+            try:
+                data = json.loads(composer.read_text(encoding="utf-8"))
+                for source in ["require", "require-dev"]:
+                    for name, version in (data.get(source) or {}).items():
+                        deps.append(EngineeringLabDependency(name=name, version=str(version), source=f"composer.json:{source}"))
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        cargo = root / "Cargo.toml"
+        if cargo.is_file():
+            text = cargo.read_text(encoding="utf-8", errors="ignore")
+            in_deps = False
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("["):
+                    in_deps = stripped in {"[dependencies]", "[dev-dependencies]", "[build-dependencies]"}
+                    continue
+                if in_deps:
+                    match = re.match(r"([\w\-]+)\s*=\s*(?:\"([^\"]+)\"|\{.*version\s*=\s*\"([^\"]+)\")", stripped)
+                    if match:
+                        deps.append(EngineeringLabDependency(name=match.group(1), version=match.group(2) or match.group(3), source="Cargo.toml"))
+
+        gemfile = root / "Gemfile"
+        if gemfile.is_file():
+            text = gemfile.read_text(encoding="utf-8", errors="ignore")
+            for name, version in re.findall(r"^\s*gem\s+['\"]([\w\-]+)['\"](?:\s*,\s*['\"]([^'\"]+)['\"])?", text, re.MULTILINE):
+                deps.append(EngineeringLabDependency(name=name, version=version or None, source="Gemfile"))
+
+        for csproj in sorted(root.glob("*.csproj")) + sorted(root.glob("*/*.csproj")):
+            text = csproj.read_text(encoding="utf-8", errors="ignore")
+            for name, version in re.findall(r"<PackageReference\s+Include=\"([^\"]+)\"(?:\s+Version=\"([^\"]+)\")?", text):
+                deps.append(EngineeringLabDependency(name=name, version=version or None, source=csproj.name))
+
+        for gradle_name in ["build.gradle", "build.gradle.kts"]:
+            gradle = root / gradle_name
+            if gradle.is_file():
+                text = gradle.read_text(encoding="utf-8", errors="ignore")
+                for coordinate in re.findall(r"(?:implementation|api|testImplementation|runtimeOnly)\s*[\(\s]['\"]([^'\"]+)['\"]", text):
+                    parts = coordinate.split(":")
+                    name = ":".join(parts[:2]) if len(parts) >= 2 else coordinate
+                    version = parts[2] if len(parts) >= 3 else None
+                    deps.append(EngineeringLabDependency(name=name, version=version, source=gradle_name))
         return deps
 
     def _containers(self, root: Path) -> list[str]:
@@ -265,6 +363,13 @@ class EngineeringLabEngine:
                 method = (match.group(1) or match.group(3) or "GET").upper()
                 route = match.group(2) or match.group(4) or "/"
                 endpoints.append(EngineeringLabApiEndpoint(method=method, path=route, source=rel))
+            for pattern, method_ref, path_group in _ECOSYSTEM_ROUTE_PATTERNS:
+                for match in pattern.finditer(text):
+                    method = method_ref if isinstance(method_ref, str) else match.group(method_ref)
+                    endpoints.append(EngineeringLabApiEndpoint(method=method.upper(), path=match.group(path_group), source=rel))
+            if rel.replace("\\", "/").endswith("config/routes.rb"):
+                for match in _RAILS_ROUTE_RE.finditer(text):
+                    endpoints.append(EngineeringLabApiEndpoint(method=match.group(1).upper(), path=match.group(2), source=rel))
         return endpoints
 
     def _architecture(self, files: list[tuple[str, Path, str]]) -> tuple[list[EngineeringLabArchitectureNode], list[EngineeringLabArchitectureEdge]]:
@@ -292,7 +397,13 @@ class EngineeringLabEngine:
                 return "configured" if any(name in scripts for name in ["build", "test", "lint"]) else "not_configured"
             except (json.JSONDecodeError, OSError):
                 return "not_configured"
-        if any((root / name).is_file() for name in ["pom.xml", "build.gradle", "pyproject.toml", "go.mod", "Cargo.toml"]):
+        manifest_names = [
+            "pom.xml", "build.gradle", "build.gradle.kts", "pyproject.toml", "requirements.txt",
+            "go.mod", "Cargo.toml", "composer.json", "Gemfile",
+        ]
+        if any((root / name).is_file() for name in manifest_names):
+            return "configured"
+        if next(root.glob("*.sln"), None) or next(root.glob("*.csproj"), None) or next(root.glob("*/*.csproj"), None):
             return "configured"
         return "not_configured"
 

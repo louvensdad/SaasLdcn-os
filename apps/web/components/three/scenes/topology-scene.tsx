@@ -74,14 +74,17 @@ function Graph({ nodes, edges, animate }: Omit<TopologySceneProps, 'dpr'>) {
       <pointLight position={[4, 5, 6]} intensity={1.4} color={accentSecondary} />
 
       {/* Edges */}
-      {edges.map((edge) => {
+      {edges.map((edge, index) => {
         const a = positions.get(edge.from);
         const b = positions.get(edge.to);
         if (!a || !b) return null;
+        // Deterministic per-edge phase (golden-ratio spread) so renders stay pure
+        // and dots keep their phase across re-renders.
+        const offset = (index * 0.618033988749895) % 1;
         return (
           <group key={`${edge.from}-${edge.to}`}>
             <Line points={[a, b]} color={accent} lineWidth={1} transparent opacity={0.28} />
-            <SignalDot from={a} to={b} color={accentSecondary} animate={animate} offset={Math.random()} />
+            <SignalDot from={a} to={b} color={accentSecondary} animate={animate} offset={offset} />
           </group>
         );
       })}
@@ -103,7 +106,7 @@ function Graph({ nodes, edges, animate }: Omit<TopologySceneProps, 'dpr'>) {
               />
             </Icosahedron>
             <Html center distanceFactor={9} occlude={false} style={{ pointerEvents: 'none' }}>
-              <span className="whitespace-nowrap rounded-full border border-white/10 bg-black/55 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[color:var(--text)] backdrop-blur-sm">
+              <span className="whitespace-nowrap rounded-full border border-white/10 bg-black/55 px-2 py-0.5 text-xs font-semibold tracking-wide text-[color:var(--text)] backdrop-blur-sm">
                 {node.label}
               </span>
             </Html>

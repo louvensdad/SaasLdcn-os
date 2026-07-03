@@ -17,7 +17,7 @@ const NODE_ICON: Record<string, LucideIcon> = {
 };
 
 function Empty({ children }: { readonly children: React.ReactNode }) {
-  return <p className="t-caption text-[color:var(--muted-2)]">{children}</p>;
+  return <p className="ds-caption text-[color:var(--muted-2)]">{children}</p>;
 }
 
 /** Context diagram: actors → layers → stores, as a connected flow of chips. */
@@ -52,14 +52,14 @@ export function BoundedContextsView({ model }: { readonly model: ArchitectureMod
             <Boxes className="h-4 w-4 text-[color:var(--accent)]" aria-hidden />
             <h4 className="text-sm font-semibold text-[color:var(--text)]">{ctx.name}</h4>
           </div>
-          <p className="t-caption text-[color:var(--muted)]">{ctx.responsibility}</p>
+          <p className="ds-caption text-[color:var(--muted)]">{ctx.responsibility}</p>
           {ctx.entities.length ? (
             <div className="flex flex-wrap gap-1">{ctx.entities.map((e) => <Badge key={e} tone="neutral">{e}</Badge>)}</div>
           ) : null}
           {ctx.relationships.length ? (
-            <p className="t-caption"><span className="font-semibold text-[color:var(--text)]">Relações:</span> {ctx.relationships.join(', ')}</p>
+            <p className="ds-caption"><span className="font-semibold text-[color:var(--text)]">Relações:</span> {ctx.relationships.join(', ')}</p>
           ) : null}
-          {ctx.evidence ? <p className="t-caption text-[color:var(--muted-2)]">Evidência: {ctx.evidence}</p> : null}
+          {ctx.evidence ? <p className="ds-caption text-[color:var(--muted-2)]">Evidência: {ctx.evidence}</p> : null}
         </Card>
       ))}
     </div>
@@ -76,7 +76,7 @@ export function FlowView({ steps, title, icon: Icon }: { readonly steps: FlowSte
           <li key={s.step} className="flex items-center gap-2">
             <span className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_45%,transparent)] px-3 py-2">
               <span className="block text-xs font-semibold text-[color:var(--text)]">{s.step}</span>
-              {s.detail ? <span className="block t-caption text-[color:var(--muted-2)]">{s.detail}</span> : null}
+              {s.detail ? <span className="block ds-caption text-[color:var(--muted-2)]">{s.detail}</span> : null}
             </span>
             {index < steps.length - 1 ? <ArrowRight className="h-4 w-4 text-[color:var(--muted-2)]" aria-hidden /> : null}
           </li>
@@ -108,9 +108,9 @@ export function StrategyView({ strategy, title }: { readonly strategy: Strategy;
         <h4 className="text-sm font-semibold text-[color:var(--text)]">{title}</h4>
         <Badge tone={strategy.available ? 'success' : 'neutral'}>{strategy.available ? 'Definida' : 'Indisponível'}</Badge>
       </div>
-      <p className="t-caption text-[color:var(--muted)]">{strategy.summary}</p>
+      <p className="ds-caption text-[color:var(--muted)]">{strategy.summary}</p>
       {strategy.items.length ? (
-        <ul className="ml-4 list-disc space-y-0.5 t-caption text-[color:var(--muted)]">
+        <ul className="ml-4 list-disc space-y-0.5 ds-caption text-[color:var(--muted)]">
           {strategy.items.map((item, index) => <li key={index}>{item}</li>)}
         </ul>
       ) : null}
@@ -140,7 +140,7 @@ export function DisasterRecoveryView({ dr }: { readonly dr: DisasterRecovery }) 
         {rows.map(([label, value]) => (
           <div key={label} className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3">
             <p className="t-overline">{label}</p>
-            <p className="mt-1 t-caption text-[color:var(--muted)]">{value}</p>
+            <p className="mt-1 ds-caption text-[color:var(--muted)]">{value}</p>
           </div>
         ))}
       </div>
@@ -153,20 +153,20 @@ export function ArchitectureModelTab({ model }: { readonly model: ArchitectureMo
   return (
     <div className="space-y-6">
       <Card className="glass noise space-y-3 p-6">
-        <h3 className="t-h3 text-[color:var(--text)]">Context Diagram</h3>
+        <h3 className="ds-subsection text-[color:var(--text)]">Context Diagram</h3>
         <ContextDiagramView model={model} />
       </Card>
       <Card className="glass noise space-y-4 p-6">
-        <h3 className="t-h3 text-[color:var(--text)]">Bounded Contexts</h3>
+        <h3 className="ds-subsection text-[color:var(--text)]">Bounded Contexts</h3>
         <BoundedContextsView model={model} />
       </Card>
       <Card className="glass noise space-y-4 p-6">
-        <h3 className="t-h3 text-[color:var(--text)]">Fluxos</h3>
+        <h3 className="ds-subsection text-[color:var(--text)]">Fluxos</h3>
         <FlowView steps={model.data_flow} title="Fluxo de dados" icon={Workflow} />
         <FlowView steps={model.auth_flow} title="Fluxo de autenticação" icon={ShieldCheck} />
       </Card>
       <Card className="glass noise space-y-4 p-6">
-        <h3 className="t-h3 text-[color:var(--text)]">Dependências entre módulos</h3>
+        <h3 className="ds-subsection text-[color:var(--text)]">Dependências entre módulos</h3>
         <DependenciesView deps={model.dependencies} />
       </Card>
     </div>

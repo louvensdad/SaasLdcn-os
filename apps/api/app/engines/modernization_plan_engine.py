@@ -33,6 +33,13 @@ ISSUE_PHASE = {
     "requirements_missing": "devops",
     "tsconfig_missing": "devops",
     "pom_missing": "devops",
+    "go_mod_missing": "devops",
+    "composer_json_missing": "devops",
+    "cargo_toml_missing": "devops",
+    "gemfile_missing": "devops",
+    "csproj_missing": "devops",
+    "gradle_kts_missing": "devops",
+    "package_json_missing": "devops",
     "src_missing": "architecture",
 }
 

@@ -73,7 +73,7 @@ export function WorkflowContextHeader({ room, stage }: { readonly room: ProjectR
 function Metric({ label, value, icon, accent }: { readonly label: string; readonly value: string; readonly icon?: React.ReactNode; readonly accent?: boolean }) {
   return (
     <div className="min-w-0 px-4 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted-2)]">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--muted-2)]">{label}</p>
       <div className="mt-1 flex items-center gap-1.5">
         {icon ? <span className="text-[color:var(--muted)]">{icon}</span> : null}
         {accent ? <Badge tone="accent">{value}</Badge> : <p className="truncate text-sm font-semibold text-[color:var(--text)]" title={value}>{value}</p>}

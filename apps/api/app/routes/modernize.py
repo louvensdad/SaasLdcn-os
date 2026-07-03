@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -426,10 +425,16 @@ def modernize_ask(payload: ModernizeAskRequest, user: CurrentUser) -> ModernizeA
             "target_architecture": plan.target_architecture,
             "plan_steps": plan.steps,
         }
+        # Ecosystem specialist layer: answers about a Go/PHP/.NET codebase cite the
+        # real toolchain (manifests, test/build commands) instead of generic advice.
+        from app.data.language_agent_profiles import ecosystem_brief
+
+        brief = ecosystem_brief(diagnosis.primary_language, diagnosis.detected_stack)
+        system = f"{_ASK_SYSTEM_PROMPT}\n\n{brief}" if brief else _ASK_SYSTEM_PROMPT
         try:
             response = LLMRouter().route(
                 LLMRequest(
-                    system=_ASK_SYSTEM_PROMPT,
+                    system=system,
                     user=f"PROJECT FACTS (JSON):\n{json.dumps(facts, ensure_ascii=False)}\n\nQUESTION: {payload.question}",
                     max_output_tokens=1200,
                 ),

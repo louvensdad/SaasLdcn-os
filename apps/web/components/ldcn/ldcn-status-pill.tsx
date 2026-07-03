@@ -38,7 +38,7 @@ export function LDCNStatusPill({ className, state = 'observing', label = 'LDCN',
   const translatedLabel = label === 'LDCN' ? t(`ldcn.${state}`) : `${label} ${STATE_LABELS[state]}`;
   return (
     <Badge
-      className={cn('gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em]', STATE_CLASSES[state], className)}
+      className={cn('gap-2 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.22em]', STATE_CLASSES[state], className)}
       aria-label={translatedLabel}
       {...props}
     >

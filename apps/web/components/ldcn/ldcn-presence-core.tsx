@@ -30,7 +30,7 @@ export function LDCNPresenceCore({ className, context, actions, ...props }: LDCN
             <LDCNCoreBadge state={context.status} className="h-12 w-12 shrink-0 md:h-14 md:w-14" />
             <div className="min-w-0 space-y-2">
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('ldcn.presence.layer')}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('ldcn.presence.layer')}</p>
                 <h3 className="mt-1 text-xl font-semibold text-[color:var(--text)] md:text-2xl">{t('ldcn.presence.reserve')}</h3>
               </div>
               <p className="max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
