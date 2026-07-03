@@ -23,6 +23,28 @@
 
 **Diagnóstico central:** O LDCN OS é um MVP avançado com qualidade de código acima da média, mas contém pelo menos 4 bloqueadores absolutos para qualquer empresa séria adquirir este produto: ausência de banco de produção com migrations, rate limiting que quebra no primeiro segundo servidor, ausência de multi-tenancy, e ausência de tracking de custo de IA por cliente.
 
+## STATUS CONSOLIDADO — 2026-07-01
+
+O resumo original abaixo é histórico. A validação do código atual mostra que os bloqueadores
+**C1–C5 foram implementados**: SQLAlchemy/PostgreSQL + Alembic, rate limiting Redis atômico,
+vault Redis criptografado com TTL, jobs persistidos e medição de tokens por usuário/modelo.
+Produção agora falha na inicialização se CORS, Redis, PostgreSQL ou S3-compatible storage
+não estiverem configurados,
+impedindo regressão silenciosa para os fallbacks locais.
+
+| Estado atual | Itens |
+|---|---|
+| Resolvido | C1/B1, C2/B2, C3/B3, C4/MF1, C5/B4/AI2, S1–S4, B5, B7 (projects), B8–B10, F2, FL2/H4, P5/M10, MF2–MF4/H7, AI3–AI4, D1–D3 |
+| Não aplicável após inspeção | C7/S6 (skills atuais não executam código arbitrário), S5 (API e frontend operam em origens separadas) |
+| Parcial | C6 (tenant core + RBAC implementados; scoping legado/UI pendentes), B6/AN3 (índices feitos; cache/pré-agregação pendente), B7 (paginação só em projects), AI1 (sinal existe; UX deve ser revalidada), AN1 (usage no overview; drill-down/export pendentes) |
+| Pendente crítico | Concluir C6: escopar Modernize, colaboração owner-scoped, convites e workspace switcher |
+| Pendente alto | C8/F1 Planning Center, A1/H12 versionamento da API, H8 isolamento do Engineering Lab, H9 analytics drill-down |
+| Pendente médio | Eventos/domain boundaries, cache de analytics, paginação dos demais endpoints, SSR/Suspense/breadcrumbs no frontend |
+
+**Próxima ordem recomendada:** multi-tenancy → versionamento `/v1` → Planning Center →
+analytics drill-down. Multi-tenancy exige desenho de
+dados e migrações; não deve ser tratado como uma alteração pontual.
+
 ---
 
 ## PARTE 1 — AUDITORIA DE ARQUITETURA
@@ -69,6 +91,21 @@ Rate limiter (`_hits: dict`), user key vault (`_vault: dict`), job state em mem�
 
 **A5. Primeira criação de admin com race condition (TOCTOU)**  
 `count_users()` → `create_user()` são duas transações separadas. Em uma startup com duas requisições simultâneas de registro, ambas leem `count=0` e ambas se tornam admin.
+
+**⏳ C6 PARCIAL (2026-07-01):** criada a fundação multi-tenant real:
+`organizations`, `organization_memberships`, `workspaces` e `workspace_memberships`, com
+papéis owner/admin/member/viewer, APIs protegidas para organizações/workspaces/membros e
+workspace pessoal provisionado no cadastro. A migration
+`20260701_c6_tenant_foundation.py` cria/backfill tenants pessoais para usuários e dados
+existentes e adiciona `workspace_id` normalizado a jobs/recursos. Meta-Fábrica e Project
+Rooms agora resolvem o workspace pessoal ou exigem membership de escrita; IDs forjados
+retornam 404. O registry `projects` também foi escopado: leitura por owner/membership,
+escrita apenas owner/admin/member, viewer read-only e seeds globais read-only; todas as
+rotas consumidoras propagam o usuário autenticado. Pendente para fechar C6: Modernize,
+acesso colaborativo aos demais recursos do workspace (hoje ainda há operações owner-scoped),
+convites/remoção de membros e workspace switcher no frontend. Testes:
+`tests/test_tenants.py` e `tests/test_project_registry.py`; cadeia Alembic validada até
+`20260701_c6_tenants (head)`.
 
 ---
 
@@ -527,6 +564,15 @@ const LDCNCore = dynamic(() => import('@/components/three/ldcn-core'), {
 
 **Descrição:** O gerador `iter_single_agent` produz eventos (heartbeats, file_emitted, gate_check) sem verificar se o cliente ainda está conectado. Um cliente que fecha a aba mantém o worker thread rodando até o timeout de 6 minutos + custo de LLM.
 
+**✅ RESOLVIDO (2026-07-01, arquitetura de job durável):** o stream de
+`GET /meta-factory/jobs/{id}/events` agora é assíncrono e verifica
+`request.is_disconnected()` antes de cada poll, encerrando imediatamente o polling SSE.
+Desconectar a UI deliberadamente **não cancela** o job persistido, permitindo refresh/replay.
+O cancelamento explícito (`POST .../pause`) passou a ser observado a cada 500ms enquanto a
+engine aguarda o provider; ela abandona a espera e chama `future.cancel()` best-effort.
+Chamadas síncronas já em execução dependem ainda do timeout do SDK do provider, mas não
+mantêm o job como running nem bloqueiam o consumidor SSE.
+
 **Como corrigir:** Monitorar `request.is_disconnected()` no loop de streaming e cancelar o future ao detectar desconexão.
 
 **Prioridade:** P2
@@ -676,6 +722,14 @@ export default function MetaFactoryPage() {
 **Como corrigir:** Implementar `Last-Event-ID` com log dos últimos N eventos por job_id, permitindo reconexão com replay.
 
 **Prioridade:** P1
+
+**✅ RESOLVIDO (2026-07-01):** eventos de execução persistidos agora são enviados com
+`id:` SSE estável; o endpoint aceita `Last-Event-ID` e retoma após o cursor. Se o cursor já
+saiu da janela retida (2.000 eventos), o servidor reenvia a janela e o frontend deduplica
+por `event.id`. O cliente autenticado reconecta com backoff de 500ms–5s, preserva o cursor
+fora do estado React e reenvia o header após refresh de token. CORS permite
+`Last-Event-ID`. Testes: `tests/test_generation_job_sse.py` e
+`test_pause_cooperatively_stops_waiting_for_provider`.
 
 ---
 
@@ -845,6 +899,15 @@ pool compartilhado (B5).
 
 **Prioridade:** P1
 
+**✅ RESOLVIDO (2026-07-01):** adicionado storage S3-compatible durável
+(`artifact_storage.py`) com criptografia SSE-S3, snapshots completos dos projetos e
+persistência dos ZIPs preparados. `ProjectWriter` sincroniza criação, append, reparos,
+verificação e override; `GeneratedProjectService` restaura projeto/ZIP sob demanda quando
+a instância local não possui o artefato. O filesystem permanece apenas como materialização
+de build. Produção exige `LDCN_ARTIFACT_STORAGE=s3` e `LDCN_ARTIFACT_BUCKET`; falhas retornam
+503 e nunca degradam silenciosamente para storage local. Extração de snapshots bloqueia
+path traversal. Testes: `tests/test_artifact_storage.py`.
+
 ---
 
 ## PARTE 9 — ANALYTICS
@@ -910,8 +973,8 @@ CORS, cookies, rate limiting, secrets/redação).
 **✅ RESOLVIDO (2026-07-01):** `apps/api/OPERATIONS.md` §6 "Operations runbook": health
 (`GET /api/health`), backups (pg_dump + artefatos), recuperação de geração travada/STALLED
 (retry/resume/continue + diagnostic + live console), custo/uso (`/jobs/usage`), tuning de
-capacidade (`LDCN_AGENT_WORKERS`, `LDCN_MAX_CONCURRENT_GENERATIONS`) e logs/redação; §7 lista
-caveats (artefatos em FS efêmero → MF4, skills sem sandbox → S6).
+capacidade (`LDCN_AGENT_WORKERS`, `LDCN_MAX_CONCURRENT_GENERATIONS`) e logs/redação; §7
+documenta a materialização local efêmera com fonte durável em S3-compatible.
 
 ---
 
