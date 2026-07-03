@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -9,6 +8,7 @@ from typing import Any, Protocol
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ServiceUnavailableError
+from app.services.fs_publish import force_rmtree, publish_directory
 
 
 class ArtifactStorageError(ServiceUnavailableError):
@@ -100,15 +100,15 @@ class S3ArtifactStore:
             if not (staging / ".ldcn-generation.json").is_file():
                 raise ArtifactStorageError("Stored project artifact has no generation marker.")
             if destination.exists():
-                shutil.rmtree(staging, ignore_errors=True)
+                force_rmtree(staging)
                 return True
-            staging.replace(destination)
+            publish_directory(staging, destination)
             return True
         except ArtifactStorageError:
-            shutil.rmtree(staging, ignore_errors=True)
+            force_rmtree(staging)
             raise
         except Exception as exc:
-            shutil.rmtree(staging, ignore_errors=True)
+            force_rmtree(staging)
             raise ArtifactStorageError("Could not restore generated project artifact.") from exc
 
     def save_download(self, project_id: str, zip_path: Path, *, workspace_id: str | None = None) -> None:

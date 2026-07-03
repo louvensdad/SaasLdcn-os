@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
 import tempfile
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +13,7 @@ from app.core.config import BASE_DIR
 from app.data.foundation import CONTRACT_VERSION
 from app.services.artifact_storage import ArtifactStore, get_artifact_store
 from app.services.file_protocol import EmittedFile
+from app.services.fs_publish import force_rmtree, publish_directory
 
 # Writes parsed agent output (EmittedFile list) to disk under generated-projects,
 # producing a directory that the existing GeneratedProjectService can browse,
@@ -21,6 +21,8 @@ from app.services.file_protocol import EmittedFile
 
 WORKSPACE_ROOT = BASE_DIR.parents[1].resolve()
 DEFAULT_OUTPUT_ROOT = WORKSPACE_ROOT / "generated-projects" / "active"
+
+_STALE_STAGING_MAX_AGE_SECONDS = 60 * 60
 
 
 class ProjectWriteError(RuntimeError):
@@ -64,6 +66,8 @@ class ProjectWriter:
             raise ProjectWriteError("Resolved project root escaped the output directory.")
         self.output_root.mkdir(parents=True, exist_ok=True)
 
+        self._cleanup_stale_staging()
+
         # Atomic write (audit MF2): assemble the whole project in a sibling staging
         # dir and publish it with a single atomic rename. A crash/exception mid-write
         # leaves only the staging dir (removed here), never a half-populated project
@@ -80,9 +84,9 @@ class ProjectWriter:
 
             all_files = self._merge_paths([], written)
             self._write_marker(staging, project_id, project_name, metadata, all_files, owner=owner, workspace_id=workspace_id)
-            os.replace(staging, root)
+            publish_directory(staging, root)
         except BaseException:
-            shutil.rmtree(staging, ignore_errors=True)
+            force_rmtree(staging)
             raise
         self.artifact_store.save_project(project_id, root, workspace_id=workspace_id)
         return WriteResult(project_id=project_id, root_path=str(root), written=all_files)
@@ -219,6 +223,23 @@ class ProjectWriter:
             return workspace_id if isinstance(workspace_id, str) and workspace_id else None
         except ProjectWriteError:
             return None
+
+    def _cleanup_stale_staging(self) -> None:
+        """Best-effort removal of orphaned staging dirs from previous crashed or
+        lock-blocked runs, so they don't accumulate under the output root."""
+        try:
+            entries = list(self.output_root.iterdir())
+        except OSError:
+            return
+        cutoff = time.time() - _STALE_STAGING_MAX_AGE_SECONDS
+        for entry in entries:
+            if not entry.name.startswith(".staging-"):
+                continue
+            try:
+                if entry.is_dir() and entry.stat().st_mtime < cutoff:
+                    force_rmtree(entry)
+            except OSError:
+                continue
 
     @staticmethod
     def _marker_owner(marker: dict) -> str | None:
