@@ -305,6 +305,117 @@ class ProjectRoomService:
         self._log(room_id, owner_user_id, "POST", f"/api/project-rooms/{room_id}/acknowledge-preview", 200, "success", "Preview deterministico reconhecido")
         return self.get_room(room_id, owner_user_id)
 
+    def approve_stack(self, room_id: str, owner_user_id: str, selections: dict[str, str | None] | None = None) -> dict[str, Any] | None:
+        """Stack Approval Gate: record the user's explicit consent for the
+        development stack. `selections` overrides ("Alterar stack") replace the
+        blueprint recommendation; generation later uses the APPROVED values, never
+        the model's internal choice. The approval lives inside the active blueprint
+        so a regenerated blueprint automatically resets it."""
+        room = self._get_normalized(room_id, owner_user_id)
+        if room is None:
+            return None
+        blueprint = room.get("architecture_blueprint")
+        if not blueprint:
+            self._fail(room, owner_user_id, endpoint=f"/api/project-rooms/{room_id}/stack/approve", expected=["BLUEPRINT_READY", "ENGINEERING_REVIEW", "ENGINEERING_APPROVED"], message="Gere o Blueprint arquitetural antes de aprovar a stack.", reason="architecture_blueprint ausente.", correction="Abra o Architect Engine e gere o Blueprint primeiro.")
+        proposal = self._stack_proposal_defaults(room)
+        selections = {key: value for key, value in (selections or {}).items() if value}
+        approval = {
+            "status": "APPROVED",
+            "approved_by": owner_user_id,
+            "approved_at": self._now(),
+            "selected_frontend": selections.get("selected_frontend") or proposal.get("frontend", ""),
+            "selected_backend": selections.get("selected_backend") or proposal.get("backend", ""),
+            "selected_database": selections.get("selected_database") or proposal.get("database", ""),
+            "selected_language": selections.get("selected_language") or proposal.get("language", ""),
+            "selected_auth": selections.get("selected_auth") or proposal.get("auth", ""),
+            "selected_testing": selections.get("selected_testing") or proposal.get("testing", ""),
+            "selected_deploy_target": selections.get("selected_deploy_target") or proposal.get("deploy", ""),
+        }
+        updated_blueprint = {**blueprint, "stack_approval": approval}
+        versions = list(room.get("blueprint_versions") or [])
+        active_version = room.get("active_blueprint_version")
+        active_record = next((item for item in versions if item.get("version") == active_version), None)
+        if active_record is not None:
+            active_record["blueprint"] = {**(active_record.get("blueprint") or {}), "stack_approval": approval}
+            self.repository.replace_blueprint_versions(room_id, owner_user_id, versions, int(active_version), updated_blueprint)
+        else:
+            self.repository.set_blueprint(room_id, owner_user_id, updated_blueprint)
+        # Deterministic enforcement: the APPROVED language/framework overwrite the
+        # spec's suggested_stack, mirroring the preferred-language pattern — the
+        # generation pipeline reads the spec, so the model choice can't survive.
+        spec = dict(room.get("spec") or {})
+        if spec:
+            stack = dict(spec.get("suggested_stack") or {})
+            if approval["selected_language"]:
+                stack["language"] = approval["selected_language"]
+                stack["language_reason"] = stack.get("language_reason") or "Escolha aprovada pelo usuario no Stack Approval Gate."
+            if approval["selected_backend"]:
+                stack["framework"] = approval["selected_backend"]
+                stack["framework_reason"] = stack.get("framework_reason") or "Escolha aprovada pelo usuario no Stack Approval Gate."
+            spec["suggested_stack"] = stack
+            self.repository.set_spec(room_id, owner_user_id, spec, confidence=float(room.get("confidence") or 0.0), degraded=bool(room.get("degraded")))
+        changed = ", ".join(f"{key.removeprefix('selected_')}={value}" for key, value in selections.items()) or "recomendacao aceita sem alteracoes"
+        self.repository.append_message(room_id, owner_user_id, self._assistant_message(f"Stack aprovada pelo usuario ({changed}). A Meta-Fabrica usara exatamente esta stack."))
+        self._history(room_id, owner_user_id, "Stack aprovada", source="Stack Approval Gate", metadata={"changed": changed})
+        self._log(room_id, owner_user_id, "POST", f"/api/project-rooms/{room_id}/stack/approve", 200, "success", "Stack aprovada pelo usuario", detail=changed)
+        return self.get_room(room_id, owner_user_id)
+
+    def _stack_proposal_defaults(self, room: dict[str, Any]) -> dict[str, str]:
+        """Per-area default choices, from blueprint decisions + spec stack."""
+        blueprint = room.get("architecture_blueprint") or {}
+        decisions = {
+            str(d.get("area")): d for d in (blueprint.get("decisions") or []) if isinstance(d, dict)
+        }
+        stack = (room.get("spec") or {}).get("suggested_stack") or {}
+        def choice(area: str) -> str:
+            return str((decisions.get(area) or {}).get("choice") or "")
+        return {
+            "frontend": choice("frontend"),
+            "backend": choice("backend") or str(stack.get("framework") or ""),
+            "database": choice("database"),
+            "language": str(stack.get("language") or ""),
+            "auth": choice("auth"),
+            "testing": choice("tests"),
+            "deploy": choice("deploy"),
+        }
+
+    def _stack_proposal(self, room: dict[str, Any]) -> dict[str, Any] | None:
+        """The Stack Approval Gate payload: choice + reason + alternatives per
+        area, plus the current approval state. None while there is no blueprint."""
+        blueprint = room.get("architecture_blueprint")
+        if not blueprint:
+            return None
+        decisions = {
+            str(d.get("area")): d for d in (blueprint.get("decisions") or []) if isinstance(d, dict)
+        }
+        stack = (room.get("spec") or {}).get("suggested_stack") or {}
+        labels = [
+            ("frontend", "Frontend"), ("backend", "Backend"), ("database", "Banco de dados"),
+            ("language", "Linguagem"), ("auth", "Autenticacao"), ("tests", "Testes"), ("deploy", "Deploy"),
+        ]
+        defaults = self._stack_proposal_defaults(room)
+        items = []
+        for area, label in labels:
+            decision = decisions.get(area) or {}
+            key = "testing" if area == "tests" else area
+            choice = defaults.get(key, "") or str(decision.get("choice") or "")
+            reason = str(decision.get("justification") or "")
+            if area == "language" and not reason:
+                reason = str(stack.get("language_reason") or "")
+            items.append({
+                "area": area,
+                "label": label,
+                "choice": choice,
+                "reason": reason,
+                "alternatives": [str(alt) for alt in (decision.get("alternatives_considered") or [])],
+            })
+        approval = blueprint.get("stack_approval") or None
+        return {
+            "status": "APPROVED" if (approval or {}).get("status") == "APPROVED" else "PENDING",
+            "items": items,
+            "approval": approval,
+        }
+
     def send_to_generator(self, room_id: str, owner_user_id: str) -> dict[str, Any] | None:
         room = self._get_normalized(room_id, owner_user_id)
         if room is None:
@@ -341,6 +452,9 @@ class ProjectRoomService:
     def archive(self, room_id: str, owner_user_id: str) -> dict[str, Any] | None:
         room = self.repository.update_status(room_id, owner_user_id, "ARCHIVED")
         return self._decorate(room) if room else None
+
+    def delete(self, room_id: str, owner_user_id: str) -> bool:
+        return self.repository.delete_for_owner(room_id, owner_user_id)
 
     def import_prompt_master(self, *, owner_user_id: str, fmt: str, content: str, title: str, locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None, workspace_id: str | None = None) -> dict[str, Any]:
         text = (content or "").strip()
@@ -415,7 +529,7 @@ class ProjectRoomService:
             room["blueprint_versions"] = versions
         checks = self._readiness_checks(room)
         blocking = [check["detail"] for check in checks if check["required"] and check["status"] != "passed"]
-        return {**room, "readiness_checklist": checks, "engineering_review": build_engineering_review(room, checks), "architecture_model": build_architecture_model(room), "workflow": self._workflow(room, checks, blocking), "history": room.get("history") or [], "operational_log": room.get("operational_log") or [], "last_failure": room.get("last_failure")}
+        return {**room, "readiness_checklist": checks, "engineering_review": build_engineering_review(room, checks), "architecture_model": build_architecture_model(room), "workflow": self._workflow(room, checks, blocking), "stack_proposal": self._stack_proposal(room), "history": room.get("history") or [], "operational_log": room.get("operational_log") or [], "last_failure": room.get("last_failure")}
 
     def _workflow(self, room: dict[str, Any], checks: list[dict[str, Any]], blocking: list[str]) -> dict[str, Any]:
         status = room["status"]
@@ -453,6 +567,9 @@ class ProjectRoomService:
             check("build", "Build", "deploy" in areas, "Plano de build/deploy definido.", "Plano de build/deploy ausente."),
             check("tests", "Testes", "tests" in areas, "Estrategia de testes definida.", "Estrategia de testes ausente."),
             check("stack", "Stack", bool(stack or "backend" in areas), "Stack principal definida.", "Stack principal ausente."),
+            # Stack Approval Gate: the Meta-Factory can never start on a stack the
+            # user did not explicitly approve (consent is a hard requirement).
+            check("stack_approval", "Aprovacao da stack", (blueprint.get("stack_approval") or {}).get("status") == "APPROVED", "Stack aprovada explicitamente pelo usuario.", "Stack ainda nao foi aprovada pelo usuario (Stack Approval Gate)."),
             # Advisory checks (required=False): enrich the Readiness Center without
             # changing the send gate (which only blocks on required checks).
             check("architecture", "Arquitetura", decided_count >= architecture_threshold, f"{decided_count}/{total_relevant_areas} areas arquiteturais decididas.", f"Apenas {decided_count}/{total_relevant_areas} areas decididas.", required=False),

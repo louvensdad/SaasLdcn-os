@@ -19,8 +19,8 @@ router = APIRouter(tags=["user-ai-keys"])
 def _status(user_id: str) -> KeySessionStatusResponse:
     return KeySessionStatusResponse(
         sessions=[
-            KeySessionStatus(provider=provider, masked=masked)
-            for provider, masked in user_key_session.status(user_id)
+            KeySessionStatus(provider=provider, masked=masked, expires_in_seconds=expires_in)
+            for provider, masked, expires_in in user_key_session.status(user_id)
         ]
     )
 
@@ -78,7 +78,7 @@ def upsert_user_ai_key(payload: UpsertKeyRequest, user: CurrentUser) -> KeySessi
     Redis deployments persist only ciphertext with a TTL; local development keeps ciphertext in RAM. The response
     returns only the masked status of the user's sessions.
     """
-    user_key_session.set(user["user_id"], payload.provider, payload.api_key)
+    user_key_session.set(user["user_id"], payload.provider, payload.api_key, payload.ttl_seconds)
     llm_settings_service.configured(user["user_id"], payload.provider)
     return _status(user["user_id"])
 

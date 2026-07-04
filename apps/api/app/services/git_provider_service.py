@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from urllib.parse import quote
 
@@ -30,7 +30,15 @@ class GitProviderService:
         self._connections: dict[tuple[str, Provider], dict[str, Any]] = {}
         self._repositories: dict[tuple[str, str], dict[str, Any]] = {}
 
-    def connect(self, user_id: str, provider: Provider, token: str) -> dict[str, Any]:
+    def connect(
+        self,
+        user_id: str,
+        provider: Provider,
+        token: str,
+        ttl_seconds: int | None = None,
+        *,
+        keep_expires_at: str | None = None,
+    ) -> dict[str, Any]:
         token = token.strip()
         if not token:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A provider token is required.")
@@ -53,6 +61,13 @@ class GitProviderService:
                 detail=f"{self._label(provider)} is unavailable. Try again shortly.",
             ) from exc
 
+        # User-chosen retention: the token (and connection) expires server-side after
+        # ttl_seconds. Re-validation preserves the original window via keep_expires_at.
+        profile["expires_at"] = (
+            (datetime.now(UTC) + timedelta(seconds=int(ttl_seconds))).replace(microsecond=0).isoformat()
+            if ttl_seconds
+            else keep_expires_at
+        )
         self._connections[(user_id, provider)] = {"token": token, "profile": profile}
         self._storage.save_connection(user_id, provider, token, profile)
         return profile
@@ -77,11 +92,17 @@ class GitProviderService:
             "scopes": [],
             "permission": "Not connected",
             "last_sync": None,
+            "expires_at": None,
         }
 
     def validate(self, user_id: str, provider: Provider) -> dict[str, Any]:
         connection = self._require_connection(user_id, provider)
-        return self.connect(user_id, provider, connection["token"])
+        return self.connect(
+            user_id,
+            provider,
+            connection["token"],
+            keep_expires_at=connection["profile"].get("expires_at"),
+        )
 
     def create_repository(
         self,
@@ -258,12 +279,25 @@ class GitProviderService:
 
     def _get_connection(self, user_id: str, provider: Provider) -> dict[str, Any] | None:
         connection = self._connections.get((user_id, provider))
-        if connection is not None:
-            return connection
-        persisted = self._storage.get_connection(user_id, provider)
-        if persisted is not None:
-            self._connections[(user_id, provider)] = persisted
-        return persisted
+        if connection is None:
+            connection = self._storage.get_connection(user_id, provider)
+            if connection is not None:
+                self._connections[(user_id, provider)] = connection
+        if connection is not None and self._expired(connection):
+            self._connections.pop((user_id, provider), None)
+            self._storage.delete_connection(user_id, provider)
+            return None
+        return connection
+
+    @staticmethod
+    def _expired(connection: dict[str, Any]) -> bool:
+        expires_at = (connection.get("profile") or {}).get("expires_at")
+        if not expires_at:
+            return False
+        try:
+            return datetime.fromisoformat(expires_at) <= datetime.now(UTC)
+        except ValueError:
+            return False
 
     def _get_repository(self, user_id: str, key: str) -> dict[str, Any] | None:
         repository = self._repositories.get((user_id, key))

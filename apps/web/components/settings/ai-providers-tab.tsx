@@ -2,13 +2,15 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, KeyRound, ServerCog, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, KeyRound, ServerCog } from 'lucide-react';
 
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CardLoading } from '@/components/feedback/loading-system';
-import { userKeysClient, type KeyProvider, type KeySessionStatusResponse } from '@/lib/api/user-keys';
+import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
+import { RetentionSelect, formatRemaining } from '@/components/settings/retention-select';
+import { userKeysClient, type KeyProvider, type KeySessionStatus, type KeySessionStatusResponse } from '@/lib/api/user-keys';
 import { llmSettingsClient } from '@/lib/api/llm-settings';
 import type { ActiveLlmSettings, LlmProviderId } from '@contracts/llm-settings.contract';
 import { useLocale } from '@/hooks/use-locale';
@@ -65,7 +67,7 @@ export function AiProvidersTab() {
             <ProviderKeyCard
               key={provider.id}
               def={provider}
-              masked={sessions.find((session) => session.provider === provider.id)?.masked}
+              session={sessions.find((item) => item.provider === provider.id)}
               isDefault={activeQuery.data?.provider === provider.id}
             />
           ))}
@@ -75,11 +77,13 @@ export function AiProvidersTab() {
   );
 }
 
-function ProviderKeyCard({ def, masked, isDefault }: { readonly def: ProviderDef; readonly masked?: string; readonly isDefault: boolean }) {
+function ProviderKeyCard({ def, session, isDefault }: { readonly def: ProviderDef; readonly session?: KeySessionStatus; readonly isDefault: boolean }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const [key, setKey] = useState('');
+  const [ttlSeconds, setTtlSeconds] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string; model?: string | null } | null>(null);
+  const masked = session?.masked;
   const hasKey = Boolean(masked);
   const status: 'active' | 'none' | 'local' = def.keyless ? 'local' : hasKey ? 'active' : 'none';
   const tone: BadgeTone = status === 'active' ? 'success' : status === 'local' ? 'accent' : 'neutral';
@@ -91,7 +95,7 @@ function ProviderKeyCard({ def, masked, isDefault }: { readonly def: ProviderDef
     onError: (caught) => setTestResult({ ok: false, message: caught instanceof Error ? caught.message : t('settings.ai.providerError') }),
   });
   const save = useMutation({
-    mutationFn: () => userKeysClient.setKey(def.id as KeyProvider, key.trim()),
+    mutationFn: () => userKeysClient.setKey(def.id as KeyProvider, key.trim(), ttlSeconds),
     onSuccess: () => {
       setKey('');
       setTestResult(null);
@@ -135,30 +139,51 @@ function ProviderKeyCard({ def, masked, isDefault }: { readonly def: ProviderDef
         {def.keyless ? (
           <p className="ds-caption">{t('settings.ai.keyless')}</p>
         ) : hasKey ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_45%,transparent)] px-3 py-2">
-            <span className="t-mono text-sm text-[color:var(--text)]" aria-label={t('settings.ai.maskedKey')}>{masked}</span>
-            <Button variant="ghost" loading={remove.isPending} onClick={() => remove.mutate()}>
-              <Trash2 className="h-4 w-4" aria-hidden />
-              {remove.isPending ? t('settings.ai.removing') : t('settings.ai.removeKey')}
-            </Button>
+          <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_45%,transparent)] px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="t-mono text-sm text-[color:var(--text)]" aria-label={t('settings.ai.maskedKey')}>{masked}</span>
+              <DeleteResourceButton
+                title={t('settings.ai.deleteKeyTitle', { provider: def.name })}
+                description={t('settings.ai.deleteKeyDescription', { provider: def.name })}
+                triggerLabel={t('settings.ai.removeKey')}
+                onConfirm={async () => { await remove.mutateAsync(); }}
+              />
+            </div>
+            {session?.expires_in_seconds != null ? (
+              <p className="mt-2 ds-caption">
+                {t('settings.retention.expiresIn', { time: formatRemaining(session.expires_in_seconds) })}
+              </p>
+            ) : null}
           </div>
         ) : (
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <Input
-              type="password"
-              error={save.isError}
-              value={key}
-              onChange={(event) => { setKey(event.target.value); setTestResult(null); }}
-              placeholder={t('settings.ai.keyPlaceholder')}
-              aria-label={`${def.name} API key`}
-              className="flex-1"
+          <div className="space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Input
+                type="password"
+                name={`${def.id}-api-key`}
+                autoComplete="off"
+                spellCheck={false}
+                error={save.isError}
+                value={key}
+                onChange={(event) => { setKey(event.target.value); setTestResult(null); }}
+                placeholder={t('settings.ai.keyPlaceholder')}
+                aria-label={`${def.name} API key`}
+                className="flex-1"
+              />
+              <Button variant="secondary" disabled={!key.trim()} loading={test.isPending} onClick={() => test.mutate()}>
+                {test.isPending ? t('settings.ai.testing') : t('settings.ai.testKey')}
+              </Button>
+              <Button variant="primary" disabled={!key.trim() || !testResult?.ok} loading={save.isPending} onClick={() => save.mutate()}>
+                {save.isPending ? t('settings.ai.saving') : t('settings.ai.setKey')}
+              </Button>
+            </div>
+            <RetentionSelect
+              value={ttlSeconds}
+              onChange={setTtlSeconds}
+              defaultOptionLabel={t('settings.retention.keyDefault')}
+              disabled={save.isPending}
+              className="max-w-xs"
             />
-            <Button variant="secondary" disabled={!key.trim()} loading={test.isPending} onClick={() => test.mutate()}>
-              {test.isPending ? 'Testando...' : 'Testar chave'}
-            </Button>
-            <Button variant="primary" disabled={!key.trim() || !testResult?.ok} loading={save.isPending} onClick={() => save.mutate()}>
-              {save.isPending ? t('settings.ai.saving') : t('settings.ai.setKey')}
-            </Button>
           </div>
         )}
         {(hasKey || def.keyless) && def.id !== 'custom' ? (

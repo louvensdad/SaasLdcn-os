@@ -30,6 +30,7 @@ import {
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ExportPanel } from '@/components/generation/export-panel';
 import { LlmGatedAction } from '@/components/llm/llm-gated-action';
@@ -155,6 +156,17 @@ function AutoFixInner() {
     };
   }, [projectParam, loadReport]);
 
+  async function deleteAnalysis() {
+    if (!summary) return;
+    await modernizeClient.deleteProject(summary.project_id);
+    setSummary(null);
+    setReport(null);
+    setPlan(null);
+    setRefactor(null);
+    setRevalidation(null);
+    setDiff(null);
+  }
+
   async function runAnalysis() {
     if (!summary) return;
     setBusy('analyze');
@@ -247,7 +259,7 @@ function AutoFixInner() {
 
   return (
     <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 pb-16 pt-6">
-      <ProjectHeader summary={summary} report={report} />
+      <ProjectHeader summary={summary} report={report} onDelete={deleteAnalysis} />
 
       {error ? <PageError title={t('autoFix.error.title')} description={error} className="p-4" /> : null}
 
@@ -445,9 +457,11 @@ function LoadingState() {
 function ProjectHeader({
   summary,
   report,
+  onDelete,
 }: {
   readonly summary: ModernizeProjectSummary;
   readonly report: CodebaseAnalysisReport | null;
+  readonly onDelete: () => Promise<void>;
 }) {
   const { t } = useLocale();
   const stack = report?.detected_stack ?? summary.detected_stack ?? t('autoFix.header.untitled');
@@ -466,6 +480,13 @@ function ProjectHeader({
               <Wrench className="h-3.5 w-3.5" /> Auto-Fix
             </Badge>
             <Badge tone="success">{t('autoFix.header.analyzed')}</Badge>
+            <DeleteResourceButton
+              className="px-2 py-1"
+              title={t('autoFix.delete.title')}
+              description={t('autoFix.delete.description', { name: stack })}
+              ariaLabel={t('autoFix.delete.trigger')}
+              onConfirm={onDelete}
+            />
           </div>
           <h1 className="text-3xl font-semibold tracking-[-0.02em] text-[color:var(--text)] md:text-4xl">{stack}</h1>
           <div className="flex flex-wrap gap-1.5">

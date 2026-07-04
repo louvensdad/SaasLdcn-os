@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -9,11 +10,23 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import unquote
 
 from fastapi import HTTPException, status
 
 from app.core.config import BASE_DIR, get_settings
-from app.schemas.generation_validation import BuildRuntimeMetrics, BuildValidationReport
+from app.schemas.generation_validation import (
+    BuildCommandRecord,
+    BuildRepairAttempt,
+    BuildRuntimeMetrics,
+    BuildValidationReport,
+    ClassifiedBuildErrorModel,
+    ManualBuildFixGuide,
+)
+from app.services.build_error_classifier import ClassifiedBuildError, build_error_classifier
+from app.services.dependency_registry import dependency_registry
+from app.services.dependency_research_service import dependency_research_service
+from app.services.stack_compatibility import stack_compatibility_engine
 
 # Receives partial execution-event dicts (type/command/cwd/stream/stdout/...). The
 # caller (job engine) enriches them with id/jobId/timestamp/stage. None = no console.
@@ -28,6 +41,20 @@ except ImportError:  # pragma: no cover - psutil is an optional dependency
 SECRET_LOG_RE = re.compile(
     r"(?i)(secret|token|password|api[_-]?key|private[_-]?key|credential)(\s*[=:]\s*)\S+"
 )
+
+# npm E404 shapes for a nonexistent package (LLM agents occasionally invent names,
+# e.g. "@radix-ui/react-badge"). Both the human line and the GET URL are matched so
+# the repair works across npm versions.
+NPM_MISSING_SPEC_RE = re.compile(r"The requested resource '([^']+)' could not be found")
+NPM_MISSING_URL_RE = re.compile(r"404\s+Not Found\s+-\s+GET\s+https://registry\.npmjs\.org/(\S+)")
+_NPM_MANIFEST_SECTIONS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
+
+# One initial command plus exactly two bounded recovery opportunities. The first
+# repair uses the complete deterministic policy; the second uses the conservative
+# simplified policy. A fourth command execution is structurally impossible.
+MAX_AUTO_REPAIR_ATTEMPTS = 2
+MAX_REPAIRS_PER_ERROR = MAX_AUTO_REPAIR_ATTEMPTS
+MAX_ATTEMPTS_PER_PHASE = 1 + MAX_AUTO_REPAIR_ATTEMPTS
 
 
 class _MetricsCollector:
@@ -86,11 +113,18 @@ class BuildValidationService:
         except subprocess.TimeoutExpired as exc:
             report = BuildValidationReport(
                 installed="failed",
-                built="skipped",
+                built="skipped_after_failure",
                 ok=False,
                 skipped_reason=f"Build validation timed out after {self.timeout_seconds}s.",
                 logs_tail=self._tail((exc.stdout or "") + "\n" + (exc.stderr or "")),
+                recovery_status="SKIPPED_AFTER_FAILURE",
             )
+        if not report.ok and report.recovery_status != "SKIPPED_AFTER_FAILURE":
+            report.built = "skipped_after_failure"
+            report.recovery_status = "SKIPPED_AFTER_FAILURE"
+            report.skipped_reason = report.skipped_reason or "Build skipped after the bounded recovery policy failed."
+        if report.recovery_status == "SKIPPED_AFTER_FAILURE" and report.manual_fix_guide is None:
+            report.manual_fix_guide = self._manual_fix_guide(root, [], [], None, report.logs_tail)
         report.metrics = collector.finalize()
         return report
 
@@ -150,6 +184,8 @@ class BuildValidationService:
     ) -> BuildValidationReport:
         def aggregate(field: str) -> str:
             values = [getattr(report, field) for _, _, report in reports]
+            if "skipped_after_failure" in values:
+                return "skipped_after_failure"
             if "failed" in values:
                 return "failed"
             if "passed" in values:
@@ -164,12 +200,36 @@ class BuildValidationService:
             if report.skipped_reason:
                 skipped.append(f"{ecosystem}:{label}: {report.skipped_reason}")
         ok = all(report.ok and not (report.skipped_reason and report.installed == "skipped") for _, _, report in reports)
+        # Merge the auto-repair audit trails: every command/repair from every
+        # ecosystem target, and the first classified error of a failing target.
+        commands = [item for _, _, report in reports for item in report.commands]
+        repairs = [item for _, _, report in reports for item in report.repairs]
+        classified = next((report.classified_error for _, _, report in reports if report.classified_error), None)
+        dependency_validation = next(
+            (report.dependency_validation for _, _, report in reports if report.dependency_validation), None
+        )
+        stack_compatibility = next(
+            (report.stack_compatibility for _, _, report in reports if report.stack_compatibility), None
+        )
+        manual_fix_guide = next(
+            (report.manual_fix_guide for _, _, report in reports if report.manual_fix_guide), None
+        )
+        recovery_status = next(
+            (report.recovery_status for _, _, report in reports if report.recovery_status), None
+        )
         return BuildValidationReport(
             installed=aggregate("installed"),
             built=aggregate("built"),
             ok=ok,
             skipped_reason="; ".join(skipped) if not ok and skipped else None,
             logs_tail=self._tail("\n".join(logs)),
+            commands=commands,
+            repairs=repairs,
+            classified_error=classified,
+            dependency_validation=dependency_validation,
+            stack_compatibility=stack_compatibility,
+            recovery_status=recovery_status,
+            manual_fix_guide=manual_fix_guide,
         )
 
     def _python(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
@@ -190,28 +250,498 @@ class BuildValidationService:
             self._emit(sink, {"type": "command_skipped", "level": "warning", "command": "npm install",
                               "cwd": str(root), "message": "npm nao esta disponivel no servidor; build pulado.", "exitCode": 127})
             return self._skipped("npm is unavailable on the server.")
-        install = self._run(["npm", "install"], root, collector, "install", sink)
+
+        commands: list[dict[str, Any]] = []
+        repairs: list[dict[str, Any]] = []
+        error_counts: dict[str, int] = {}
+
+        # Dependency Registry gate: validate + auto-fix the manifest BEFORE the
+        # first npm install so invented packages (@radix-ui/react-badge) never
+        # reach the registry. Writes dependency.validation.json at the root.
+        dep_result = dependency_registry.validate_and_fix(root, sink=sink)
+        dep_validation = dep_result.as_dict() if dep_result.status != "skipped" else None
+        if dep_result.repaired:
+            fixed = [f.package for f in dep_result.findings if f.status == "fixed"]
+            self._emit(sink, {
+                "type": "repair_applied", "level": "warning",
+                "message": (
+                    "Dependency Registry: dependencia(s) inexistente(s) corrigida(s) antes do install: "
+                    + ", ".join(fixed) + "."
+                ),
+            })
+
+        # Stack Compatibility Engine: capture/load the Stack Lock, restore any
+        # anchor drift, and move ecosystem packages that are incompatible with
+        # the locked React major to matrix-suggested versions (Auto Version
+        # Fixer) — BEFORE npm resolves anything. Writes stack.lock.json +
+        # stack.compatibility.json at the project root.
+        compat_result = stack_compatibility_engine.validate_and_fix(root, sink=sink)
+        compat_report = compat_result.as_dict() if compat_result.status != "skipped" else None
+        if compat_result.fixed:
+            adjusted = ", ".join(
+                f"{item.package} {item.current} -> {item.suggested}"
+                for item in compat_result.findings if item.status in {"fixed", "lock_enforced"}
+            )
+            self._emit(sink, {
+                "type": "repair_applied", "level": "warning",
+                "message": f"Stack Compatibility: versao(oes) incoerente(s) com a stack travada ajustada(s) antes do install: {adjusted}.",
+            })
+
+        # Preflight Build Check (Build Guard): SIMULATE the install first.
+        # `npm install --dry-run` resolves the full dependency tree without
+        # writing node_modules, so a predictable conflict (ERESOLVE, E404,
+        # ETARGET) is caught — and repaired — before the real install/build.
+        classified: ClassifiedBuildError | None = None
+        preflight, classified = self._install_phase(
+            root, collector, sink, commands, repairs, error_counts,
+            command=["npm", "install", "--dry-run"], record_phase="preflight",
+        )
+        if preflight.returncode != 0:
+            report = self._failed_install(preflight)
+            return self._failed_with_guide(root, report, commands, repairs, classified, dep_validation, compat_report)
+
+        # ------------------------------------------------------ install + repair
+        install, classified = self._install_phase(
+            root, collector, sink, commands, repairs, error_counts,
+            command=["npm", "install"], record_phase="install",
+        )
         if install.returncode != 0:
-            return self._failed_install(install)
+            report = self._failed_install(install)
+            return self._failed_with_guide(root, report, commands, repairs, classified, dep_validation, compat_report)
+        classified = None
+
+        # -------------------------------------------------------- build + repair
         build_status = "skipped"
-        build_result = None
-        package = (root / "package.json").read_text(encoding="utf-8", errors="ignore")
-        if '"build"' in package:
-            build_result = self._run(["npm", "run", "build"], root, collector, "build", sink)
-            build_status = "passed" if build_result.returncode == 0 else "failed"
-        elif (root / "tsconfig.json").is_file():
-            build_result = self._run(["npm", "exec", "tsc", "--", "--noEmit"], root, collector, "build", sink)
-            build_status = "passed" if build_result.returncode == 0 else "failed"
+        build_result: subprocess.CompletedProcess[str] | None = None
+        build_attempts = 0
+        while build_attempts < MAX_ATTEMPTS_PER_PHASE:
+            build_cmd = self._node_build_command(root)
+            if build_cmd is None:
+                break
+            build_result = self._run(build_cmd, root, collector, "build", sink, records=commands, record_phase="build")
+            build_attempts += 1
+            if build_result.returncode == 0:
+                build_status = "passed"
+                classified = None
+                break
+            build_status = "failed"
+            logs = build_result.stdout + build_result.stderr
+            classified = build_error_classifier.classify(logs)
+            if classified is None:
+                break
+            signature = f"{classified.code}:{classified.package or '-'}"
+            error_counts[signature] = error_counts.get(signature, 0) + 1
+            if error_counts[signature] > MAX_REPAIRS_PER_ERROR:
+                break
+            strategy = "standard" if build_attempts == 1 else "simplified"
+            self._emit(sink, {"type": "repair_started", "level": "warning",
+                              "message": f"Auto-reparo {strategy}: {classified.message} Causa raiz: {classified.root_cause}"})
+            patch, applied, detail = self._repair_build_error(
+                root, collector, classified, sink, commands, simplified=strategy == "simplified"
+            )
+            repairs.append({
+                "phase": "build", "attempt": len(repairs) + 1,
+                "strategy": strategy, "error": classified.as_dict(), "patch": patch, "applied": applied, "detail": detail,
+            })
+            self._emit(sink, {
+                "type": "repair_applied" if applied else "repair_failed",
+                "level": "warning" if applied else "error",
+                "message": (f"Patch aplicado: {patch}" if applied else f"Sem correcao automatica segura: {classified.suggested_fix}"),
+            })
+            if not applied:
+                break
+
         logs = install.stdout + install.stderr
         if build_result is not None:
             logs += "\n" + build_result.stdout + build_result.stderr
-        return BuildValidationReport(
+        if repairs:
+            notes = "\n".join(
+                f"[auto-repair] {item['error']['message']} Patch: {item['patch'] or 'nenhum'} ({'aplicado' if item['applied'] else 'nao aplicado'})"
+                for item in repairs
+            )
+            logs = f"{notes}\n{logs}"
+        exhausted = build_status == "failed"
+        report = BuildValidationReport(
             installed="passed",
-            built=build_status,
-            ok=build_status != "failed",
-            skipped_reason=None if build_status != "skipped" else "No build script or tsconfig.json was found.",
+            built="skipped_after_failure" if exhausted else build_status,
+            ok=not exhausted,
+            skipped_reason=(
+                "Build skipped after two automatic recovery attempts."
+                if exhausted else None if build_status != "skipped" else "No build script or tsconfig.json was found."
+            ),
             logs_tail=self._tail(logs),
+            recovery_status="SKIPPED_AFTER_FAILURE" if exhausted else None,
         )
+        attached = self._attach_audit(
+            report, commands, repairs, classified if exhausted else None, dep_validation, compat_report
+        )
+        if exhausted:
+            attached.manual_fix_guide = self._manual_fix_guide(root, commands, repairs, classified, logs)
+        return attached
+
+    def _install_phase(
+        self,
+        root: Path,
+        collector: _MetricsCollector,
+        sink: EventSink | None,
+        commands: list[dict[str, Any]],
+        repairs: list[dict[str, Any]],
+        error_counts: dict[str, int],
+        *,
+        command: list[str],
+        record_phase: str,
+    ) -> tuple[subprocess.CompletedProcess[str], ClassifiedBuildError | None]:
+        """Run one install-style command (preflight --dry-run or the real
+        install) under the bounded auto-repair loop: classify the failure,
+        enrich ERESOLVE with the Stack Compatibility diagnosis, apply the safe
+        patch and re-run — max MAX_REPAIRS_PER_ERROR per distinct error and
+        MAX_ATTEMPTS_PER_PHASE commands per phase."""
+        result = self._run(command, root, collector, "install", sink, records=commands, record_phase=record_phase)
+        attempts = 1
+        classified: ClassifiedBuildError | None = None
+        current = list(command)
+        while result.returncode != 0 and attempts < MAX_ATTEMPTS_PER_PHASE:
+            logs = result.stdout + result.stderr
+            classified = build_error_classifier.classify(logs)
+            if classified is None:
+                break
+            if classified.code == "npm_peer_dependency_conflict":
+                conflict = stack_compatibility_engine.diagnose_peer_conflict(logs, root)
+                if conflict is not None:
+                    classified = classified.with_conflict(
+                        conflict.as_dict(),
+                        message=(
+                            f"Conflito de versao: {conflict.package}@{conflict.package_version} exige "
+                            f"{conflict.requires}, mas a stack travada usa {conflict.anchor}@{conflict.anchor_version}."
+                        ),
+                        root_cause=conflict.reason,
+                        suggested_fix=(
+                            f"Ajustar {conflict.package} para {conflict.suggested}. Impacto: {conflict.impact}"
+                            if conflict.suggested
+                            else f"Decisao do usuario necessaria. {conflict.impact}"
+                        ),
+                        auto_fixable=not conflict.requires_user_decision,
+                    )
+            signature = f"{classified.code}:{classified.package or '-'}"
+            error_counts[signature] = error_counts.get(signature, 0) + 1
+            if error_counts[signature] > MAX_REPAIRS_PER_ERROR:
+                break
+            strategy = "standard" if attempts == 1 else "simplified"
+            self._emit(sink, {"type": "repair_started", "level": "warning",
+                              "message": f"Auto-reparo {strategy}: {classified.message} Causa raiz: {classified.root_cause}"})
+            patch, applied, detail, replacement_cmd = self._repair_install_error(
+                root, classified, logs, sink, simplified=strategy == "simplified"
+            )
+            repairs.append({
+                "phase": record_phase, "attempt": len(repairs) + 1,
+                "strategy": strategy, "error": classified.as_dict(), "patch": patch, "applied": applied, "detail": detail,
+            })
+            self._emit(sink, {
+                "type": "repair_applied" if applied else "repair_failed",
+                "level": "warning" if applied else "error",
+                "message": (f"Patch aplicado: {patch}" if applied else f"Sem correcao automatica segura: {classified.suggested_fix}"),
+            })
+            if not applied:
+                break
+            if replacement_cmd is not None:
+                current = replacement_cmd
+            result = self._run(current, root, collector, "install", sink, records=commands, record_phase=record_phase)
+            attempts += 1
+        if result.returncode == 0:
+            classified = None
+        return result, classified
+
+    def _node_build_command(self, root: Path) -> list[str] | None:
+        package = (root / "package.json").read_text(encoding="utf-8", errors="ignore")
+        if '"build"' in package:
+            return ["npm", "run", "build"]
+        if (root / "tsconfig.json").is_file():
+            return ["npm", "exec", "tsc", "--", "--noEmit"]
+        return None
+
+    def _repair_install_error(
+        self, root: Path, classified: ClassifiedBuildError, logs: str, sink: EventSink | None,
+        *, simplified: bool = False,
+    ) -> tuple[str | None, bool, str, list[str] | None]:
+        """Apply the safe deterministic patch for a classified install failure.
+        Returns (patch description, applied?, detail, replacement install command)."""
+        if classified.code in {"npm_package_not_found", "invalid_package_name"}:
+            if classified.package:
+                record = dependency_registry.fix_missing_package(root, classified.package, sink=sink)
+                if record is not None:
+                    detail_parts = []
+                    if record.files_written:
+                        detail_parts.append("criado: " + ", ".join(record.files_written))
+                    if record.files_rewritten:
+                        detail_parts.append("imports atualizados: " + ", ".join(record.files_rewritten))
+                    return record.patch, True, "; ".join(detail_parts), None
+            removed = self._strip_missing_npm_packages(root, logs, sink)
+            if removed:
+                return f"Dependencia(s) removida(s) do package.json: {', '.join(removed)}.", True, "", None
+            return None, False, "Pacote ofensor nao localizado em nenhum package.json.", None
+        if classified.code == "npm_version_not_found" and classified.package:
+            if simplified:
+                return None, False, "Modo simplificado nao consulta novas versoes no registro.", None
+            new_version = self._fix_npm_version(root, classified.package)
+            if new_version:
+                return f"Versao de '{classified.package}' ajustada para {new_version}.", True, "", None
+            return None, False, f"'{classified.package}' nao encontrado em nenhum package.json.", None
+        if classified.code == "npm_peer_dependency_conflict":
+            # Build Guard: ERESOLVE is resolved by moving the CONFLICTING package
+            # to the matrix-compatible version — never by forcing the install
+            # (--legacy-peer-deps would hide the incoherence) and never by
+            # changing a locked anchor (React) without the user's approval.
+            conflict = stack_compatibility_engine.diagnose_peer_conflict(logs, root)
+            if conflict is None:
+                return None, False, "Conflito ERESOLVE nao pode ser diagnosticado automaticamente.", None
+            if conflict.requires_user_decision:
+                return None, False, conflict.impact, None
+            if stack_compatibility_engine.apply_conflict_fix(root, conflict):
+                return (
+                    f"'{conflict.package}' ajustado de {conflict.package_version} para {conflict.suggested} "
+                    f"(compativel com {conflict.anchor}@{conflict.anchor_version}).",
+                    True,
+                    conflict.impact,
+                    None,
+                )
+            return None, False, f"'{conflict.package}' nao encontrado em nenhum package.json.", None
+        return None, False, "Erro sem correcao deterministica segura.", None
+
+    def _repair_build_error(
+        self, root: Path, collector: _MetricsCollector, classified: ClassifiedBuildError,
+        sink: EventSink | None, commands: list[dict[str, Any]],
+        *, simplified: bool = False,
+    ) -> tuple[str | None, bool, str]:
+        """Safe deterministic patches for classified BUILD failures. Only
+        module-resolution problems have one: a forbidden/invented module is
+        replaced by its local component (imports rewritten); a real missing npm
+        package is added to the manifest and installed."""
+        if classified.code != "module_not_found" or not classified.package:
+            return None, False, "Erro sem correcao deterministica segura."
+        package = classified.package
+        if dependency_registry.is_forbidden(package):
+            record = dependency_registry.fix_missing_package(root, package, sink=sink)
+            known = dependency_registry.bad_package(package)
+            if record is None and known and known.import_replacement:
+                # Not in the manifest anymore, but a source file still imports it.
+                rewritten = dependency_registry._rewrite_imports(root, root, package, known.import_replacement)  # noqa: SLF001
+                if known.local_component and known.local_component_content:
+                    component = root / known.local_component
+                    if not component.is_file():
+                        component.parent.mkdir(parents=True, exist_ok=True)
+                        component.write_text(known.local_component_content, encoding="utf-8")
+                if rewritten:
+                    return known.fix, True, "imports atualizados: " + ", ".join(rewritten)
+            if record is not None:
+                return record.patch, True, "",
+            return None, False, f"Nenhum uso de '{package}' localizado para corrigir."
+        if simplified:
+            return None, False, "Modo simplificado nao adiciona dependencias novas ao projeto."
+        version = self._registry_latest(package)
+        if version is None:
+            return None, False, f"'{package}' nao foi confirmado no registro npm; nada adicionado."
+        added = self._add_npm_dependency(root, package, version)
+        if not added:
+            return None, False, "package.json nao encontrado para adicionar a dependencia."
+        install = self._run(["npm", "install"], root, collector, "install", sink, records=commands, record_phase="install")
+        if install.returncode != 0:
+            return f"Dependencia '{package}@^{version}' adicionada, mas o install falhou.", False, self._tail(install.stdout + install.stderr, 10)
+        return f"Dependencia real '{package}@^{version}' adicionada ao package.json e instalada.", True, ""
+
+    def _fix_npm_version(self, root: Path, package: str) -> str | None:
+        """ETARGET repair: point the requested version at the latest published one."""
+        lookup_version = self._registry_latest(package)
+        new_version = f"^{lookup_version}" if lookup_version else "latest"
+        for manifest in sorted(root.rglob("package.json"), key=lambda path: len(path.parts)):
+            if "node_modules" in manifest.parts:
+                continue
+            try:
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            changed = False
+            for section in _NPM_MANIFEST_SECTIONS:
+                deps = data.get(section)
+                if isinstance(deps, dict) and package in deps:
+                    deps[package] = new_version
+                    changed = True
+            if changed:
+                manifest.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                lock = manifest.parent / "package-lock.json"
+                if lock.is_file():
+                    lock.unlink()
+                return new_version
+        return None
+
+    def _add_npm_dependency(self, root: Path, package: str, version: str) -> bool:
+        manifest = root / "package.json"
+        if not manifest.is_file():
+            return False
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        deps = data.get("dependencies")
+        if not isinstance(deps, dict):
+            deps = {}
+            data["dependencies"] = deps
+        deps[package] = f"^{version}"
+        manifest.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return True
+
+    def _registry_latest(self, package: str) -> str | None:
+        try:
+            lookup = dependency_research_service.latest_npm(package)
+        except Exception:  # noqa: BLE001 — registry probe is best-effort
+            return None
+        return lookup.latest_version
+
+    @staticmethod
+    def _attach_audit(
+        report: BuildValidationReport,
+        commands: list[dict[str, Any]],
+        repairs: list[dict[str, Any]],
+        classified: ClassifiedBuildError | None,
+        dep_validation: dict[str, Any] | None,
+        stack_compatibility: dict[str, Any] | None = None,
+    ) -> BuildValidationReport:
+        report.commands = [BuildCommandRecord.model_validate(item) for item in commands]
+        report.repairs = [BuildRepairAttempt.model_validate(item) for item in repairs]
+        report.classified_error = (
+            ClassifiedBuildErrorModel.model_validate(classified.as_dict()) if classified else None
+        )
+        report.dependency_validation = dep_validation
+        report.stack_compatibility = stack_compatibility
+        return report
+
+    def _failed_with_guide(
+        self,
+        root: Path,
+        report: BuildValidationReport,
+        commands: list[dict[str, Any]],
+        repairs: list[dict[str, Any]],
+        classified: ClassifiedBuildError | None,
+        dependency_validation: dict[str, Any] | None,
+        stack_compatibility: dict[str, Any] | None,
+    ) -> BuildValidationReport:
+        report.built = "skipped_after_failure"
+        report.ok = False
+        report.recovery_status = "SKIPPED_AFTER_FAILURE"
+        report.skipped_reason = "Build skipped after the bounded automatic recovery policy was exhausted."
+        attached = self._attach_audit(
+            report, commands, repairs, classified, dependency_validation, stack_compatibility
+        )
+        attached.manual_fix_guide = self._manual_fix_guide(
+            root, commands, repairs, classified, report.logs_tail
+        )
+        return attached
+
+    def _manual_fix_guide(
+        self,
+        root: Path,
+        commands: list[dict[str, Any]],
+        repairs: list[dict[str, Any]],
+        classified: ClassifiedBuildError | None,
+        fallback_logs: str,
+    ) -> ManualBuildFixGuide:
+        conflict = classified.conflict if classified and isinstance(classified.conflict, dict) else {}
+        dependencies = {
+            str(value)
+            for value in (
+                classified.package if classified else None,
+                conflict.get("package"),
+                conflict.get("anchor"),
+            )
+            if value
+        }
+        suggestions: dict[str, str] = {}
+        if conflict.get("package") and conflict.get("suggested"):
+            suggestions[str(conflict["package"])] = str(conflict["suggested"])
+
+        affected = sorted(
+            path.relative_to(root).as_posix()
+            for path in root.rglob("package.json")
+            if "node_modules" not in path.parts
+        )
+        patches = [str(item["patch"]) for item in repairs if item.get("patch")]
+        command_list = ["npm install"]
+        command_list.extend(
+            f"npm install {package}@{version}" for package, version in suggestions.items()
+        )
+        command_list.append("npm run build")
+
+        log_blocks: list[str] = []
+        for item in commands:
+            stdout = str(item.get("stdout") or item.get("stdout_tail") or "")
+            stderr = str(item.get("stderr") or item.get("stderr_tail") or "")
+            log_blocks.append(
+                f"$ {item.get('command', '')}\n{stdout}\n{stderr}".strip()
+            )
+        full_logs = self._redact("\n\n".join(log_blocks) or fallback_logs)
+        original_error = (
+            classified.message if classified else next(
+                (line for line in reversed(full_logs.splitlines()) if line.strip()),
+                "Build command failed.",
+            )
+        )
+        root_cause = classified.root_cause if classified else "The build command failed after bounded recovery."
+        return ManualBuildFixGuide(
+            root_cause=root_cause,
+            original_error=original_error,
+            affected_files=affected,
+            problematic_dependencies=sorted(dependencies),
+            suggested_versions=suggestions,
+            commands=command_list,
+            steps=[
+                "Review the original error and the complete command logs.",
+                "Open the affected manifests and verify the dependency compatibility range.",
+                "Apply the suggested version change or revert the recorded automatic patches.",
+                "Run the install command and then the build command locally.",
+                "Return to Meta-Factory and run the manual build retry once the local build passes.",
+            ],
+            patches_applied=patches,
+            full_logs=full_logs,
+        )
+
+    def _strip_missing_npm_packages(self, root: Path, logs: str, sink: EventSink | None) -> list[str]:
+        """Remove npm-E404 (nonexistent) packages from package.json so the caller can
+        retry the install. Returns the removed names ([] when there is nothing to
+        repair, e.g. the failure was network- or engine-related, not a bad name)."""
+        names: set[str] = set()
+        for spec in NPM_MISSING_SPEC_RE.findall(logs):
+            # '@scope/name@^1.0.0' -> '@scope/name'; a leading '@' is never a separator.
+            names.add(spec.rsplit("@", 1)[0] if spec.rfind("@") > 0 else spec)
+        for encoded in NPM_MISSING_URL_RE.findall(logs):
+            names.add(unquote(encoded).strip("'\""))
+        if not names:
+            return []
+        manifest = root / "package.json"
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        removed: list[str] = []
+        for section in _NPM_MANIFEST_SECTIONS:
+            deps = data.get(section)
+            if not isinstance(deps, dict):
+                continue
+            for name in sorted(names):
+                if name in deps:
+                    deps.pop(name)
+                    removed.append(name)
+        if not removed:
+            return []
+        manifest.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        # A stale lockfile would keep resolving the removed package on retry.
+        lock = root / "package-lock.json"
+        if lock.is_file():
+            lock.unlink()
+        for name in removed:
+            self._emit(sink, {
+                "type": "command_output", "stream": "stderr", "level": "warning",
+                "message": f"Auto-reparo: '{name}' nao existe no registro npm (E404); dependencia removida do package.json e o install sera repetido.",
+            })
+        return removed
 
     def _maven(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
         return self._compile_ecosystem(root, collector, sink, tool="mvn", command=["mvn", "-q", "-DskipTests", "compile"])
@@ -274,6 +804,8 @@ class BuildValidationService:
         collector: _MetricsCollector | None = None,
         phase: str = "build",
         sink: EventSink | None = None,
+        records: list[dict[str, Any]] | None = None,
+        record_phase: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Run a build subprocess, STREAMING its stdout/stderr line-by-line to the
         live console while measuring real wall-clock duration (always) plus peak
@@ -298,6 +830,10 @@ class BuildValidationService:
             message = f"Executavel '{exe}' nao encontrado no PATH do servidor."
             self._emit(sink, {"type": "command_skipped", "level": "warning", "command": display,
                               "cwd": cwd, "message": message, "exitCode": 127})
+            if records is not None:
+                records.append({"phase": record_phase or phase, "command": display, "cwd": cwd,
+                                "exit_code": 127, "duration_ms": 0, "stdout_tail": "", "stderr_tail": message,
+                                "stdout": "", "stderr": message})
             return subprocess.CompletedProcess(command, 127, "", message)
 
         out_lines: list[str] = []
@@ -378,6 +914,12 @@ class BuildValidationService:
             )
         stdout = "\n".join(out_lines)
         stderr = "\n".join(err_lines)
+
+        if records is not None:
+            records.append({"phase": record_phase or phase, "command": display, "cwd": cwd,
+                            "exit_code": None if timed_out else proc.returncode, "duration_ms": elapsed_ms,
+                            "stdout_tail": self._tail(stdout, 40), "stderr_tail": self._tail(stderr, 40),
+                            "stdout": self._redact(stdout), "stderr": self._redact(stderr)})
 
         if timed_out:
             self._emit(sink, {"type": "command_finished", "level": "error", "command": display, "cwd": cwd,

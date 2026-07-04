@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from app.schemas.architecture_blueprint import ArchitectureBlueprint
+from app.schemas.architecture_blueprint import ArchitectureBlueprint, StackProposal
 from app.schemas.architecture_model import ArchitectureModel
 from app.schemas.common import ApiModel
 from app.schemas.orchestrator import ClarifyingQuestion, ProjectSpec
@@ -242,6 +242,9 @@ class ProjectRoom(ApiModel):
     architecture_blueprint: ArchitectureBlueprint | None = None
     blueprint_versions: list[BlueprintVersion] = Field(default_factory=list)
     active_blueprint_version: int | None = None
+    # Stack Approval Gate: the proposed stack (choice + reason + alternatives per
+    # area) and the current approval state, derived from the active blueprint.
+    stack_proposal: StackProposal | None = None
     generation_handoff: GenerationJob | None = None
     readiness_checklist: list[ProjectReadinessCheck] = Field(default_factory=list)
     engineering_review: EngineeringReviewAssessment | None = None
@@ -318,3 +321,17 @@ class AcknowledgePreviewRequest(ApiModel):
     """Conscious acceptance of a degraded (deterministic) Blueprint preview."""
 
     confirmation: str = Field(min_length=1)
+
+
+class StackApprovalRequest(ApiModel):
+    """Stack Approval Gate: approve the proposed stack as-is (empty body) or with
+    explicit user overrides ('Alterar stack'). Every provided field replaces the
+    blueprint recommendation and is what generation will use."""
+
+    selected_frontend: str | None = None
+    selected_backend: str | None = None
+    selected_database: str | None = None
+    selected_language: str | None = None
+    selected_auth: str | None = None
+    selected_testing: str | None = None
+    selected_deploy_target: str | None = None

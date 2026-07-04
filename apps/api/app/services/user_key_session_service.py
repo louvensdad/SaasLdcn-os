@@ -31,7 +31,7 @@ class UserKeyVaultUnavailable(ServiceUnavailableError):
 class UserKeyVaultBackend(Protocol):
     def set(self, user_id: str, provider: str, token: str, masked: str, ttl: int) -> None: ...
     def get(self, user_id: str, provider: str) -> tuple[str, str] | None: ...
-    def status(self, user_id: str) -> list[tuple[str, str]]: ...
+    def status(self, user_id: str) -> list[tuple[str, str, int | None]]: ...
     def clear(self, user_id: str, provider: str | None = None) -> None: ...
 
 
@@ -61,14 +61,14 @@ class InMemoryVaultBackend:
                 return None
             return entry[0], entry[1]
 
-    def status(self, user_id: str) -> list[tuple[str, str]]:
+    def status(self, user_id: str) -> list[tuple[str, str, int | None]]:
         with self._lock:
             now = self._clock()
             entries = self._vault.get(user_id, {})
             for provider in [name for name, entry in entries.items() if entry[2] <= now]:
                 self._purge_locked(user_id, provider)
             return [
-                (provider, entry[1])
+                (provider, entry[1], max(0, int(entry[2] - now)))
                 for provider, entry in sorted(self._vault.get(user_id, {}).items())
             ]
 
@@ -136,15 +136,17 @@ class RedisVaultBackend:
         except Exception as exc:
             raise UserKeyVaultUnavailable() from exc
 
-    def status(self, user_id: str) -> list[tuple[str, str]]:
+    def status(self, user_id: str) -> list[tuple[str, str, int | None]]:
         providers = sorted(_PROVIDERS)
         try:
             values = self._redis.mget([self._key(user_id, provider) for provider in providers])
-            return [
-                (provider, self._decode(raw)[1])
-                for provider, raw in zip(providers, values, strict=True)
-                if raw
-            ]
+            result: list[tuple[str, str, int | None]] = []
+            for provider, raw in zip(providers, values, strict=True):
+                if not raw:
+                    continue
+                ttl = self._redis.ttl(self._key(user_id, provider))
+                result.append((provider, self._decode(raw)[1], max(0, int(ttl)) if isinstance(ttl, int) and ttl >= 0 else None))
+            return result
         except UserKeyVaultUnavailable:
             raise
         except Exception as exc:
@@ -191,7 +193,7 @@ class UserKeySessionService:
             raise ValueError(f"Unsupported provider '{normalized}'.")
         return normalized
 
-    def set(self, user_id: str, provider: str, api_key: str) -> str:
+    def set(self, user_id: str, provider: str, api_key: str, ttl_seconds: int | None = None) -> str:
         normalized = self._provider(provider)
         clean_key = api_key.strip()
         if not clean_key:
@@ -202,7 +204,7 @@ class UserKeySessionService:
             normalized,
             encrypt_secret(clean_key),
             masked,
-            self._ttl(),
+            max(1, int(ttl_seconds)) if ttl_seconds is not None else self._ttl(),
         )
         return masked
 
@@ -220,7 +222,7 @@ class UserKeySessionService:
             self._get_backend().clear(user_id, normalized)
             return None
 
-    def status(self, user_id: str) -> list[tuple[str, str]]:
+    def status(self, user_id: str) -> list[tuple[str, str, int | None]]:
         return self._get_backend().status(user_id)
 
     def clear(self, user_id: str, provider: str | None = None) -> None:

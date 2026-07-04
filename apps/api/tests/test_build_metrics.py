@@ -89,3 +89,66 @@ def test_dispatch_validates_backend_web_and_mobile_manifests(monkeypatch):
     finally:
         import shutil
         shutil.rmtree(root, ignore_errors=True)
+
+
+# --- npm E404 auto-repair (hallucinated package names) ----------------------- #
+
+_NPM_404_LOG = """
+npm error code E404
+npm error 404 Not Found - GET https://registry.npmjs.org/@radix-ui%2freact-badge - Not found
+npm error 404
+npm error 404  The requested resource '@radix-ui/react-badge@^1.0.4' could not be found or you do not have permission to access it.
+"""
+
+
+def _npm_project(dependencies: dict[str, str]) -> Path:
+    import json
+
+    root = Path(tempfile.mkdtemp(prefix="ldcn-npm-repair-"))
+    (root / "package.json").write_text(
+        json.dumps({"name": "x", "version": "1.0.0", "dependencies": dependencies}),
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_strip_missing_npm_packages_removes_hallucinated_dependency():
+    import json
+
+    svc = BuildValidationService()
+    root = _npm_project({"@radix-ui/react-badge": "^1.0.4", "react": "^18.2.0"})
+    events: list[dict] = []
+
+    removed = svc._strip_missing_npm_packages(root, _NPM_404_LOG, events.append)
+
+    assert removed == ["@radix-ui/react-badge"]
+    data = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    assert "@radix-ui/react-badge" not in data["dependencies"]
+    assert data["dependencies"]["react"] == "^18.2.0"  # untouched
+    assert any("@radix-ui/react-badge" in e.get("message", "") for e in events)
+
+
+def test_strip_missing_npm_packages_ignores_unrelated_failures():
+    svc = BuildValidationService()
+    root = _npm_project({"react": "^18.2.0"})
+
+    # Network failure / engine mismatch: nothing to repair, no manifest rewrite.
+    assert svc._strip_missing_npm_packages(root, "npm error code ECONNRESET", None) == []
+    # E404 for a package that is not in this manifest: also a no-op.
+    assert svc._strip_missing_npm_packages(root, _NPM_404_LOG, None) == []
+
+
+def test_strip_missing_npm_packages_handles_unscoped_spec_and_lockfile():
+    import json
+
+    svc = BuildValidationService()
+    root = _npm_project({"left-padz": "^9.9.9"})
+    (root / "package-lock.json").write_text("{}", encoding="utf-8")
+    log = "npm error 404  The requested resource 'left-padz@^9.9.9' could not be found or you do not have permission to access it."
+
+    removed = svc._strip_missing_npm_packages(root, log, None)
+
+    assert removed == ["left-padz"]
+    assert not (root / "package-lock.json").exists()  # stale lock purged for the retry
+    data = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    assert data["dependencies"] == {}

@@ -7,7 +7,7 @@ from pydantic import Field
 from app.schemas.common import ApiModel
 
 DependencyFindingStatus = Literal["missing", "outdated", "current", "managed", "skipped"]
-BuildStageStatus = Literal["passed", "failed", "skipped"]
+BuildStageStatus = Literal["passed", "failed", "skipped", "skipped_after_failure"]
 
 
 class DependencyFinding(ApiModel):
@@ -39,6 +39,61 @@ class BuildRuntimeMetrics(ApiModel):
     sampler: Literal["psutil", "wallclock"] = "wallclock"
 
 
+class BuildCommandRecord(ApiModel):
+    """One real command executed during build validation — the audit trail that
+    build.report.json exposes (comando, cwd, exitCode, duração, stdout/stderr)."""
+
+    phase: Literal["dependency_validation", "preflight", "install", "build"] = "build"
+    command: str
+    cwd: str
+    exit_code: int | None = None
+    duration_ms: int = 0
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    stdout: str = ""
+    stderr: str = ""
+
+
+class ClassifiedBuildErrorModel(ApiModel):
+    """Typed build error produced by the BuildErrorClassifier."""
+
+    code: str
+    message: str
+    root_cause: str
+    suggested_fix: str
+    package: str | None = None
+    auto_fixable: bool = False
+    # Peer-conflict diagnosis (Stack Compatibility Engine): conflicting package,
+    # current version, required version, suggested compatible version, impact,
+    # and whether resolving it needs an explicit user decision (anchor change).
+    conflict: dict[str, Any] | None = None
+
+
+class BuildRepairAttempt(ApiModel):
+    """One pass of the Build Auto-Repair loop: which classified error was found,
+    which patch was applied, and whether the retry could proceed."""
+
+    phase: Literal["preflight", "install", "build"]
+    attempt: int
+    strategy: Literal["standard", "simplified"] = "standard"
+    error: ClassifiedBuildErrorModel
+    patch: str | None = None
+    applied: bool = False
+    detail: str = ""
+
+
+class ManualBuildFixGuide(ApiModel):
+    root_cause: str
+    original_error: str
+    affected_files: list[str] = Field(default_factory=list)
+    problematic_dependencies: list[str] = Field(default_factory=list)
+    suggested_versions: dict[str, str] = Field(default_factory=dict)
+    commands: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    patches_applied: list[str] = Field(default_factory=list)
+    full_logs: str = ""
+
+
 class BuildValidationReport(ApiModel):
     installed: BuildStageStatus
     built: BuildStageStatus
@@ -46,6 +101,17 @@ class BuildValidationReport(ApiModel):
     skipped_reason: str | None = None
     logs_tail: str = ""
     metrics: BuildRuntimeMetrics | None = None
+    # Build Auto-Repair audit trail: every command run, every classified error,
+    # every deterministic patch applied, and the pre-install dependency validation.
+    commands: list[BuildCommandRecord] = Field(default_factory=list)
+    repairs: list[BuildRepairAttempt] = Field(default_factory=list)
+    classified_error: ClassifiedBuildErrorModel | None = None
+    dependency_validation: dict[str, Any] | None = None
+    # Stack Compatibility Engine output: the stack lock + matrix findings
+    # (auto version fixes, lock enforcement, user-decision blocks).
+    stack_compatibility: dict[str, Any] | None = None
+    recovery_status: Literal["SKIPPED_AFTER_FAILURE"] | None = None
+    manual_fix_guide: ManualBuildFixGuide | None = None
 
 
 class GenerationValidationReport(ApiModel):

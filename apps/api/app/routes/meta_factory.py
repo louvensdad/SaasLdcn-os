@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import queue
 import re
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app.core.config import get_settings
@@ -27,6 +29,7 @@ from app.engines.context_pack_builder import build_agent_context, summarize_cont
 from app.engines.factory_pipeline import PIPELINE_ORDER, iter_factory_pipeline, iter_single_agent, run_factory_pipeline
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.generation_job_engine import generation_job_engine
+from app.engines.ground_truth_engine import ground_truth_engine
 from app.engines.generated_project_quality_engine import GeneratedProjectQualityEngine
 from app.engines.verification_engine import iter_verification
 from app.engines.llm.base import LLMError
@@ -58,7 +61,9 @@ from app.schemas.generation_job import (
     GenerationUsageSummary,
     RetryGenerationStageRequest,
 )
+from app.schemas.execution_terminal import TerminalExecuteRequest, TerminalHistoryResponse
 from app.services.api_collection_service import api_collection_service
+from app.services.execution_terminal_service import ALLOWED_COMMANDS_DISPLAY, execution_terminal_service
 from app.services.generated_project_service import GeneratedProjectService
 from app.services.git_provider_service import git_provider_service
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter, ProjectWriteError
@@ -200,6 +205,28 @@ def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser
             },
         )
     if room is not None:
+        # Stack Approval Gate (server-side backstop): generation can never start on
+        # a stack the user did not explicitly approve. The approved selections —
+        # not the model's internal choice — are enforced into the spec below.
+        stack_approval = ((room.get("architecture_blueprint") or {}).get("stack_approval") or {})
+        if stack_approval.get("status") != "APPROVED":
+            _audit(user["user_id"], "generation_job_blocked_by_stack_gate")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "STACK_APPROVAL_REQUIRED",
+                    "message": (
+                        "A stack de desenvolvimento ainda nao foi aprovada pelo usuario. "
+                        "Aprove (ou altere) a stack no Stack Approval Gate antes de gerar."
+                    ),
+                },
+            )
+        if stack_approval.get("selected_language"):
+            payload.spec.suggested_stack.language = str(stack_approval["selected_language"])
+        if stack_approval.get("selected_backend"):
+            payload.spec.suggested_stack.framework = str(stack_approval["selected_backend"])
+        payload.blueprint.setdefault("stack_approval", stack_approval)
+    if room is not None:
         # The room's own approve()/acknowledge_preview() flow already requires and
         # records explicit human sign-off for a degraded (deterministic-preview)
         # blueprint before it can reach ENGINEERING_APPROVED (see
@@ -274,6 +301,19 @@ def get_generation_job(job_id: str, user: CurrentUser) -> GenerationJob:
     return GenerationJob.model_validate(job)
 
 
+@router.delete("/meta-factory/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_generation_job(job_id: str, user: CurrentUser) -> Response:
+    result = generation_job_engine.delete(job_id, user["user_id"])
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="GenerationJob nao encontrado.")
+    if result is False:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="O job ainda esta em execucao. Pause ou aguarde a conclusao antes de excluir.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/meta-factory/jobs/{job_id}/events")
 def stream_generation_job(
     job_id: str,
@@ -325,6 +365,14 @@ def stream_generation_job(
             if job["status"] in terminal:
                 return
             await asyncio.sleep(0.75)
+        # Tick budget exhausted without a terminal status: NEVER end the stream
+        # silently — tell the client explicitly so the UI can offer "Continuar
+        # manualmente" instead of freezing on an implicit disconnect.
+        yield _sse({
+            "type": "stream_timeout",
+            "jobId": job_id,
+            "message": "Stream expirou sem estado terminal; atualize manualmente ou reconecte.",
+        })
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -402,6 +450,17 @@ def continue_with_warnings(job_id: str, user: CurrentUser) -> GenerationJob:
     return GenerationJob.model_validate(updated)
 
 
+@router.post("/meta-factory/jobs/{job_id}/continue-after-build-skip", response_model=GenerationJob)
+def continue_after_build_skip(job_id: str, user: CurrentUser) -> GenerationJob:
+    try:
+        job = generation_job_engine.acknowledge_build_skip(job_id, user["user_id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="GenerationJob nao encontrado.")
+    return GenerationJob.model_validate(job)
+
+
 @router.post("/meta-factory/jobs/{job_id}/pause", response_model=GenerationJob)
 def pause_generation_job(job_id: str, user: CurrentUser) -> GenerationJob:
     job = generation_job_engine.pause(job_id, user["user_id"])
@@ -438,8 +497,17 @@ def download_generation_diagnostic(job_id: str, user: CurrentUser) -> JSONRespon
             "provider": job["provider"],
             "model": job["model"],
             "error": job["error"],
+            "buildStatus": job.get("buildStatus"),
+            "buildAttempts": job.get("buildAttempts", 0),
+            "manualBuildRetryCount": job.get("manualBuildRetryCount", 0),
+            "buildSkipAcknowledged": job.get("buildSkipAcknowledged", False),
+            "manualBuildFixGuide": job.get("manualBuildFixGuide"),
             "checkpoints": job["checkpoints"],
             "logs": job["logs"],
+            "buildArtifacts": [
+                item for item in job["artifacts"]
+                if item.get("stage", "").split(".")[0] == "build"
+            ],
         },
         headers={"Content-Disposition": f'attachment; filename="{job_id}-diagnostic.json"'},
     )
@@ -699,7 +767,10 @@ def _stage_context(payload: StageGenerateRequest) -> str:
     context, _diag = build_agent_context(
         payload.role, mega, contract_summary=contract_summary, emitted_files=emitted
     )
-    return context
+    # Ground Truth: the stage-stream path runs BEFORE any pipeline exists, so the
+    # real state is "nothing built, no repo, no docker" — mandatory in the LLM
+    # context so no agent invents git clone URLs or deploy claims.
+    return context + "\n\n" + ground_truth_engine.prompt_block(ground_truth_engine.default_state())
 
 
 @router.post("/meta-factory/generate/stream")
@@ -908,6 +979,63 @@ def verify_meta_factory_project(project_id: str, payload: VerifyRequest, user: C
         event_source(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/meta-factory/{project_id}/terminal/execute")
+def execute_terminal_command(project_id: str, payload: TerminalExecuteRequest, user: CurrentUser) -> StreamingResponse:
+    """LDCN Execution Terminal: run ONE allowlisted command inside the generated
+    project workspace, streaming sanitized output lines as SSE and persisting the
+    durable record (audit trail). The human-intervention escape hatch for builds
+    the bounded auto-repair could not fix."""
+    project = _owned_meta_project(project_id, user)
+    _audit(user["user_id"], "terminal_command_executed")
+
+    frames: queue.Queue[tuple[str, Any]] = queue.Queue()
+
+    def run() -> None:
+        try:
+            record = execution_terminal_service.execute(
+                project, payload.command, cwd=payload.cwd,
+                executed_by=user["user_id"],
+                on_line=lambda stream, line: frames.put(("line", {"stream": stream, "line": line})),
+            )
+            frames.put(("done", record.model_dump(mode="json")))
+        except Exception as exc:  # noqa: BLE001 — the stream must always terminate
+            frames.put(("error", str(exc)))
+
+    def event_source():
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        while True:
+            try:
+                kind, value = frames.get(timeout=1.0)
+            except queue.Empty:
+                yield _sse({"type": "heartbeat"})
+                continue
+            if kind == "line":
+                yield _sse({"type": "line", **value})
+            elif kind == "done":
+                yield _sse({"type": "done", "record": value})
+                return
+            else:
+                yield _sse({"type": "error", "detail": str(value)})
+                return
+
+    return StreamingResponse(
+        event_source(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/meta-factory/{project_id}/terminal/history", response_model=TerminalHistoryResponse)
+def terminal_history(project_id: str, user: CurrentUser) -> TerminalHistoryResponse:
+    """Persistent per-project command history + the allowlist shown in the UI."""
+    _owned_meta_project(project_id, user)
+    return TerminalHistoryResponse(
+        project_id=project_id,
+        records=execution_terminal_service.history(project_id),
+        allowed_commands=ALLOWED_COMMANDS_DISPLAY,
     )
 
 

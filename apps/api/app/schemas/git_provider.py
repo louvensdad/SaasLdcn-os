@@ -7,8 +7,15 @@ from pydantic import Field
 from app.schemas.common import ApiModel
 
 
+# User-chosen retention window for a stored provider token: 5 minutes to 90 days.
+# None keeps the connection until the user disconnects.
+MIN_TOKEN_TTL_SECONDS = 300
+MAX_TOKEN_TTL_SECONDS = 90 * 24 * 3600
+
+
 class GitProviderConnectRequest(ApiModel):
     token: str = Field(min_length=1)
+    ttl_seconds: int | None = Field(default=None, ge=MIN_TOKEN_TTL_SECONDS, le=MAX_TOKEN_TTL_SECONDS)
 
 
 class GitProviderConnection(ApiModel):
@@ -22,6 +29,7 @@ class GitProviderConnection(ApiModel):
     scopes: list[str] = Field(default_factory=list)
     permission: str
     last_sync: str | None = None
+    expires_at: str | None = None
 
 
 class RepositoryCreateRequest(ApiModel):

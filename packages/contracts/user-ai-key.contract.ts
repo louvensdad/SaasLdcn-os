@@ -8,6 +8,8 @@ export interface KeySessionStatus {
   provider: string;
   masked: string;
   active: boolean;
+  /** Seconds until the stored key self-destructs; null when the backend can't tell. */
+  expires_in_seconds?: number | null;
 }
 
 export interface KeySessionStatusResponse {

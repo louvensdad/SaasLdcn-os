@@ -19,7 +19,8 @@ export function useGitProviderConnection(
 export function useConnectGitProvider(provider: 'github' | 'gitlab') {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (token: string) => apiClient.connectGitProvider(provider, token),
+    mutationFn: ({ token, ttlSeconds }: { token: string; ttlSeconds?: number | null }) =>
+      apiClient.connectGitProvider(provider, token, ttlSeconds),
     onSuccess: (connection) => queryClient.setQueryData(['git-provider', provider], connection),
   });
 }

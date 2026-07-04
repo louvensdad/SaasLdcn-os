@@ -142,6 +142,8 @@ export const modernizeClient = {
   latestProject: () =>
     send<ModernizeProjectSummary | null>('/api/modernize/projects/latest', { method: 'GET' }, FIVE_MIN),
   listProjects: () => send<ModernizeProjectSummary[]>('/api/modernize/projects', { method: 'GET' }, FIVE_MIN),
+  deleteProject: (projectId: string) =>
+    send<null>(`/api/modernize/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' }, FIVE_MIN),
   getReport: (projectId: string) =>
     send<ModernizationReportResponse>(`/api/modernize/${projectId}/report`, { method: 'GET' }, FIVE_MIN),
   analyze: (projectId: string, opts: { useUserKey?: boolean; model?: string } = {}) => {

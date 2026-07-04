@@ -6,7 +6,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
@@ -116,7 +116,7 @@ def _require_flag(flag: str) -> None:
 
 
 def _provider_cards(user_id: str) -> list[LlmProviderConfig]:
-    active = {provider for provider, _masked in user_key_session.status(user_id)}
+    active = {provider for provider, _masked, _expires_in in user_key_session.status(user_id)}
     return [
         LlmProviderConfig(
             id=card["id"], name=card["name"], description=card["description"],
@@ -634,6 +634,17 @@ def modernize_list_projects(user: CurrentUser) -> list[ModernizeProjectSummary]:
     """Recent analyses for the current user (newest first) for the Auto-Fix picker."""
     rows = _jobs_repo.list_for_owner(user["user_id"])
     return [_project_summary(r["project_id"], r["data"], r["created_at"], r["updated_at"]) for r in rows]
+
+
+@router.delete("/modernize/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def modernize_delete_project(project_id: str, user: CurrentUser) -> Response:
+    """Delete a persisted analysis (shared by Modernize and Auto-Fix) and its
+    ingest sandbox on disk."""
+    if not _jobs_repo.delete_for_owner(project_id, user["user_id"]):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto de modernizacao nao encontrado.")
+    service.remove(project_id)
+    _audit(user["user_id"], "modernize_project_deleted")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/modernize/{project_id}/analyze", response_model=ModernizationReportResponse)

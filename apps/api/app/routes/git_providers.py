@@ -20,7 +20,9 @@ def get_connection(provider: Literal["github", "gitlab"], user: CurrentUser) -> 
 
 @router.post("/integrations/git/{provider}/connect", response_model=GitProviderConnection)
 def connect(provider: Literal["github", "gitlab"], payload: GitProviderConnectRequest, user: CurrentUser) -> GitProviderConnection:
-    return GitProviderConnection.model_validate(git_provider_service.connect(user["user_id"], provider, payload.token))
+    return GitProviderConnection.model_validate(
+        git_provider_service.connect(user["user_id"], provider, payload.token, payload.ttl_seconds)
+    )
 
 
 @router.post("/integrations/git/{provider}/validate", response_model=GitProviderConnection)

@@ -19,8 +19,8 @@ def test_vault_masks_and_never_exposes_raw_key():
     assert masked.endswith(RAW_KEY[-4:])
     # status carries only masked tails, never the raw key.
     status = vault.status("user_a")
-    assert status == [("anthropic", masked)]
-    assert all(RAW_KEY not in m for _p, m in status)
+    assert [(p, m) for p, m, _expires in status] == [("anthropic", masked)]
+    assert all(RAW_KEY not in m for _p, m, _e in status)
     # get returns the plaintext only for client-build time.
     assert vault.get("user_a", "anthropic") == RAW_KEY
 
@@ -151,3 +151,34 @@ def test_test_key_endpoint_validates_without_persisting_or_echoing(client, monke
     assert body["http_status"] == 200
     assert RAW_KEY not in resp.text
     assert client.get("/api/user-ai-keys/status").json()["sessions"] == []
+
+
+# --- user-chosen retention (TTL) --------------------------------------------- #
+
+def test_vault_honours_user_chosen_ttl():
+    vault = UserKeySessionService()
+    vault.set("user_ttl", "openai", RAW_KEY, ttl_seconds=600)
+    status = vault.status("user_ttl")
+    assert len(status) == 1
+    _provider, _masked, expires_in = status[0]
+    assert expires_in is not None and 0 < expires_in <= 600
+
+
+def test_session_endpoint_accepts_ttl_and_reports_expiry(client):
+    response = client.post(
+        "/api/user-ai-keys/session",
+        json={"provider": "openai", "api_key": RAW_KEY, "ttl_seconds": 900},
+    )
+    assert response.status_code == 200, response.text
+    sessions = response.json()["sessions"]
+    session = next(s for s in sessions if s["provider"] == "openai")
+    assert session["expires_in_seconds"] is not None
+    assert 0 < session["expires_in_seconds"] <= 900
+
+
+def test_session_endpoint_rejects_ttl_below_minimum(client):
+    response = client.post(
+        "/api/user-ai-keys/session",
+        json={"provider": "openai", "api_key": RAW_KEY, "ttl_seconds": 10},
+    )
+    assert response.status_code == 422

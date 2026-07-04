@@ -5,7 +5,7 @@ import queue
 import threading
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.core.deps import CurrentUser
@@ -20,6 +20,7 @@ from app.schemas.project_room import (
     ProjectRoom,
     ProjectRoomSummary,
     RevisePromptRequest,
+    StackApprovalRequest,
 )
 from app.services.project_room_service import (
     ProjectRoomError,
@@ -367,6 +368,21 @@ def acknowledge_project_room_preview(
     return _to_model(_require(room))
 
 
+@router.post("/project-rooms/{room_id}/stack/approve", response_model=ProjectRoom)
+def approve_project_room_stack(
+    room_id: str, user: CurrentUser, payload: StackApprovalRequest | None = None
+) -> ProjectRoom:
+    """Stack Approval Gate: explicit user consent for the development stack.
+    Empty body approves the recommendation as-is; any provided field is an
+    'Alterar stack' override that generation will use instead."""
+    payload = payload or StackApprovalRequest()
+    try:
+        room = service.approve_stack(room_id, user["user_id"], payload.model_dump(exclude_none=True))
+    except ProjectRoomError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.diagnostic()) from exc
+    return _to_model(_require(room))
+
+
 @router.post("/project-rooms/{room_id}/approve", response_model=ProjectRoom)
 def approve_project_room(room_id: str, user: CurrentUser) -> ProjectRoom:
     try:
@@ -399,3 +415,10 @@ def mark_project_room_generated(
 @router.post("/project-rooms/{room_id}/archive", response_model=ProjectRoom)
 def archive_project_room(room_id: str, user: CurrentUser) -> ProjectRoom:
     return _to_model(_require(service.archive(room_id, user["user_id"])))
+
+
+@router.delete("/project-rooms/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project_room(room_id: str, user: CurrentUser) -> Response:
+    if not service.delete(room_id, user["user_id"]):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sala nao encontrada.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

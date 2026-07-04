@@ -87,7 +87,10 @@ def test_job_creation_allowed_after_engineering_approval(client, isolated_engine
     monkeypatch.setattr(route, "generation_job_engine", isolated_engine)
     monkeypatch.setattr(isolated_engine, "start", lambda *args, **kwargs: None)
 
-    room_id, _ = _create_room(client, status="ENGINEERING_APPROVED")
+    # An approved room also needs the user's explicit stack approval (Stack
+    # Approval Gate) before generation can start.
+    blueprint = {"decisions": [], "stack_approval": {"status": "APPROVED"}}
+    room_id, _ = _create_room(client, status="ENGINEERING_APPROVED", blueprint=blueprint)
     response = client.post("/api/meta-factory/jobs", json=_job_payload(room_id))
 
     assert response.status_code == 202
@@ -112,7 +115,10 @@ def test_acknowledged_preview_blueprint_is_recorded_as_an_approval(client, isola
     monkeypatch.setattr(route, "generation_job_engine", isolated_engine)
     monkeypatch.setattr(isolated_engine, "start", lambda *args, **kwargs: None)
 
-    blueprint = {"decisions": [{"area": "backend"}], "degraded": True, "preview_acknowledged": True}
+    blueprint = {
+        "decisions": [{"area": "backend"}], "degraded": True, "preview_acknowledged": True,
+        "stack_approval": {"status": "APPROVED"},
+    }
     room_id, _ = _create_room(client, status="ENGINEERING_APPROVED", blueprint=blueprint)
 
     response = client.post("/api/meta-factory/jobs", json=_job_payload(room_id))

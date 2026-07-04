@@ -15,6 +15,8 @@ from app.engines.agent_executor import submit_agent
 from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, summarize_contract
 from app.engines.factory_pipeline import _run_agent
 from app.engines.generation_validation_engine import generation_validation_engine
+from app.engines.ground_truth_engine import ground_truth_engine
+from app.services.execution_reality_guard import execution_reality_guard
 from app.engines.llm.router import LLMRouter
 from app.engines.orchestrator_engine import compile_mega_prompt
 from app.engines.warning_policy import classify as classify_warnings
@@ -37,6 +39,7 @@ STAGE_TIMEOUT_SECONDS = 1500  # 25 min — bounds any single step; never infinit
 # awaiting the user, or parked. Everything else (QUEUED + the *_RUNNING/*_GENERATING
 # stages) counts as "in flight" for the per-user concurrency cap (audit MF3).
 TERMINAL_STATUSES = frozenset({"READY", "FAILED", "PAUSED", "NEEDS_USER_ACTION", "STALLED"})
+MAX_MANUAL_BUILD_RETRIES = 3
 
 LOGICAL_STAGES = ["contracts", "database", "backend", "frontend", "mobile", "security", "tests", "docs", "build", "package"]
 
@@ -179,6 +182,9 @@ class GenerationJobEngine:
             "provider": provider, "providerLabel": provider_label, "model": model,
             "blueprintVersion": blueprint_version, "startedAt": now, "finishedAt": None,
             "progress": 0, "error": None, "retryCount": 0, "artifacts": [],
+            "buildStatus": "PENDING", "buildAttempts": 0,
+            "manualBuildRetryCount": 0, "buildSkipAcknowledged": False,
+            "manualBuildFixGuide": None,
             "logs": [], "events": [], "checkpoints": [],
             "stageStatuses": {stage: "waiting" for stage in logical_stages_for(steps)},
             "projectName": project_name, "partial": True, "valid": False,
@@ -226,15 +232,30 @@ class GenerationJobEngine:
             job["status"] = "READY"
             job["currentStage"] = "READY"
             job["progress"] = 100
-            job["partial"] = False
-            job["valid"] = True
+            build_skipped = job.get("buildStatus") == "SKIPPED_AFTER_FAILURE"
+            job["partial"] = build_skipped
+            job["valid"] = not build_skipped
             job["packageReady"] = True
             job["finishedAt"] = self._now()
             job["error"] = None
             for stage in logical_stages_for(steps):
-                job["stageStatuses"][stage] = "success"
-            self._log(job, "READY", "info", "Pipeline concluida. Projeto validado e pacote pronto.")
-            self._save(job, owner_user_id)
+                if job["stageStatuses"].get(stage) != "skipped":
+                    job["stageStatuses"][stage] = "success"
+            self._log(
+                job, "READY", "warning" if build_skipped else "info",
+                "Pipeline concluida com build pulado; guia manual preservado."
+                if build_skipped else "Pipeline concluida. Projeto validado e pacote pronto.",
+            )
+            self._finalize_pipeline(
+                job, owner_user_id,
+                outcome="DEGRADED_CONTINUATION" if build_skipped else "SUCCESS",
+                message=(
+                    "Pipeline concluida em modo degradado: build pulado apos o limite de auto-reparo; "
+                    "projeto parcial disponivel para visualizar, exportar e reexecutar o build manualmente."
+                    if build_skipped
+                    else "Pipeline concluida com sucesso; projeto validado e pacote pronto."
+                ),
+            )
         except JobPaused:
             return
         except StageFailure as exc:
@@ -258,7 +279,7 @@ class GenerationJobEngine:
             job["stageStatuses"][steps[self._step_index(job["currentStage"], steps)].logical if self._step_index(job["currentStage"], steps) >= 0 else "build"] = "failed"
             self._log(job, job["currentStage"], "error", str(exc), exc.diagnostic.get("recommended_action"))
             self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=str(exc))
-            self._save(job, owner_user_id)
+            self._finalize_pipeline(job, owner_user_id, outcome="NEEDS_USER_ACTION", message=str(exc))
         except StageStalled as exc:
             # A step ran past its timeout: never leave the job 'running'. Persist the
             # checkpoint, expose a full diagnostic and let the user recover.
@@ -284,7 +305,7 @@ class GenerationJobEngine:
                 job["stageStatuses"][steps[stalled_index].logical] = "stalled"
             self._log(job, job["currentStage"], "warning", str(exc), exc.diagnostic.get("recommended_action"))
             self._emit(job, owner_user_id, "stalled", stage=job["currentStage"], level="warning", message=str(exc))
-            self._save(job, owner_user_id)
+            self._finalize_pipeline(job, owner_user_id, outcome="STALLED", message=str(exc))
         except Exception as exc:  # keep every checkpoint; never claim success
             job = self.repository.get(job_id, owner_user_id) or job
             job["status"] = "FAILED"
@@ -294,7 +315,24 @@ class GenerationJobEngine:
             job["packageReady"] = False
             self._log(job, job["currentStage"], "error", "Falha inesperada da pipeline.", str(exc))
             self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=f"Falha inesperada da pipeline: {exc}")
-            self._save(job, owner_user_id)
+            self._finalize_pipeline(job, owner_user_id, outcome="FAILED", message=f"Falha inesperada da pipeline: {exc}")
+
+    def _finalize_pipeline(self, job: dict[str, Any], owner: str, *, outcome: str, message: str) -> None:
+        """State Transition Finalizer: EVERY pipeline run — success, degraded
+        continuation (build skipped), user-action block, stall or crash — ends
+        here. It stamps finishedAt and emits the mandatory PIPELINE_COMPLETE
+        execution event, so the frontend always receives a terminal signal and
+        can never be left waiting for a BUILD_SUCCESS that will not come.
+
+        Outcomes: SUCCESS | DEGRADED_CONTINUATION | NEEDS_USER_ACTION | STALLED | FAILED."""
+        job["finishedAt"] = job.get("finishedAt") or self._now()
+        self._emit(
+            job, owner, "pipeline_complete",
+            stage=job.get("currentStage") or "READY",
+            level="info" if outcome == "SUCCESS" else "warning",
+            message=f"PIPELINE_COMPLETE ({outcome}): {message}",
+        )
+        self._save(job, owner)
 
     def _steps_for_job(self, job_id: str, owner_user_id: str) -> list[PipelineStep]:
         """Resolve the correct per-job step list (web vs. mobile-inclusive) for
@@ -315,6 +353,16 @@ class GenerationJobEngine:
         index = self._recovery_index(job, steps, stage)
         if index < 0:
             raise ValueError(f"Etapa desconhecida: {stage}")
+        if steps[index].logical == "build":
+            manual_retries = int(job.get("manualBuildRetryCount", 0))
+            if manual_retries >= MAX_MANUAL_BUILD_RETRIES:
+                raise ValueError(
+                    f"Limite de {MAX_MANUAL_BUILD_RETRIES} reexecucoes manuais de build atingido. "
+                    "Aplique o guia de correcao antes de criar um novo job."
+                )
+            job["manualBuildRetryCount"] = manual_retries + 1
+            job["buildStatus"] = "PENDING"
+            job["buildSkipAcknowledged"] = False
         job["retryCount"] += 1
         job["error"] = None
         job["status"] = "QUEUED"
@@ -322,6 +370,24 @@ class GenerationJobEngine:
         self._log(job, steps[index].state, "warning", f"Reexecucao solicitada em modo {mode}; checkpoints anteriores preservados.")
         self._save(job, owner_user_id)
         self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=index, mode=mode)
+        return self.repository.get(job_id, owner_user_id)
+
+    def acknowledge_build_skip(self, job_id: str, owner_user_id: str) -> dict[str, Any] | None:
+        """Idempotent user acknowledgement for the degraded continuation. The
+        runner already advances past a skipped build; this action records the
+        explicit decision and also makes recovery safe after a process restart."""
+        job = self.repository.get(job_id, owner_user_id)
+        if job is None:
+            return None
+        if job.get("buildStatus") != "SKIPPED_AFTER_FAILURE":
+            raise ValueError("O build deste job nao esta marcado como SKIPPED_AFTER_FAILURE.")
+        if not job.get("buildSkipAcknowledged"):
+            job["buildSkipAcknowledged"] = True
+            self._log(
+                job, "BUILD_RUNNING", "warning",
+                "Usuario confirmou a continuidade do pipeline mesmo com build pulado.",
+            )
+            self._save(job, owner_user_id)
         return self.repository.get(job_id, owner_user_id)
 
     def resume(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None) -> dict[str, Any] | None:
@@ -379,6 +445,16 @@ class GenerationJobEngine:
     def get(self, job_id: str, owner_user_id: str) -> dict[str, Any] | None:
         return self.repository.get(job_id, owner_user_id)
 
+    def delete(self, job_id: str, owner_user_id: str) -> bool | None:
+        """Delete a finished job. Returns None when the job doesn't exist and False
+        when it's still in flight (pause it first so the runner stops writing)."""
+        job = self.repository.get(job_id, owner_user_id)
+        if job is None:
+            return None
+        if job["status"] not in TERMINAL_STATUSES:
+            return False
+        return self.repository.delete(job_id, owner_user_id)
+
     def latest(self, project_id: str, owner_user_id: str) -> dict[str, Any] | None:
         return self.repository.latest_for_project(project_id, owner_user_id)
 
@@ -431,6 +507,13 @@ class GenerationJobEngine:
             context, compression = compress_to_budget(context, max(4_000, len(context) // 2))
             diagnostics.compressed = True
             diagnostics.compression_steps.extend(compression)
+        # Ground Truth State Engine: the REAL system state is mandatory in every
+        # LLM context (appended AFTER compression so it always survives). The
+        # model can never guess whether the build passed, a repo exists or the
+        # pipeline finished — it is told, and in failure state it is put in
+        # DIAGNOSTIC ONLY mode.
+        ground_truth = ground_truth_engine.from_job(job)
+        context += "\n\n" + ground_truth_engine.prompt_block(ground_truth)
         payload_bytes = len(context.encode("utf-8"))
         token_estimate = estimate_tokens(context)
         checkpoint = self._checkpoint(job, step, payload_bytes, token_estimate)
@@ -454,6 +537,7 @@ class GenerationJobEngine:
             if totals is not None:
                 job["inputTokensTotal"], job["outputTokensTotal"] = totals
         self._assert_not_paused(job, owner)
+        response, parsed = self._enforce_reality(job, owner, step, role, context, ground_truth, response, parsed, model, api_key, spec)
         self._emit(job, owner, "agent_finished", stage=step.state, message=f"Agente '{role}' respondeu: {len(parsed.files)} arquivo(s).")
         raw = response.text if response is not None else parsed.raw_response
         raw_artifact = self._write_text_artifact(job, owner, step, f"raw/{step.logical}-{step.chunk or 'main'}.txt", raw or "", "raw_response", valid=False)
@@ -475,6 +559,73 @@ class GenerationJobEngine:
             f"{len(parsed.files)} artefatos validos; parser={parsed.parser_strategy}; "
             f"warnings={classification.warning_count} (bloqueantes={classification.blocking_count})."
         )
+
+    def _enforce_reality(
+        self, job: dict[str, Any], owner: str, step: PipelineStep, role: str,
+        context: str, ground_truth: Any, response: Any, parsed: Any,
+        model: str | None, api_key: str | None, spec: ProjectSpec,
+    ) -> tuple[Any, Any]:
+        """Execution Reality Guard / Response Validator: validate every emitted
+        file against the Ground Truth state. Violations (fabricated `git clone`
+        URLs, docker/deploy instructions on a non-READY build, invented success
+        claims) reject the response; ONE regeneration runs with the explicit
+        failure context; whatever still violates is sanitized into an honest
+        diagnostic note and flagged with a non-blocking warning."""
+        violations = [
+            (emitted, execution_reality_guard.validate(emitted.content, ground_truth, mode="artifact"))
+            for emitted in parsed.files
+        ]
+        offending = [(emitted, result) for emitted, result in violations if not result.ok]
+        if not offending:
+            return response, parsed
+
+        merged = type(offending[0][1])()
+        for _, result in offending:
+            merged.violations.extend(result.violations)
+        summary = "; ".join(f"{v.rule} ('{v.excerpt}')" for v in merged.violations[:5])
+        self._emit(
+            job, owner, "reality_guard", stage=step.state, level="warning",
+            message=(
+                f"Reality Guard rejeitou a resposta do agente '{role}': {len(merged.violations)} "
+                f"instrucao(oes) contradizem o estado real ({summary}). Regenerando com contexto de falha."
+            ),
+        )
+        # Failure-aware regeneration: one attempt, with the rejected claims cited.
+        retry_context = context + execution_reality_guard.regeneration_directive(ground_truth, merged)
+        try:
+            retry_response, retry_parsed = self._route_with_timeout(
+                job, owner, step, role, retry_context, model, api_key,
+                language=spec.suggested_stack.language, framework=spec.suggested_stack.framework,
+            )
+            input_tokens, output_tokens = _usage_totals(retry_parsed, retry_response)
+            if input_tokens or output_tokens:
+                totals = self.repository.add_usage(job["id"], owner, input_tokens, output_tokens)
+                if totals is not None:
+                    job["inputTokensTotal"], job["outputTokensTotal"] = totals
+            if retry_parsed.files:
+                response, parsed = retry_response, retry_parsed
+        except (StageStalled, JobPaused):
+            raise
+        except Exception:  # noqa: BLE001 — regeneration is best-effort; sanitization below is the guarantee
+            pass
+
+        # Whatever still contradicts reality is forcibly sanitized (never shown).
+        sanitized_count = 0
+        for emitted in parsed.files:
+            sanitized, result = execution_reality_guard.sanitize(emitted.content, ground_truth, mode="artifact")
+            if not result.ok:
+                emitted.content = sanitized
+                sanitized_count += 1
+                parsed.warnings.append(
+                    f"Reality Guard removeu instrucao que contradiz o estado real em {emitted.path}: "
+                    + "; ".join(sorted({v.rule for v in result.violations}))
+                )
+        if sanitized_count:
+            self._emit(
+                job, owner, "reality_guard", stage=step.state, level="warning",
+                message=f"Reality Guard sanitizou {sanitized_count} arquivo(s): resposta forcada a refletir o estado real.",
+            )
+        return response, parsed
 
     def _route_with_timeout(
         self, job: dict[str, Any], owner: str, step: PipelineStep, role: str,
@@ -597,12 +748,43 @@ class GenerationJobEngine:
         result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner, workspace_id=job.get("workspaceId"))
         job["generatedProjectId"] = result.project_id
         job["resultPath"] = str(result.root_path)
+        job["buildStatus"] = "RUNNING"
+        self._save(job, owner)
         report = generation_validation_engine.validate(
             {"project_id": result.project_id, "generated_project_path": result.root_path},
             event_sink=self._build_sink(job, owner),
         )
         report_data = report.model_dump(mode="json")
         self._write_json_artifact(job, owner, PipelineStep("BUILD_RUNNING", "build", "build"), "build.report.json", report_data, "validation")
+        failed_commands = [command for command in report.build.commands if command.exit_code not in {0, None}]
+        job["buildAttempts"] = len(failed_commands)
+        if report.build.recovery_status == "SKIPPED_AFTER_FAILURE":
+            guide = report.build.manual_fix_guide
+            guide_data = guide.model_dump(mode="json") if guide is not None else {
+                "root_cause": "Build failed after bounded automatic recovery.",
+                "original_error": report.build.logs_tail or "Build command failed.",
+                "affected_files": [], "problematic_dependencies": [], "suggested_versions": {},
+                "commands": [], "steps": [], "patches_applied": [], "full_logs": report.build.logs_tail,
+            }
+            job["buildStatus"] = "SKIPPED_AFTER_FAILURE"
+            job["manualBuildFixGuide"] = guide_data
+            job["stageStatuses"]["build"] = "skipped"
+            job["valid"] = False
+            self._write_json_artifact(
+                job, owner, PipelineStep("BUILD_RUNNING", "build", "build"),
+                "ManualBuildFixGuide.json", guide_data, "manual_fix_guide",
+            )
+            self._log(
+                job, "BUILD_RUNNING", "warning",
+                "Build marcado como SKIPPED_AFTER_FAILURE apos no maximo 2 auto-reparos; pipeline continuara.",
+                guide_data.get("root_cause"),
+            )
+            self._emit(
+                job, owner, "repair_failed", stage="BUILD_RUNNING", level="warning",
+                message="Limite de auto-recuperacao atingido. Build pulado e guia manual gerado.",
+            )
+            self._save(job, owner)
+            return
         build_skipped = bool(report.build.skipped_reason)
         if not report.passed or not report.build.ok or build_skipped:
             failed_checks = [
@@ -610,25 +792,45 @@ class GenerationJobEngine:
                 for check in (report.quality.get("checks") or [])
                 if isinstance(check, dict) and check.get("status") == "failed"
             ]
-            message = (
-                report.build.skipped_reason
-                or "; ".join(failed_checks)
-                or "; ".join(report.warnings)
-                or report.build.logs_tail
-                or "Build local falhou."
-            )
+            # Prefer the classified error (BuildErrorClassifier): cause + root cause
+            # + suggested fix, so the UI shows an actionable card, not a log dump.
+            classified = report.build.classified_error
+            if classified is not None:
+                message = (
+                    f"{classified.message} Causa raiz: {classified.root_cause} "
+                    f"Correcao sugerida: {classified.suggested_fix}"
+                )
+            else:
+                message = (
+                    report.build.skipped_reason
+                    or "; ".join(failed_checks)
+                    or "; ".join(report.warnings)
+                    or report.build.logs_tail
+                    or "Build local falhou."
+                )
+            if report.build.repairs:
+                applied = sum(1 for item in report.build.repairs if item.applied)
+                message += f" (Auto-reparo: {applied}/{len(report.build.repairs)} patch(es) aplicado(s) antes desta falha.)"
             raise StageFailure("Build final nao passou; projeto permanece parcial e sem pacote.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", message, validator="lint+typecheck+tests+build+openapi"))
         ProjectWriter().set_verification(result.project_id, verified=True, score=report.score)
+        job["buildStatus"] = "PASSED"
+        job["manualBuildFixGuide"] = None
         job["valid"] = True
 
     def _package(self, job: dict[str, Any], owner: str) -> None:
-        if not job.get("valid") or not job.get("generatedProjectId"):
+        degraded = job.get("buildStatus") == "SKIPPED_AFTER_FAILURE"
+        if (not job.get("valid") and not degraded) or not job.get("generatedProjectId"):
             raise StageFailure("Package bloqueado: build ainda nao esta valido.", diagnostic=self._diagnostic(job, "PACKAGE_CREATING", "package", "Build obrigatorio nao aprovado."))
         package = GeneratedProjectService().prepare_download({"project_id": job["generatedProjectId"], "generated_project_path": str(DEFAULT_OUTPUT_ROOT / job["generatedProjectId"])})
         ProjectWriter().append(
             job["generatedProjectId"],
             [],
-            metadata={"partial": False, "package_ready": True, "generation_job_id": job["id"]},
+            metadata={
+                "partial": degraded,
+                "package_ready": True,
+                "generation_job_id": job["id"],
+                "build_status": job.get("buildStatus"),
+            },
             owner=owner,
             workspace_id=job.get("workspaceId"),
         )
@@ -655,17 +857,22 @@ class GenerationJobEngine:
 
     def _finish_step(self, job: dict[str, Any], owner: str, step: PipelineStep, index: int, steps: list[PipelineStep] | None = None) -> None:
         steps = steps if steps is not None else STEPS
+        build_was_skipped = step.logical == "build" and job.get("buildStatus") == "SKIPPED_AFTER_FAILURE"
         checkpoint = next(
             (item for item in reversed(job["checkpoints"]) if item["stage"] == step.state),
             None,
         ) or self._checkpoint(job, step, 0, 0)
-        checkpoint["status"] = "success"
+        checkpoint["status"] = "skipped" if build_was_skipped else "success"
         checkpoint["finished_at"] = self._now()
-        if not any(next_step.logical == step.logical for next_step in steps[index + 1:]):
+        if build_was_skipped:
+            job["stageStatuses"][step.logical] = "skipped"
+        elif not any(next_step.logical == step.logical for next_step in steps[index + 1:]):
             job["stageStatuses"][step.logical] = "success"
         job["progress"] = max(int(job.get("progress", 0)), min(98, round((index + 1) / len(steps) * 100)))
-        self._log(job, step.state, "info", f"Checkpoint salvo: {step.state}.")
-        self._emit(job, owner, "stage_finished", stage=step.state, message=f"Checkpoint salvo: {step.state}.")
+        level = "warning" if build_was_skipped else "info"
+        message = f"Checkpoint salvo como skipped: {step.state}." if build_was_skipped else f"Checkpoint salvo: {step.state}."
+        self._log(job, step.state, level, message)
+        self._emit(job, owner, "stage_finished", stage=step.state, level=level, message=message)
         self._save(job, owner)
 
     def _checkpoint(self, job: dict[str, Any], step: PipelineStep, payload_bytes: int, token_estimate: int) -> dict[str, Any]:

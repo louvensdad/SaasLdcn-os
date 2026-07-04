@@ -16,6 +16,7 @@ import { LocaleSelector } from '@/components/shell/locale-selector';
 import { Select } from '@/components/ui/select';
 import { ThemeGallery } from '@/components/settings/theme-gallery';
 import { AiProvidersTab } from '@/components/settings/ai-providers-tab';
+import { RetentionSelect } from '@/components/settings/retention-select';
 import { ArchitectureGraphSurface, OperationalRail, StackEcosystemMap } from '@/components/visual/engineering-surface';
 import { useArchitectures } from '@/hooks/use-architectures';
 import { useArchetypes } from '@/hooks/use-archetypes';
@@ -190,6 +191,7 @@ function GitProviderCard({ provider }: { readonly provider: 'github' | 'gitlab' 
   const validate = useValidateGitProvider(provider);
   const disconnect = useDisconnectGitProvider(provider);
   const [token, setToken] = useState('');
+  const [ttlSeconds, setTtlSeconds] = useState<number | null>(null);
   const data = connection.data;
   const connected = data?.status === 'connected';
   const error = connect.error ?? validate.error ?? disconnect.error ?? connection.error;
@@ -197,7 +199,7 @@ function GitProviderCard({ provider }: { readonly provider: 'github' | 'gitlab' 
   const submit = async () => {
     if (!token.trim()) return;
     try {
-      await connect.mutateAsync(token.trim());
+      await connect.mutateAsync({ token: token.trim(), ttlSeconds });
       setToken('');
     } catch {
       // React Query exposes the recoverable provider error inline below.
@@ -228,6 +230,14 @@ function GitProviderCard({ provider }: { readonly provider: 'github' | 'gitlab' 
             <Metric label={t('settings.integrations.permission')} value={data.permission} />
             <Metric label={t('settings.integrations.scopes')} value={data.scopes.join(', ') || t('settings.integrations.providerManaged')} />
             <Metric label={t('settings.integrations.lastSync')} value={data.last_sync ? new Date(data.last_sync).toLocaleString(locale) : t('common.never')} />
+            <Metric
+              label={t('settings.retention.label')}
+              value={data.expires_at
+                ? t('settings.retention.expiresAt', {
+                    date: new Date(data.expires_at).toLocaleString(locale),
+                  })
+                : t('settings.retention.untilDisconnect')}
+            />
           </div>
           <div className="flex flex-wrap gap-3">
             <Button variant="secondary" loading={validate.isPending} onClick={() => validate.mutate()}>{t('settings.integrations.validate')}</Button>
@@ -236,8 +246,24 @@ function GitProviderCard({ provider }: { readonly provider: 'github' | 'gitlab' 
         </>
       ) : (
         <div className="space-y-3">
-          <Input type="password" aria-label={t('settings.integrations.tokenLabel', { provider: label })} placeholder={t('settings.integrations.tokenLabel', { provider: label })} value={token} onChange={(event) => setToken(event.target.value)} />
+          <Input
+            type="password"
+            name={`${provider}-token`}
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={t('settings.integrations.tokenLabel', { provider: label })}
+            placeholder={t('settings.integrations.tokenLabel', { provider: label })}
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+          />
           <p className="ds-caption">{t('settings.integrations.tokenDescription')}</p>
+          <RetentionSelect
+            value={ttlSeconds}
+            onChange={setTtlSeconds}
+            defaultOptionLabel={t('settings.retention.gitDefault')}
+            disabled={connect.isPending}
+            className="max-w-xs"
+          />
           <Button variant="primary" disabled={!token.trim()} loading={connect.isPending} onClick={() => void submit()}>{t('settings.integrations.connect', { provider: label })}</Button>
         </div>
       )}

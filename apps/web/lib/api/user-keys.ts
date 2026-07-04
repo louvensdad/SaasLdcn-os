@@ -47,10 +47,10 @@ export const userKeysClient = {
       method: 'POST',
       body: JSON.stringify({ provider, api_key }),
     }),
-  setKey: (provider: KeyProvider, api_key: string) =>
+  setKey: (provider: KeyProvider, api_key: string, ttlSeconds?: number | null) =>
     send<KeySessionStatusResponse>('/api/user-ai-keys/session', {
       method: 'POST',
-      body: JSON.stringify({ provider, api_key }),
+      body: JSON.stringify({ provider, api_key, ...(ttlSeconds ? { ttl_seconds: ttlSeconds } : {}) }),
     }),
   remove: (provider?: string) =>
     send<null>(

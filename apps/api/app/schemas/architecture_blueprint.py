@@ -37,6 +37,43 @@ def relevant_areas(delivery_type: str | None) -> list[str]:
     return [area for area in BLUEPRINT_AREAS if area not in _AREAS_REQUIRING_MOBILE_DELIVERY]
 
 
+class StackApproval(ApiModel):
+    """Explicit user consent for the development stack (Stack Approval Gate).
+
+    The Meta-Factory can only start generating when status == "APPROVED"; the
+    approved selections — not the model's internal choice — are what generation
+    uses. Lives inside the blueprint so regenerating the blueprint naturally
+    resets the approval (the stack may have changed)."""
+
+    status: Literal["PENDING", "APPROVED"] = "PENDING"
+    approved_by: str | None = None
+    approved_at: str | None = None
+    selected_frontend: str = ""
+    selected_backend: str = ""
+    selected_database: str = ""
+    selected_language: str = ""
+    selected_auth: str = ""
+    selected_testing: str = ""
+    selected_deploy_target: str = ""
+
+
+class StackProposalItem(ApiModel):
+    """One stack dimension shown at the Stack Approval Gate: what was chosen,
+    why, and which alternatives were considered (from the blueprint decisions)."""
+
+    area: str
+    label: str
+    choice: str
+    reason: str = ""
+    alternatives: list[str] = Field(default_factory=list)
+
+
+class StackProposal(ApiModel):
+    status: Literal["PENDING", "APPROVED"] = "PENDING"
+    items: list[StackProposalItem] = Field(default_factory=list)
+    approval: StackApproval | None = None
+
+
 class BlueprintDecision(ApiModel):
     area: str
     choice: str
@@ -96,3 +133,6 @@ class ArchitectureBlueprint(ApiModel):
     # how it was parsed/normalized/repaired. Lets the UI show the raw response,
     # the normalized blueprint, and any partial-recovery reason. Secrets redacted.
     responseDiagnostics: dict[str, Any] | None = None
+    # Stack Approval Gate: set when the user explicitly approves the stack.
+    # Absent/PENDING blocks generation. Reset by design on blueprint regeneration.
+    stack_approval: StackApproval | None = None

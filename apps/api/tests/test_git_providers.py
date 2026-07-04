@@ -122,3 +122,43 @@ def test_integration_status_endpoints_are_self_service(client):
     assert gitlab.json()["status"] == "disconnected"
     assert "token" not in github.text
     assert "token" not in gitlab.text
+
+
+# --- user-chosen retention (TTL) --------------------------------------------- #
+
+def test_connect_without_ttl_keeps_connection_until_disconnect(service, monkeypatch):
+    monkeypatch.setattr(service, "_github_profile", lambda token: dict(_GITHUB_PROFILE))
+    connection = service.connect("user-1", "github", "secret-token")
+    assert connection["expires_at"] is None
+    assert service.status("user-1", "github")["status"] == "connected"
+
+
+def test_connect_with_ttl_sets_expiry_and_expired_token_is_purged(service, monkeypatch):
+    monkeypatch.setattr(service, "_github_profile", lambda token: dict(_GITHUB_PROFILE))
+
+    connection = service.connect("user-1", "github", "secret-token", ttl_seconds=3600)
+    assert connection["expires_at"] is not None
+
+    # Simulate the retention window elapsing: the stored token must vanish
+    # server-side, without requiring any user action.
+    service._connections[("user-1", "github")]["profile"]["expires_at"] = "2020-01-01T00:00:00+00:00"
+    assert service.status("user-1", "github")["status"] == "disconnected"
+    # The purge also removed the persisted ciphertext, so a fresh instance
+    # backed by the same storage sees no connection either.
+    assert service._storage.get_connection("user-1", "github") is None
+
+
+def test_validate_preserves_the_original_retention_window(service, monkeypatch):
+    monkeypatch.setattr(service, "_github_profile", lambda token: dict(_GITHUB_PROFILE))
+
+    first = service.connect("user-1", "github", "secret-token", ttl_seconds=3600)
+    revalidated = service.validate("user-1", "github")
+    assert revalidated["expires_at"] == first["expires_at"]
+
+
+def test_connect_endpoint_rejects_ttl_below_minimum(client):
+    response = client.post(
+        "/api/integrations/git/github/connect",
+        json={"token": "ghp_x", "ttl_seconds": 10},
+    )
+    assert response.status_code == 422

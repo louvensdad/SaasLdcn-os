@@ -35,6 +35,12 @@ class SharedRedisFake:
     def mget(self, keys: list[str]) -> list[str | None]:
         return [self.get(key) for key in keys]
 
+    def ttl(self, key: str) -> int:
+        entry = self.values.get(key)
+        if entry is None or entry[1] <= self.now:
+            return -2
+        return int(entry[1] - self.now)
+
     def delete(self, *keys: str) -> int:
         deleted = 0
         for key in keys:
@@ -66,7 +72,8 @@ def test_key_persists_between_two_service_instances_without_plaintext_storage():
     stored_payload = shared.values["vault:user-a:openai"][0]
     assert RAW_KEY not in stored_payload
     assert second.get("user-a", "openai") == RAW_KEY
-    assert second.status("user-a") == [("openai", masked)]
+    expires = get_settings().user_key_ttl_seconds
+    assert second.status("user-a") == [("openai", masked, expires)]
 
     second.clear("user-a", "openai")
     assert first.get("user-a", "openai") is None

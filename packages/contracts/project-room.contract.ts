@@ -2,7 +2,7 @@
 // Mirrors apps/api/app/schemas/project_room.py. No secret/API key is ever part of
 // any response; chat content, spec and handoff are redacted server-side.
 
-import type { ArchitectureBlueprint } from './architecture-blueprint.contract';
+import type { ArchitectureBlueprint, StackProposal } from './architecture-blueprint.contract';
 import type { ArchitectureModel } from './architecture-model.contract';
 
 export type ProjectRoomStatus =
@@ -256,6 +256,9 @@ export interface ProjectRoom {
   architecture_blueprint: ArchitectureBlueprint | null;
   blueprint_versions: BlueprintVersion[];
   active_blueprint_version?: number | null;
+  // Stack Approval Gate: proposed stack (choice + reason + alternatives) and
+  // its approval state, derived from the active blueprint.
+  stack_proposal?: StackProposal | null;
   generation_handoff: GenerationJob | null;
   readiness_checklist: ProjectReadinessCheck[];
   engineering_review?: EngineeringReviewAssessment | null;

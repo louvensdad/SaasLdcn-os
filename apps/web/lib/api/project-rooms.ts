@@ -9,7 +9,7 @@ import type {
   ProjectRoomSummary,
   ReviseProjectRoomPromptRequest,
 } from '@contracts/project-room.contract';
-import type { BlueprintDecision } from '@contracts/architecture-blueprint.contract';
+import type { BlueprintDecision, StackApprovalRequest } from '@contracts/architecture-blueprint.contract';
 
 export type BlueprintStreamEvent =
   | { type: 'progress' | 'heartbeat'; stage: string; label: string; progress: number; elapsed?: number }
@@ -130,6 +130,7 @@ export const projectRoomsClient = {
   create: (payload: CreateProjectRoomRequest) => request<ProjectRoom>('/api/project-rooms', { method: 'POST', body: JSON.stringify(payload) }, FIVE_MIN),
   importPromptMaster: (payload: ImportPromptMasterRequest) => request<ProjectRoom>('/api/project-rooms/import', { method: 'POST', body: JSON.stringify(payload) }, FIVE_MIN),
   archive: (roomId: string) => request<ProjectRoom>(`/api/project-rooms/${roomId}/archive`, { method: 'POST' }, THIRTY_SEC),
+  remove: (roomId: string) => request<null>(`/api/project-rooms/${roomId}`, { method: 'DELETE' }, THIRTY_SEC),
   markGenerated: (roomId: string, generatedProjectId: string) => request<ProjectRoom>(`/api/project-rooms/${roomId}/mark-generated`, { method: 'POST', body: JSON.stringify({ generated_project_id: generatedProjectId }) }, THIRTY_SEC),
   postMessage: (roomId: string, payload: PostProjectRoomMessageRequest) => request<ProjectRoom>(`/api/project-rooms/${roomId}/message`, { method: 'POST', body: JSON.stringify(payload) }, FIVE_MIN),
   generatePrompt: (roomId: string, payload?: { use_user_key?: boolean; user_model_choice?: string | null }) => request<ProjectRoom>(`/api/project-rooms/${roomId}/generate-prompt`, { method: 'POST', body: payload ? JSON.stringify(payload) : undefined }, FIVE_MIN),
@@ -194,6 +195,8 @@ export const projectRoomsClient = {
   validateEngineeringReview: (roomId: string) => request<EngineeringReviewValidation>(`/api/project-rooms/${roomId}/engineering-review/validate`, { method: 'POST' }, THIRTY_SEC),
   acknowledgePreview: (roomId: string, confirmation: string) => request<ProjectRoom>(`/api/project-rooms/${roomId}/acknowledge-preview`, { method: 'POST', body: JSON.stringify({ confirmation }) }, THIRTY_SEC),
   approve: (roomId: string) => request<ProjectRoom>(`/api/project-rooms/${roomId}/approve`, { method: 'POST' }, THIRTY_SEC),
+  approveStack: (roomId: string, overrides?: StackApprovalRequest) =>
+    request<ProjectRoom>(`/api/project-rooms/${roomId}/stack/approve`, { method: 'POST', body: JSON.stringify(overrides ?? {}) }, THIRTY_SEC),
   sendToGenerator: (roomId: string) => request<ProjectRoom>(`/api/project-rooms/${roomId}/send-to-generator`, { method: 'POST' }, THIRTY_SEC),
 };
 

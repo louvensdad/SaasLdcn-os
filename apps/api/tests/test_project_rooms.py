@@ -106,6 +106,9 @@ def _engineering_approved_room(client: TestClient) -> str:
     final_approval = client.post(f"/api/project-rooms/{room_id}/approve")
     assert final_approval.status_code == 200, final_approval.text
     assert final_approval.json()["status"] == "ENGINEERING_APPROVED"
+    # Stack Approval Gate: the Meta-Factory only starts on a user-approved stack.
+    stack = client.post(f"/api/project-rooms/{room_id}/stack/approve", json={})
+    assert stack.status_code == 200, stack.text
     return room_id
 
 
@@ -652,3 +655,32 @@ def test_engineering_review_uses_active_llm_blueprint_metadata(client: TestClien
     assert validation_body["providerLabel"] == "Claude"
     assert validation_body["degraded"] is False
     assert validation_body["checks"][2]["passed"] is True
+
+
+# --- delete ------------------------------------------------------------------ #
+
+def test_delete_project_room_removes_it_permanently(client: TestClient) -> None:
+    room = _create_room(client, title="Sala descartavel")
+    room_id = room["room_id"]
+
+    deleted = client.delete(f"/api/project-rooms/{room_id}")
+    assert deleted.status_code == 204, deleted.text
+
+    assert client.get(f"/api/project-rooms/{room_id}").status_code == 404
+    assert all(item["room_id"] != room_id for item in client.get("/api/project-rooms").json())
+    # Deleting again is an honest 404, not a silent success.
+    assert client.delete(f"/api/project-rooms/{room_id}").status_code == 404
+
+
+def test_delete_project_room_is_owner_scoped(client: TestClient) -> None:
+    room = _create_room(client, title="Sala privada do usuario A")
+    other_token = _register_second_user(client)
+
+    foreign = client.delete(
+        f"/api/project-rooms/{room['room_id']}",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert foreign.status_code == 404
+
+    # The owner still sees the room untouched.
+    assert client.get(f"/api/project-rooms/{room['room_id']}").status_code == 200

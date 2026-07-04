@@ -187,6 +187,20 @@ class CodebaseIngestService:
                 return candidate
         raise CodebaseIngestError(f"Unknown ingest id '{ingest_id}'.")
 
+    def remove(self, ingest_id: str) -> None:
+        """Delete the ingest sandbox from disk. Registered re-analysis roots point at
+        generated projects outside the ingest root and are only unregistered."""
+        try:
+            root = self.root_for(ingest_id)
+        except CodebaseIngestError:
+            return
+        self._roots.pop(ingest_id, None)
+        if self._root.resolve() not in root.resolve().parents:
+            return
+        from app.services.fs_publish import force_rmtree
+
+        force_rmtree(root)
+
     def register_root(self, root: Path) -> str:
         """Register an already-materialized directory so it can be inventoried/analyzed
         with the same read-only walk (used to re-analyze the project after auto-refactor)."""

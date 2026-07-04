@@ -38,6 +38,46 @@ export interface BlueprintDecision {
   evidence?: string[];
 }
 
+// Stack Approval Gate: explicit user consent for the development stack.
+// Generation only starts when status === 'APPROVED'; the approved selections
+// (not the model's internal choice) are what generation uses.
+export interface StackApproval {
+  status: 'PENDING' | 'APPROVED';
+  approved_by?: string | null;
+  approved_at?: string | null;
+  selected_frontend: string;
+  selected_backend: string;
+  selected_database: string;
+  selected_language: string;
+  selected_auth: string;
+  selected_testing: string;
+  selected_deploy_target: string;
+}
+
+export interface StackProposalItem {
+  area: string;
+  label: string;
+  choice: string;
+  reason: string;
+  alternatives: string[];
+}
+
+export interface StackProposal {
+  status: 'PENDING' | 'APPROVED';
+  items: StackProposalItem[];
+  approval?: StackApproval | null;
+}
+
+export interface StackApprovalRequest {
+  selected_frontend?: string;
+  selected_backend?: string;
+  selected_database?: string;
+  selected_language?: string;
+  selected_auth?: string;
+  selected_testing?: string;
+  selected_deploy_target?: string;
+}
+
 export interface ArchitectureBlueprint {
   project_id: string;
   decisions: BlueprintDecision[];
@@ -66,6 +106,9 @@ export interface ArchitectureBlueprint {
   // parsed/normalized/repaired (raw excerpt, extractor/normalizer used, partial
   // recovery reason, missing areas). Powers "Visualizar resposta da IA".
   responseDiagnostics?: BlueprintResponseDiagnostics | null;
+  // Stack Approval Gate state; absent/PENDING blocks generation. Reset by design
+  // whenever a new blueprint version is generated.
+  stack_approval?: StackApproval | null;
 }
 
 export interface BlueprintResponseDiagnostics {

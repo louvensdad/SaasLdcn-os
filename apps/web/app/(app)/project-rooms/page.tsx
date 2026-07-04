@@ -8,6 +8,7 @@ import { projectRoomsClient } from '@/lib/api/project-rooms';
 import type { ProjectRoomStatus, ProjectRoomSummary } from '@contracts/project-room.contract';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
 import { useLocale } from '@/hooks/use-locale';
 import { useProjectCacheSync } from '@/hooks/use-project-cache-sync';
 
@@ -58,6 +59,12 @@ export default function ProjectRoomsPage() {
       active = false;
     };
   }, [t]);
+
+  async function handleDelete(roomId: string) {
+    await projectRoomsClient.remove(roomId);
+    setRooms((current) => current.filter((room) => room.room_id !== roomId));
+    syncProjectCaches();
+  }
 
   async function handleArchive(roomId: string) {
     setArchiving(roomId);
@@ -153,6 +160,13 @@ export default function ProjectRoomsPage() {
                       )}
                     </Button>
                   ) : null}
+                  <DeleteResourceButton
+                    className="px-2 py-1.5"
+                    title={t('projectRooms.delete.title')}
+                    description={t('projectRooms.delete.description', { name: room.title })}
+                    ariaLabel={t('projectRooms.delete.trigger')}
+                    onConfirm={() => handleDelete(room.room_id)}
+                  />
                 </div>
               </Card>
             );

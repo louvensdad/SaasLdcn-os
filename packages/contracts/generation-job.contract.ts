@@ -54,7 +54,17 @@ export interface GenerationJobLog {
 export type ExecutionEventType =
   | 'stage_started' | 'stage_finished' | 'command_started' | 'command_output'
   | 'command_finished' | 'command_skipped' | 'artifact_written' | 'agent_started'
-  | 'agent_finished' | 'error' | 'stalled' | 'timeout' | 'info';
+  | 'agent_finished' | 'error' | 'stalled' | 'timeout' | 'info'
+  // Build Auto-Repair timeline: classified error detected, deterministic patch
+  // applied (or none was safe) and the failing command re-ran.
+  | 'repair_started' | 'repair_applied' | 'repair_failed'
+  // Execution Reality Guard: a response contradicted the Ground Truth state
+  // (fabricated repo/deploy claims) and was rejected/sanitized.
+  | 'reality_guard'
+  // PIPELINE_FINAL_EVENT: emitted on EVERY terminal outcome (SUCCESS /
+  // DEGRADED_CONTINUATION / NEEDS_USER_ACTION / STALLED / FAILED), even when
+  // the build failed or was skipped.
+  | 'pipeline_complete';
 
 // Fine-grained, real-time execution event for the live console.
 export interface GenerationExecutionEvent {
@@ -106,6 +116,18 @@ export interface GenerationJobError {
   can_continue_with_warnings: boolean;
 }
 
+export interface ManualBuildFixGuide {
+  root_cause: string;
+  original_error: string;
+  affected_files: string[];
+  problematic_dependencies: string[];
+  suggested_versions: Record<string, string>;
+  commands: string[];
+  steps: string[];
+  patches_applied: string[];
+  full_logs: string;
+}
+
 export interface ResilientGenerationJob {
   id: string;
   projectId: string;
@@ -122,6 +144,11 @@ export interface ResilientGenerationJob {
   progress: number;
   error?: GenerationJobError | null;
   retryCount: number;
+  buildStatus: 'PENDING' | 'RUNNING' | 'PASSED' | 'SKIPPED_AFTER_FAILURE';
+  buildAttempts: number;
+  manualBuildRetryCount: number;
+  buildSkipAcknowledged: boolean;
+  manualBuildFixGuide?: ManualBuildFixGuide | null;
   artifacts: GenerationArtifact[];
   logs: GenerationJobLog[];
   events: GenerationExecutionEvent[];

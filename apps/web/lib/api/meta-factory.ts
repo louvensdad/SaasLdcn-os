@@ -6,6 +6,7 @@ import {
 } from '@/lib/api/client';
 import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
 import type { GenerationExecutionEvent, ResilientGenerationJob } from '@contracts/generation-job.contract';
+import type { TerminalCommandRecord, TerminalHistoryResponse, TerminalStreamEvent } from '@contracts/execution-terminal.contract';
 
 const TERMINAL_JOB_STATUSES = new Set(['READY', 'FAILED', 'PAUSED', 'NEEDS_USER_ACTION', 'STALLED']);
 
@@ -415,9 +416,19 @@ export const metaFactoryClient = {
     { method: 'POST' },
     30_000,
   ),
+  continueAfterBuildSkip: (jobId: string) => request<ResilientGenerationJob>(
+    `/api/meta-factory/jobs/${encodeURIComponent(jobId)}/continue-after-build-skip`,
+    { method: 'POST' },
+    30_000,
+  ),
   pauseJob: (jobId: string) => request<ResilientGenerationJob>(
     `/api/meta-factory/jobs/${encodeURIComponent(jobId)}/pause`,
     { method: 'POST' },
+    30_000,
+  ),
+  deleteJob: (jobId: string) => request<null>(
+    `/api/meta-factory/jobs/${encodeURIComponent(jobId)}`,
+    { method: 'DELETE' },
     30_000,
   ),
   downloadJobDiagnostic: (jobId: string) => downloadAuthenticated(
@@ -691,4 +702,50 @@ export const metaFactoryClient = {
     ),
   download: (projectId: string) =>
     downloadAuthenticated(`${API_BASE_URL}/api/meta-factory/${projectId}/download`, `${projectId}.zip`),
+  // ------------------------------------------------ LDCN Execution Terminal
+  terminalHistory: (projectId: string) =>
+    request<TerminalHistoryResponse>(`/api/meta-factory/${projectId}/terminal/history`, undefined, 30_000),
+  executeTerminalCommand: async (
+    projectId: string,
+    command: string,
+    cwd: string,
+    onLine: (stream: 'stdout' | 'stderr', line: string) => void,
+    signal?: AbortSignal,
+  ): Promise<TerminalCommandRecord> => {
+    const accessToken = getAccessToken();
+    const response = await fetch(`${API_BASE_URL}/api/meta-factory/${projectId}/terminal/execute`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      credentials: 'include', cache: 'no-store', signal,
+      body: JSON.stringify({ command, cwd }),
+    });
+    if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let record: TerminalCommandRecord | null = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const line = frame.split('\n').find((item) => item.startsWith('data: '));
+        if (line) {
+          const event = JSON.parse(line.slice(6)) as TerminalStreamEvent;
+          if (event.type === 'line') onLine(event.stream, event.line);
+          else if (event.type === 'done') record = event.record;
+          else if (event.type === 'error') throw new Error(event.detail);
+        }
+        boundary = buffer.indexOf('\n\n');
+      }
+      if (done) break;
+    }
+    if (!record) throw new Error('O terminal terminou sem registrar o comando.');
+    return record;
+  },
 };

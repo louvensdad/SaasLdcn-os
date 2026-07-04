@@ -98,7 +98,7 @@ def test_user_key_vault_accepts_deepseek_provider():
     vault = UserKeySessionService()
     masked = vault.set("user_d", "deepseek", "sk-deepseek-1234567890")
     assert vault.get("user_d", "deepseek") == "sk-deepseek-1234567890"
-    assert ("deepseek", masked) in vault.status("user_d")
+    assert ("deepseek", masked) in [(p, m) for p, m, _expires in vault.status("user_d")]
     # The vault resolves the key for a DeepSeek model choice.
     assert vault.resolve_for_model_choice("user_d", "deepseek-chat") == "sk-deepseek-1234567890"
 

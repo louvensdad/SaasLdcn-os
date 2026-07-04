@@ -198,3 +198,29 @@ def test_modernize_generate_in_mock_mode(client):
         assert body["project_id"]
     finally:
         settings.force_mock = previous
+
+
+# --- delete ------------------------------------------------------------------ #
+
+def test_delete_modernize_project_removes_analysis_and_sandbox(client):
+    upload = client.post(
+        "/api/modernize/projects/upload",
+        files={"file": ("legacy.zip", _zip(_LEGACY), "application/zip")},
+    )
+    assert upload.status_code == 201, upload.text
+    project_id = upload.json()["project_id"]
+
+    deleted = client.delete(f"/api/modernize/projects/{project_id}")
+    assert deleted.status_code == 204, deleted.text
+
+    # The persisted analysis is gone for Modernize AND Auto-Fix...
+    assert client.get("/api/modernize/projects/latest").json() is None
+    assert all(p["project_id"] != project_id for p in client.get("/api/modernize/projects").json())
+    # ...and the ingest sandbox no longer accepts operations.
+    assert client.post(f"/api/modernize/{project_id}/analyze").status_code == 404
+    # Deleting again is an honest 404.
+    assert client.delete(f"/api/modernize/projects/{project_id}").status_code == 404
+
+
+def test_delete_modernize_project_unknown_id_is_404(client):
+    assert client.delete("/api/modernize/projects/ingest_nope").status_code == 404

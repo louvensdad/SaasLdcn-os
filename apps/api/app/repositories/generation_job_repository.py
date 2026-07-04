@@ -6,7 +6,7 @@ from typing import Any
 
 from collections.abc import Sequence
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 
 from app.core.config import get_settings
 from app.core.database import database_url_for, session_factory
@@ -91,6 +91,11 @@ class GenerationJobRepository:
                 )
             )
             return int(count or 0)
+
+    def delete(self, job_id: str, owner_user_id: str) -> bool:
+        with self._sessions.begin() as session:
+            result = session.execute(delete(GenerationJob).where(GenerationJob.id == job_id, self._writable_by(owner_user_id)))
+            return bool(result.rowcount)
 
     def update(self, job_id: str, owner_user_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
         values = {

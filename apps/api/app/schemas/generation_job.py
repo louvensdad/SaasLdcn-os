@@ -6,6 +6,7 @@ from pydantic import Field
 
 from app.schemas.common import ApiModel
 from app.schemas.orchestrator import ProjectSpec
+from app.schemas.generation_validation import ManualBuildFixGuide
 
 
 GenerationJobStatus = Literal[
@@ -66,6 +67,16 @@ ExecutionEventType = Literal[
     "stage_started", "stage_finished", "command_started", "command_output",
     "command_finished", "command_skipped", "artifact_written", "agent_started",
     "agent_finished", "error", "stalled", "timeout", "info",
+    # Build Auto-Repair timeline: a classified error was detected, a deterministic
+    # patch was applied (or none was safe) and the failing command re-ran.
+    "repair_started", "repair_applied", "repair_failed",
+    # Execution Reality Guard: an LLM response contradicted the Ground Truth
+    # state (fabricated repo/deploy claims) and was rejected/sanitized.
+    "reality_guard",
+    # PIPELINE_FINAL_EVENT: emitted by the State Transition Finalizer on EVERY
+    # terminal outcome (SUCCESS / DEGRADED_CONTINUATION / NEEDS_USER_ACTION /
+    # STALLED / FAILED) — even when the build failed or was skipped.
+    "pipeline_complete",
 ]
 
 
@@ -138,6 +149,11 @@ class GenerationJob(ApiModel):
     progress: int = 0
     error: GenerationJobError | None = None
     retryCount: int = 0
+    buildStatus: Literal["PENDING", "RUNNING", "PASSED", "SKIPPED_AFTER_FAILURE"] = "PENDING"
+    buildAttempts: int = 0
+    manualBuildRetryCount: int = 0
+    buildSkipAcknowledged: bool = False
+    manualBuildFixGuide: ManualBuildFixGuide | None = None
     artifacts: list[GenerationArtifact] = Field(default_factory=list)
     logs: list[GenerationJobLog] = Field(default_factory=list)
     events: list[GenerationExecutionEvent] = Field(default_factory=list)

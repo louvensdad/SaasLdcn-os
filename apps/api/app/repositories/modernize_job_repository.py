@@ -58,6 +58,14 @@ class ModernizeJobRepository:
             row.updated_at = self._now()
             return data
 
+    def delete_for_owner(self, project_id: str, owner_user_id: str) -> bool:
+        with self._sessions.begin() as session:
+            row = session.scalar(select(ModernizeJob).where(ModernizeJob.project_id == project_id, ModernizeJob.owner_user_id == owner_user_id))
+            if row is None:
+                return False
+            session.delete(row)
+        return True
+
     @staticmethod
     def _record(row: ModernizeJob | None) -> dict[str, Any] | None:
         if row is None:

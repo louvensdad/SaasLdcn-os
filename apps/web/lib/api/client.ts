@@ -596,10 +596,10 @@ export const apiClient = {
     apiRequest<GitExportStatusResponse>(apiEndpoints.gitExport.status(exportId)),
   getGitProviderConnection: (provider: 'github' | 'gitlab') =>
     apiRequest<GitProviderConnection>(apiEndpoints.gitProviders.connection(provider)),
-  connectGitProvider: (provider: 'github' | 'gitlab', token: string) =>
+  connectGitProvider: (provider: 'github' | 'gitlab', token: string, ttlSeconds?: number | null) =>
     apiRequest<GitProviderConnection>(apiEndpoints.gitProviders.connect(provider), {
       method: 'POST',
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, ...(ttlSeconds ? { ttl_seconds: ttlSeconds } : {}) }),
     }),
   validateGitProvider: (provider: 'github' | 'gitlab') =>
     apiRequest<GitProviderConnection>(apiEndpoints.gitProviders.validate(provider), {

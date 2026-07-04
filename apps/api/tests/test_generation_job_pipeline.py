@@ -6,6 +6,7 @@ import time
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,6 +31,12 @@ from app.engines.warning_policy import classify, classify_one
 from app.models.tenant import WorkspaceMembership
 from app.repositories.generation_job_repository import GenerationJobRepository
 from app.schemas.orchestrator import ProjectSpec
+from app.schemas.generation_validation import (
+    BuildValidationReport,
+    DependencyAuditReport,
+    GenerationValidationReport,
+    ManualBuildFixGuide,
+)
 from app.services.file_protocol import EmittedFile, ParsedAgentOutput, parse_agent_output
 from app.services.generated_project_service import DOWNLOAD_DIR
 
@@ -308,6 +315,107 @@ def test_build_and_package_are_last_and_contracts_are_first():
     assert states[:4] == ["PREPARING_CONTEXT", "CONTRACTS_PLANNING", "CONTRACTS_GENERATING", "CONTRACTS_VALIDATING"]
     assert states.index("DATABASE_GENERATING") < states.index("BACKEND_GENERATING") < states.index("FRONTEND_GENERATING")
     assert states[-2:] == ["BUILD_RUNNING", "PACKAGE_CREATING"]
+
+
+def test_skipped_build_persists_guide_and_does_not_raise(isolated_engine, monkeypatch):
+    engine, repository, root = isolated_engine
+    job = _create(engine)
+    source = root / "source.ts"
+    source.write_text("export const ok = true;", encoding="utf-8")
+    job["artifacts"].append({
+        "id": "art_source", "stage": "frontend", "name": "src/source.ts",
+        "kind": "generated", "path": str(source), "size_bytes": source.stat().st_size,
+        "checksum": "x", "valid": True, "warnings": [], "created_at": engine._now(),
+    })
+    generated_root = root / "generated"
+    generated_root.mkdir()
+    writer = SimpleNamespace(write=lambda *args, **kwargs: SimpleNamespace(project_id="generated-1", root_path=generated_root))
+    monkeypatch.setattr("app.engines.generation_job_engine.ProjectWriter", lambda: writer)
+    guide = ManualBuildFixGuide(
+        root_cause="Peer dependency conflict",
+        original_error="ERESOLVE",
+        affected_files=["package.json"],
+        problematic_dependencies=["react"],
+        suggested_versions={"react": "18.2.0"},
+        commands=["npm install", "npm run build"],
+        steps=["Fix package.json"],
+        patches_applied=["react 19 -> 18"],
+        full_logs="complete ERESOLVE log",
+    )
+    validation = GenerationValidationReport(
+        project_id="generated-1", score=70, passed=False, quality={"checks": []},
+        dependency_audit=DependencyAuditReport(status="passed"),
+        build=BuildValidationReport(
+            installed="failed", built="skipped_after_failure", ok=False,
+            skipped_reason="bounded recovery exhausted",
+            recovery_status="SKIPPED_AFTER_FAILURE", manual_fix_guide=guide,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.engines.generation_job_engine.generation_validation_engine.validate",
+        lambda *args, **kwargs: validation,
+    )
+
+    engine._build(job, "user-1")
+
+    persisted = repository.get(job["id"], "user-1")
+    assert persisted["buildStatus"] == "SKIPPED_AFTER_FAILURE"
+    assert persisted["stageStatuses"]["build"] == "skipped"
+    assert persisted["manualBuildFixGuide"]["root_cause"] == "Peer dependency conflict"
+    assert any(item["name"] == "ManualBuildFixGuide.json" for item in persisted["artifacts"])
+
+
+def test_pipeline_continues_to_package_after_build_skip(isolated_engine, monkeypatch):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    executed: list[str] = []
+
+    def fake_step(current, owner, step, *args, **kwargs):  # noqa: ANN001
+        executed.append(step.logical)
+        if step.logical == "build":
+            current["buildStatus"] = "SKIPPED_AFTER_FAILURE"
+            current["manualBuildFixGuide"] = {
+                "root_cause": "persistent failure", "original_error": "build failed",
+                "affected_files": [], "problematic_dependencies": [], "suggested_versions": {},
+                "commands": [], "steps": [], "patches_applied": [], "full_logs": "log",
+            }
+
+    monkeypatch.setattr(engine, "_execute_step", fake_step)
+    engine.execute(job["id"], "user-1", api_key=None, user_model_choice=None)
+
+    completed = repository.get(job["id"], "user-1")
+    assert executed[-3:] == ["docs", "build", "package"]
+    assert completed["status"] == "READY"
+    assert completed["stageStatuses"]["build"] == "skipped"
+    assert completed["stageStatuses"]["package"] == "success"
+    assert completed["partial"] is True and completed["valid"] is False
+
+    acknowledged = engine.acknowledge_build_skip(job["id"], "user-1")
+    assert acknowledged["buildSkipAcknowledged"] is True
+    assert engine.acknowledge_build_skip(job["id"], "user-1")["buildSkipAcknowledged"] is True
+
+
+def test_manual_build_retry_is_bounded(isolated_engine, monkeypatch):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    job["buildStatus"] = "SKIPPED_AFTER_FAILURE"
+    job["currentStage"] = "BUILD_RUNNING"
+    job["status"] = "READY"
+    engine._save(job, "user-1")
+    monkeypatch.setattr(engine, "start", lambda *args, **kwargs: None)
+
+    for expected in range(1, 4):
+        engine.retry_stage(
+            job["id"], "user-1", "build", api_key=None,
+            user_model_choice=None, mode="normal",
+        )
+        assert repository.get(job["id"], "user-1")["manualBuildRetryCount"] == expected
+
+    with pytest.raises(ValueError, match="Limite de 3"):
+        engine.retry_stage(
+            job["id"], "user-1", "build", api_key=None,
+            user_model_choice=None, mode="normal",
+        )
 
 
 def test_failure_diagnostic_is_actionable(isolated_engine):
@@ -807,3 +915,39 @@ def test_llm_job_never_falls_back_silently_without_provider(client, isolated_eng
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "LLM_PROVIDER_REQUIRED"
     assert engine.latest("room-no-provider", response.request.headers.get("x-user", "")) is None
+
+
+# --- delete ------------------------------------------------------------------ #
+
+def test_delete_refuses_jobs_still_in_flight(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)  # QUEUED: the runner may still write to it.
+    assert engine.delete(job["id"], "user-1") is False
+    assert repository.get(job["id"], "user-1") is not None
+
+
+def test_delete_removes_terminal_job(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    job["status"] = "FAILED"
+    repository.update(job["id"], "user-1", job)
+
+    assert engine.delete(job["id"], "user-1") is True
+    assert repository.get(job["id"], "user-1") is None
+    # A second delete reports the job as missing.
+    assert engine.delete(job["id"], "user-1") is None
+
+
+def test_delete_unknown_job_returns_none(isolated_engine):
+    engine, _, _ = isolated_engine
+    assert engine.delete("job_nope", "user-1") is None
+
+
+def test_delete_is_owner_scoped(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    job["status"] = "READY"
+    repository.update(job["id"], "user-1", job)
+
+    assert engine.delete(job["id"], "user-2") is None
+    assert repository.get(job["id"], "user-1") is not None

@@ -67,7 +67,7 @@ import type {
   ReviewDimension,
   ReviewScore,
 } from '@contracts/project-room.contract';
-import type { BlueprintDecision } from '@contracts/architecture-blueprint.contract';
+import type { BlueprintDecision, StackApprovalRequest, StackProposal } from '@contracts/architecture-blueprint.contract';
 
 const AREA_ICON: Record<string, LucideIcon> = {
   frontend: Globe, backend: Server, database: Database, auth: KeyRound,
@@ -217,6 +217,22 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
     } catch (caught) {
       if (caught instanceof ProjectRoomApiError) setDiagnostic(caught.diagnostic);
       setLogs((current) => [...current, { method: 'POST', endpoint: `/api/project-rooms/${room.room_id}/approve`, status: caught instanceof ProjectRoomApiError ? caught.httpStatus : null, message: caught instanceof Error ? caught.message : 'Falha ao aprovar a Review' }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveStack(overrides?: StackApprovalRequest) {
+    setBusy(true);
+    setDiagnostic(null);
+    try {
+      const updated = await projectRoomsClient.approveStack(room.room_id, overrides);
+      setRoom(updated);
+      syncProjectCaches();
+      router.refresh();
+    } catch (caught) {
+      if (caught instanceof ProjectRoomApiError) setDiagnostic(caught.diagnostic);
+      setLogs((current) => [...current, { method: 'POST', endpoint: `/api/project-rooms/${room.room_id}/stack/approve`, status: caught instanceof ProjectRoomApiError ? caught.httpStatus : null, message: caught instanceof Error ? caught.message : 'Falha ao aprovar a stack' }]);
     } finally {
       setBusy(false);
     }
@@ -418,6 +434,17 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
           phrase={previewPhrase}
           onPhrase={setPreviewPhrase}
           phraseOk={phraseOk}
+        />
+      ) : null}
+
+      {/* Stack Approval Gate — explicit user consent for the development stack */}
+      {room.stack_proposal ? (
+        <StackApprovalGate
+          proposal={room.stack_proposal}
+          roomId={room.room_id}
+          busy={busy}
+          locked={isMeta}
+          onApprove={(overrides) => void approveStack(overrides)}
         />
       ) : null}
 
@@ -637,6 +664,100 @@ function DeterministicGate({ roomId, acknowledged, phrase, onPhrase, phraseOk }:
           <Input value={phrase} onChange={(e) => onPhrase(e.target.value)} placeholder={PREVIEW_PHRASE} error={phrase.length > 0 && !phraseOk} aria-label={t('review.gate.ariaConfirm')} />
         </div>
       )}
+    </Card>
+  );
+}
+
+// Maps a proposal area to its StackApprovalRequest override field.
+const STACK_FIELD: Record<string, keyof StackApprovalRequest> = {
+  frontend: 'selected_frontend',
+  backend: 'selected_backend',
+  database: 'selected_database',
+  language: 'selected_language',
+  auth: 'selected_auth',
+  tests: 'selected_testing',
+  deploy: 'selected_deploy_target',
+};
+
+function StackApprovalGate({ proposal, roomId, busy, locked, onApprove }: {
+  readonly proposal: StackProposal;
+  readonly roomId: string;
+  readonly busy: boolean;
+  readonly locked: boolean;
+  readonly onApprove: (overrides?: StackApprovalRequest) => void;
+}) {
+  const { t } = useLocale();
+  const [editing, setEditing] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const approved = proposal.status === 'APPROVED';
+  const approval = proposal.approval ?? null;
+
+  function submit() {
+    const overrides: StackApprovalRequest = {};
+    for (const [area, value] of Object.entries(drafts)) {
+      const field = STACK_FIELD[area];
+      if (field && value.trim()) overrides[field] = value.trim();
+    }
+    onApprove(Object.keys(overrides).length ? overrides : undefined);
+    setEditing(false);
+  }
+
+  return (
+    <Card className={cn('glass noise space-y-4 p-6', !approved && 'border border-[color-mix(in_srgb,var(--warning)_35%,var(--border))]')}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Blocks className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
+          <h2 className="ds-subsection text-[color:var(--text)]">{t('review.stack.title')}</h2>
+        </div>
+        <Badge tone={approved ? 'success' : 'warning'}>{approved ? t('review.stack.approvedBadge') : t('review.stack.pendingBadge')}</Badge>
+      </div>
+      <p className="ds-caption">{approved && approval ? `${t('review.stack.approvedBy')} ${approval.approved_by ?? '—'} · ${approval.approved_at ? new Date(approval.approved_at).toLocaleString() : '—'}` : t('review.stack.pendingHint')}</p>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {proposal.items.map((item) => {
+          const Icon = AREA_ICON[item.area] ?? Blocks;
+          return (
+            <div key={item.area} className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)] p-4">
+              <p className="flex items-center gap-2 t-overline"><Icon className="h-3.5 w-3.5 text-[color:var(--accent)]" aria-hidden /> {item.label}</p>
+              {editing && !locked ? (
+                <Input
+                  className="mt-2"
+                  value={drafts[item.area] ?? item.choice}
+                  onChange={(e) => setDrafts((current) => ({ ...current, [item.area]: e.target.value }))}
+                  aria-label={item.label}
+                />
+              ) : (
+                <p className="mt-1 text-sm font-semibold text-[color:var(--text)]">{item.choice || <span className="text-[color:var(--muted-2)]">{t('review.stack.notStated')}</span>}</p>
+              )}
+              {item.reason ? <p className="mt-1.5 ds-caption"><span className="font-semibold text-[color:var(--text)]">{t('review.stack.reason')}:</span> {item.reason}</p> : null}
+              {item.alternatives.length ? (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="ds-caption text-[color:var(--muted-2)]">{t('review.stack.alternatives')}:</span>
+                  {item.alternatives.map((alt) => <Badge key={alt} tone="neutral">{alt}</Badge>)}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      {!locked ? (
+        <div className="flex flex-wrap gap-3">
+          {editing ? (
+            <>
+              <Button variant="primary" loading={busy} onClick={submit}><CheckCircle2 className="h-4 w-4" /> {t('review.stack.approveChanges')}</Button>
+              <Button variant="ghost" onClick={() => { setEditing(false); setDrafts({}); }}>{t('review.stack.cancelEdit')}</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="primary" loading={busy} onClick={() => onApprove()}><CheckCircle2 className="h-4 w-4" /> {approved ? t('review.stack.reapprove') : t('review.stack.approve')}</Button>
+              <Button variant="secondary" onClick={() => setEditing(true)}><Wrench className="h-4 w-4" /> {t('review.stack.alter')}</Button>
+            </>
+          )}
+          <Link href={`/architect?projectId=${roomId}&regenerate=1`}><Button variant="ghost"><Sparkles className="h-4 w-4" /> {t('review.stack.regenerate')}</Button></Link>
+          <Link href={`/architect?projectId=${roomId}`}><Button variant="ghost">{t('review.stack.backToArchitect')}</Button></Link>
+        </div>
+      ) : null}
     </Card>
   );
 }
