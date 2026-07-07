@@ -38,6 +38,16 @@ COMPATIBILITY_REPORT_FILE = "stack.compatibility.json"
 # fixer never changes them; manifests that drift are restored to the lock.
 ANCHOR_PACKAGES = ("react", "react-native", "expo")
 
+# Anchors used to fix the Stack Lock BEFORE any manifest exists (React 18 line —
+# the only window the Compatibility Matrix and generated scaffolds currently
+# target). Real manifests are still restored to these on drift by
+# validate_and_fix(); default_lock() only decides the values up front.
+DEFAULT_ANCHORS: dict[str, str] = {
+    "react": "^18.2.0",
+    "react_native": "0.74.5",
+    "expo": "~51.0.0",
+}
+
 _VERSION_RE = re.compile(r"(\d+)(?:\.(\d+))?")
 
 # npm ERESOLVE log shape (stable across npm 8-10):
@@ -260,6 +270,23 @@ class PeerConflict:
 
 class StackCompatibilityEngine:
     # ------------------------------------------------------------- stack lock
+    def default_lock(self, *, delivery_type: str | None) -> StackLock:
+        """Fix the anchor versions BEFORE any code is generated. The caller
+        persists the result as the job's stack.lock.json artifact so it lands in
+        the project root ahead of every generation step; capture_lock() then
+        finds it already present and loads it instead of deriving a fresh lock
+        from whatever an agent happened to write (which is too late to prevent
+        drift — only to repair it)."""
+        includes_mobile = delivery_type in {"mobile", "full_stack"}
+        return StackLock(
+            react=DEFAULT_ANCHORS["react"],
+            react_native=DEFAULT_ANCHORS["react_native"] if includes_mobile else None,
+            expo=DEFAULT_ANCHORS["expo"] if includes_mobile else None,
+            node=None,
+            source_manifest="pre_generation_default",
+            captured_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        )
+
     def capture_lock(self, root: Path) -> StackLock | None:
         """Load the existing stack.lock.json (immutable during generation) or
         capture the anchors from the first manifest that declares React and
@@ -297,6 +324,94 @@ class StackCompatibilityEngine:
         return None
 
     # ----------------------------------------------------- validate + auto-fix
+    def check_manifest(self, lock: StackLock, label: str, data: dict[str, Any]) -> list[CompatibilityFinding]:
+        """Pure, in-memory enforcement of the (already locked) anchors + the
+        Compatibility Matrix against a single manifest dict, mutating `data` in
+        place for every auto-fix. Shared by validate_and_fix() (disk manifests,
+        checked once more at BUILD_RUNNING) and by the per-stage Conflict
+        Detector gate in generation_job_engine (checked right after each of
+        backend/frontend/mobile emits its package.json, instead of only at the
+        end of the pipeline)."""
+        if lock.react_major is None:
+            return []
+        rules = COMPATIBILITY_MATRIX.get(lock.react_major, {})
+        findings: list[CompatibilityFinding] = []
+        for section in _NPM_MANIFEST_SECTIONS:
+            deps = data.get(section)
+            if not isinstance(deps, dict):
+                continue
+            for name in sorted(deps):
+                spec = str(deps[name])
+                version = _parse_version(spec)
+                if version is None:
+                    continue
+                # Stack Lock enforcement: an anchor that drifted from the lock is
+                # restored — never silently upgraded/downgraded by an agent.
+                locked_spec = lock.anchor_spec(name)
+                if locked_spec is not None and name in ANCHOR_PACKAGES:
+                    locked_version = _parse_version(locked_spec)
+                    # For 0.x anchors (react-native) the minor IS the version
+                    # line, so drift is judged on (major, minor), not major.
+                    drifted = locked_version is not None and (
+                        version[0] != locked_version[0]
+                        or (locked_version[0] == 0 and version[1] != locked_version[1])
+                    )
+                    if drifted:
+                        deps[name] = locked_spec
+                        findings.append(CompatibilityFinding(
+                            manifest=label, package=name, section=section,
+                            current=spec, required=locked_spec, suggested=locked_spec,
+                            reason=f"Stack Lock: '{name}' esta travado em {locked_spec} durante a geracao.",
+                            impact="Restaura a versao aprovada da stack; nenhuma dependencia decide o React sozinha.",
+                            status="lock_enforced",
+                        ))
+                        continue
+                rule = rules.get(name)
+                if rule is None or name in ANCHOR_PACKAGES:
+                    continue
+                if not rule.accepts(version):
+                    deps[name] = rule.suggested
+                    findings.append(CompatibilityFinding(
+                        manifest=label, package=name, section=section,
+                        current=spec,
+                        required=f">={rule.min_version[0]}.{rule.min_version[1]} <={rule.max_version[0]}.{rule.max_version[1]} (React {lock.react_major})",
+                        suggested=rule.suggested, reason=rule.reason, impact=rule.impact,
+                        status="fixed",
+                    ))
+        return findings
+
+    def check_duplicate_versions(self, manifests: dict[str, dict[str, Any]]) -> list[CompatibilityFinding]:
+        """Dependency Graph gap: the same (non-anchor) package declared with
+        different version specs across frontend/mobile/backend manifests —
+        anchors are already governed by the Stack Lock and skipped here.
+        Reconciles every later occurrence to the first manifest's spec (stable,
+        insertion-ordered) and mutates `manifests` in place."""
+        seen: dict[str, tuple[str, str]] = {}
+        findings: list[CompatibilityFinding] = []
+        for label, data in manifests.items():
+            for section in _NPM_MANIFEST_SECTIONS:
+                deps = data.get(section)
+                if not isinstance(deps, dict):
+                    continue
+                for name in sorted(deps):
+                    if name in ANCHOR_PACKAGES:
+                        continue
+                    spec = str(deps[name])
+                    if name not in seen:
+                        seen[name] = (label, spec)
+                        continue
+                    first_label, first_spec = seen[name]
+                    if spec != first_spec:
+                        deps[name] = first_spec
+                        findings.append(CompatibilityFinding(
+                            manifest=label, package=name, section=section,
+                            current=spec, required=first_spec, suggested=first_spec,
+                            reason=f"'{name}' declarado como {first_spec} em {first_label} e {spec} em {label}; monorepo exige uma unica versao.",
+                            impact="Reconciliado para a versao do primeiro manifesto que declarou a dependencia.",
+                            status="fixed",
+                        ))
+        return findings
+
     def validate_and_fix(self, root: Path, *, sink: EventSink | None = None) -> StackCompatibilityResult:
         """Dependency Resolver + Auto Version Fixer, BEFORE npm ever runs:
 
@@ -310,7 +425,6 @@ class StackCompatibilityEngine:
         lock = self.capture_lock(root)
         if lock is None or lock.react_major is None:
             return StackCompatibilityResult(status="skipped")
-        rules = COMPATIBILITY_MATRIX.get(lock.react_major, {})
         result = StackCompatibilityResult(status="passed", lock=lock)
 
         for manifest in self._manifests(root):
@@ -318,58 +432,12 @@ class StackCompatibilityEngine:
             if data is None:
                 continue
             label = manifest.relative_to(root).as_posix()
-            changed = False
+            findings = self.check_manifest(lock, label, data)
+            for finding in findings:
+                result.findings.append(finding)
+                self._emit(sink, finding)
 
-            for section in _NPM_MANIFEST_SECTIONS:
-                deps = data.get(section)
-                if not isinstance(deps, dict):
-                    continue
-                for name in sorted(deps):
-                    spec = str(deps[name])
-                    version = _parse_version(spec)
-                    if version is None:
-                        continue
-                    # Stack Lock enforcement: an anchor that drifted from the lock
-                    # is restored — never silently upgraded/downgraded by an agent.
-                    locked_spec = lock.anchor_spec(name)
-                    if locked_spec is not None and name in ANCHOR_PACKAGES:
-                        locked_version = _parse_version(locked_spec)
-                        # For 0.x anchors (react-native) the minor IS the version
-                        # line, so drift is judged on (major, minor), not major.
-                        drifted = locked_version is not None and (
-                            version[0] != locked_version[0]
-                            or (locked_version[0] == 0 and version[1] != locked_version[1])
-                        )
-                        if drifted:
-                            deps[name] = locked_spec
-                            changed = True
-                            finding = CompatibilityFinding(
-                                manifest=label, package=name, section=section,
-                                current=spec, required=locked_spec, suggested=locked_spec,
-                                reason=f"Stack Lock: '{name}' esta travado em {locked_spec} durante a geracao.",
-                                impact="Restaura a versao aprovada da stack; nenhuma dependencia decide o React sozinha.",
-                                status="lock_enforced",
-                            )
-                            result.findings.append(finding)
-                            self._emit(sink, finding)
-                            continue
-                    rule = rules.get(name)
-                    if rule is None or name in ANCHOR_PACKAGES:
-                        continue
-                    if not rule.accepts(version):
-                        deps[name] = rule.suggested
-                        changed = True
-                        finding = CompatibilityFinding(
-                            manifest=label, package=name, section=section,
-                            current=spec,
-                            required=f">={rule.min_version[0]}.{rule.min_version[1]} <={rule.max_version[0]}.{rule.max_version[1]} (React {lock.react_major})",
-                            suggested=rule.suggested, reason=rule.reason, impact=rule.impact,
-                            status="fixed",
-                        )
-                        result.findings.append(finding)
-                        self._emit(sink, finding)
-
-            if changed:
+            if findings:
                 manifest.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                 stale_lock = manifest.parent / "package-lock.json"
                 if stale_lock.is_file():

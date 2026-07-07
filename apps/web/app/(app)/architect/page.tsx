@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -153,11 +153,24 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const syncProjectCaches = useProjectCacheSync();
 
+  // Tracks the roomId this stage should currently be showing, so a response
+  // for a room the user has since navigated away from is discarded instead of
+  // overwriting the newer room's data (stale-closure race). Synced in an
+  // effect (never during render) per the rules of React refs.
+  const roomIdRef = useRef(roomId);
+  useEffect(() => {
+    roomIdRef.current = roomId;
+  }, [roomId]);
+
   const load = useCallback(async () => {
+    const requestedRoomId = roomId;
     setError(null);
     try {
-      setRoom(await projectRoomsClient.get(roomId));
+      const data = await projectRoomsClient.get(requestedRoomId);
+      if (roomIdRef.current !== requestedRoomId) return;
+      setRoom(data);
     } catch (caught) {
+      if (roomIdRef.current !== requestedRoomId) return;
       setError(caught instanceof Error ? caught.message : 'error');
     }
   }, [roomId]);
@@ -287,13 +300,13 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
               id: 'model',
               label: 'Modelo',
               icon: Boxes,
-              content: model ? <ArchitectureModelTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">Modelo de arquitetura indisponÃ­vel.</p>,
+              content: model ? <ArchitectureModelTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">Modelo de arquitetura indisponível.</p>,
             },
             {
               id: 'strategies',
               label: 'Estratégias',
               icon: Layers,
-              content: model ? <ArchitectureStrategiesTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">Estratégias indisponÃ­veis.</p>,
+              content: model ? <ArchitectureStrategiesTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">Estratégias indisponíveis.</p>,
             },
             ...(blueprint.responseDiagnostics
               ? [{
@@ -340,17 +353,17 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
   const areaLabel = t(`architect.area.${decision.area}`);
   const label = areaLabel.startsWith('architect.area.') ? decision.area : areaLabel;
   const impacts: [string, string | undefined][] = [
-    ['SeguranÃ§a', decision.security_impact],
+    ['Segurança', decision.security_impact],
     ['Escalabilidade', decision.scalability_impact],
     ['Custo', decision.cost_impact],
-    ['ManutenÃ§Ã£o', decision.maintainability_impact],
+    ['Manutenção', decision.maintainability_impact],
   ];
 
   return (
     <AccordionItem
       icon={Icon}
       title={`${label}: ${decision.choice}`}
-      subtitle={decision.confidence_basis ? `ConfianÃ§a â€” ${decision.confidence_basis}` : undefined}
+      subtitle={decision.confidence_basis ? `Confiança — ${decision.confidence_basis}` : undefined}
       right={<ConfidenceBadge value={decision.confidence} />}
     >
     <div className="space-y-3">
@@ -419,14 +432,14 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
         <div className="grid gap-2 border-t border-[color:var(--border)] pt-3 sm:grid-cols-2">
           {decision.dependencies?.length ? (
             <div>
-              <p className="t-overline">DependÃªncias</p>
+              <p className="t-overline">Dependências</p>
               <div className="mt-1 flex flex-wrap gap-1">{decision.dependencies.map((dep) => <Badge key={dep} tone="neutral">{dep}</Badge>)}</div>
             </div>
           ) : null}
           {decision.requirement_links?.length ? (
             <div>
               <p className="t-overline">Requisitos da spec</p>
-              <ul className="mt-1 space-y-0.5 ds-caption text-[color:var(--muted)]">{decision.requirement_links.map((req, index) => <li key={index}>â€¢ {req}</li>)}</ul>
+              <ul className="mt-1 space-y-0.5 ds-caption text-[color:var(--muted)]">{decision.requirement_links.map((req, index) => <li key={index}>• {req}</li>)}</ul>
             </div>
           ) : null}
         </div>
@@ -434,8 +447,8 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
 
       {decision.evidence?.length ? (
         <div>
-          <p className="t-overline">EvidÃªncias utilizadas</p>
-          <ul className="mt-1 space-y-0.5 ds-caption text-[color:var(--muted)]">{decision.evidence.map((ev, index) => <li key={index}>â€¢ {ev}</li>)}</ul>
+          <p className="t-overline">Evidências utilizadas</p>
+          <ul className="mt-1 space-y-0.5 ds-caption text-[color:var(--muted)]">{decision.evidence.map((ev, index) => <li key={index}>• {ev}</li>)}</ul>
         </div>
       ) : null}
     </div>

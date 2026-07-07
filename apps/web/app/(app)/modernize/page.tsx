@@ -462,7 +462,10 @@ export default function ModernizePage() {
     let active = true;
     modernizeClient
       .runtimeProfile(ingestId)
-      .then((profile) => { if (active) setRuntime(profile); })
+      // A resolved (2xx) response is not proof of the expected shape — treat
+      // anything that isn't a real RuntimeProfile the same as a failed fetch
+      // instead of setting state that later crashes runtime.metrics.filter().
+      .then((profile) => { if (active) setRuntime(Array.isArray(profile?.metrics) ? profile : null); })
       .catch(() => { if (active) setRuntime(null); });
     return () => { active = false; };
   }, [ingestId]);
@@ -875,7 +878,7 @@ export default function ModernizePage() {
                 </div>
               ))}
             </div>
-            {runtime.notes.map((note) => (
+            {(runtime.notes ?? []).map((note) => (
               <p key={note} className="text-xs leading-5 text-[color:var(--muted)]">· {note}</p>
             ))}
           </div>

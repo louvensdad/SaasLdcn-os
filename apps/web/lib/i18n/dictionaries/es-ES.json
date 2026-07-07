@@ -1975,6 +1975,7 @@
   "autoFix.dim.security": "Security",
   "autoFix.dim.architecture": "Architecture",
   "autoFix.dim.documentation": "Documentation",
+  "autoFix.dim.devops": "DevOps",
   "autoFix.dim.build": "Build",
   "autoFix.dim.tests": "Pruebas",
   "modernize.score.notMeasured": "No medido",

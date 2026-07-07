@@ -94,7 +94,7 @@ def _to_summary(room: dict[str, Any]) -> ProjectRoomSummary:
 def _require(room: dict[str, Any] | None) -> dict[str, Any]:
     # 404 (not 403) for a foreign/unknown room: never leak that it exists.
     if room is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sala nÃƒÆ’Ã‚Â£o encontrada.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sala não encontrada.")
     return room
 
 
@@ -203,7 +203,7 @@ def generate_project_room_prompt(
 def generate_project_room_blueprint(
     room_id: str, user: CurrentUser, payload: LlmActionRequest | None = None
 ) -> ProjectRoom:
-    """Architect Engine: PromptMaster aprovado ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Blueprint arquitetural justificado."""
+    """Architect Engine: PromptMaster aprovado → Blueprint arquitetural justificado."""
     explicit_mode = payload is not None
     payload = payload or LlmActionRequest()
     api_key = _resolve_api_key(

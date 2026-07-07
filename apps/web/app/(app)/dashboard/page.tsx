@@ -26,6 +26,17 @@ const TONE_COLOR: Record<MetricTone, string> = {
   warning: 'var(--warning)',
 };
 
+// Full BadgeTone -> color map for the portfolio live-dot, which must agree
+// with the adjacent Badge's tone instead of collapsing 'danger'/'warning' into
+// the same color as 'success'.
+const READINESS_DOT_COLOR: Record<BadgeTone, string> = {
+  neutral: 'var(--muted-2)',
+  accent: 'var(--accent)',
+  success: 'var(--success)',
+  warning: 'var(--warning)',
+  danger: 'var(--danger)',
+};
+
 const STAGE_KEYS = ['idea', 'spec', 'contract', 'build', 'verify', 'ship'] as const;
 
 function readinessTone(status: string): BadgeTone {
@@ -134,7 +145,7 @@ export default function DashboardPage() {
                 {projects.slice(0, 5).map((project) => (
                   <StaggerItem key={project.project_id} className="lift flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_60%,transparent)] px-4 py-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="live-dot" style={{ background: TONE_COLOR[readinessTone(project.readiness_status) === 'danger' ? 'warning' : 'success'] }} aria-hidden />
+                      <span className="live-dot" style={{ background: READINESS_DOT_COLOR[readinessTone(project.readiness_status)] }} aria-hidden />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-[color:var(--text)]">{project.project_name}</p>
                         <p className="mt-0.5 t-mono text-xs text-[color:var(--muted-2)]">{project.technology_graph.framework.name} · {project.technology_graph.architecture.name}</p>

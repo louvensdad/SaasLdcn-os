@@ -99,15 +99,29 @@ const DEVICE_MODES: readonly { id: DeviceMode; label: string; icon: LucideIcon }
   { id: 'mobile', label: 'Mobile', icon: Smartphone },
 ];
 
-const JOURNEY_STEPS = [
-  ['Ideia', 'done'],
-  ['PromptMaster', 'done'],
-  ['Architect', 'done'],
-  ['Engineering Review', 'done'],
-  ['Meta-Fabrica', 'done'],
-  ['Laboratorio', 'current'],
-  ['Deploy', 'pending'],
-] as const;
+const JOURNEY_LABELS = ['Ideia', 'PromptMaster', 'Architect', 'Engineering Review', 'Meta-Fabrica', 'Laboratorio', 'Deploy'] as const;
+
+// project.status only has coarse stage granularity (no separate "prompt master
+// done" vs "architect done" states), so a status maps to the step the project
+// is now WORKING ON (steps before it are done) rather than a 1:1 step index.
+const STATUS_STAGE_INDEX: Partial<Record<Project['status'], number>> = {
+  draft: 1,
+  blueprint_ready: 3,
+  gatekeeper_approved: 4,
+  ready_for_generation: 4,
+  generation_blocked: 4,
+  generated: 5,
+  failed: 1,
+};
+
+// Real journey progress derived from the project's own state (status +
+// whether generated files/deploy-readiness were actually observed), instead
+// of a constant that always rendered the same "done/done/done/current/pending"
+// regardless of the project's actual stage.
+function deriveJourneySteps(project: Project, generated: boolean, deployReady: boolean) {
+  const reached = deployReady ? JOURNEY_LABELS.length : generated ? 5 : (STATUS_STAGE_INDEX[project.status] ?? 1);
+  return JOURNEY_LABELS.map((label, index) => [label, index < reached ? 'done' : index === reached ? 'current' : 'pending'] as const);
+}
 
 const INTRO_STAGES = ['Contracts', 'Backend', 'Frontend', 'Security', 'Testing', 'Architecture', 'Laboratory', 'Deploy Ready'] as const;
 
@@ -511,7 +525,7 @@ function CinematicBackground({ signature }: { readonly signature: { title: strin
 
 function JourneyConsole({ project, generated, deployReady }: { readonly project: Project; readonly generated: boolean; readonly deployReady: boolean }) {
   const { t } = useLocale();
-  return <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/35 p-5 backdrop-blur"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[0.28em] ds-text-secondary">{t('projectXp.journey.title')}</p><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? t('projectXp.journey.deployReady') : t('projectXp.journey.inProgress')}</Badge></div><div className="mt-5 space-y-3">{JOURNEY_STEPS.map(([label, state]) => <div key={label} className="flex items-center gap-3"><span className={cn('grid h-7 w-7 place-items-center rounded-full border', state === 'done' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : state === 'current' ? 'border-[color:var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'border-white/15 ds-text-muted')}>{state === 'done' ? <CheckCircle2 className="h-4 w-4" /> : state === 'current' ? <Activity className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}</span><span className="text-sm ds-text-primary">{label}</span></div>)}</div><div className="mt-5 grid grid-cols-2 gap-3 text-xs ds-text-secondary"><span>{t('projectXp.journey.readiness')} {formatStatus(project.readiness_status)}</span><span>{t('projectXp.journey.files')} {generated ? t('projectXp.journey.indexed') : t('projectXp.journey.pending')}</span></div></div>;
+  return <div className="rounded-[var(--radius-xl)] border border-white/10 bg-black/35 p-5 backdrop-blur"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[0.28em] ds-text-secondary">{t('projectXp.journey.title')}</p><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? t('projectXp.journey.deployReady') : t('projectXp.journey.inProgress')}</Badge></div><div className="mt-5 space-y-3">{deriveJourneySteps(project, generated, deployReady).map(([label, state]) => <div key={label} className="flex items-center gap-3"><span className={cn('grid h-7 w-7 place-items-center rounded-full border', state === 'done' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : state === 'current' ? 'border-[color:var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'border-white/15 ds-text-muted')}>{state === 'done' ? <CheckCircle2 className="h-4 w-4" /> : state === 'current' ? <Activity className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}</span><span className="text-sm ds-text-primary">{label}</span></div>)}</div><div className="mt-5 grid grid-cols-2 gap-3 text-xs ds-text-secondary"><span>{t('projectXp.journey.readiness')} {formatStatus(project.readiness_status)}</span><span>{t('projectXp.journey.files')} {generated ? t('projectXp.journey.indexed') : t('projectXp.journey.pending')}</span></div></div>;
 }
 
 function HeroDatum({ label, value }: { readonly label: string; readonly value: string }) {

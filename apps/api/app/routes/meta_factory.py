@@ -79,7 +79,7 @@ _SAFE_PROJECT_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 # Client-facing message for any upstream LLM failure. The raw provider error
 # (which can carry internal request context) is logged with a correlation id but
 # never returned to the client (diagnosis M6).
-_GENERIC_LLM_MESSAGE = "O provedor de IA estÃƒÂ¡ temporariamente indisponÃƒÂ­vel. Tente novamente em instantes."
+_GENERIC_LLM_MESSAGE = "O provedor de IA está temporariamente indisponível. Tente novamente em instantes."
 
 
 def _llm_failure(exc: Exception) -> str:
@@ -250,6 +250,7 @@ def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser
         deterministic=payload.mode == "deterministic",
     )
     resolution = context.resolution
+    engine_mode = "deterministic" if payload.mode == "deterministic" else "normal"
     try:
         job = generation_job_engine.create_job(
             owner_user_id=user["user_id"],
@@ -262,6 +263,7 @@ def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser
             provider=resolution.provider,
             provider_label=resolution.providerLabel or "Nenhum",
             model=resolution.model or ("Motor deterministico" if payload.mode == "deterministic" else None),
+            mode=engine_mode,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
@@ -272,7 +274,7 @@ def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser
         user["user_id"],
         api_key=context.api_key,
         user_model_choice=resolution.model,
-        mode="deterministic" if payload.mode == "deterministic" else "normal",
+        mode=engine_mode,
     )
     return GenerationJob.model_validate(job)
 
@@ -413,6 +415,7 @@ def resume_generation_job(job_id: str, user: CurrentUser) -> GenerationJob:
         user,
         workspace_id=job.get("workspaceId"),
         user_model_choice=job.get("model"),
+        deterministic=job.get("mode") == "deterministic",
     )
     updated = generation_job_engine.resume(
         job_id,
@@ -437,6 +440,7 @@ def continue_with_warnings(job_id: str, user: CurrentUser) -> GenerationJob:
         user,
         workspace_id=job.get("workspaceId"),
         user_model_choice=job.get("model"),
+        deterministic=job.get("mode") == "deterministic",
     )
     try:
         updated = generation_job_engine.continue_with_warnings(
@@ -948,7 +952,7 @@ def review_completeness(payload: CompletenessReviewRequest, user: CurrentUser) -
     try:
         report = CompletenessReviewEngine().review(
             payload.spec,
-            _meta_project(payload.project_id),
+            _owned_meta_project(payload.project_id, user),
             user_model_choice=payload.user_model_choice,
             api_key=api_key,
         )
@@ -1060,6 +1064,9 @@ def repair_project(project_id: str, user: CurrentUser) -> RepairResult:
     """Apply safe, deterministic auto-repairs (no LLM, no shell)."""
     project = _owned_meta_project(project_id, user)
     report = quality_gate_engine.evaluate(project, run_build=False)
+    ProjectWriter().record_quality_gate_baseline(
+        project_id, score=report.score, blocker_ids=[issue.id for issue in report.issues if issue.severity == "BLOCKER"],
+    )
     _audit(user["user_id"], "auto_repair_started")
     try:
         result = auto_repair_engine.repair(project, report)
@@ -1079,12 +1086,19 @@ def revalidate_project(project_id: str, user: CurrentUser, build: bool = Query(T
     report = quality_gate_engine.evaluate(_owned_meta_project(project_id, user), run_build=build)
     _audit(user["user_id"], "revalidation_run")
     remaining = [issue.id for issue in report.issues if issue.severity == "BLOCKER"]
+    baseline = ProjectWriter().read_quality_gate_baseline(project_id)
+    fixed_ids: list[str] = []
+    score_delta = 0
+    if baseline:
+        current_ids = {issue.id for issue in report.issues}
+        fixed_ids = sorted(set(baseline.get("blocker_ids") or []) - current_ids)
+        score_delta = report.score - int(baseline.get("score") or 0)
     return RevalidationResult(
         project_id=report.project_id,
         report=report,
-        fixed_ids=[],
+        fixed_ids=fixed_ids,
         remaining_ids=remaining,
-        score_delta=0,
+        score_delta=score_delta,
     )
 
 
@@ -1098,7 +1112,7 @@ def force_release_project(
     if payload.confirmation.strip() != CONSCIOUS_RELEASE_PHRASE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f'ConfirmaÃƒÂ§ÃƒÂ£o invÃƒÂ¡lida. Digite exatamente: "{CONSCIOUS_RELEASE_PHRASE}".',
+            detail=f'Confirmação inválida. Digite exatamente: "{CONSCIOUS_RELEASE_PHRASE}".',
         )
     try:
         ProjectWriter().set_release_override(project_id, by_user=user["user_id"], reason="force release")
@@ -1135,8 +1149,8 @@ def _require_verified(project_id: str, *, force: bool, user_id: str | None = Non
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"ExportaÃƒÂ§ÃƒÂ£o bloqueada porque ainda existem {report.blocker_count} problema(s) "
-                "crÃƒÂ­tico(s). Corrija automaticamente, rode a validaÃƒÂ§ÃƒÂ£o novamente ou veja os problemas."
+                f"Exportação bloqueada porque ainda existem {report.blocker_count} problema(s) "
+                "crítico(s). Corrija automaticamente, rode a validação novamente ou veja os problemas."
             ),
         )
 

@@ -44,7 +44,18 @@ class SkillExecutionEngine:
         if project is None and normalized_skill_id not in {"generate_local_project"}:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="project_id is required for this skill execution.")
 
-        result = self._run(normalized_skill_id, project, context)
+        try:
+            result = self._run(normalized_skill_id, project, context)
+        except (KeyError, TypeError) as exc:
+            # The skill indexes straight into the project's stage-specific snapshots
+            # (blueprint_snapshot, technology_graph, ...) assuming the project has
+            # already reached that stage. A project that exists but hasn't gotten
+            # there yet raises KeyError/TypeError here — surface it as a clean 422
+            # ("this project isn't ready for this skill") instead of a bare 500.
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Project is not ready for skill '{normalized_skill_id}': missing {exc}.",
+            ) from exc
         return {
             "contractVersion": CONTRACT_VERSION,
             "execution_id": f"skillrun_{uuid4().hex[:12]}",

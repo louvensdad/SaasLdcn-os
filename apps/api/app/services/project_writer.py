@@ -151,6 +151,33 @@ class ProjectWriter:
             "verification_score": int(meta.get("verification_score") or 0),
         }
 
+    def record_quality_gate_baseline(self, project_id: str, *, score: int, blocker_ids: list[str]) -> None:
+        """Persist the pre-repair Quality Gate snapshot so /revalidate can report which
+        BLOCKER issues were actually fixed and how much the score moved, instead of a
+        stateless re-evaluation with nothing to diff against."""
+        root = self._project_root(project_id)
+        marker = self._read_marker(root)
+        project_name = str(marker.get("project_name") or "meta-factory-project")
+        metadata = self._merge_metadata(
+            marker.get("metadata"), {"quality_gate_baseline": {"score": int(score), "blocker_ids": list(blocker_ids)}}
+        )
+        files = marker.get("files")
+        if not isinstance(files, list):
+            files = self._existing_file_paths(root)
+        self._write_marker(
+            root, project_id, project_name, metadata, [str(p) for p in files],
+            owner=self._marker_owner(marker), workspace_id=marker.get("workspace_id"),
+        )
+        self.artifact_store.save_project(project_id, root, workspace_id=marker.get("workspace_id"))
+
+    def read_quality_gate_baseline(self, project_id: str) -> dict | None:
+        """Return the last pre-repair Quality Gate snapshot, or None if repair was never run."""
+        root = self._project_root(project_id)
+        meta = self._read_marker(root).get("metadata")
+        meta = meta if isinstance(meta, dict) else {}
+        baseline = meta.get("quality_gate_baseline")
+        return baseline if isinstance(baseline, dict) else None
+
     def delete(self, project_id: str, relative_path: str) -> bool:
         """Safely delete a single file inside the generated project.
 

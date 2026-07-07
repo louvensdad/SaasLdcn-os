@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, Response, status
 
 from app.core.deps import CurrentUser
+from app.repositories.redaction import REDACTED, redact_text
 from app.schemas.user_ai_key import (
     KeySessionStatus,
     KeySessionStatusResponse,
@@ -42,6 +43,17 @@ _PROVIDER_TEST_MODEL = {
 }
 
 
+def _safe_message(exc: Exception, api_key: str) -> str:
+    """Provider SDK exceptions can embed the raw key we just sent them (e.g. a
+    REST transport that puts `key=...` in the request URL). redact_text()
+    catches the common secret shapes; replacing the exact key we sent closes
+    the gap for whatever pattern it doesn't recognize."""
+    message = redact_text(str(exc))
+    if api_key:
+        message = message.replace(api_key, REDACTED)
+    return message
+
+
 @router.post("/user-ai-keys/test", response_model=TestKeyResponse)
 def test_user_ai_key(payload: TestKeyRequest, user: CurrentUser) -> TestKeyResponse:
     """Validate a user key without storing it or echoing it back."""
@@ -64,10 +76,10 @@ def test_user_ai_key(payload: TestKeyRequest, user: CurrentUser) -> TestKeyRespo
         )
     except LLMError as exc:
         llm_settings_service.validated(user["user_id"], payload.provider, ok=False)
-        return TestKeyResponse(ok=False, provider=payload.provider, model=model, http_status=401, message=str(exc))
+        return TestKeyResponse(ok=False, provider=payload.provider, model=model, http_status=401, message=_safe_message(exc, payload.api_key))
     except Exception as exc:  # noqa: BLE001 - provider SDKs differ; surface exact message
         llm_settings_service.validated(user["user_id"], payload.provider, ok=False)
-        return TestKeyResponse(ok=False, provider=payload.provider, model=model, http_status=502, message=str(exc))
+        return TestKeyResponse(ok=False, provider=payload.provider, model=model, http_status=502, message=_safe_message(exc, payload.api_key))
     llm_settings_service.validated(user["user_id"], payload.provider, ok=True)
     return TestKeyResponse(ok=True, provider=payload.provider, model=response.model, http_status=200, message="Chave validada com sucesso.")
 

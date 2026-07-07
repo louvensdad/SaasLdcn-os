@@ -74,8 +74,20 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const capabilitiesQuery = useCapabilities();
 
   const items = useMemo(() => {
+    // Each query's `data` is only ever safe to .map() once TanStack Query has
+    // resolved it to the expected array shape; a still-loading/errored query
+    // (or, as seen in tests, a response that doesn't match the real contract)
+    // leaves `data` as `undefined` OR some other non-array value, and this
+    // component is mounted globally in the app shell — an unguarded .map()
+    // here crashes every page, not just the one that triggered it.
+    const languages = Array.isArray(languagesQuery.data) ? languagesQuery.data : [];
+    const frameworks = Array.isArray(frameworksQuery.data) ? frameworksQuery.data : [];
+    const architectures = Array.isArray(architecturesQuery.data) ? architecturesQuery.data : [];
+    const archetypes = Array.isArray(archetypesQuery.data) ? archetypesQuery.data : [];
+    const capabilities = Array.isArray(capabilitiesQuery.data) ? capabilitiesQuery.data : [];
+
     const dynamicLanguageItems = createTechnologySearchItems(
-      (languagesQuery.data ?? []).map((language) => ({
+      languages.map((language) => ({
         id: language.id,
         name: language.name,
         description: language.description,
@@ -85,7 +97,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       })),
     );
     const dynamicFrameworkItems = createTechnologySearchItems(
-      (frameworksQuery.data ?? []).map((framework) => ({
+      frameworks.map((framework) => ({
         id: framework.id,
         name: framework.name,
         description: framework.description,
@@ -95,7 +107,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       })),
     );
     const dynamicArchitectureItems = createTechnologySearchItems(
-      (architecturesQuery.data ?? []).map((architecture) => ({
+      architectures.map((architecture) => ({
         id: architecture.id,
         name: architecture.name,
         description: architecture.description,
@@ -104,9 +116,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         prefix: 'architecture',
       })),
     );
-    const dynamicArchetypeItems = createArchetypeSearchItems(archetypesQuery.data ?? []);
-    const dynamicCapabilityItems = createCapabilitySearchItems(capabilitiesQuery.data ?? []);
-    const dynamicSpecialistItems = createFrameworkSpecialistSearchItems(frameworksQuery.data ?? []);
+    const dynamicArchetypeItems = createArchetypeSearchItems(archetypes);
+    const dynamicCapabilityItems = createCapabilitySearchItems(capabilities);
+    const dynamicSpecialistItems = createFrameworkSpecialistSearchItems(frameworks);
     return filterSearchItems(query, [
       ...SEARCH_ITEMS,
       ...dynamicLanguageItems,

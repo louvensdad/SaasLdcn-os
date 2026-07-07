@@ -26,7 +26,7 @@ engine = DocumentationEngine()
 writer = DocumentationAiWriter()
 logger = logging.getLogger("ldcn.api.documentation")
 
-_GENERIC_LLM_MESSAGE = "O provedor de IA estÃƒÂ¡ temporariamente indisponÃƒÂ­vel. Tente novamente em instantes."
+_GENERIC_LLM_MESSAGE = "O provedor de IA está temporariamente indisponível. Tente novamente em instantes."
 
 
 def _resolve_api_key(user: dict, *, use_user_key: bool, user_model_choice: str | None) -> str | None:

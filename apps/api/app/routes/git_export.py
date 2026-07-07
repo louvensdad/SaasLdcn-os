@@ -31,5 +31,5 @@ def export_to_gitlab(payload: GitExportRequest, user: CurrentUser) -> GitExportJ
 
 
 @router.get("/git/export/status/{export_id}", response_model=GitExportStatusResponse)
-def get_git_export_status(export_id: str) -> GitExportStatusResponse:
-    return GitExportStatusResponse.model_validate(engine.status(export_id))
+def get_git_export_status(export_id: str, user: CurrentUser) -> GitExportStatusResponse:
+    return GitExportStatusResponse.model_validate(engine.status(export_id, user["user_id"]))

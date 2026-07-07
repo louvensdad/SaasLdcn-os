@@ -26,9 +26,12 @@ class GitExportEngine:
         payload = {**request, "provider": provider}
         return self._build_job(user_id, project, payload, execute=True)
 
-    def status(self, export_id: str) -> dict[str, Any]:
+    def status(self, export_id: str, user_id: str) -> dict[str, Any]:
         job = self._jobs.get(export_id)
-        if job is None:
+        # 404 (never 403) for a job owned by someone else, so this endpoint never
+        # confirms another user's export_id exists (same rule as meta_factory's
+        # _owned_meta_project).
+        if job is None or job.get("owner_user_id") != user_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Git export '{export_id}' was not found.")
         return {
             key: value
@@ -95,6 +98,7 @@ class GitExportEngine:
         job = {
             "contractVersion": CONTRACT_VERSION,
             "export_id": export_id,
+            "owner_user_id": user_id,
             "provider": request["provider"],
             "repo_name": request["repo_name"],
             "namespace": request["namespace"],

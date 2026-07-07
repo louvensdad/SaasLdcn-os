@@ -211,6 +211,83 @@ def test_workspace_isolation(client, cleanup):
     assert response.status_code == 404
 
 
+def test_endpoints_and_api_collection_resolve_after_apply_fixes(client, cleanup):
+    # Regression: _materialized_modernize_project() must resolve the job's
+    # materialized_project_id, not 404 by treating {project_id} (the ingest id)
+    # as if it were the materialized project's own directory.
+    project = _upload(client, _LEGACY)
+    pid = project["project_id"]
+    cleanup["ingest"].append(pid)
+    client.post(f"/api/modernize/{pid}/analyze")
+    client.post(f"/api/modernize/{pid}/approve-plan", json={"mode": "full"})
+    materialized = client.post(f"/api/modernize/{pid}/apply-fixes").json()["materialized_project_id"]
+    cleanup["materialized"].append(materialized)
+    # api_collection_service needs an openapi.yaml on disk; _LEGACY has none,
+    # so seed a minimal one directly (the fixture's plain .py files carry no
+    # spec) -- the routing/ownership resolution is what this test verifies.
+    (DEFAULT_OUTPUT_ROOT / materialized / "openapi.yaml").write_text(
+        "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n", encoding="utf-8"
+    )
+
+    endpoints = client.get(f"/api/modernize/{pid}/endpoints")
+    assert endpoints.status_code == 200, endpoints.text
+    collection = client.get(f"/api/modernize/{pid}/api-collection")
+    assert collection.status_code == 200, collection.text
+
+
+def test_endpoints_and_export_are_owner_scoped_for_job_based_flow(client, cleanup):
+    project = _upload(client, _LEGACY)
+    pid = project["project_id"]
+    cleanup["ingest"].append(pid)
+    client.post(f"/api/modernize/{pid}/analyze")
+    client.post(f"/api/modernize/{pid}/approve-plan", json={"mode": "full"})
+    materialized = client.post(f"/api/modernize/{pid}/apply-fixes").json()["materialized_project_id"]
+    cleanup["materialized"].append(materialized)
+
+    other = _register_second_user(client)
+    headers = {"Authorization": f"Bearer {other}"}
+    assert client.get(f"/api/modernize/{pid}/endpoints", headers=headers).status_code == 404
+    assert client.get(f"/api/modernize/{pid}/api-collection", headers=headers).status_code == 404
+    assert client.post(
+        f"/api/modernize/{pid}/export/github",
+        headers=headers,
+        json={"namespace": "octo", "repo_name": "m", "branch": "main"},
+    ).status_code == 404
+
+
+def test_legacy_one_shot_generate_flow_resolves_endpoints_without_a_job(client, cleanup):
+    # /modernize/generate (the older non-job one-shot flow) writes a project
+    # directly and never registers a modernize job — _materialized_modernize_project
+    # must still resolve it (falling back to treating project_id as the
+    # materialized project's own id) instead of 404ing on a project that exists.
+    ingest = _upload(client, _LEGACY)
+    cleanup["ingest"].append(ingest["project_id"])
+
+    settings = get_settings()
+    previous = settings.force_mock
+    settings.force_mock = True
+    try:
+        generated = client.post(
+            "/api/modernize/generate",
+            json={"ingest_id": ingest["project_id"], "project_name": "modernized-legacy", "persist": True},
+        )
+    finally:
+        settings.force_mock = previous
+    assert generated.status_code == 200, generated.text
+    materialized = generated.json()["project_id"]
+    assert materialized
+    cleanup["materialized"].append(materialized)
+
+    endpoints = client.get(f"/api/modernize/{materialized}/endpoints")
+    assert endpoints.status_code == 200, endpoints.text
+
+    # Owner-recorded now (owner=user_id passed to ProjectWriter().write()): a
+    # different user must not be able to read it.
+    other = _register_second_user(client)
+    other_response = client.get(f"/api/modernize/{materialized}/endpoints", headers={"Authorization": f"Bearer {other}"})
+    assert other_response.status_code == 404
+
+
 def test_pipeline_audit_trail(client, cleanup):
     user_id = _user_id(client)
     project = _upload(client, _LEGACY)

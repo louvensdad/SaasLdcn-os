@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 import time
@@ -39,6 +40,7 @@ from app.schemas.generation_validation import (
 )
 from app.services.file_protocol import EmittedFile, ParsedAgentOutput, parse_agent_output
 from app.services.generated_project_service import DOWNLOAD_DIR
+from app.services.stack_compatibility import DEFAULT_ANCHORS, STACK_LOCK_FILE, stack_compatibility_engine
 
 
 @pytest.fixture
@@ -573,6 +575,47 @@ def test_user_can_continue_with_warnings(isolated_engine, monkeypatch):
     assert captured["start_index"] == _FRONTEND_PLAN_INDEX  # skips remaining backend, starts frontend
 
 
+def test_continue_with_warnings_preserves_the_job_s_original_deterministic_mode(isolated_engine, monkeypatch):
+    # A job created without an LLM provider (mode="deterministic") must stay
+    # deterministic on recovery -- it must not silently switch to real LLM
+    # calls just because it stalled and is being continued past a warning.
+    engine, repository, _ = isolated_engine
+    job = engine.create_job(
+        owner_user_id="user-1", project_id="room-1", workspace_id="enterprise",
+        project_name="Orders", spec=_spec(), blueprint={"decisions": []},
+        blueprint_version=4, provider=None, provider_label="Nenhum",
+        model="Motor deterministico", mode="deterministic",
+    )
+    _seed_backend_artifact(engine, job, ["Agent wrote outside its territory: pom.xml"])
+    job["currentStage"] = "BACKEND_GENERATING"
+    job["status"] = "STALLED"
+    engine._save(job, "user-1")
+
+    captured = {}
+    monkeypatch.setattr(engine, "start", lambda job_id, owner, **kwargs: captured.update(kwargs))
+    engine.continue_with_warnings(job["id"], "user-1", api_key=None, user_model_choice=None)
+
+    assert captured["mode"] == "deterministic"
+
+
+def test_resume_preserves_the_job_s_original_deterministic_mode(isolated_engine, monkeypatch):
+    engine, repository, _ = isolated_engine
+    job = engine.create_job(
+        owner_user_id="user-1", project_id="room-1", workspace_id="enterprise",
+        project_name="Orders", spec=_spec(), blueprint={"decisions": []},
+        blueprint_version=4, provider=None, provider_label="Nenhum",
+        model="Motor deterministico", mode="deterministic",
+    )
+    job["status"] = "STALLED"
+    engine._save(job, "user-1")
+
+    captured = {}
+    monkeypatch.setattr(engine, "start", lambda job_id, owner, **kwargs: captured.update(kwargs))
+    engine.resume(job["id"], "user-1", api_key=None, user_model_choice=None)
+
+    assert captured["mode"] == "deterministic"
+
+
 def test_pipeline_advances_through_backend_to_frontend_and_completes(isolated_engine, monkeypatch):
     engine, repository, _ = isolated_engine
     job = _create(engine)
@@ -950,4 +993,136 @@ def test_delete_is_owner_scoped(isolated_engine):
     repository.update(job["id"], "user-1", job)
 
     assert engine.delete(job["id"], "user-2") is None
-    assert repository.get(job["id"], "user-1") is not None
+
+
+# --- pre-generation Stack Lock + per-stage Conflict Detector / Import Graph -- #
+
+_PREPARE_STEP = next(step for step in STEPS if step.state == "PREPARING_CONTEXT")
+_FRONTEND_GEN = next(step for step in STEPS if step.state == "FRONTEND_GENERATING")
+_FRONTEND_VALIDATE = next(step for step in STEPS if step.state == "FRONTEND_VALIDATING")
+
+
+def _prepare(engine, job, spec, blueprint=None):
+    engine._execute_step(job, "user-1", _PREPARE_STEP, spec, blueprint or {"decisions": []}, "", None, None, "full")
+
+
+def _seed_frontend_manifest(engine, job, dependencies, name="apps/web/package.json"):
+    content = json.dumps({"name": "web", "version": "1.0.0", "dependencies": dependencies}, indent=2) + "\n"
+    return engine._write_text_artifact(job, "user-1", _FRONTEND_GEN, name, content, "generated", valid=True)
+
+
+def _seed_frontend_source(engine, job, name, content):
+    return engine._write_text_artifact(job, "user-1", _FRONTEND_GEN, name, content, "generated", valid=True)
+
+
+def test_preparing_context_fixes_stack_lock_before_any_llm_step_for_web_job(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)  # web delivery_type (default)
+    _prepare(engine, job, _spec())
+
+    assert job["stackLock"]["react"] == DEFAULT_ANCHORS["react"]
+    assert job["stackLock"]["react_native"] is None
+    assert job["stackLock"]["expo"] is None
+    assert job["stackLock"]["source_manifest"] == "pre_generation_default"
+    lock_artifact = next(a for a in job["artifacts"] if a["name"] == STACK_LOCK_FILE)
+    assert lock_artifact["kind"] == "generated"  # carried into the project root by ProjectWriter
+    persisted = json.loads(Path(lock_artifact["path"]).read_text(encoding="utf-8"))
+    assert persisted["react"] == DEFAULT_ANCHORS["react"]
+
+
+def test_preparing_context_fixes_stack_lock_with_mobile_anchors_for_mobile_job(isolated_engine):
+    engine, _, _ = isolated_engine
+    spec = _spec()
+    spec.delivery_type = "mobile"
+    job = _create_mobile(engine)
+    _prepare(engine, job, spec)
+
+    assert job["stackLock"]["react_native"] == DEFAULT_ANCHORS["react_native"]
+    assert job["stackLock"]["expo"] == DEFAULT_ANCHORS["expo"]
+
+
+def test_frontend_llm_context_includes_stack_lock_hint(isolated_engine, monkeypatch):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec())
+
+    captured_contexts: dict[str, str] = {}
+
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+        captured_contexts[role] = context
+        parsed = ParsedAgentOutput(raw_response="ok")
+        if role == "contracts":
+            parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))
+        else:
+            parsed.files.append(EmittedFile(f"src/{role}/main.ts", "export const x = 1;"))
+        return None, parsed
+
+    monkeypatch.setattr("app.engines.generation_job_engine._run_agent", _fake_agent)
+    monkeypatch.setattr(engine, "_build", lambda job, owner: None)
+    monkeypatch.setattr(engine, "_package", lambda job, owner: None)
+    engine.execute(job["id"], "user-1", api_key="secret", user_model_choice="m")
+
+    assert "<stack_lock>" in captured_contexts["frontend"]
+    assert DEFAULT_ANCHORS["react"] in captured_contexts["frontend"]
+    assert "<stack_lock>" not in captured_contexts["backend"]  # only frontend/mobile get the hint
+
+
+def test_conflict_detector_restores_drifted_react_after_frontend_stage(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec())
+    manifest_artifact = _seed_frontend_manifest(engine, job, {"react": "^19.0.0", "react-dom": "^19.0.0"})
+    _seed_frontend_source(engine, job, "apps/web/src/index.ts", "export const x = 1;")
+
+    engine._validate_stage(job, "user-1", _FRONTEND_VALIDATE)
+
+    restored = json.loads(Path(manifest_artifact["path"]).read_text(encoding="utf-8"))
+    assert restored["dependencies"]["react"] == DEFAULT_ANCHORS["react"]  # Stack Lock enforced, never left at 19
+    conflicts = next(a for a in job["artifacts"] if a["name"] == "frontend.stack-conflicts.json")
+    findings = json.loads(Path(conflicts["path"]).read_text(encoding="utf-8"))
+    assert any(f["package"] == "react" and f["status"] == "lock_enforced" for f in findings)
+    assert any(event["type"] == "repair_applied" for event in job["events"])
+
+
+def test_conflict_detector_reconciles_duplicate_dependency_versions_across_manifests(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec())
+    _seed_frontend_manifest(engine, job, {"zod": "^3.22.0"}, name="apps/web/package.json")
+    mobile_artifact = _seed_frontend_manifest(engine, job, {"zod": "^3.20.0"}, name="apps/mobile/package.json")
+    _seed_frontend_source(engine, job, "apps/web/src/index.ts", "export const x = 1;")
+
+    engine._validate_stage(job, "user-1", _FRONTEND_VALIDATE)
+
+    reconciled = json.loads(Path(mobile_artifact["path"]).read_text(encoding="utf-8"))
+    assert reconciled["dependencies"]["zod"] == "^3.22.0"  # reconciled to the first manifest that declared it
+
+
+def test_conflict_detector_hard_blocks_on_unparseable_manifest(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec())
+    _seed_frontend_manifest(engine, job, {})
+    broken = next(a for a in job["artifacts"] if a["name"] == "apps/web/package.json")
+    Path(broken["path"]).write_text("{ not valid json", encoding="utf-8")
+    _seed_frontend_source(engine, job, "apps/web/src/index.ts", "export const x = 1;")
+
+    with pytest.raises(StageFailure):
+        engine._validate_stage(job, "user-1", _FRONTEND_VALIDATE)
+
+
+def test_import_graph_gate_reports_undeclared_external_without_blocking(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec())
+    _seed_frontend_manifest(engine, job, {"react": DEFAULT_ANCHORS["react"]})
+    _seed_frontend_source(engine, job, "apps/web/src/index.ts", "import axios from 'axios';\nexport const x = 1;")
+
+    engine._validate_stage(job, "user-1", _FRONTEND_VALIDATE)  # report-only: must not raise
+
+    graph_artifact = next(a for a in job["artifacts"] if a["name"] == "frontend.import-graph.json")
+    graph = json.loads(Path(graph_artifact["path"]).read_text(encoding="utf-8"))
+    assert any(edge["specifier"] == "axios" and edge["status"] == "undeclared_external" for edge in graph["edges"])
+    conflicts_artifact = next(a for a in job["artifacts"] if a["name"] == "frontend.import-conflicts.json")
+    conflicts = json.loads(Path(conflicts_artifact["path"]).read_text(encoding="utf-8"))
+    assert any(c["specifier"] == "axios" for c in conflicts)

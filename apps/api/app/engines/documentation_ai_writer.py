@@ -86,7 +86,10 @@ class DocumentationAiWriter:
     ) -> dict[str, Any]:
         knowledge = self._knowledge(project)
         ai_active = bool(api_key) or ai_available()
-        targets = [d for d in MIN_DOCS if not doc_ids or d[0] in set(doc_ids)]
+        # doc_ids=None means "generate everything"; doc_ids=[] is an explicit
+        # request to generate nothing, and must NOT fall through to "everything"
+        # (a plain `not doc_ids` treats both the same since [] is falsy).
+        targets = [d for d in MIN_DOCS if doc_ids is None or d[0] in set(doc_ids)]
 
         docs: list[dict[str, Any]] = []
         any_llm = False

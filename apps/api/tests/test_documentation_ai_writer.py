@@ -59,6 +59,20 @@ def test_deterministic_docs_stay_generic_for_unknown_language():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_doc_ids_none_generates_everything_but_empty_list_generates_nothing():
+    # doc_ids=None is the "generate all" default; an explicit doc_ids=[] must
+    # NOT be treated the same way (both are falsy in Python, which used to
+    # collapse "generate nothing" into "generate everything").
+    root = _make_project_dir({})
+    try:
+        project = _project(root)
+        writer = DocumentationAiWriter()
+        assert len(writer.generate(project, doc_ids=None)["docs"]) == len(MIN_DOCS)
+        assert writer.generate(project, doc_ids=[])["docs"] == []
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 class _CaptureRouter(_FakeRouter):
     def route(self, req, *, user_choice=None, agent_role=None, api_key=None):
         self.last_system = req.system

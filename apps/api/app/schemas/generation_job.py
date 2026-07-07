@@ -154,6 +154,7 @@ class GenerationJob(ApiModel):
     manualBuildRetryCount: int = 0
     buildSkipAcknowledged: bool = False
     manualBuildFixGuide: ManualBuildFixGuide | None = None
+    stackLock: dict[str, Any] | None = None
     artifacts: list[GenerationArtifact] = Field(default_factory=list)
     logs: list[GenerationJobLog] = Field(default_factory=list)
     events: list[GenerationExecutionEvent] = Field(default_factory=list)

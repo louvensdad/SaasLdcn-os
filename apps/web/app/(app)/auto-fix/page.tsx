@@ -423,7 +423,7 @@ function AutoFixInner() {
                 </h2>
                 <ExportPanel
                   surface="modernize"
-                  projectId={refactor.materialized_project_id}
+                  projectId={summary.project_id}
                   defaultRepoName={`autofix-${summary.project_id}`.toLowerCase().replace(/[^a-z0-9_.-]+/g, '-')}
                 />
               </Card>
@@ -505,7 +505,7 @@ function ProjectHeader({
           <ScorePill label={t('autoFix.header.score')} value={overall} />
           <ScorePill label={t('autoFix.dim.security')} value={scores?.security ?? null} />
           <ScorePill label={t('autoFix.dim.architecture')} value={scores?.architecture ?? null} />
-          <ScorePill label={t('autoFix.dim.documentation')} value={scores?.devops ?? null} />
+          <ScorePill label={t('autoFix.dim.devops')} value={scores?.devops ?? null} />
           <ScorePill label={t('autoFix.dim.build')} value={null} />
           <ScorePill label={t('autoFix.dim.tests')} value={null} />
         </div>

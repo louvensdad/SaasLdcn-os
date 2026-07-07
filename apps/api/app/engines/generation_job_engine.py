@@ -25,7 +25,9 @@ from app.repositories.redaction import redact_value
 from app.schemas.orchestrator import ProjectSpec
 from app.services.file_protocol import EmittedFile
 from app.services.generated_project_service import GeneratedProjectService
+from app.services import import_graph_engine
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
+from app.services.stack_compatibility import STACK_LOCK_FILE, StackLock, stack_compatibility_engine
 
 
 # Per-stage hard ceiling. The LLM call already retries up to 3x at 6 min each
@@ -166,7 +168,7 @@ class GenerationJobEngine:
         self, *, owner_user_id: str, project_id: str, workspace_id: str | None,
         project_name: str, spec: ProjectSpec, blueprint: dict[str, Any],
         blueprint_version: int, provider: str | None, provider_label: str,
-        model: str | None,
+        model: str | None, mode: str = "normal",
     ) -> dict[str, Any]:
         if spec.delivery_type in _DELIVERY_TYPES_WITH_MOBILE and self._mobile_stack(spec, blueprint) == "flutter":
             raise ValueError(
@@ -179,12 +181,12 @@ class GenerationJobEngine:
         data = {
             "id": job_id, "projectId": project_id, "generatedProjectId": None,
             "workspaceId": workspace_id, "status": "QUEUED", "currentStage": "QUEUED",
-            "provider": provider, "providerLabel": provider_label, "model": model,
+            "provider": provider, "providerLabel": provider_label, "model": model, "mode": mode,
             "blueprintVersion": blueprint_version, "startedAt": now, "finishedAt": None,
             "progress": 0, "error": None, "retryCount": 0, "artifacts": [],
             "buildStatus": "PENDING", "buildAttempts": 0,
             "manualBuildRetryCount": 0, "buildSkipAcknowledged": False,
-            "manualBuildFixGuide": None,
+            "manualBuildFixGuide": None, "stackLock": None,
             "logs": [], "events": [], "checkpoints": [],
             "stageStatuses": {stage: "waiting" for stage in logical_stages_for(steps)},
             "projectName": project_name, "partial": True, "valid": False,
@@ -400,7 +402,11 @@ class GenerationJobEngine:
         job["error"] = None
         self._log(job, job["currentStage"], "info", "Continuando a partir do ultimo checkpoint.")
         self._save(job, owner_user_id)
-        self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=max(0, index), mode="normal")
+        # Resume in the SAME mode the job was created with — a job started in
+        # "deterministic" mode (no LLM provider required) must not silently
+        # switch to real LLM calls (or demand a provider it never needed) just
+        # because it stalled/paused and is being resumed.
+        self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=max(0, index), mode=job.get("mode", "normal"))
         return self.repository.get(job_id, owner_user_id)
 
     def continue_with_warnings(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None) -> dict[str, Any] | None:
@@ -431,7 +437,7 @@ class GenerationJobEngine:
             f"Usuario optou por continuar com warnings; etapa '{current_logical}' aceita e pipeline avanca para {steps[next_index].state}.",
         )
         self._save(job, owner_user_id)
-        self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=next_index, mode="normal")
+        self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=next_index, mode=job.get("mode", "normal"))
         return self.repository.get(job_id, owner_user_id)
 
     def pause(self, job_id: str, owner_user_id: str) -> dict[str, Any] | None:
@@ -473,6 +479,19 @@ class GenerationJobEngine:
             self._write_json_artifact(job, owner, step, "product-spec.normalized.json", spec.model_dump(mode="json"), "normalized_spec")
             domain = {"entities": spec.entities, "business_rules": spec.business_rules, "workflows": spec.core_workflows}
             self._write_json_artifact(job, owner, step, "domain-model.json", domain, "domain_model")
+            # Stack Lock is fixed HERE, before CONTRACTS_GENERATING (the first LLM
+            # step) ever runs: the anchor versions are decided up front instead of
+            # being reverse-derived from whatever a later agent writes. Persisted as
+            # a "generated" artifact so ProjectWriter carries it into the final
+            # project root, where capture_lock()/validate_and_fix() (BUILD_RUNNING)
+            # find it already present and enforce it rather than deriving a new one.
+            lock = stack_compatibility_engine.default_lock(delivery_type=spec.delivery_type)
+            job["stackLock"] = lock.as_dict()
+            # kind="generated" (not a metadata-only kind like normalized_spec/domain_model
+            # above) so _build() carries this file into the final project root via
+            # ProjectWriter, same as any other emitted source file.
+            self._write_json_artifact(job, owner, step, STACK_LOCK_FILE, job["stackLock"], "generated")
+            self._persist_dependency_graph(job, owner, step, blueprint)
         elif step.action == "plan":
             chunks = BACKEND_CHUNKS if step.logical == "backend" else MOBILE_CHUNKS if step.logical == "mobile" else []
             payload = {"stage": step.logical, "inputs": self._context_requirements(step.logical), "chunks": chunks, "strategy": mode}
@@ -514,6 +533,21 @@ class GenerationJobEngine:
         # DIAGNOSTIC ONLY mode.
         ground_truth = ground_truth_engine.from_job(job)
         context += "\n\n" + ground_truth_engine.prompt_block(ground_truth)
+        # Stack Lock was fixed before generation started (PREPARING_CONTEXT): tell
+        # the frontend/mobile agent the exact anchor versions so it emits matching
+        # manifests instead of relying on the post-generation Auto Version Fixer.
+        lock = job.get("stackLock") if step.logical in {"frontend", "mobile"} else None
+        if lock:
+            hints = [
+                f"- {name}: {value}"
+                for name, value in (("react", lock.get("react")), ("react-native", lock.get("react_native")), ("expo", lock.get("expo")))
+                if value
+            ]
+            if hints:
+                context += (
+                    "\n\n<stack_lock>\nStack Lock travado ANTES da geracao (imutavel; "
+                    "gere manifests exatamente nestas versoes):\n" + "\n".join(hints) + "\n</stack_lock>\n"
+                )
         payload_bytes = len(context.encode("utf-8"))
         token_estimate = estimate_tokens(context)
         checkpoint = self._checkpoint(job, step, payload_bytes, token_estimate)
@@ -697,6 +731,15 @@ class GenerationJobEngine:
                     if valid
                     else f"Scaffold mobile incompleto: {', '.join(missing) or 'cliente API ausente'}."
                 )
+        if valid and step.logical in {"backend", "frontend", "mobile"}:
+            # Intermediate Conflict Detector gate: check the Stack Lock +
+            # Compatibility Matrix + cross-manifest duplicates right after THIS
+            # stage emits its package.json, instead of waiting for BUILD_RUNNING
+            # at the very end of the pipeline (which only ran after every stage,
+            # including the LLM-heavy backend/frontend/mobile/tests/docs steps,
+            # had already finished).
+            self._check_stack_conflicts(job, owner, step)
+            self._check_import_graph(job, owner, step)
         # Warning policy gate: classify everything this stage produced. Only
         # blocking_warning / error / critical stop the pipeline — documentation,
         # coverage, TODO, traceability, territory-drift and synthesized-manifest
@@ -734,6 +777,156 @@ class GenerationJobEngine:
                     reason="Warnings classificados como bloqueantes (blocking_warning/error/critical) exigem decisao do usuario.",
                 ),
             )
+
+    def _persist_dependency_graph(self, job: dict[str, Any], owner: str, step: PipelineStep, blueprint: dict[str, Any]) -> None:
+        """Carry the architecture-level Dependency Graph Engine snapshot (nodes,
+        edges, propagation rules, impact/readiness/risk profiles — already
+        computed pre-generation from the room's approved stack/capabilities by
+        `dependency_graph_engine.generate_dependency_snapshot`, see
+        `blueprint_engine.py`) into the generation job itself. Previously this
+        data only ever lived in the Wizard preview and was never attached to a
+        finished job; it is now persisted as the job's own Dependency Graph and
+        Risk Report artifacts. Silently skipped when the blueprint carries no
+        snapshot (ad-hoc/API callers, legacy blueprints)."""
+        snapshot = blueprint.get("dependency_graph_snapshot") if isinstance(blueprint, dict) else None
+        if not isinstance(snapshot, dict):
+            return
+        graph = {
+            "graph_id": snapshot.get("graph_id"),
+            "language_id": snapshot.get("language_id"),
+            "runtime_id": snapshot.get("runtime_id"),
+            "framework_id": snapshot.get("framework_id"),
+            "architecture_id": snapshot.get("architecture_id"),
+            "architecture_level": snapshot.get("architecture_level"),
+            "archetype_id": snapshot.get("archetype_id"),
+            "capability_ids": snapshot.get("capability_ids"),
+            "infrastructure_ids": snapshot.get("infrastructure_ids"),
+            "nodes": snapshot.get("nodes"),
+            "edges": snapshot.get("edges"),
+            "rules": snapshot.get("rules"),
+            "propagation": snapshot.get("propagation"),
+            "mutations": snapshot.get("mutations"),
+            "generated_at": snapshot.get("generated_at"),
+        }
+        risk_report = {
+            "graph_id": snapshot.get("graph_id"),
+            "risk_profile": snapshot.get("risk_profile"),
+            "impact_profile": snapshot.get("impact_profile"),
+            "readiness_profile": snapshot.get("readiness_profile"),
+        }
+        self._write_json_artifact(job, owner, step, "dependency-graph.json", graph, "validation")
+        self._write_json_artifact(job, owner, step, "risk-report.json", risk_report, "validation")
+        risk_profile = snapshot.get("risk_profile") or {}
+        issue_count = len(risk_profile.get("issues") or [])
+        self._log(
+            job, step.state, "info",
+            f"Dependency Graph Engine: {len(graph['nodes'] or [])} node(s), "
+            f"risk_level={risk_profile.get('risk_level', 'unknown')}, {issue_count} issue(s) herdado(s) da arquitetura aprovada.",
+        )
+
+    def _collect_manifest_artifacts(
+        self, job: dict[str, Any],
+    ) -> tuple[dict[str, tuple[dict[str, Any], Path, dict[str, Any]]], list[str]]:
+        """Every valid, generated `package.json` artifact emitted so far, parsed
+        from disk. Returns (label -> (data, path, artifact), parse_errors) so a
+        caller can either treat a parse failure as a hard block (Conflict
+        Detector) or just skip it (Import Graph Engine, report-only)."""
+        manifest_artifacts = [
+            item for item in job["artifacts"]
+            if item["kind"] == "generated" and item["valid"] and item["name"].lower().endswith("package.json")
+        ]
+        parse_errors: list[str] = []
+        manifests: dict[str, tuple[dict[str, Any], Path, dict[str, Any]]] = {}
+        for artifact in manifest_artifacts:
+            path = Path(artifact["path"])
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                parse_errors.append(f"{artifact['name']}: {exc}")
+                continue
+            if isinstance(data, dict):
+                manifests[artifact["name"]] = (data, path, artifact)
+            else:
+                parse_errors.append(f"{artifact['name']}: raiz do manifesto nao e um objeto JSON")
+        return manifests, parse_errors
+
+    def _check_import_graph(self, job: dict[str, Any], owner: str, step: PipelineStep) -> None:
+        """Import Graph Engine v1 (TS/JS only): parses the imports of every
+        generated source file emitted so far and cross-checks them against the
+        manifests emitted in the same job. Report-only by design (user
+        decision) — a regex parser can false-positive on syntax it doesn't
+        recognize, and BUILD_RUNNING's real typecheck/bundler remains the
+        authoritative gate. Value-add over the compiler: undeclared external
+        packages and cross-stack leakage (e.g. apps/web importing straight from
+        apps/api), surfaced right after each stage instead of at the end."""
+        files = {
+            item["name"]: Path(item["path"]).read_text(encoding="utf-8")
+            for item in job["artifacts"]
+            if item["kind"] == "generated" and item["valid"] and import_graph_engine.is_js_file(item["name"])
+        }
+        if not files:
+            return
+        manifests, _ = self._collect_manifest_artifacts(job)
+        manifest_by_app = {
+            import_graph_engine.manifest_app_root(label): data for label, (data, _, _) in manifests.items()
+        }
+        graph = import_graph_engine.build_import_graph(files, manifest_by_app)
+        self._write_json_artifact(job, owner, step, f"{step.logical}.import-graph.json", graph, "validation")
+        conflicts = graph["conflicts"]
+        if conflicts:
+            self._write_json_artifact(job, owner, step, f"{step.logical}.import-conflicts.json", conflicts, "validation")
+            self._emit(
+                job, owner, "info", stage=step.state, level="warning",
+                message=(
+                    f"Import Graph Engine: {len(conflicts)} inconsistencia(s) de import detectada(s) "
+                    f"apos {step.logical} (relatorio, nao bloqueante)."
+                ),
+            )
+
+    def _check_stack_conflicts(self, job: dict[str, Any], owner: str, step: PipelineStep) -> None:
+        """Intermediate Conflict Detector: reads every package.json emitted so far
+        (across backend/frontend/mobile, whichever have run) straight from the
+        checkpoint artifacts, enforces the pre-generation Stack Lock +
+        Compatibility Matrix, and reconciles the same dependency declared with
+        different versions across manifests (monorepo drift). Auto-fixes are
+        applied in place (artifact content + file on disk); a manifest that
+        cannot even be parsed is a hard block — everything else this engine
+        can diagnose has a deterministic fix, so it repairs rather than stops
+        the pipeline (see stack_compatibility.py)."""
+        manifests, parse_errors = self._collect_manifest_artifacts(job)
+        if not manifests and not parse_errors:
+            return
+        if parse_errors:
+            message = "Conflict Detector: manifesto(s) invalido(s): " + "; ".join(parse_errors)
+            raise StageFailure(message, diagnostic=self._diagnostic(job, step.state, step.logical, message, validator="conflict_detector"))
+
+        findings: list[Any] = []
+        lock_dict = job.get("stackLock")
+        if lock_dict:
+            lock = StackLock(
+                react=lock_dict.get("react"), react_native=lock_dict.get("react_native"),
+                expo=lock_dict.get("expo"), node=lock_dict.get("node"),
+                source_manifest=lock_dict.get("source_manifest"), captured_at=lock_dict.get("captured_at") or "",
+            )
+            for label, (data, _, _) in manifests.items():
+                findings.extend(stack_compatibility_engine.check_manifest(lock, label, data))
+        findings.extend(
+            stack_compatibility_engine.check_duplicate_versions({label: data for label, (data, _, _) in manifests.items()})
+        )
+        if not findings:
+            return
+
+        for data, path, artifact in manifests.values():
+            content = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+            path.write_text(content, encoding="utf-8")
+            encoded = content.encode("utf-8")
+            artifact["checksum"] = hashlib.sha256(encoded).hexdigest()
+            artifact["size_bytes"] = len(encoded)
+        self._write_json_artifact(job, owner, step, f"{step.logical}.stack-conflicts.json", [item.as_dict() for item in findings], "validation")
+        self._emit(
+            job, owner, "repair_applied", stage=step.state, level="warning",
+            message=f"Conflict Detector: {len(findings)} incoerencia(s) de dependencia corrigida(s) logo apos {step.logical}.",
+        )
 
     def _build(self, job: dict[str, Any], owner: str) -> None:
         files: list[EmittedFile] = []

@@ -287,7 +287,7 @@ export default function ProjectRoomPage() {
                 <p className="ds-caption mb-2 text-[color:var(--muted)]">{t('projectRooms.openQuestions')}</p>
                 <ul className="space-y-1 text-sm text-[color:var(--text)]">
                   {room.open_questions.map((question) => (
-                    <li key={question.id}>Ã¢â‚¬Â¢ {question.question}</li>
+                    <li key={question.id}>• {question.question}</li>
                   ))}
                 </ul>
               </div>

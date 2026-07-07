@@ -93,11 +93,11 @@ _jobs_repo = ModernizeJobRepository()
 
 # Provider catalog cards. DeepSeek is reached via the OpenRouter provider/key.
 _PROVIDER_CARDS: list[dict] = [
-    {"id": "openai", "name": "GPT / OpenAI", "description": "Bom para anÃƒÂ¡lise geral, arquitetura e documentaÃƒÂ§ÃƒÂ£o.", "recommended_for": "Arquitetura e documentaÃƒÂ§ÃƒÂ£o", "key_required": True},
-    {"id": "anthropic", "name": "Claude / Anthropic", "description": "Forte em anÃƒÂ¡lise longa de codebase e refatoraÃƒÂ§ÃƒÂ£o.", "recommended_for": "RefatoraÃƒÂ§ÃƒÂ£o de codebase", "key_required": True},
-    {"id": "google", "name": "Gemini / Google", "description": "Bom custo-benefÃƒÂ­cio para leitura e anÃƒÂ¡lise ampla.", "recommended_for": "AnÃƒÂ¡lise ampla", "key_required": True},
-    {"id": "openrouter", "name": "DeepSeek", "description": "Bom para anÃƒÂ¡lise de cÃƒÂ³digo e raciocÃƒÂ­nio tÃƒÂ©cnico (via OpenRouter).", "recommended_for": "AnÃƒÂ¡lise de cÃƒÂ³digo", "key_required": True},
-    {"id": "openrouter", "name": "OpenRouter", "description": "Muitos modelos por uma ÃƒÂºnica chave OpenRouter.", "recommended_for": "Flexibilidade de modelos", "key_required": True},
+    {"id": "openai", "name": "GPT / OpenAI", "description": "Bom para análise geral, arquitetura e documentação.", "recommended_for": "Arquitetura e documentação", "key_required": True},
+    {"id": "anthropic", "name": "Claude / Anthropic", "description": "Forte em análise longa de codebase e refatoração.", "recommended_for": "Refatoração de codebase", "key_required": True},
+    {"id": "google", "name": "Gemini / Google", "description": "Bom custo-benefício para leitura e análise ampla.", "recommended_for": "Análise ampla", "key_required": True},
+    {"id": "openrouter", "name": "DeepSeek", "description": "Bom para análise de código e raciocínio técnico (via OpenRouter).", "recommended_for": "Análise de código", "key_required": True},
+    {"id": "openrouter", "name": "OpenRouter", "description": "Muitos modelos por uma única chave OpenRouter.", "recommended_for": "Flexibilidade de modelos", "key_required": True},
     {"id": "ollama", "name": "Ollama Local", "description": "Modelos locais, sem chave (requer Ollama instalado).", "recommended_for": "Offline / local", "key_required": False},
 ]
 
@@ -112,7 +112,7 @@ def _audit(user_id: str, event_code: str) -> None:
 def _require_flag(flag: str) -> None:
     settings = get_settings()
     if not getattr(settings, "modernize_enabled", True) or not getattr(settings, flag, True):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Esta aÃƒÂ§ÃƒÂ£o estÃƒÂ¡ desativada por configuraÃƒÂ§ÃƒÂ£o.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Esta ação está desativada por configuração.")
 
 
 def _provider_cards(user_id: str) -> list[LlmProviderConfig]:
@@ -130,7 +130,7 @@ def _provider_cards(user_id: str) -> list[LlmProviderConfig]:
 def _job(project_id: str, user_id: str) -> dict:
     job = _jobs_repo.get_for_owner(project_id, user_id)
     if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto de modernizaÃƒÂ§ÃƒÂ£o nÃƒÂ£o encontrado.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto de modernização não encontrado.")
     return job
 
 
@@ -348,15 +348,15 @@ def _deterministic_answer(question: str, inventory, diagnosis, plan, executive) 
 
     def _sec_line() -> str:
         if not sec:
-            return "Nenhum achado de seguranÃ§a crÃ­tico foi retornado pela varredura."
+            return "Nenhum achado de segurança crítico foi retornado pela varredura."
         grounded.append("security_findings")
         top = "; ".join(f"{f.code} ({f.severity}) em {f.path}:{f.line or '?'}" for f in sec[:5])
-        return f"{len(sec)} achado(s) de seguranÃ§a. Principais: {top}."
+        return f"{len(sec)} achado(s) de segurança. Principais: {top}."
 
     if any(k in q for k in ("segur", "security", "vulnerab", "owasp", "secret", "jwt")):
         answer = _sec_line()
     elif any(k in q for k in ("errado", "problema", "wrong", "issue", "ruim")):
-        parts = [f"SaÃºde geral: {executive.overall_health}% ({executive.health_label})."]
+        parts = [f"Saúde geral: {executive.overall_health}% ({executive.health_label})."]
         if sec:
             parts.append(_sec_line())
         if smells:
@@ -364,11 +364,11 @@ def _deterministic_answer(question: str, inventory, diagnosis, plan, executive) 
             parts.append("Smells de arquitetura: " + "; ".join(s.message for s in smells[:4]) + ".")
         if deps:
             grounded.append("dependency_notes")
-            parts.append("DependÃªncias: " + "; ".join(deps[:3]) + ".")
+            parts.append("Dependências: " + "; ".join(deps[:3]) + ".")
         answer = " ".join(parts)
-    elif any(k in q for k in ("melhor", "improve", "recomend", "priorid", "next", "comeÃ§")):
+    elif any(k in q for k in ("melhor", "improve", "recomend", "priorid", "next", "começ")):
         grounded.append("plan")
-        steps = "; ".join(f"{i+1}. {s}" for i, s in enumerate(plan.steps[:6])) or "plano ainda nÃ£o gerado"
+        steps = "; ".join(f"{i+1}. {s}" for i, s in enumerate(plan.steps[:6])) or "plano ainda não gerado"
         answer = f"Prioridade: {executive.priority} Passos do plano: {steps}."
     elif any(k in q for k in ("arquitet", "architecture", "clean", "padr", "estrutura")):
         grounded.append("architecture")
@@ -379,9 +379,9 @@ def _deterministic_answer(question: str, inventory, diagnosis, plan, executive) 
     elif any(k in q for k in ("microserv", "microservice", "monolit", "escal", "scal")):
         grounded.append("architecture")
         answer = (
-            f"Com complexidade '{executive.complexity}' e risco '{executive.risk_level}', a recomendaÃ§Ã£o atual Ã© "
-            f"'{plan.target_architecture}'. Migrar para microsserviÃ§os sÃ³ compensa apÃ³s estabilizar a base "
-            "(testes, seguranÃ§a e fronteiras de mÃ³dulo claras)."
+            f"Com complexidade '{executive.complexity}' e risco '{executive.risk_level}', a recomendação atual é "
+            f"'{plan.target_architecture}'. Migrar para microsserviços só compensa após estabilizar a base "
+            "(testes, segurança e fronteiras de módulo claras)."
         )
     else:
         grounded.append("executive")
@@ -508,6 +508,7 @@ def modernize_generate(payload: ModernizeGenerateRequest, user: CurrentUser) -> 
                 files,
                 project_name=payload.project_name,
                 metadata={"source": "modernization", "ingest_id": payload.ingest_id},
+                owner=user["user_id"],
             )
         except ProjectWriteError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -550,10 +551,10 @@ def modernize_llm_test(payload: LlmConnectionTestRequest, user: CurrentUser) -> 
     _audit(user["user_id"], "llm_provider_selected")
     if provider == "ollama":
         _audit(user["user_id"], "llm_connection_tested")
-        return LlmConnectionTestResult(ok=True, provider=provider, model=None, message="Ollama local: nenhuma chave necessÃƒÂ¡ria.", degraded=True)
+        return LlmConnectionTestResult(ok=True, provider=provider, model=None, message="Ollama local: nenhuma chave necessária.", degraded=True)
     api_key = user_key_session.get(user["user_id"], provider)
     if api_key is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nenhuma chave na sessÃƒÂ£o para este provedor. Cole a chave primeiro.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nenhuma chave na sessão para este provedor. Cole a chave primeiro.")
     try:
         response = LLMRouter().route(
             LLMRequest(system="ping", user="responda apenas: ok"),
@@ -562,9 +563,9 @@ def modernize_llm_test(payload: LlmConnectionTestRequest, user: CurrentUser) -> 
         )
     except Exception as exc:  # noqa: BLE001 Ã¢â‚¬â€ any provider/SDK/network failure means "not connected"
         _audit(user["user_id"], "llm_connection_tested")
-        return LlmConnectionTestResult(ok=False, provider=provider, model=None, message=f"Falha na conexÃƒÂ£o: {exc}"[:300], degraded=False)
+        return LlmConnectionTestResult(ok=False, provider=provider, model=None, message=f"Falha na conexão: {exc}"[:300], degraded=False)
     _audit(user["user_id"], "llm_connection_tested")
-    return LlmConnectionTestResult(ok=True, provider=provider, model=response.model, message="ConexÃƒÂ£o validada. LLM pronto.", degraded=False)
+    return LlmConnectionTestResult(ok=True, provider=provider, model=response.model, message="Conexão validada. LLM pronto.", degraded=False)
 
 
 @router.post("/modernize/projects/upload", response_model=ModernizeProjectIngest, status_code=status.HTTP_201_CREATED)
@@ -686,7 +687,7 @@ def modernize_analyze(
 def modernize_get_report(project_id: str, user: CurrentUser) -> ModernizationReportResponse:
     job = _job(project_id, user["user_id"])
     if not job.get("report"):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Rode a anÃƒÂ¡lise primeiro.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Rode a análise primeiro.")
     return ModernizationReportResponse(
         report=CodebaseAnalysisReport.model_validate(job["report"]),
         plan=ModernizationPlan.model_validate(job["plan"]),
@@ -698,7 +699,7 @@ def modernize_approve_plan(project_id: str, payload: ApprovePlanRequest, user: C
     job = _job(project_id, user["user_id"])
     plan = job.get("plan")
     if not plan:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="AnÃƒÂ¡lise/plano ausente. Rode a anÃƒÂ¡lise primeiro.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Análise/plano ausente. Rode a análise primeiro.")
     all_ids = [phase["id"] for phase in plan["phases"]]
     if payload.mode == "full":
         approved = all_ids
@@ -717,7 +718,7 @@ def modernize_apply_fixes(project_id: str, user: CurrentUser) -> RefactorResult:
     job = _job(project_id, user["user_id"])
     approved = job.get("approved_phase_ids")
     if not approved:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Aprove o plano antes de aplicar correÃƒÂ§ÃƒÂµes.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Aprove o plano antes de aplicar correções.")
     _audit(user["user_id"], "auto_refactor_started")
     try:
         write_result = _materialize(project_id, f"modernized-{project_id}")
@@ -753,7 +754,7 @@ def modernize_revalidate(project_id: str, user: CurrentUser) -> RevalidationRepo
     job = _job(project_id, user["user_id"])
     materialized_id = job.get("materialized_project_id")
     if not materialized_id:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Aplique correÃƒÂ§ÃƒÂµes antes de revalidar.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Aplique correções antes de revalidar.")
     _audit(user["user_id"], "revalidation_started")
     before = CodebaseScores.model_validate(job["before_scores"]) if job.get("before_scores") else CodebaseScores()
     after = score_root(DEFAULT_OUTPUT_ROOT / materialized_id, service)
@@ -770,7 +771,7 @@ def modernize_diff(project_id: str, user: CurrentUser) -> CodeDiffSummary:
     job = _job(project_id, user["user_id"])
     refactor = job.get("refactor")
     if not refactor:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Aplique correÃƒÂ§ÃƒÂµes antes de ver o diff.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Aplique correções antes de ver o diff.")
     before = job.get("before_scores")
     after = job.get("after_scores")
     deltas: dict[str, int] = {}
@@ -816,6 +817,35 @@ def _register_job(result: IngestResult, user_id: str, audit_code: str) -> Modern
     )
 
 
+def _materialized_modernize_project(project_id: str, user_id: str, *, action: str) -> dict:
+    """Resolve the actual materialized generated project for a modernize job,
+    enforcing ownership (diagnosis: the three routes below used to call
+    _modernize_project(project_id) directly, which both skipped the ownership
+    check every other {project_id} route in this file performs AND resolved the
+    wrong directory — for a job, project_id is the ingest id, not the
+    materialized project's own id).
+
+    Two distinct callers pass a project_id here: the analyze->apply-fixes job
+    pipeline (project_id = ingest/job id; the real project lives at
+    job['materialized_project_id']), and the legacy one-shot /modernize/generate
+    flow, which writes a project directly with no job entry at all (project_id
+    IS already the materialized project's own id there). Try the job first;
+    fall back to treating project_id as a materialized project id (same
+    unowned-is-unrestricted rule as meta_factory's _owned_meta_project) so the
+    legacy flow keeps working instead of 404ing on a project that exists."""
+    job = _jobs_repo.get_for_owner(project_id, user_id)
+    if job is not None:
+        materialized_id = job.get("materialized_project_id")
+        if not materialized_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Aplique correções antes de {action}.")
+        return _modernize_project(materialized_id)
+    project = _modernize_project(project_id)
+    owner = ProjectWriter().read_owner(project_id)
+    if owner is not None and owner != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projeto de modernização não encontrado.")
+    return project
+
+
 @router.post("/modernize/{project_id}/export/{provider}", response_model=GeneratedProjectExportResponse)
 def export_modernized_project(
     project_id: str,
@@ -823,20 +853,24 @@ def export_modernized_project(
     payload: GeneratedProjectExportRequest,
     user: CurrentUser,
 ) -> GeneratedProjectExportResponse:
-    return _export_generated_project(user["user_id"], _modernize_project(project_id), provider, payload)
+    project = _materialized_modernize_project(project_id, user["user_id"], action="exportar")
+    return _export_generated_project(user["user_id"], project, provider, payload)
 
 
 @router.get("/modernize/{project_id}/endpoints", response_model=GeneratedEndpointsResponse)
-def list_modernized_endpoints(project_id: str) -> GeneratedEndpointsResponse:
-    return api_collection_service.list_endpoints(_modernize_project(project_id))
+def list_modernized_endpoints(project_id: str, user: CurrentUser) -> GeneratedEndpointsResponse:
+    project = _materialized_modernize_project(project_id, user["user_id"], action="listar endpoints")
+    return api_collection_service.list_endpoints(project)
 
 
 @router.get("/modernize/{project_id}/api-collection", response_model=ApiCollectionResponse)
 def get_modernized_api_collection(
     project_id: str,
+    user: CurrentUser,
     format: str = Query("postman", pattern="^(postman|insomnia)$"),
 ) -> ApiCollectionResponse:
-    return api_collection_service.collection(_modernize_project(project_id), format)  # type: ignore[arg-type]
+    project = _materialized_modernize_project(project_id, user["user_id"], action="gerar a coleção")
+    return api_collection_service.collection(project, format)  # type: ignore[arg-type]
 
 
 def _export_generated_project(
@@ -855,8 +889,8 @@ def _export_generated_project(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"ExportaÃƒÂ§ÃƒÂ£o bloqueada: {gate.blocker_count} problema(s) crÃƒÂ­tico(s). Corrija "
-                "automaticamente, rode a validaÃƒÂ§ÃƒÂ£o novamente ou libere conscientemente."
+                f"Exportação bloqueada: {gate.blocker_count} problema(s) crítico(s). Corrija "
+                "automaticamente, rode a validação novamente ou libere conscientemente."
             ),
         )
 

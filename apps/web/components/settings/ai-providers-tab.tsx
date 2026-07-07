@@ -26,14 +26,14 @@ interface ProviderDef {
 
 // Only the providers the platform actually supports. DeepSeek/Llama/Qwen are
 // reachable through OpenRouter (no first-class key), so they are not separate
-// cards â€” surfacing them would imply functionality that doesn't exist.
+// cards — surfacing them would imply functionality that doesn't exist.
 const PROVIDERS: readonly ProviderDef[] = [
-  { id: 'anthropic', name: 'Claude', description: 'Anthropic â€” Opus, Sonnet, Haiku, Fable.' },
+  { id: 'anthropic', name: 'Claude', description: 'Anthropic — Opus, Sonnet, Haiku, Fable.' },
   { id: 'openai', name: 'OpenAI', description: 'GPT-4.1, o4-mini.' },
   { id: 'google', name: 'Gemini', description: 'Gemini 2.5 Pro / Flash.' },
-  { id: 'openrouter', name: 'OpenRouter', description: 'Many models behind one key â€” DeepSeek, Llama, Qwenâ€¦' },
-  { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek first-class API â€” Chat (V3) and Reasoner (R1).' },
-  { id: 'custom', name: 'Custom', description: 'Any OpenAI-compatible endpoint (vLLM, LM Studio, Togetherâ€¦).' },
+  { id: 'openrouter', name: 'OpenRouter', description: 'Many models behind one key — DeepSeek, Llama, Qwen…' },
+  { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek first-class API — Chat (V3) and Reasoner (R1).' },
+  { id: 'custom', name: 'Custom', description: 'Any OpenAI-compatible endpoint (vLLM, LM Studio, Together…).' },
   { id: 'ollama', name: 'Ollama', description: 'Local open-source models on your machine.', keyless: true },
 ];
 
@@ -189,10 +189,10 @@ function ProviderKeyCard({ def, session, isDefault }: { readonly def: ProviderDe
         {(hasKey || def.keyless) && def.id !== 'custom' ? (
           <div className="mt-3">
             {isDefault ? (
-              <Badge tone="accent">Provider padrão da plataforma</Badge>
+              <Badge tone="accent">{t('settings.ai.defaultProvider')}</Badge>
             ) : (
               <Button variant="ghost" loading={makeDefault.isPending} onClick={() => makeDefault.mutate()}>
-                Tornar padrão
+                {t('settings.ai.makeDefault')}
               </Button>
             )}
           </div>
