@@ -1,26 +1,29 @@
 import { expect, test } from '@playwright/test';
+import { openWizardAtTechnologyStep } from './wizard-flow-helpers';
 
-test('wizard reveals steps progressively and validates a real blueprint', async ({ page }) => {
-  await page.goto('http://127.0.0.1:3000/wizard');
+test('wizard reveals steps progressively and validates a real blueprint', async ({ page, request }) => {
+  await openWizardAtTechnologyStep(page, request);
 
-  await expect(page.getByLabel('1. Language')).toBeVisible({ timeout: 15000 });
-  await expect(page.getByLabel('2. Runtime')).toHaveCount(0);
+  // Labels for these chip groups are plain text (role="group" + aria-labelledby,
+  // not a form control), so they're matched with getByText, not getByLabel.
+  await expect(page.getByText('1. Language')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('2. Runtime')).toHaveCount(0);
   await expect(page.getByText('Runtime unlocks after selecting a language.')).toBeVisible();
 
-  await page.getByLabel('1. Language').selectOption('typescript');
-  await expect(page.getByLabel('2. Runtime')).toBeVisible();
+  await page.locator('[data-option-id="typescript"]').click();
+  await expect(page.getByText('2. Runtime')).toBeVisible();
 
-  await page.getByLabel('2. Runtime').selectOption('nodejs');
-  await expect(page.getByLabel('3. Framework')).toBeVisible();
+  await page.locator('[data-option-id="nodejs"]').click();
+  await expect(page.getByText('3. Framework')).toBeVisible();
 
-  await page.getByLabel('3. Framework').selectOption('nestjs');
+  await page.locator('[data-option-id="nestjs"]').click();
   await page.getByRole('button', { name: 'Continue to Architecture' }).click();
 
-  await expect(page.getByLabel('4. Architecture')).toBeVisible();
-  await page.getByLabel('4. Architecture').selectOption('modular_monolith');
+  await expect(page.getByText('4. Architecture')).toBeVisible();
+  await page.locator('[data-option-id="modular_monolith"]').click();
   await page.getByRole('button', { name: 'Continue to Project Type' }).click();
 
-  await page.getByLabel('5. Archetype').selectOption('ai_saas');
+  await page.locator('[data-option-id="ai_saas"]').click();
   await page.getByRole('button', { name: 'Continue to Capabilities' }).click();
 
   await expect(page.getByText('Recommended for this blueprint')).toBeVisible();
@@ -63,11 +66,11 @@ test('wizard reveals steps progressively and validates a real blueprint', async 
   await expect(dialog.getByRole('button', { name: /^RBAC/ })).toBeVisible();
 });
 
-test('wizard stays responsive on mobile without horizontal overflow', async ({ page }) => {
+test('wizard stays responsive on mobile without horizontal overflow', async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('http://127.0.0.1:3000/wizard');
+  await openWizardAtTechnologyStep(page, request);
 
-  await expect(page.getByLabel('1. Language')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('1. Language')).toBeVisible({ timeout: 15000 });
 
   const hasHorizontalOverflow = await page.evaluate(() => {
     const root = document.documentElement;

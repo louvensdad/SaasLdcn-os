@@ -102,16 +102,37 @@ class RegistryRepository:
     def list_compatibility_rules(self) -> Sequence[dict]:
         return self._with_contract_version(COMPATIBILITY_RULES)
 
-    @staticmethod
-    def _all_architecture_ids_for_minimum(minimum_level: str) -> list[str]:
-        legacy_mapping = {
-            "level_1_mvp": ["monolith", "modular_monolith"],
-            "level_2_professional": ["monolith", "modular_monolith", "clean_architecture", "hexagonal", "serverless"],
-            "level_3_enterprise": ["modular_monolith", "clean_architecture", "hexagonal", "event_driven", "cqrs"],
-            "level_4_distributed": ["microservices", "event_driven", "distributed_system", "clean_architecture", "hexagonal"],
-            "level_5_hyperscale": ["microservices", "event_driven", "distributed_system", "cqrs"],
-        }
-        return legacy_mapping[minimum_level]
+    # Per-level architecture list, exactly as originally authored (unchanged —
+    # this is the curated "which architectures make sense at this tier" data).
+    # The bug was in how a capability's MINIMUM level got turned into a set:
+    # architecture_level_minimum is a FLOOR ("needs at least this much
+    # engineering maturity"), so a capability's final architecture_ids must be
+    # the union of its own tier's list AND every MORE complex tier's list —
+    # never just its own tier in isolation. The previous lookup returned only
+    # the single matching tier's list, and since "microservices"/
+    # "distributed_system" only ever appear in level_4/level_5's own lists,
+    # EVERY capability (all of which are tagged level_1-3 across every
+    # language) had zero architecture_ids in common with those two — picking
+    # either in the wizard always produced a completely empty Capabilities
+    # step, confirmed live regardless of language/framework/archetype.
+    _LEVEL_ORDER = ("level_1_mvp", "level_2_professional", "level_3_enterprise", "level_4_distributed", "level_5_hyperscale")
+    _LEVEL_ARCHITECTURES = {
+        "level_1_mvp": ["monolith", "modular_monolith"],
+        "level_2_professional": ["monolith", "modular_monolith", "clean_architecture", "hexagonal", "serverless"],
+        "level_3_enterprise": ["modular_monolith", "clean_architecture", "hexagonal", "event_driven", "cqrs"],
+        "level_4_distributed": ["microservices", "event_driven", "distributed_system", "clean_architecture", "hexagonal"],
+        "level_5_hyperscale": ["microservices", "event_driven", "distributed_system", "cqrs"],
+    }
+
+    @classmethod
+    def _all_architecture_ids_for_minimum(cls, minimum_level: str) -> list[str]:
+        start = cls._LEVEL_ORDER.index(minimum_level) if minimum_level in cls._LEVEL_ORDER else 0
+        architecture_ids: list[str] = []
+        for level in cls._LEVEL_ORDER[start:]:  # this tier AND every more complex one
+            for architecture_id in cls._LEVEL_ARCHITECTURES[level]:
+                if architecture_id not in architecture_ids:
+                    architecture_ids.append(architecture_id)
+        return architecture_ids
 
     @classmethod
     def _architecture_ids_for_legacy_levels(cls, levels: Sequence[str]) -> list[str]:

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { authenticateWizardSession } from './wizard-flow-helpers';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${process.env.PLAYWRIGHT_WEB_PORT ?? '3100'}`;
 
@@ -34,7 +35,8 @@ async function setLocale(page: Page, locale: keyof typeof localeExpectations) {
 }
 
 for (const locale of Object.keys(localeExpectations) as Array<keyof typeof localeExpectations>) {
-  test(`wizard critical copy is localized in ${locale}`, async ({ page }) => {
+  test(`wizard critical copy is localized in ${locale}`, async ({ page, request }) => {
+    await authenticateWizardSession(page, request);
     await setLocale(page, locale);
     await page.goto(`${BASE_URL}/wizard`);
 
@@ -45,8 +47,9 @@ for (const locale of Object.keys(localeExpectations) as Array<keyof typeof local
 }
 
 for (const viewport of viewports) {
-  test(`wizard content remains visible without horizontal overflow on ${viewport.name}`, async ({ page }) => {
+  test(`wizard content remains visible without horizontal overflow on ${viewport.name}`, async ({ page, request }) => {
     await page.setViewportSize(viewport);
+    await authenticateWizardSession(page, request);
     await setLocale(page, 'pt-BR');
     await page.goto(`${BASE_URL}/wizard`);
 

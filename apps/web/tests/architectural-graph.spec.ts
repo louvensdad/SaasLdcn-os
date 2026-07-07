@@ -1,19 +1,19 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { webUrl } from './test-urls';
+import { applyAuthToPage, openWizardAtTechnologyStep, registerWizardApiUser } from './wizard-flow-helpers';
 
 const WIZARD_URL = webUrl('/wizard');
 const API_URL = 'http://127.0.0.1:8001/api';
 
-async function openGraphReview(page: Page, options?: { payments?: boolean }) {
-  await page.goto(WIZARD_URL);
-  await page.getByRole('button', { name: '1 Technology Path Choose language, runtime, and framework.' }).click();
-  await page.getByLabel('1. Language').selectOption('java');
-  await page.getByLabel('2. Runtime').selectOption('jvm');
-  await page.getByLabel('3. Framework').selectOption('spring_boot');
+async function openGraphReview(page: Page, request: APIRequestContext, options?: { payments?: boolean }) {
+  await openWizardAtTechnologyStep(page, request);
+  await page.locator('[data-option-id="java"]').click();
+  await page.locator('[data-option-id="jvm"]').click();
+  await page.locator('[data-option-id="spring_boot"]').click();
   await page.getByRole('button', { name: 'Continue to Architecture' }).click();
-  await page.getByLabel('4. Architecture').selectOption('microservices');
+  await page.locator('[data-option-id="microservices"]').click();
   await page.getByRole('button', { name: 'Continue to Project Type' }).click();
-  await page.getByLabel('5. Archetype').selectOption('microservice_api');
+  await page.locator('[data-option-id="microservice_api"]').click();
   await page.getByRole('button', { name: 'Continue to Capabilities' }).click();
   await page.getByRole('button', { name: 'View advanced capabilities' }).click();
   for (const label of ['Observability', 'Queue', ...(options?.payments ? ['Payments'] : [])]) {
@@ -27,35 +27,37 @@ async function openGraphReview(page: Page, options?: { payments?: boolean }) {
   await page.getByRole('button', { name: 'Continue to Endpoints' }).click();
   await page.getByRole('button', { name: 'Continue to Blueprint Review' }).click();
   await expect(page.getByRole('heading', { name: 'Blueprint Review' })).toBeVisible({ timeout: 15000 });
+  // The graph/cockpit/readiness panels are tabbed (only the active one is mounted).
+  await page.getByRole('tab', { name: 'Architecture Graph' }).click();
 }
 
-test('graph visible in wizard', async ({ page }) => {
-  await openGraphReview(page);
+test('graph visible in wizard', async ({ page, request }) => {
+  await openGraphReview(page, request);
   await expect(page.getByTestId('architectural-graph-canvas')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Architecture Graph Surface')).toBeVisible();
 });
 
-test('select microservices shows gateway and service nodes', async ({ page }) => {
-  await openGraphReview(page);
+test('select microservices shows gateway and service nodes', async ({ page, request }) => {
+  await openGraphReview(page, request);
   await expect(page.getByTestId('graph-node-gateway')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('graph-node-core_service')).toBeVisible();
 });
 
-test('select payments shows payment provider node', async ({ page }) => {
-  await openGraphReview(page, { payments: true });
+test('select payments shows payment provider node', async ({ page, request }) => {
+  await openGraphReview(page, request, { payments: true });
   await expect(page.getByTestId('graph-node-payment_provider')).toBeVisible({ timeout: 15000 });
 });
 
-test('node details opens', async ({ page }) => {
-  await openGraphReview(page);
+test('node details opens', async ({ page, request }) => {
+  await openGraphReview(page, request);
   await page.getByTestId('architectural-graph-canvas').scrollIntoViewIfNeeded();
   await page.getByTestId('graph-node-gateway').click();
   await expect(page.getByTestId('graph-node-details').getByText('API Gateway')).toBeVisible();
   await expect(page.getByTestId('graph-node-details').getByText('Ownership')).toBeVisible();
 });
 
-test('edge exposes relationship metadata', async ({ page }) => {
-  await openGraphReview(page);
+test('edge exposes relationship metadata', async ({ page, request }) => {
+  await openGraphReview(page, request);
   await expect(page.getByTestId('graph-node-gateway')).toBeVisible({ timeout: 15000 });
   const edgeTitle = await page.locator('svg[aria-label="Architectural edges"] title').evaluateAll((items) =>
     items.map((item) => item.textContent ?? '').find((text) => text.includes('gateway') && text.includes('core_service')),
@@ -63,23 +65,25 @@ test('edge exposes relationship metadata', async ({ page }) => {
   expect(edgeTitle).toContain('route');
 });
 
-test('graph is mobile safe', async ({ page }) => {
+test('graph is mobile safe', async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 1200 });
-  await openGraphReview(page);
+  await openGraphReview(page, request);
   await expect(page.getByTestId('architectural-graph-canvas')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('graph-mobile-summary')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBeTruthy();
 });
 
-test('graph keeps safe state when backend is offline', async ({ page }) => {
-  await page.route('http://127.0.0.1:8001/api/architectural-graph/preview', async (route) => route.abort('failed'));
-  await openGraphReview(page);
+test('graph keeps safe state when backend is offline', async ({ page, request }) => {
+  await page.route('**/api/architectural-graph/preview', async (route) => route.abort('failed'));
+  await openGraphReview(page, request);
   await expect(page.getByText('Architectural graph offline')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Architectural graph services are offline, but the selected blueprint remains safe.')).toBeVisible();
 });
 
-async function createSavedProject(request: APIRequestContext) {
+async function createSavedProject(request: APIRequestContext, accessToken: string) {
+  const headers = { Authorization: `Bearer ${accessToken}` };
   const blueprintResponse = await request.post(`${API_URL}/blueprints/preview`, {
+    headers,
     data: {
       project_name: 'ldcn-graph-snapshot-app',
       language_id: 'typescript',
@@ -97,15 +101,16 @@ async function createSavedProject(request: APIRequestContext) {
   expect(blueprintResponse.ok()).toBeTruthy();
   const blueprint = await blueprintResponse.json();
 
-  const promptResponse = await request.post(`${API_URL}/prompt-master/preview`, { data: { blueprint } });
+  const promptResponse = await request.post(`${API_URL}/prompt-master/preview`, { headers, data: { blueprint } });
   expect(promptResponse.ok()).toBeTruthy();
   const prompt_master = await promptResponse.json();
 
-  const gatekeeperResponse = await request.post(`${API_URL}/gatekeeper/preview`, { data: { blueprint, prompt_master } });
+  const gatekeeperResponse = await request.post(`${API_URL}/gatekeeper/preview`, { headers, data: { blueprint, prompt_master } });
   expect(gatekeeperResponse.ok()).toBeTruthy();
   const gatekeeper = await gatekeeperResponse.json();
 
   const saveResponse = await request.post(`${API_URL}/projects/save-from-wizard`, {
+    headers,
     data: { blueprint, prompt_master, gatekeeper },
   });
   expect(saveResponse.ok()).toBeTruthy();
@@ -113,9 +118,11 @@ async function createSavedProject(request: APIRequestContext) {
 }
 
 test('project detail renders saved graph snapshot with preview offline', async ({ page, request }) => {
-  const project = await createSavedProject(request);
+  const auth = await registerWizardApiUser(request);
+  await applyAuthToPage(page, auth);
+  const project = await createSavedProject(request, auth.tokens.access_token);
   expect(project.architectural_graph_snapshot.graph.nodes.length).toBeGreaterThan(0);
-  await page.route('http://127.0.0.1:8001/api/architectural-graph/preview', async (route) => route.abort('failed'));
+  await page.route('**/api/architectural-graph/preview', async (route) => route.abort('failed'));
   await page.goto(webUrl(`/projects/${project.project_id}`));
   await expect(page.getByText('Graph Snapshot')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('graph-node-app')).toBeVisible({ timeout: 15000 });

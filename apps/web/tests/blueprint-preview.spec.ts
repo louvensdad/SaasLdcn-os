@@ -1,17 +1,17 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { openWizardAtTechnologyStep } from './wizard-flow-helpers';
 
-async function goToBlueprintReview(page: Page) {
-  await page.goto('http://127.0.0.1:3000/wizard');
-
-  await page.getByLabel('1. Language').selectOption('typescript');
-  await page.getByLabel('2. Runtime').selectOption('nodejs');
-  await page.getByLabel('3. Framework').selectOption('nestjs');
+async function goToBlueprintReview(page: Page, request: APIRequestContext) {
+  await openWizardAtTechnologyStep(page, request);
+  await page.locator('[data-option-id="typescript"]').click();
+  await page.locator('[data-option-id="nodejs"]').click();
+  await page.locator('[data-option-id="nestjs"]').click();
   await page.getByRole('button', { name: 'Continue to Architecture' }).click();
 
-  await page.getByLabel('4. Architecture').selectOption('modular_monolith');
+  await page.locator('[data-option-id="modular_monolith"]').click();
   await page.getByRole('button', { name: 'Continue to Project Type' }).click();
 
-  await page.getByLabel('5. Archetype').selectOption('ai_saas');
+  await page.locator('[data-option-id="ai_saas"]').click();
   await page.getByRole('button', { name: 'Continue to Capabilities' }).click();
   await page.getByRole('button', { name: 'Continue to Business Modules' }).click();
   await page.getByLabel('Reports').check();
@@ -29,8 +29,8 @@ async function goBackToCapabilities(page: Page) {
   await expect(page.getByRole('heading', { name: 'Capabilities' })).toBeVisible();
 }
 
-async function buildHealthyGatekeeper(page: Page) {
-  await goToBlueprintReview(page);
+async function buildHealthyGatekeeper(page: Page, request: APIRequestContext) {
+  await goToBlueprintReview(page, request);
 
   await goBackToCapabilities(page);
   await page.getByRole('button', { name: 'View advanced capabilities' }).click();
@@ -51,10 +51,10 @@ async function buildHealthyGatekeeper(page: Page) {
   await expect(page.getByText('The Gatekeeper found warnings but did not block progression.')).toBeVisible({ timeout: 10000 });
 }
 
-test('wizard blueprint preview shows invalid selection from backend', async ({ page }) => {
-  await goToBlueprintReview(page);
+test('wizard blueprint preview shows invalid selection from backend', async ({ page, request }) => {
+  await goToBlueprintReview(page, request);
 
-  await page.route('http://127.0.0.1:8001/api/blueprints/preview', async (route) => {
+  await page.route('**/api/blueprints/preview', async (route) => {
     const response = await route.fetch();
     const blueprint = await response.json();
     await route.fulfill({
@@ -80,10 +80,10 @@ test('wizard blueprint preview shows invalid selection from backend', async ({ p
   await expect(page.getByText(/requires capabilities: ai_chat/i)).toBeVisible();
 });
 
-test('wizard blueprint preview shows loading state', async ({ page }) => {
-  await goToBlueprintReview(page);
+test('wizard blueprint preview shows loading state', async ({ page, request }) => {
+  await goToBlueprintReview(page, request);
 
-  await page.route('http://127.0.0.1:8001/api/blueprints/preview', async (route) => {
+  await page.route('**/api/blueprints/preview', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1200));
     await route.continue();
   });
@@ -93,10 +93,10 @@ test('wizard blueprint preview shows loading state', async ({ page }) => {
   await expect(page.getByText('Technology graph snapshot')).toBeVisible({ timeout: 10000 });
 });
 
-test('wizard blueprint preview shows request error state', async ({ page }) => {
-  await goToBlueprintReview(page);
+test('wizard blueprint preview shows request error state', async ({ page, request }) => {
+  await goToBlueprintReview(page, request);
 
-  await page.route('http://127.0.0.1:8001/api/blueprints/preview', async (route) => {
+  await page.route('**/api/blueprints/preview', async (route) => {
     await route.fulfill({
       status: 500,
       contentType: 'application/json',
@@ -114,7 +114,7 @@ test('wizard blueprint preview shows request error state', async ({ page }) => {
   await expect(page.getByText('Blueprint preview failed')).toBeVisible({ timeout: 10000 });
 });
 
-test('wizard prompt master preview opens all required sections and supports copy', async ({ page }) => {
+test('wizard prompt master preview opens all required sections and supports copy', async ({ page, request }) => {
   await page.addInitScript(() => {
     const clipboardStore = { text: '' };
     Object.defineProperty(window, '__promptMasterClipboard', {
@@ -132,7 +132,7 @@ test('wizard prompt master preview opens all required sections and supports copy
     });
   });
 
-  await goToBlueprintReview(page);
+  await goToBlueprintReview(page, request);
 
   await page.getByRole('button', { name: 'Preview blueprint' }).click();
   await expect(page.getByText('Valid blueprint')).toBeVisible({ timeout: 10000 });
@@ -142,7 +142,7 @@ test('wizard prompt master preview opens all required sections and supports copy
   await expect(page.getByText('Prompt Master sections', { exact: true })).toBeVisible();
   await expect(page.getByText('Product Intent', { exact: true }).last()).toBeVisible();
   await expect(page.getByText('Technology Graph', { exact: true }).last()).toBeVisible();
-  await expect(page.getByText('Compiled Prompt Master')).toBeVisible();
+  await expect(page.getByText('Compiled Prompt Master').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Copy Prompt Master' }).click();
   await expect(page.getByText('Prompt Master copied')).toBeVisible({ timeout: 10000 });
@@ -154,30 +154,30 @@ test('wizard prompt master preview opens all required sections and supports copy
   expect(copiedText).toContain('15. Trace');
 });
 
-test('wizard prompt master preview shows offline request state', async ({ page }) => {
-  await goToBlueprintReview(page);
+test('wizard prompt master preview shows offline request state', async ({ page, request }) => {
+  await goToBlueprintReview(page, request);
 
   await page.getByRole('button', { name: 'Preview blueprint' }).click();
   await expect(page.getByText('Valid blueprint')).toBeVisible({ timeout: 10000 });
 
-  await page.route('http://127.0.0.1:8001/api/prompt-master/preview', async (route) => {
+  await page.route('**/api/prompt-master/preview', async (route) => {
     await route.abort('failed');
   });
 
   await page.getByRole('button', { name: 'Preview Prompt Master' }).click();
   await expect(page.getByText('Prompt Master preview failed')).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText('Backend is offline or unreachable.')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Backend is offline or unreachable.').first()).toBeVisible({ timeout: 10000 });
 });
 
-test('wizard gatekeeper preview approves a healthy blueprint and prompt master pair', async ({ page }) => {
-  await buildHealthyGatekeeper(page);
+test('wizard gatekeeper preview approves a healthy blueprint and prompt master pair', async ({ page, request }) => {
+  await buildHealthyGatekeeper(page, request);
   await expect(page.getByText('The Gatekeeper found warnings but did not block progression.')).toBeVisible({ timeout: 10000 });
   await expect(page.getByText('Gatekeeper report')).toBeVisible();
   await expect(page.getByText('Gatekeeper checks', { exact: true })).toBeVisible();
 });
 
-test('wizard gatekeeper preview blocks an invalid blueprint and prompt master pair', async ({ page }) => {
-  await goToBlueprintReview(page);
+test('wizard gatekeeper preview blocks an invalid blueprint and prompt master pair', async ({ page, request }) => {
+  await goToBlueprintReview(page, request);
 
   await page.getByRole('button', { name: /Capabilities Start with recommended capabilities/i }).click();
   await expect(page.getByRole('heading', { name: 'Capabilities' })).toBeVisible();
@@ -199,8 +199,8 @@ test('wizard gatekeeper preview blocks an invalid blueprint and prompt master pa
   await expect(page.getByText('Blockers', { exact: true })).toBeVisible();
 });
 
-test('wizard gatekeeper preview shows offline request state', async ({ page }) => {
-  await goToBlueprintReview(page);
+test('wizard gatekeeper preview shows offline request state', async ({ page, request }) => {
+  await goToBlueprintReview(page, request);
 
   await page.getByRole('button', { name: 'Preview blueprint' }).click();
   await expect(page.getByText('Valid blueprint')).toBeVisible({ timeout: 10000 });
@@ -208,34 +208,35 @@ test('wizard gatekeeper preview shows offline request state', async ({ page }) =
   await page.getByRole('button', { name: 'Preview Prompt Master' }).click();
   await expect(page.getByText('Valid Prompt Master')).toBeVisible({ timeout: 10000 });
 
-  await page.route('http://127.0.0.1:8001/api/gatekeeper/preview', async (route) => {
+  await page.route('**/api/gatekeeper/preview', async (route) => {
     await route.abort('failed');
   });
 
   await page.getByRole('button', { name: 'Run Gatekeeper' }).click();
   await expect(page.getByText('Gatekeeper preview failed')).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText('Backend is offline or unreachable.')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Backend is offline or unreachable.').first()).toBeVisible({ timeout: 10000 });
 });
 
-test('wizard save flow persists a project and opens detail page', async ({ page }) => {
-  await buildHealthyGatekeeper(page);
+test('wizard save flow persists a project and opens detail page', async ({ page, request }) => {
+  await buildHealthyGatekeeper(page, request);
 
   await page.getByRole('button', { name: 'Save Project' }).click();
   await expect(page).toHaveURL(/\/projects\/project_[a-f0-9]+/);
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText('Blueprint summary')).toBeVisible();
-  await expect(page.getByText('Prompt Master summary')).toBeVisible();
-  await expect(page.getByText('Gatekeeper result')).toBeVisible();
+  // The project detail page is "Project Experience V2" -- it shows a live
+  // dashboard (preview, tech verification, timeline), not the old raw
+  // blueprint/prompt-master/gatekeeper summary sections.
+  await expect(page.getByRole('heading', { name: 'wizard-regression-app' })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Project Experience V2')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Technology Verified' })).toBeVisible();
 
   await page.goto('http://127.0.0.1:3000/projects');
-  await expect(page.getByText('ldcn-enterprise-app').first()).toBeVisible({ timeout: 10000 });
-  await expect(page.getByRole('link', { name: 'Open details' }).first()).toBeVisible();
+  await expect(page.getByText('wizard-regression-app').first()).toBeVisible({ timeout: 10000 });
 });
 
-test('wizard save flow shows offline request state', async ({ page }) => {
-  await buildHealthyGatekeeper(page);
+test('wizard save flow shows offline request state', async ({ page, request }) => {
+  await buildHealthyGatekeeper(page, request);
 
-  await page.route('http://127.0.0.1:8001/api/projects/save-from-wizard', async (route) => {
+  await page.route('**/api/projects/save-from-wizard', async (route) => {
     await route.abort('failed');
   });
 

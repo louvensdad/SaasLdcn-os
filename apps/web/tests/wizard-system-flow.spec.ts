@@ -86,15 +86,15 @@ test('authenticated wizard enforces every step and completes the governed previe
   await expect(continueToTechnology).toBeEnabled();
   await continueToTechnology.click();
 
-  await page.getByLabel('1. Language').selectOption('typescript');
-  await page.getByLabel('2. Runtime').selectOption('nodejs');
-  await page.getByLabel('3. Framework').selectOption('nestjs');
+  await page.getByRole('button', { name: 'TypeScript', exact: true }).click();
+  await page.getByRole('button', { name: 'Node.js', exact: true }).click();
+  await page.getByRole('button', { name: 'NestJS', exact: true }).click();
   await page.getByRole('button', { name: 'Continue to Architecture' }).click();
 
-  await page.getByLabel('4. Architecture').selectOption('modular_monolith');
+  await page.getByRole('button', { name: 'Modular Monolith', exact: true }).click();
   await page.getByRole('button', { name: 'Continue to Project Type' }).click();
 
-  await page.getByLabel('5. Archetype').selectOption('ai_saas');
+  await page.getByRole('button', { name: 'AI SaaS', exact: true }).click();
   await page.getByRole('button', { name: 'Continue to Capabilities' }).click();
   await page.getByRole('button', { name: 'View advanced capabilities' }).click();
   for (const capability of ['RBAC', 'Rate Limiting', 'Observability']) {

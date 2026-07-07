@@ -1,9 +1,7 @@
-import { expect, test, type Page } from '@playwright/test';
-import { webUrl } from './test-urls';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { openWizardAtTechnologyStep } from './wizard-flow-helpers';
 
-const WIZARD_URL = webUrl('/wizard');
-
-async function completeWizardSelection(page: Page, {
+async function completeWizardSelection(page: Page, request: APIRequestContext, {
   languageId,
   runtimeId,
   frameworkId,
@@ -20,20 +18,20 @@ async function completeWizardSelection(page: Page, {
   readonly capabilityLabel: string;
   readonly moduleLabel: string;
 }) {
-  await page.goto(WIZARD_URL);
+  await openWizardAtTechnologyStep(page, request);
 
-  await expect(page.getByLabel('1. Language')).toBeVisible({ timeout: 15000 });
-  await page.getByLabel('1. Language').selectOption(languageId);
-  await page.getByLabel('2. Runtime').selectOption(runtimeId);
-  await page.getByLabel('3. Framework').selectOption(frameworkId);
+  await expect(page.locator(`[data-option-id="${languageId}"]`)).toBeVisible({ timeout: 15000 });
+  await page.locator(`[data-option-id="${languageId}"]`).click();
+  await page.locator(`[data-option-id="${runtimeId}"]`).click();
+  await page.locator(`[data-option-id="${frameworkId}"]`).click();
 
   await page.getByRole('button', { name: 'Continue to Architecture' }).click();
-  await expect(page.getByLabel('4. Architecture')).toBeVisible({ timeout: 15000 });
-  await page.getByLabel('4. Architecture').selectOption(architectureId);
+  await expect(page.locator(`[data-option-id="${architectureId}"]`)).toBeVisible({ timeout: 15000 });
+  await page.locator(`[data-option-id="${architectureId}"]`).click();
 
   await page.getByRole('button', { name: 'Continue to Project Type' }).click();
-  await expect(page.getByLabel('5. Archetype')).toBeVisible({ timeout: 15000 });
-  await page.getByLabel('5. Archetype').selectOption(archetypeId);
+  await expect(page.locator(`[data-option-id="${archetypeId}"]`)).toBeVisible({ timeout: 15000 });
+  await page.locator(`[data-option-id="${archetypeId}"]`).click();
 
   await page.getByRole('button', { name: 'Continue to Capabilities' }).click();
   await expect(page.getByText('Recommended capabilities first', { exact: true })).toBeVisible({ timeout: 15000 });
@@ -47,8 +45,8 @@ async function completeWizardSelection(page: Page, {
   await page.getByRole('checkbox', { name: moduleLabel }).check();
 }
 
-test('wizard shows Spring Boot infrastructure recommendations', async ({ page }) => {
-  await completeWizardSelection(page, {
+test('wizard shows Spring Boot infrastructure recommendations', async ({ page, request }) => {
+  await completeWizardSelection(page, request, {
     languageId: 'java',
     runtimeId: 'jvm',
     frameworkId: 'spring_boot',
@@ -64,8 +62,8 @@ test('wizard shows Spring Boot infrastructure recommendations', async ({ page })
   await expect(page.getByRole('button', { name: /Docker Compose/i }).first()).toBeVisible();
 });
 
-test('wizard shows FastAPI AI infrastructure recommendations', async ({ page }) => {
-  await completeWizardSelection(page, {
+test('wizard shows FastAPI AI infrastructure recommendations', async ({ page, request }) => {
+  await completeWizardSelection(page, request, {
     languageId: 'python',
     runtimeId: 'python_runtime',
     frameworkId: 'fastapi',
@@ -79,12 +77,12 @@ test('wizard shows FastAPI AI infrastructure recommendations', async ({ page }) 
   await expect(page.getByRole('button', { name: /pgvector/i }).first()).toBeVisible();
 });
 
-test('wizard keeps infrastructure panel safe when backend is offline', async ({ page }) => {
-  await page.route('http://127.0.0.1:8001/api/infrastructure/recommendations', async (route) => {
+test('wizard keeps infrastructure panel safe when backend is offline', async ({ page, request }) => {
+  await page.route('**/api/infrastructure/recommendations', async (route) => {
     await route.abort('failed');
   });
 
-  await completeWizardSelection(page, {
+  await completeWizardSelection(page, request, {
     languageId: 'java',
     runtimeId: 'jvm',
     frameworkId: 'spring_boot',

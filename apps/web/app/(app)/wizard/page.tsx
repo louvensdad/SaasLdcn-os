@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, Database, Layers3, Sparkles } from 'lucide-react';
+import { Activity, Database, Gauge, GitBranch, Layers3, ShieldCheck, Sparkles } from 'lucide-react';
 
 import { LDCNPresenceRail } from '@/components/ldcn/ldcn-presence-rail';
 import { ActionLink } from '@/components/ui/action-link';
@@ -15,6 +15,7 @@ import { PageError } from '@/components/feedback/error-system';
 import { ButtonLoading, CardLoading } from '@/components/feedback/loading-system';
 import { CheckboxField, SelectField, TextareaField, TextField } from '@/components/forms/form-field';
 import { SectionHeader } from '@/components/shell/section-header';
+import { Tabs } from '@/components/ui/tabs';
 import {
   ArchitectureGraphSurface,
   ComplexityRadar,
@@ -362,6 +363,58 @@ function SelectionGroup({
         <p className="relative mt-2 text-sm leading-6 text-[color:var(--muted)]">{description}</p>
       </div>
       <div className="relative">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Single-select chip grid, styled like FieldShell (label + description above
+ * the control). Used for every stack decision (language, runtime, framework,
+ * architecture, archetype) so the whole wizard picks one way to choose
+ * between options, instead of mixing native <select> dropdowns with button
+ * chips depending on the step.
+ */
+function ChoiceField({
+  label,
+  description,
+  value,
+  onChange,
+  options,
+  emptyMessage,
+}: {
+  readonly label: string;
+  readonly description?: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly options: readonly { id: string; name: string }[];
+  readonly emptyMessage?: string;
+}) {
+  // A <label> can only wrap ONE form control -- wrapping a whole button group
+  // in one makes every button's accessible name absorb the label PLUS every
+  // sibling button's text (confirmed live: a "Node.js" chip's accessible name
+  // came back as "2. Runtime Ambiente de execução. Bun Deno"). role="group" +
+  // aria-labelledby is the correct pattern for a labelled set of buttons.
+  const labelId = useId();
+  return (
+    <div className="block">
+      <span id={labelId} className="text-sm font-semibold text-[color:var(--text)]">{label}</span>
+      {description ? <span className="mt-1 block text-xs leading-5 text-[color:var(--muted)]">{description}</span> : null}
+      <div role="group" aria-labelledby={labelId} className="mt-2 flex flex-wrap gap-2">
+        {options.length === 0 && emptyMessage ? (
+          <p className="text-sm text-[color:var(--muted)]">{emptyMessage}</p>
+        ) : null}
+        {options.map((option) => (
+          <Button
+            key={option.id}
+            type="button"
+            data-option-id={option.id}
+            variant={value === option.id ? 'primary' : 'secondary'}
+            onClick={() => onChange(option.id)}
+          >
+            {option.name}
+          </Button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1975,13 +2028,22 @@ export default function WizardPage() {
                 >
                   <AiIntakePanel onApply={handleApplyProjectSpec} />
                   <SelectionGroup title={t('wizard.businessFirst.objective')} description={t('wizard.businessFirst.objective.description')}>
-                    <TextField label={t('wizard.businessFirst.projectName')} value={projectName} onChange={(event) => setProjectName(event.target.value)} required />
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {PRODUCT_GOAL_OPTIONS.map((option) => (
-                        <Button key={option} type="button" variant={projectGoal === t(`wizard.businessFirst.goal.${option}`) ? 'primary' : 'secondary'} onClick={() => setProjectGoal(t(`wizard.businessFirst.goal.${option}`))}>
-                          {t(`wizard.businessFirst.goal.${option}`)}
-                        </Button>
-                      ))}
+                    <TextField
+                      label={t('wizard.businessFirst.projectName')}
+                      placeholder={t('wizard.businessFirst.projectName.placeholder')}
+                      value={projectName}
+                      onChange={(event) => setProjectName(event.target.value)}
+                      required
+                    />
+                    <div className="mt-4">
+                      <span className="text-sm font-semibold text-[color:var(--text)]">{t('wizard.businessFirst.goalPicker.label')}</span>
+                      <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {PRODUCT_GOAL_OPTIONS.map((option) => (
+                          <Button key={option} type="button" variant={projectGoal === t(`wizard.businessFirst.goal.${option}`) ? 'primary' : 'secondary'} onClick={() => setProjectGoal(t(`wizard.businessFirst.goal.${option}`))}>
+                            {t(`wizard.businessFirst.goal.${option}`)}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
                   </SelectionGroup>
                   <SelectionGroup title={t('wizard.businessFirst.problem')} description={t('wizard.businessFirst.problem.description')}>
@@ -2068,34 +2130,22 @@ export default function WizardPage() {
                     description={t('wizard.chooseTechnologySpineDescription')}
                   >
                     <div className="grid gap-5 xl:grid-cols-3">
-                      <SelectField
+                      <ChoiceField
                         label={t('wizard.languageField')}
                         description={t('wizard.programmingEcosystem')}
                         value={languageId}
-                        onChange={(event) => handleLanguageChange(event.target.value)}
-                      >
-                        <option value="">{t('wizard.selectLanguage')}</option>
-                        {(languagesQuery.data ?? []).map((language) => (
-                          <option key={language.id} value={language.id}>
-                            {language.name}
-                          </option>
-                        ))}
-                      </SelectField>
+                        onChange={handleLanguageChange}
+                        options={languagesQuery.data ?? []}
+                      />
 
                       {languageId ? (
-                        <SelectField
+                        <ChoiceField
                           label={t('wizard.runtimeField')}
                           description={t('wizard.executionEnvironment')}
                           value={runtimeId}
-                          onChange={(event) => handleRuntimeChange(event.target.value)}
-                        >
-                          <option value="">{t('wizard.selectRuntime')}</option>
-                          {availableRuntimes.map((runtime) => (
-                            <option key={runtime.id} value={runtime.id}>
-                              {runtime.name}
-                            </option>
-                          ))}
-                        </SelectField>
+                          onChange={handleRuntimeChange}
+                          options={availableRuntimes}
+                        />
                       ) : (
                         <div className="rounded-[var(--radius-xl)] border border-dashed border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
                           {t('wizard.runtimeUnlocks')}
@@ -2103,19 +2153,13 @@ export default function WizardPage() {
                       )}
 
                       {runtimeId ? (
-                        <SelectField
+                        <ChoiceField
                           label={t('wizard.frameworkField')}
                           description={t('wizard.deliveryFramework')}
                           value={frameworkId}
-                          onChange={(event) => handleFrameworkChange(event.target.value)}
-                        >
-                          <option value="">{t('wizard.selectFramework')}</option>
-                          {availableFrameworks.map((framework) => (
-                            <option key={framework.id} value={framework.id}>
-                              {framework.name}
-                            </option>
-                          ))}
-                        </SelectField>
+                          onChange={handleFrameworkChange}
+                          options={availableFrameworks}
+                        />
                       ) : (
                         <div className="rounded-[var(--radius-xl)] border border-dashed border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
                           {t('wizard.frameworkUnlocks')}
@@ -2220,20 +2264,14 @@ export default function WizardPage() {
                     title={t('wizard.steps.architectureTitle')}
                     description={t('wizard.steps.architectureDescription')}
                   >
-                    <div className="grid gap-5 xl:grid-cols-[minmax(0,18rem)_1fr]">
-                      <SelectField
+                    <div className="space-y-5">
+                      <ChoiceField
                         label={t('wizard.steps.architectureLabel')}
                         description={t('wizard.steps.architectureFieldDescription')}
                         value={architectureId}
-                        onChange={(event) => handleArchitectureChange(event.target.value)}
-                      >
-                        <option value="">{t('wizard.steps.architectureSelectPlaceholder')}</option>
-                        {availableArchitectures.map((architecture) => (
-                          <option key={architecture.id} value={architecture.id}>
-                            {architecture.name}
-                          </option>
-                        ))}
-                      </SelectField>
+                        onChange={handleArchitectureChange}
+                        options={availableArchitectures}
+                      />
 
                       <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
                         <p className="font-semibold text-[color:var(--text)]">{t('wizard.steps.architectureProfileTitle')}</p>
@@ -2282,20 +2320,14 @@ export default function WizardPage() {
                     title={t('wizard.steps.projectTypeTitle')}
                     description={t('wizard.steps.projectTypeDescription')}
                   >
-                    <div className="grid gap-5 xl:grid-cols-[minmax(0,18rem)_1fr]">
-                      <SelectField
+                    <div className="space-y-5">
+                      <ChoiceField
                         label={t('wizard.steps.archetypeLabel')}
                         description={t('wizard.steps.archetypeFieldDescription')}
                         value={archetypeId}
-                        onChange={(event) => handleArchetypeChange(event.target.value)}
-                      >
-                        <option value="">{t('wizard.steps.archetypeSelectPlaceholder')}</option>
-                        {filteredArchetypes.map((archetype) => (
-                          <option key={archetype.id} value={archetype.id}>
-                            {archetype.name}
-                          </option>
-                        ))}
-                      </SelectField>
+                        onChange={handleArchetypeChange}
+                        options={filteredArchetypes}
+                      />
 
                       <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/5 p-5 text-sm text-[color:var(--muted)]">
                         <p className="font-semibold text-[color:var(--text)]">{t('wizard.steps.archetypeProfileTitle')}</p>
@@ -2858,40 +2890,74 @@ export default function WizardPage() {
                       </div>
                     </div>
 
-                    <DependencyGraphPanel
-                      snapshot={dependencyGraphSnapshot}
-                      impact={dependencyImpact}
-                      readiness={dependencyReadiness}
-                      risks={dependencyRisks}
-                      isLoading={dependencyGraphQuery.isLoading || impactAnalysisQuery.isLoading || readinessAnalysisQuery.isLoading || riskAnalysisQuery.isLoading}
-                      errorMessage={
-                        dependencyGraphQuery.isError || impactAnalysisQuery.isError || readinessAnalysisQuery.isError || riskAnalysisQuery.isError
-                          ? t('wizard.review.dependencyGraphOffline')
-                          : null
-                      }
-                    />
-
-                    <ArchitecturalGraphCanvas
-                      payload={architecturalGraphPayload}
-                      title={t('wizard.review.architecturalGraphTitle')}
-                      offlineMessage={t('wizard.review.architecturalGraphOffline')}
-                    />
-
-                    <VisualizationCockpit
-                      payload={dependencyGraphPayload}
-                      offlineMessage={t('wizard.review.visualizationOffline')}
-                    />
-
-                    <EngineeringReadinessPanel
-                      readiness={engineeringReadiness}
-                      team={teamProfileQuery.data ?? null}
-                      delivery={deliveryEstimateQuery.data ?? null}
-                      isLoading={engineeringReadinessQuery.isLoading || teamProfileQuery.isLoading || deliveryEstimateQuery.isLoading}
-                      errorMessage={
-                        engineeringReadinessQuery.isError || teamProfileQuery.isError || deliveryEstimateQuery.isError
-                          ? t('wizard.review.engineeringReadinessOffline')
-                          : null
-                      }
+                    {/* The review step used to stack all four intelligence panels
+                        vertically (~13k px of graphs/radars/cockpits below the
+                        validation cards), forcing one long scroll to see any of
+                        them. They have no shared state, so a tab switcher only
+                        mounts the active one's heavy visuals at a time. */}
+                    <Tabs
+                      items={[
+                        {
+                          id: 'dependencies',
+                          label: t('wizard.review.tabs.dependencies'),
+                          icon: Activity,
+                          content: (
+                            <DependencyGraphPanel
+                              snapshot={dependencyGraphSnapshot}
+                              impact={dependencyImpact}
+                              readiness={dependencyReadiness}
+                              risks={dependencyRisks}
+                              isLoading={dependencyGraphQuery.isLoading || impactAnalysisQuery.isLoading || readinessAnalysisQuery.isLoading || riskAnalysisQuery.isLoading}
+                              errorMessage={
+                                dependencyGraphQuery.isError || impactAnalysisQuery.isError || readinessAnalysisQuery.isError || riskAnalysisQuery.isError
+                                  ? t('wizard.review.dependencyGraphOffline')
+                                  : null
+                              }
+                            />
+                          ),
+                        },
+                        {
+                          id: 'architecture-graph',
+                          label: t('wizard.review.tabs.architectureGraph'),
+                          icon: GitBranch,
+                          content: (
+                            <ArchitecturalGraphCanvas
+                              payload={architecturalGraphPayload}
+                              title={t('wizard.review.architecturalGraphTitle')}
+                              offlineMessage={t('wizard.review.architecturalGraphOffline')}
+                            />
+                          ),
+                        },
+                        {
+                          id: 'cockpit',
+                          label: t('wizard.review.tabs.cockpit'),
+                          icon: Gauge,
+                          content: (
+                            <VisualizationCockpit
+                              payload={dependencyGraphPayload}
+                              offlineMessage={t('wizard.review.visualizationOffline')}
+                            />
+                          ),
+                        },
+                        {
+                          id: 'readiness',
+                          label: t('wizard.review.tabs.readiness'),
+                          icon: ShieldCheck,
+                          content: (
+                            <EngineeringReadinessPanel
+                              readiness={engineeringReadiness}
+                              team={teamProfileQuery.data ?? null}
+                              delivery={deliveryEstimateQuery.data ?? null}
+                              isLoading={engineeringReadinessQuery.isLoading || teamProfileQuery.isLoading || deliveryEstimateQuery.isLoading}
+                              errorMessage={
+                                engineeringReadinessQuery.isError || teamProfileQuery.isError || deliveryEstimateQuery.isError
+                                  ? t('wizard.review.engineeringReadinessOffline')
+                                  : null
+                              }
+                            />
+                          ),
+                        },
+                      ]}
                     />
 
                     {blueprintPreviewMutation.isError ? (

@@ -1,51 +1,52 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { openWizardAtTechnologyStep } from './wizard-flow-helpers';
 
-async function selectLanguage(page: Page, languageId: string, runtimeId: string) {
-  await page.goto('http://127.0.0.1:3000/wizard');
-  const languageSelect = page.getByLabel('1. Language');
-  await expect(languageSelect).toBeVisible({ timeout: 15000 });
-  await languageSelect.selectOption(languageId);
+async function selectLanguage(page: Page, request: APIRequestContext, languageId: string, runtimeId: string) {
+  await openWizardAtTechnologyStep(page, request);
+  const languageChip = page.locator(`[data-option-id="${languageId}"]`);
+  await expect(languageChip).toBeVisible({ timeout: 15000 });
+  await languageChip.click();
 
-  const runtimeSelect = page.getByLabel('2. Runtime');
-  await expect(runtimeSelect).toBeVisible({ timeout: 15000 });
-  await runtimeSelect.selectOption(runtimeId);
-
-  const frameworkSelect = page.getByLabel('3. Framework');
-  await expect(frameworkSelect).toBeVisible({ timeout: 15000 });
+  const runtimeChip = page.locator(`[data-option-id="${runtimeId}"]`);
+  await expect(runtimeChip).toBeVisible({ timeout: 15000 });
+  await runtimeChip.click();
 }
 
-test('Java language domain loads Spring Boot and related recommendations', async ({ page }) => {
-  await selectLanguage(page, 'java', 'jvm');
+test('Java language domain loads Spring Boot and related recommendations', async ({ page, request }) => {
+  await selectLanguage(page, request, 'java', 'jvm');
 
-  const frameworkOptions = page.getByLabel('3. Framework').locator('option');
-  await expect(frameworkOptions).toContainText(['Spring Boot', 'Quarkus', 'Micronaut']);
+  for (const frameworkId of ['spring_boot', 'quarkus', 'micronaut']) {
+    await expect(page.locator(`[data-option-id="${frameworkId}"]`)).toBeVisible();
+  }
   await expect(page.getByText('Java recommendations')).toBeVisible();
   await expect(page.getByText('Use Spring Boot for enterprise APIs')).toBeVisible();
 });
 
-test('TypeScript language domain loads Node-focused framework choices', async ({ page }) => {
-  await selectLanguage(page, 'typescript', 'nodejs');
+test('TypeScript language domain loads Node-focused framework choices', async ({ page, request }) => {
+  await selectLanguage(page, request, 'typescript', 'nodejs');
 
-  const frameworkOptions = page.getByLabel('3. Framework').locator('option');
-  await expect(frameworkOptions).toContainText(['NestJS', 'Next.js', 'Express', 'Fastify', 'Angular', 'React']);
+  for (const frameworkId of ['nestjs', 'nextjs', 'express', 'fastify', 'angular', 'react']) {
+    await expect(page.locator(`[data-option-id="${frameworkId}"]`)).toBeVisible();
+  }
   await expect(page.getByText('TypeScript recommendations')).toBeVisible();
 });
 
-test('Python language domain loads FastAPI, Django and Flask', async ({ page }) => {
-  await selectLanguage(page, 'python', 'python_runtime');
+test('Python language domain loads FastAPI, Django and Flask', async ({ page, request }) => {
+  await selectLanguage(page, request, 'python', 'python_runtime');
 
-  const frameworkOptions = page.getByLabel('3. Framework').locator('option');
-  await expect(frameworkOptions).toContainText(['FastAPI', 'Django', 'Flask']);
+  for (const frameworkId of ['fastapi', 'django', 'flask']) {
+    await expect(page.locator(`[data-option-id="${frameworkId}"]`)).toBeVisible();
+  }
   await expect(page.getByText('Python recommendations')).toBeVisible();
 });
 
-test('wizard shows a safe offline state when the language domain profile endpoint fails', async ({ page }) => {
-  await page.route('http://127.0.0.1:8001/api/languages/java/profile', async (route) => {
+test('wizard shows a safe offline state when the language domain profile endpoint fails', async ({ page, request }) => {
+  await page.route('**/api/languages/java/profile', async (route) => {
     await route.abort('failed');
   });
 
-  await page.goto('http://127.0.0.1:3000/wizard');
-  await page.getByLabel('1. Language').selectOption('java');
+  await openWizardAtTechnologyStep(page, request);
+  await page.locator('[data-option-id="java"]').click();
 
   await expect(page.getByText('Technology graph unavailable')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Backend is offline or unreachable.')).toBeVisible({ timeout: 15000 });

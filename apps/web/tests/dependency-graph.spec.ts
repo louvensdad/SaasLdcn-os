@@ -1,11 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
-import { webUrl } from './test-urls';
-
-const WIZARD_URL = webUrl('/wizard');
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { openWizardAtTechnologyStep } from './wizard-flow-helpers';
 
 test.setTimeout(60_000);
 
-async function completeSelection(page: Page, options: {
+async function completeSelection(page: Page, request: APIRequestContext, options: {
   readonly languageId: string;
   readonly runtimeId: string;
   readonly frameworkId: string;
@@ -27,15 +25,14 @@ async function completeSelection(page: Page, options: {
       console.log(`response-404: ${response.url()}`);
     }
   });
-  await page.goto(WIZARD_URL);
-  await page.getByRole('button', { name: '1 Technology Path Choose language, runtime, and framework.' }).click();
-  await page.getByLabel('1. Language').selectOption(options.languageId);
-  await page.getByLabel('2. Runtime').selectOption(options.runtimeId);
-  await page.getByLabel('3. Framework').selectOption(options.frameworkId);
+  await openWizardAtTechnologyStep(page, request);
+  await page.locator(`[data-option-id="${options.languageId}"]`).click();
+  await page.locator(`[data-option-id="${options.runtimeId}"]`).click();
+  await page.locator(`[data-option-id="${options.frameworkId}"]`).click();
   await page.getByRole('button', { name: 'Continue to Architecture' }).click();
-  await page.getByLabel('4. Architecture').selectOption(options.architectureId);
+  await page.locator(`[data-option-id="${options.architectureId}"]`).click();
   await page.getByRole('button', { name: 'Continue to Project Type' }).click();
-  await page.getByLabel('5. Archetype').selectOption(options.archetypeId);
+  await page.locator(`[data-option-id="${options.archetypeId}"]`).click();
   await page.getByRole('button', { name: 'Continue to Capabilities' }).click();
   await page.getByRole('button', { name: 'View advanced capabilities' }).click();
   for (const capabilityLabel of options.capabilityLabels) {
@@ -51,8 +48,8 @@ async function completeSelection(page: Page, options: {
   await expect(page.getByRole('heading', { name: 'Blueprint Review' })).toBeVisible({ timeout: 15000 });
 }
 
-test('wizard shows dependency propagation for microservices', async ({ page }) => {
-  await completeSelection(page, {
+test('wizard shows dependency propagation for microservices', async ({ page, request }) => {
+  await completeSelection(page, request, {
     languageId: 'java',
     runtimeId: 'jvm',
     frameworkId: 'spring_boot',
@@ -68,8 +65,8 @@ test('wizard shows dependency propagation for microservices', async ({ page }) =
   await expect(page.getByText('Required observability', { exact: false })).toBeVisible({ timeout: 15000 });
 });
 
-test('wizard shows vector database mutation for AI RAG', async ({ page }) => {
-  await completeSelection(page, {
+test('wizard shows vector database mutation for AI RAG', async ({ page, request }) => {
+  await completeSelection(page, request, {
     languageId: 'python',
     runtimeId: 'python_runtime',
     frameworkId: 'fastapi',
@@ -85,12 +82,12 @@ test('wizard shows vector database mutation for AI RAG', async ({ page }) => {
   await expect(page.getByText('Readiness radar')).toBeVisible();
 });
 
-test('wizard keeps dependency graph safe when backend is offline', async ({ page }) => {
-  await page.route('http://127.0.0.1:8001/api/dependency-graph/**', async (route) => {
+test('wizard keeps dependency graph safe when backend is offline', async ({ page, request }) => {
+  await page.route('**/api/dependency-graph/**', async (route) => {
     await route.abort('failed');
   });
 
-  await completeSelection(page, {
+  await completeSelection(page, request, {
     languageId: 'java',
     runtimeId: 'jvm',
     frameworkId: 'spring_boot',

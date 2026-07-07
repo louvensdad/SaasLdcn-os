@@ -28,6 +28,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
+import { ArchitecturalGraphCanvas } from '@/components/architectural-graph/architectural-graph-canvas';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -446,6 +447,14 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
           </div>
           <TwinDetails node={derived.selectedTwin} />
         </Card>
+        {project.architectural_graph_snapshot ? (
+          <ArchitecturalGraphCanvas
+            snapshot={project.architectural_graph_snapshot}
+            payload={null}
+            title={t('projectDetail.graph.title')}
+            offlineMessage={t('projectDetail.graph.offlineMessage')}
+          />
+        ) : null}
       </section>
 
       <section className="space-y-5">

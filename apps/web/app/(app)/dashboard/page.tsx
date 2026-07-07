@@ -10,9 +10,11 @@ import { PageError } from '@/components/feedback/error-system';
 import { AnimatedCounter } from '@/components/motion/animated-counter';
 import { Stagger, StaggerItem } from '@/components/motion/stagger';
 import { ComplexityRadar } from '@/components/visual/engineering-surface';
+import { LDCNPresenceCore } from '@/components/ldcn/ldcn-presence-core';
 import { useHealth } from '@/hooks/use-health';
 import { useProjects } from '@/hooks/use-projects';
 import { useLocale } from '@/hooks/use-locale';
+import { useLDCNStore } from '@/stores/use-ldcn-store';
 import { cn } from '@/lib/cn';
 import { getApiErrorMessage } from '@/lib/api/errors';
 import type { Project } from '@/lib/api/types';
@@ -80,6 +82,35 @@ export default function DashboardPage() {
   const error = healthQuery.error ?? projectsQuery.error;
   const readinessPct = projects.length ? Math.round((metrics.ready / projects.length) * 100) : 0;
 
+  const ldcnContext = useLDCNStore((state) => state.context);
+  const setLdcnContext = useLDCNStore((state) => state.setContext);
+  const setLdcnPresenceState = useLDCNStore((state) => state.setPresenceState);
+
+  useEffect(() => {
+    if (loading) return;
+    const presenceState = !healthOk ? 'offline' : metrics.risks > 0 ? 'warning' : 'observing';
+    setLdcnPresenceState(presenceState);
+    setLdcnContext({
+      route: '/dashboard',
+      page_title: t('dashboard.title'),
+      current_phase: t('dashboard.title'),
+      pipeline: {
+        route: '/dashboard',
+        phase: t('dashboard.title'),
+        status: !healthOk ? 'offline' : metrics.risks > 0 ? 'degraded' : 'healthy',
+        readiness_label: !healthOk
+          ? t('dashboard.line.offline')
+          : metrics.risks > 0
+            ? t('dashboard.attention')
+            : t('dashboard.healthy'),
+        detail: t('dashboard.presence.detail', { ready: metrics.ready, total: projects.length }),
+      },
+      status: presenceState,
+      summary: t('dashboard.presence.detail', { ready: metrics.ready, total: projects.length }),
+      suggestions: [],
+    });
+  }, [healthOk, loading, metrics.ready, metrics.risks, projects.length, setLdcnContext, setLdcnPresenceState, t]);
+
   return (
     <div className="space-y-6 pb-12">
       <ScrollProgress />
@@ -101,6 +132,9 @@ export default function DashboardPage() {
         </div>
         <ActionLink href="/wizard" variant="primary">{t('dashboard.newProject')}</ActionLink>
       </header>
+
+      <LDCNPresenceCore context={ldcnContext} />
+      <ActionLink href="/wizard" variant="secondary">{t('dashboard.presence.enterJourney')}</ActionLink>
 
       {loading ? (
         <div className="space-y-6">
