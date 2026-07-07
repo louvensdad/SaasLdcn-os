@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
 import { WorkflowContextHeader } from '@/components/project/workflow-context-header';
 import { ExecutionTerminal } from '@/components/generation/execution-terminal';
+import { ExportPanel } from '@/components/generation/export-panel';
 import { LiveExecutionConsole } from '@/components/generation/live-execution-console';
 import { useLocale } from '@/hooks/use-locale';
 import { metaFactoryClient, type ProjectSpec } from '@/lib/api/meta-factory';
@@ -347,10 +348,19 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
       </div>
 
       {job.status === 'READY' && job.valid && job.packageReady && !job.partial ? (
-        <section className="flex flex-wrap items-center gap-4 rounded-2xl border border-[color-mix(in_srgb,var(--success)_35%,transparent)] bg-[color-mix(in_srgb,var(--success)_9%,transparent)] p-5">
-          <Check className="h-5 w-5 text-[color:var(--success)]" /><div className="mr-auto"><h2 className="font-semibold">{t('pipeline.done.title')}</h2><p className="text-sm text-muted-foreground">{t('pipeline.done.hint')}</p></div>
-          {job.generatedProjectId ? <Button variant="primary" onClick={() => void metaFactoryClient.download(job.generatedProjectId!)}><Download className="h-4 w-4" /> {t('pipeline.done.download')}</Button> : null}
-        </section>
+        <>
+          <section className="flex flex-wrap items-center gap-4 rounded-2xl border border-[color-mix(in_srgb,var(--success)_35%,transparent)] bg-[color-mix(in_srgb,var(--success)_9%,transparent)] p-5">
+            <Check className="h-5 w-5 text-[color:var(--success)]" /><div className="mr-auto"><h2 className="font-semibold">{t('pipeline.done.title')}</h2><p className="text-sm text-muted-foreground">{t('pipeline.done.hint')}</p></div>
+            {job.generatedProjectId ? <Button variant="primary" onClick={() => void metaFactoryClient.download(job.generatedProjectId!)}><Download className="h-4 w-4" /> {t('pipeline.done.download')}</Button> : null}
+          </section>
+          {job.generatedProjectId ? (
+            <ExportPanel
+              surface="meta-factory"
+              projectId={job.generatedProjectId}
+              defaultRepoName={job.projectName.trim().toLowerCase().replace(/[^a-z0-9_.-]+/g, '-') || 'meta-factory-project'}
+            />
+          ) : null}
+        </>
       ) : null}
     </div>
   );

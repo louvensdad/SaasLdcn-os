@@ -367,6 +367,121 @@ def test_skipped_build_persists_guide_and_does_not_raise(isolated_engine, monkey
     assert any(item["name"] == "ManualBuildFixGuide.json" for item in persisted["artifacts"])
 
 
+def test_build_merges_package_json_from_different_stages_instead_of_dropping_one(isolated_engine, monkeypatch):
+    # Regression: backend and frontend each emit their own "package.json" at the
+    # same bare relative path when the project shares one root (no apps/backend,
+    # apps/frontend split). _build() used to key its "latest emitted file" dict
+    # by that bare name, so the later stage's package.json silently overwrote —
+    # not merged with — the earlier one, and the earlier stage's ENTIRE
+    # dependency list never made it into the published project at all
+    # (confirmed against a real end-to-end generation: the backend's NestJS/
+    # TypeORM deps were completely absent from the final package.json).
+    engine, repository, root = isolated_engine
+    job = _create(engine)
+    backend_pkg = root / "backend_package.json"
+    backend_pkg.write_text(
+        json.dumps({"dependencies": {"@nestjs/common": "^10.0.0"}, "scripts": {"start": "nest start"}}),
+        encoding="utf-8",
+    )
+    frontend_pkg = root / "frontend_package.json"
+    frontend_pkg.write_text(
+        json.dumps({"dependencies": {"next": "^14.0.0"}, "scripts": {"build": "next build"}}),
+        encoding="utf-8",
+    )
+    now = engine._now()
+    job["artifacts"].extend([
+        {"id": "art_be_pkg", "stage": "backend", "name": "package.json", "kind": "generated", "path": str(backend_pkg), "size_bytes": backend_pkg.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
+        {"id": "art_fe_pkg", "stage": "frontend", "name": "package.json", "kind": "generated", "path": str(frontend_pkg), "size_bytes": frontend_pkg.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
+    ])
+
+    class _FakeWriter:
+        captured_files: dict[str, str] | None = None
+
+        def write(self, files, **kwargs):  # noqa: ANN001
+            self.captured_files = {f.path: f.content for f in files}
+            generated_root = root / "generated2"
+            generated_root.mkdir(exist_ok=True)
+            return SimpleNamespace(project_id="generated-1", root_path=generated_root)
+
+        def set_verification(self, *args, **kwargs):  # noqa: ANN001
+            pass
+
+    fake_writer = _FakeWriter()
+    monkeypatch.setattr("app.engines.generation_job_engine.ProjectWriter", lambda: fake_writer)
+    validation = GenerationValidationReport(
+        project_id="generated-1", score=90, passed=True, quality={"checks": []},
+        dependency_audit=DependencyAuditReport(status="passed"),
+        build=BuildValidationReport(installed="passed", built="passed", ok=True, recovery_status=None),
+    )
+    monkeypatch.setattr(
+        "app.engines.generation_job_engine.generation_validation_engine.validate",
+        lambda *args, **kwargs: validation,
+    )
+
+    engine._build(job, "user-1")
+
+    merged = json.loads(fake_writer.captured_files["package.json"])
+    assert merged["dependencies"] == {"@nestjs/common": "^10.0.0", "next": "^14.0.0"}
+    assert merged["scripts"] == {"start": "nest start", "build": "next build"}
+
+
+def test_build_merges_tsconfig_json_so_backend_decorators_are_not_silently_dropped(isolated_engine, monkeypatch):
+    # Same collision as package.json, confirmed live on a real generation: the
+    # frontend's Next.js tsconfig.json overwrote the backend's, silently
+    # dropping "experimentalDecorators"/"emitDecoratorMetadata" — which broke
+    # every NestJS decorator once `next build`'s typecheck pass (which scans
+    # the whole shared src/ tree) hit the backend's controller files.
+    engine, repository, root = isolated_engine
+    job = _create(engine)
+    backend_tsconfig = root / "backend_tsconfig.json"
+    backend_tsconfig.write_text(
+        json.dumps({"compilerOptions": {"module": "commonjs", "experimentalDecorators": True, "emitDecoratorMetadata": True}}),
+        encoding="utf-8",
+    )
+    frontend_tsconfig = root / "frontend_tsconfig.json"
+    frontend_tsconfig.write_text(
+        json.dumps({"compilerOptions": {"jsx": "preserve", "module": "esnext"}}),
+        encoding="utf-8",
+    )
+    now = engine._now()
+    job["artifacts"].extend([
+        {"id": "art_be_ts", "stage": "backend", "name": "tsconfig.json", "kind": "generated", "path": str(backend_tsconfig), "size_bytes": backend_tsconfig.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
+        {"id": "art_fe_ts", "stage": "frontend", "name": "tsconfig.json", "kind": "generated", "path": str(frontend_tsconfig), "size_bytes": frontend_tsconfig.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
+    ])
+
+    class _FakeWriter:
+        captured_files: dict[str, str] | None = None
+
+        def write(self, files, **kwargs):  # noqa: ANN001
+            self.captured_files = {f.path: f.content for f in files}
+            generated_root = root / "generated3"
+            generated_root.mkdir(exist_ok=True)
+            return SimpleNamespace(project_id="generated-1", root_path=generated_root)
+
+        def set_verification(self, *args, **kwargs):  # noqa: ANN001
+            pass
+
+    fake_writer = _FakeWriter()
+    monkeypatch.setattr("app.engines.generation_job_engine.ProjectWriter", lambda: fake_writer)
+    validation = GenerationValidationReport(
+        project_id="generated-1", score=90, passed=True, quality={"checks": []},
+        dependency_audit=DependencyAuditReport(status="passed"),
+        build=BuildValidationReport(installed="passed", built="passed", ok=True, recovery_status=None),
+    )
+    monkeypatch.setattr(
+        "app.engines.generation_job_engine.generation_validation_engine.validate",
+        lambda *args, **kwargs: validation,
+    )
+
+    engine._build(job, "user-1")
+
+    merged = json.loads(fake_writer.captured_files["tsconfig.json"])
+    assert merged["compilerOptions"]["experimentalDecorators"] is True
+    assert merged["compilerOptions"]["emitDecoratorMetadata"] is True
+    assert merged["compilerOptions"]["jsx"] == "preserve"
+    assert merged["compilerOptions"]["module"] == "esnext"  # later stage wins on an exact key collision
+
+
 def test_pipeline_continues_to_package_after_build_skip(isolated_engine, monkeypatch):
     engine, repository, _ = isolated_engine
     job = _create(engine)
@@ -1109,6 +1224,39 @@ def test_conflict_detector_hard_blocks_on_unparseable_manifest(isolated_engine):
 
     with pytest.raises(StageFailure):
         engine._validate_stage(job, "user-1", _FRONTEND_VALIDATE)
+
+
+def test_manifests_with_the_same_bare_name_from_different_stages_do_not_collide(isolated_engine):
+    # Regression: backend and frontend each emit their own "package.json" (bare
+    # name, no "apps/" prefix — the real generated-project convention). Keying
+    # _collect_manifest_artifacts by bare name alone let the frontend manifest
+    # silently clobber the backend one, so every backend-only package (nestjs,
+    # typeorm, ...) got flagged as "undeclared_external" the moment the frontend
+    # stage's import graph re-scanned every JS/TS file emitted so far, including
+    # backend's own files (confirmed against a real end-to-end generation run).
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec())
+    _seed_frontend_manifest(engine, job, {"react": DEFAULT_ANCHORS["react"]})  # step's stage == "frontend"
+
+    backend_manifest = engine._write_text_artifact(
+        job, "user-1", _BACKEND_GEN, "package.json",
+        json.dumps({"dependencies": {"@nestjs/common": "^10.0.0"}}), "generated", valid=True,
+    )
+    engine._write_text_artifact(
+        job, "user-1", _BACKEND_GEN, "src/app.module.ts",
+        "import { Module } from '@nestjs/common';\nexport class AppModule {}",
+        "generated", valid=True,
+    )
+    _seed_frontend_source(engine, job, "src/index.ts", "export const x = 1;")
+
+    engine._validate_stage(job, "user-1", _FRONTEND_VALIDATE)
+
+    graph_artifact = next(a for a in job["artifacts"] if a["name"] == "frontend.import-graph.json")
+    graph = json.loads(Path(graph_artifact["path"]).read_text(encoding="utf-8"))
+    assert not any(e["specifier"] == "@nestjs/common" for e in graph["conflicts"])
+    # The backend manifest itself must still be intact on disk (never clobbered).
+    assert json.loads(Path(backend_manifest["path"]).read_text(encoding="utf-8"))["dependencies"]["@nestjs/common"] == "^10.0.0"
 
 
 def test_import_graph_gate_reports_undeclared_external_without_blocking(isolated_engine):

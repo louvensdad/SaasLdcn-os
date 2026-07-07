@@ -442,3 +442,20 @@ def test_classifier_covers_initial_error_catalog():
         assert classified is not None, logs
         assert classified.code == expected, f"{logs} -> {classified.code} != {expected}"
     assert build_error_classifier.classify("npm error code ECONNRESET") is None
+
+
+def test_classifier_extracts_the_real_package_from_webpack_s_cant_resolve_message():
+    # Webpack/Next's own message contains an apostrophe INSIDE "Can't" before the
+    # real package name's quotes; a naive lazy quote-to-quote match stops at that
+    # apostrophe and captures garbage (e.g. "t resolve ") instead of the package,
+    # which then gets fed straight into the auto-repair loop as a bogus install
+    # target that can never succeed.
+    logs = (
+        "Module not found: Can't resolve 'next-themes'\n\n"
+        "https://nextjs.org/docs/messages/module-not-found"
+    )
+    classified = build_error_classifier.classify(logs)
+    assert classified is not None
+    assert classified.code == "module_not_found"
+    assert classified.package == "next-themes"
+    assert classified.auto_fixable is True

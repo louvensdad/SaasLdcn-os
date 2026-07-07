@@ -18,7 +18,15 @@ NPM_MISSING_URL_RE = re.compile(r"404\s+Not Found\s+-\s+GET\s+https://registry\.
 _NPM_ETARGET_RE = re.compile(r"No matching version found for (\S+?)@?([^\s.]*)\.?(?:\s|$)")
 _NPM_ETARGET_SPEC_RE = re.compile(r"notarget No matching version found for (\S+)")
 _TS_ERROR_RE = re.compile(r"error TS\d+:")
-_MODULE_NOT_FOUND_RE = re.compile(r"Cannot find module '([^']+)'|Module not found:.*?['\"]([^'\"]+)['\"]")
+_MODULE_NOT_FOUND_RE = re.compile(
+    r"Cannot find module '([^']+)'"
+    # Webpack/Next's own message is "Module not found: Can't resolve '<name>'" -
+    # anchoring on "resolve" (not just any quote) matters because a lazy
+    # quote-to-quote match would stop at the apostrophe in "Can't" itself and
+    # capture the wrong substring (e.g. "t resolve " instead of the real
+    # package name), silently feeding a garbage name into the auto-repair loop.
+    r"|Module not found:.*?resolve\s+['\"]([^'\"]+)['\"]"
+)
 _MISSING_SCRIPT_RE = re.compile(r"[Mm]issing script:?\s*\"?([A-Za-z0-9:_-]+)\"?")
 _ENOENT_FILE_RE = re.compile(r"ENOENT[:,].*?open\s+'([^']+)'|ENOENT[:,].*?no such file or directory,?\s*(?:open\s+)?'?([^'\n]+)'?")
 _INVALID_NAME_RE = re.compile(r"Invalid (?:package )?name\s*:?\s*\"?([^\"\n]+)\"?", re.IGNORECASE)

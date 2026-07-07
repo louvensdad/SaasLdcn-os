@@ -89,3 +89,15 @@ test('Meta-Factory renders a live execution console with streamed command output
   await expect(page.getByText('exit 0')).toBeVisible();
   await expect(page.getByText('Etapa iniciada: build.')).toBeVisible();
 });
+
+test('Meta-Factory offers GitHub, GitLab export and a ZIP download once the job is done', async ({ page }) => {
+  // Regression: the ResilientPipeline "done" panel used to only offer the ZIP
+  // download button; GitHub/GitLab export only existed on a separate, legacy
+  // ad-hoc code path this room-based journey never renders.
+  await mockConsole(page);
+  await page.goto(`${WEB_BASE}/meta-factory?projectId=${ROOM_ID}`);
+
+  await expect(page.getByRole('button', { name: 'Baixar projeto' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'GitHub' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'GitLab' })).toBeVisible();
+});

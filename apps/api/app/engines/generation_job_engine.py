@@ -830,7 +830,18 @@ class GenerationJobEngine:
         """Every valid, generated `package.json` artifact emitted so far, parsed
         from disk. Returns (label -> (data, path, artifact), parse_errors) so a
         caller can either treat a parse failure as a hard block (Conflict
-        Detector) or just skip it (Import Graph Engine, report-only)."""
+        Detector) or just skip it (Import Graph Engine, report-only).
+
+        Keyed by "{logical_stage}/{name}", not the bare artifact name: a chunked
+        stage (e.g. BACKEND_CHUNKS) legitimately re-emits the same "package.json"
+        several times as it accumulates dependencies, and those must collapse to
+        one entry (the latest content) — but backend and frontend each emit their
+        own "package.json" at a DIFFERENT path with the SAME bare name, and keying
+        by bare name alone let the later stage's manifest silently clobber the
+        earlier one's entry in this dict (findable on disk the whole time, just
+        invisible to this scan), which flooded the Import Graph Engine with false
+        "undeclared_external" positives for every backend package once the
+        frontend stage ran (confirmed against a real end-to-end generation)."""
         manifest_artifacts = [
             item for item in job["artifacts"]
             if item["kind"] == "generated" and item["valid"] and item["name"].lower().endswith("package.json")
@@ -844,10 +855,11 @@ class GenerationJobEngine:
             except (OSError, json.JSONDecodeError) as exc:
                 parse_errors.append(f"{artifact['name']}: {exc}")
                 continue
+            label = f"{artifact['stage'].split('.')[0]}/{artifact['name']}"
             if isinstance(data, dict):
-                manifests[artifact["name"]] = (data, path, artifact)
+                manifests[label] = (data, path, artifact)
             else:
-                parse_errors.append(f"{artifact['name']}: raiz do manifesto nao e um objeto JSON")
+                parse_errors.append(f"{label}: raiz do manifesto nao e um objeto JSON")
         return manifests, parse_errors
 
     def _check_import_graph(self, job: dict[str, Any], owner: str, step: PipelineStep) -> None:
@@ -934,7 +946,29 @@ class GenerationJobEngine:
         for artifact in job["artifacts"]:
             if artifact["kind"] != "generated" or not artifact["valid"]:
                 continue
-            latest[artifact["name"]] = Path(artifact["path"]).read_text(encoding="utf-8")
+            name = artifact["name"]
+            content = Path(artifact["path"]).read_text(encoding="utf-8")
+            previous = latest.get(name)
+            lower_name = name.lower()
+            if previous is not None and lower_name.endswith("package.json"):
+                # Backend and frontend (and any other logical stage) each emit
+                # their own "package.json" at this same bare relative path when
+                # the project shares one root (not split under apps/backend,
+                # apps/frontend, ...): naive last-write-wins here silently
+                # dropped the earlier stage's entire dependency list from the
+                # published project (confirmed against a real end-to-end
+                # generation — the backend's NestJS/TypeORM deps never made it
+                # into the final package.json at all). Merge instead of overwrite.
+                content = self._merge_package_json(previous, content)
+            elif previous is not None and lower_name.endswith("tsconfig.json"):
+                # Same collision, same fix, for tsconfig.json: a NestJS backend's
+                # "experimentalDecorators"/"emitDecoratorMetadata" compilerOptions
+                # were silently dropped by the frontend's Next.js tsconfig
+                # (confirmed live: this broke every decorator in the backend
+                # source once `next build`'s typecheck pass hit it, since Next
+                # scans the whole shared src/ tree, not just its own files).
+                content = self._merge_tsconfig_json(previous, content)
+            latest[name] = content
         files = [EmittedFile(path=name, content=content) for name, content in latest.items()]
         if not files:
             raise StageFailure("Nenhum arquivo valido para build.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", "Nenhum arquivo valido para build."))
@@ -1009,6 +1043,56 @@ class GenerationJobEngine:
         job["buildStatus"] = "PASSED"
         job["manualBuildFixGuide"] = None
         job["valid"] = True
+
+    @staticmethod
+    def _merge_package_json(previous: str, current: str) -> str:
+        """Union dependencies/scripts from an earlier stage's package.json into
+        the later stage's, instead of the later one silently replacing it. Falls
+        back to `current` unchanged if either side doesn't parse as a JSON
+        object — publishing whatever the pipeline actually produced is safer
+        than raising mid-build over a merge nicety."""
+        try:
+            before = json.loads(previous)
+            after = json.loads(current)
+        except json.JSONDecodeError:
+            return current
+        if not isinstance(before, dict) or not isinstance(after, dict):
+            return current
+        for section in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "scripts"):
+            before_section = before.get(section)
+            if not isinstance(before_section, dict):
+                continue
+            after_section = after.get(section)
+            merged = dict(before_section)
+            if isinstance(after_section, dict):
+                merged.update(after_section)  # later stage wins on an exact key collision
+            after[section] = merged
+        return json.dumps(after, indent=2, ensure_ascii=False) + "\n"
+
+    @staticmethod
+    def _merge_tsconfig_json(previous: str, current: str) -> str:
+        """Union compilerOptions from an earlier stage's tsconfig.json into the
+        later stage's, instead of the later one silently replacing it — same
+        collision and fix shape as _merge_package_json. Any key only the
+        earlier stage set (e.g. a NestJS backend's "experimentalDecorators")
+        survives untouched; the later stage's value wins on an exact key
+        collision. Falls back to `current` unchanged if either side doesn't
+        parse as a JSON object."""
+        try:
+            before = json.loads(previous)
+            after = json.loads(current)
+        except json.JSONDecodeError:
+            return current
+        if not isinstance(before, dict) or not isinstance(after, dict):
+            return current
+        before_options = before.get("compilerOptions")
+        if isinstance(before_options, dict):
+            after_options = after.get("compilerOptions")
+            merged = dict(before_options)
+            if isinstance(after_options, dict):
+                merged.update(after_options)
+            after["compilerOptions"] = merged
+        return json.dumps(after, indent=2, ensure_ascii=False) + "\n"
 
     def _package(self, job: dict[str, Any], owner: str) -> None:
         degraded = job.get("buildStatus") == "SKIPPED_AFTER_FAILURE"
