@@ -5,10 +5,10 @@ import {
   refreshAccessToken,
 } from '@/lib/api/client';
 import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
-import type { GenerationExecutionEvent, ResilientGenerationJob } from '@contracts/generation-job.contract';
+import type { GenerationExecutionEvent, GenerationJobSummary, ResilientGenerationJob } from '@contracts/generation-job.contract';
 import type { TerminalCommandRecord, TerminalHistoryResponse, TerminalStreamEvent } from '@contracts/execution-terminal.contract';
 
-const TERMINAL_JOB_STATUSES = new Set(['READY', 'FAILED', 'PAUSED', 'NEEDS_USER_ACTION', 'STALLED']);
+export const TERMINAL_JOB_STATUSES = new Set(['READY', 'FAILED', 'PAUSED', 'NEEDS_USER_ACTION', 'STALLED']);
 
 // Self-contained client for the meta-factory feature. It does NOT reuse the
 // global apiRequest because that has a 5s timeout — the generate call runs 6 LLM
@@ -429,6 +429,18 @@ export const metaFactoryClient = {
   deleteJob: (jobId: string) => request<null>(
     `/api/meta-factory/jobs/${encodeURIComponent(jobId)}`,
     { method: 'DELETE' },
+    30_000,
+  ),
+  // The jobs "space": every generation the user has run. `archived` filters to
+  // the active list (false), the archive (true), or everything (omit it).
+  listJobs: (archived?: boolean) => request<GenerationJobSummary[]>(
+    `/api/meta-factory/jobs${archived === undefined ? '' : `?archived=${archived}`}`,
+    undefined,
+    30_000,
+  ),
+  setJobArchived: (jobId: string, archived: boolean) => request<ResilientGenerationJob>(
+    `/api/meta-factory/jobs/${encodeURIComponent(jobId)}/archive`,
+    { method: 'PATCH', body: JSON.stringify({ archived }) },
     30_000,
   ),
   downloadJobDiagnostic: (jobId: string) => downloadAuthenticated(

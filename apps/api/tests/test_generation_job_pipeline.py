@@ -975,6 +975,59 @@ def test_job_api_survives_refresh(client, client_scoped_engine, monkeypatch):
     assert latest.json()["id"] == fetched.json()["id"] == created["id"]
 
 
+def test_list_jobs_route_returns_created_jobs_as_summaries(client, client_scoped_engine, monkeypatch):
+    from app.routes import meta_factory as route
+
+    engine = client_scoped_engine
+    monkeypatch.setattr(route, "generation_job_engine", engine)
+    monkeypatch.setattr(engine, "start", lambda *args, **kwargs: None)
+    created = client.post("/api/meta-factory/jobs", json={
+        "projectId": "room-list-api", "projectName": "List API Job",
+        "spec": _spec().model_dump(mode="json"), "blueprint": {"decisions": []},
+        "blueprintVersion": 1, "mode": "deterministic",
+    }).json()
+
+    listed = client.get("/api/meta-factory/jobs")
+    assert listed.status_code == 200
+    ids = [item["id"] for item in listed.json()]
+    assert created["id"] in ids
+    row = next(item for item in listed.json() if item["id"] == created["id"])
+    assert row["projectName"] == "List API Job"
+    assert row["archived"] is False
+    assert "artifacts" not in row  # summary is lightweight, no heavy fields
+
+
+def test_archive_job_route_toggles_state_and_is_owner_scoped(client, client_scoped_engine, monkeypatch):
+    from app.routes import meta_factory as route
+
+    engine = client_scoped_engine
+    monkeypatch.setattr(route, "generation_job_engine", engine)
+    monkeypatch.setattr(engine, "start", lambda *args, **kwargs: None)
+    created = client.post("/api/meta-factory/jobs", json={
+        "projectId": "room-archive-api", "projectName": "Archive API Job",
+        "spec": _spec().model_dump(mode="json"), "blueprint": {"decisions": []},
+        "blueprintVersion": 1, "mode": "deterministic",
+    }).json()
+
+    # Not yet terminal -> archiving is refused.
+    refused = client.patch(f"/api/meta-factory/jobs/{created['id']}/archive", json={"archived": True})
+    assert refused.status_code == 409
+
+    owner_user_id = client.get("/api/auth/me").json()["user_id"]
+    job = engine.repository.get(created["id"], owner_user_id)
+    job["status"] = "READY"
+    engine.repository.update(created["id"], owner_user_id, job)
+
+    archived = client.patch(f"/api/meta-factory/jobs/{created['id']}/archive", json={"archived": True})
+    assert archived.status_code == 200
+    assert archived.json()["archived"] is True
+
+    active_list = client.get("/api/meta-factory/jobs", params={"archived": "false"}).json()
+    archived_list = client.get("/api/meta-factory/jobs", params={"archived": "true"}).json()
+    assert created["id"] not in [item["id"] for item in active_list]
+    assert created["id"] in [item["id"] for item in archived_list]
+
+
 def test_count_active_for_user_excludes_terminal(isolated_engine):
     engine, _, _ = isolated_engine
     job = _create(engine)
@@ -1108,6 +1161,83 @@ def test_delete_is_owner_scoped(isolated_engine):
     repository.update(job["id"], "user-1", job)
 
     assert engine.delete(job["id"], "user-2") is None
+
+
+# --- jobs "space": list + archive/unarchive ---------------------------------- #
+
+def test_list_returns_every_job_for_the_owner_newest_first(isolated_engine):
+    # _now() truncates to whole seconds, so two jobs created back-to-back in the
+    # same test can tie on updatedAt -- set distinct timestamps explicitly
+    # instead of relying on real-clock resolution for a deterministic ordering.
+    engine, repository, _ = isolated_engine
+    first = _create(engine)
+    second = _create(engine)
+    first["updatedAt"] = "2026-01-01T00:00:00+00:00"
+    second["updatedAt"] = "2026-01-02T00:00:00+00:00"
+    repository.update(first["id"], "user-1", first)
+    repository.update(second["id"], "user-1", second)
+
+    listed = engine.list("user-1")
+
+    assert [job["id"] for job in listed] == [second["id"], first["id"]]
+
+
+def test_list_filters_by_archived_state(isolated_engine):
+    engine, repository, _ = isolated_engine
+    active_job = _create(engine)
+    archived_job = _create(engine)
+    archived_job["status"] = "READY"
+    repository.update(archived_job["id"], "user-1", archived_job)
+    engine.set_archived(archived_job["id"], "user-1", True)
+
+    assert [job["id"] for job in engine.list("user-1", archived=False)] == [active_job["id"]]
+    assert [job["id"] for job in engine.list("user-1", archived=True)] == [archived_job["id"]]
+    assert {job["id"] for job in engine.list("user-1")} == {active_job["id"], archived_job["id"]}
+
+
+def test_list_is_owner_scoped(isolated_engine):
+    engine, _, _ = isolated_engine
+    _create(engine)
+    assert engine.list("user-2") == []
+
+
+def test_archiving_an_in_flight_job_is_refused(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)  # QUEUED
+
+    with pytest.raises(ValueError):
+        engine.set_archived(job["id"], "user-1", True)
+
+    assert repository.get(job["id"], "user-1")["archived"] is False
+
+
+def test_archiving_and_unarchiving_a_terminal_job(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    job["status"] = "READY"
+    repository.update(job["id"], "user-1", job)
+
+    archived = engine.set_archived(job["id"], "user-1", True)
+    assert archived["archived"] is True
+    assert repository.get(job["id"], "user-1")["archived"] is True
+
+    restored = engine.set_archived(job["id"], "user-1", False)
+    assert restored["archived"] is False
+
+
+def test_archive_unknown_job_returns_none(isolated_engine):
+    engine, _, _ = isolated_engine
+    assert engine.set_archived("job_nope", "user-1", True) is None
+
+
+def test_archive_is_owner_scoped(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    job["status"] = "READY"
+    repository.update(job["id"], "user-1", job)
+
+    assert engine.set_archived(job["id"], "user-2", True) is None
+    assert repository.get(job["id"], "user-1")["archived"] is False
 
 
 # --- pre-generation Stack Lock + per-stage Conflict Detector / Import Graph -- #

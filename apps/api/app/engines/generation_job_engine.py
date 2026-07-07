@@ -464,6 +464,26 @@ class GenerationJobEngine:
     def latest(self, project_id: str, owner_user_id: str) -> dict[str, Any] | None:
         return self.repository.latest_for_project(project_id, owner_user_id)
 
+    def list(self, owner_user_id: str, *, archived: bool | None = None) -> list[dict[str, Any]]:
+        """Every job visible to the owner (owned or via workspace membership),
+        newest first. The "space" for saved/archived/deleted jobs: `archived`
+        filters to the active list (False), the archive (True), or everything
+        (None)."""
+        return self.repository.list(owner_user_id, archived=archived)
+
+    def set_archived(self, job_id: str, owner_user_id: str, archived: bool) -> dict[str, Any] | None:
+        """Archive/unarchive a finished job -- kept in history, out of the
+        active list, without deleting it (see delete() for that). Only a
+        terminal job can be archived; an in-flight job disappearing from the
+        active view while still running would be confusing. Unarchiving has
+        no such restriction."""
+        job = self.repository.get(job_id, owner_user_id)
+        if job is None:
+            return None
+        if archived and job["status"] not in TERMINAL_STATUSES:
+            raise ValueError("Somente jobs finalizados podem ser arquivados.")
+        return self.repository.set_archived(job_id, owner_user_id, archived)
+
     def count_active_for_user(self, owner_user_id: str) -> int:
         """Owner's in-flight generations (not in a terminal status). Bounds how many
         concurrent generations a single user can start (audit MF3)."""

@@ -160,4 +160,28 @@ export interface ResilientGenerationJob {
   packageReady: boolean;
   createdAt: string;
   updatedAt: string;
+  archived?: boolean;
+}
+
+// Lightweight row for the jobs list/history screen — a full ResilientGenerationJob
+// can carry hundreds of artifacts; the list view never needs them.
+export interface GenerationJobSummary {
+  id: string;
+  projectId: string;
+  generatedProjectId?: string | null;
+  projectName: string;
+  status: GenerationJobStatus;
+  currentStage: string;
+  provider?: string | null;
+  providerLabel: string;
+  model?: string | null;
+  progress: number;
+  valid: boolean;
+  packageReady: boolean;
+  buildStatus: 'PENDING' | 'RUNNING' | 'PASSED' | 'SKIPPED_AFTER_FAILURE';
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string;
+  finishedAt?: string | null;
 }

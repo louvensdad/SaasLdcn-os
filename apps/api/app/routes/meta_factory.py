@@ -58,8 +58,10 @@ from app.schemas.meta_factory import (
 from app.schemas.generation_job import (
     CreateGenerationJobRequest,
     GenerationJob,
+    GenerationJobSummary,
     GenerationUsageSummary,
     RetryGenerationStageRequest,
+    SetJobArchivedRequest,
 )
 from app.schemas.execution_terminal import TerminalExecuteRequest, TerminalHistoryResponse
 from app.services.api_collection_service import api_collection_service
@@ -279,6 +281,16 @@ def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser
     return GenerationJob.model_validate(job)
 
 
+@router.get("/meta-factory/jobs", response_model=list[GenerationJobSummary])
+def list_generation_jobs(user: CurrentUser, archived: bool | None = Query(None)) -> list[GenerationJobSummary]:
+    """The jobs "space": every generation the user has run (owned or via
+    workspace membership), newest first. `archived` filters to the active
+    list (False, the default a UI would show), the archive (True), or
+    everything (omit the param)."""
+    jobs = generation_job_engine.list(user["user_id"], archived=archived)
+    return [GenerationJobSummary.model_validate(job) for job in jobs]
+
+
 @router.get("/meta-factory/jobs/latest", response_model=GenerationJob | None)
 def latest_generation_job(user: CurrentUser, projectId: str = Query(min_length=1)) -> GenerationJob | None:
     job = generation_job_engine.latest(projectId, user["user_id"])
@@ -314,6 +326,17 @@ def delete_generation_job(job_id: str, user: CurrentUser) -> Response:
             detail="O job ainda esta em execucao. Pause ou aguarde a conclusao antes de excluir.",
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/meta-factory/jobs/{job_id}/archive", response_model=GenerationJob)
+def set_generation_job_archived(job_id: str, payload: SetJobArchivedRequest, user: CurrentUser) -> GenerationJob:
+    try:
+        job = generation_job_engine.set_archived(job_id, user["user_id"], payload.archived)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="GenerationJob nao encontrado.")
+    return GenerationJob.model_validate(job)
 
 
 @router.get("/meta-factory/jobs/{job_id}/events")

@@ -104,6 +104,7 @@ class GenerationJob(Base):
     output_tokens_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     started_at: Mapped[str | None] = mapped_column(String)
     completed_at: Mapped[str | None] = mapped_column(String)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0", index=True)
     data_json: Mapped[str] = mapped_column(Text, nullable=False)
     spec_json: Mapped[str] = mapped_column(Text, nullable=False)
     blueprint_json: Mapped[str] = mapped_column(Text, nullable=False)

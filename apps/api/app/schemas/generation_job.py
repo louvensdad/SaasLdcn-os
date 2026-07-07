@@ -169,6 +169,35 @@ class GenerationJob(ApiModel):
     resultPath: str | None = None
     createdAt: str
     updatedAt: str
+    archived: bool = False
+
+
+class GenerationJobSummary(ApiModel):
+    """Lightweight row for the jobs list/history screen — a full GenerationJob
+    can carry hundreds of artifacts; the list view never needs them."""
+
+    id: str
+    projectId: str
+    generatedProjectId: str | None = None
+    projectName: str
+    status: GenerationJobStatus
+    currentStage: str
+    provider: str | None = None
+    providerLabel: str = "Nenhum"
+    model: str | None = None
+    progress: int = 0
+    valid: bool = False
+    packageReady: bool = False
+    buildStatus: Literal["PENDING", "RUNNING", "PASSED", "SKIPPED_AFTER_FAILURE"] = "PENDING"
+    archived: bool = False
+    createdAt: str
+    updatedAt: str
+    startedAt: str
+    finishedAt: str | None = None
+
+
+class SetJobArchivedRequest(ApiModel):
+    archived: bool
 
 
 class UsageByModel(ApiModel):

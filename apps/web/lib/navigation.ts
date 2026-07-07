@@ -4,6 +4,7 @@ import {
   BookOpen,
   BrainCircuit,
   GitBranch,
+  History,
   Library,
   SearchCheck,
   LayoutDashboard,
@@ -79,6 +80,12 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
     href: '/engineering-review',
     icon: SearchCheck,
     descriptionKey: 'navigation.engineeringReview.description',
+  },
+  {
+    labelKey: 'navigation.jobs.label',
+    href: '/jobs',
+    icon: History,
+    descriptionKey: 'navigation.jobs.description',
   },
   {
     labelKey: 'navigation.engineeringLaboratory.label',

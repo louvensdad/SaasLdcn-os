@@ -72,10 +72,22 @@ class GenerationJobRepository:
             row = session.scalar(select(GenerationJob).where(GenerationJob.project_id == project_id, self._visible_to(owner_user_id)).order_by(GenerationJob.updated_at.desc()).limit(1))
             return self._row(row)
 
-    def list(self, owner_user_id: str) -> list[dict[str, Any]]:
+    def list(self, owner_user_id: str, *, archived: bool | None = None) -> list[dict[str, Any]]:
         with self._sessions() as session:
-            rows = session.scalars(select(GenerationJob).where(self._visible_to(owner_user_id)).order_by(GenerationJob.updated_at.desc())).all()
+            stmt = select(GenerationJob).where(self._visible_to(owner_user_id))
+            if archived is not None:
+                stmt = stmt.where(GenerationJob.archived == archived)
+            rows = session.scalars(stmt.order_by(GenerationJob.updated_at.desc())).all()
             return [self._row(row) for row in rows if row is not None]
+
+    def set_archived(self, job_id: str, owner_user_id: str, archived: bool) -> dict[str, Any] | None:
+        with self._sessions.begin() as session:
+            result = session.execute(
+                update(GenerationJob).where(GenerationJob.id == job_id, self._writable_by(owner_user_id)).values(archived=archived)
+            )
+            if not result.rowcount:
+                return None
+        return self.get(job_id, owner_user_id)
 
     def count_active_for_owner(self, owner_user_id: str, terminal_statuses: Sequence[str]) -> int:
         """Number of the owner's jobs that are NOT in a terminal status — i.e. in
@@ -189,6 +201,7 @@ class GenerationJobRepository:
         data["outputTokensTotal"] = int(row.output_tokens_total or 0)
         data["startedAt"] = row.started_at or data.get("startedAt")
         data["finishedAt"] = row.completed_at
+        data["archived"] = bool(row.archived)
         if row.error:
             data["error"] = json.loads(row.error)
         if row.result_path:
