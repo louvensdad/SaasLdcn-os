@@ -17,6 +17,7 @@ from app.engines.factory_pipeline import _run_agent
 from app.engines.functional_completeness_engine import functional_completeness_engine
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.ground_truth_engine import ground_truth_engine
+from app.engines.project_manifest_engine import build_project_manifest
 from app.engines.work_estimation_engine import estimate_generation_effort
 from app.services.execution_reality_guard import execution_reality_guard
 from app.engines.llm.router import LLMRouter
@@ -245,6 +246,7 @@ class GenerationJobEngine:
             job["finishedAt"] = self._now()
             job["error"] = None
             self._evaluate_functional_completeness(job, owner_user_id, build_skipped=build_skipped)
+            self._write_project_manifest(job, spec, blueprint)
             for stage in logical_stages_for(steps):
                 if job["stageStatuses"].get(stage) != "skipped":
                     job["stageStatuses"][stage] = "success"
@@ -1012,6 +1014,23 @@ class GenerationJobEngine:
             job["completenessStatus"] = "NEEDS_HUMAN_REVIEW"
             job["completenessSummary"] = {"status": "NEEDS_HUMAN_REVIEW", "error": str(exc)}
             self._log(job, "READY", "warning", "Functional Completeness Gate failed to evaluate.", str(exc))
+
+    def _write_project_manifest(self, job: dict[str, Any], spec: ProjectSpec, blueprint: dict[str, Any]) -> None:
+        """Project Manifest (Engineering Employee Mode, section 20): write a single
+        ldcn.project.json with identity/stack/modules/decisions into the delivered
+        project. Independent try/except from the completeness gate above -- a
+        failure here must not affect (or be affected by) that evaluation."""
+        project_id = job.get("generatedProjectId")
+        result_path = job.get("resultPath")
+        if not project_id or not result_path:
+            return
+        try:
+            manifest = build_project_manifest(project_id, job.get("projectName") or project_id, spec, blueprint)
+            (Path(result_path) / "ldcn.project.json").write_text(
+                json.dumps(manifest.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8",
+            )
+        except Exception as exc:  # noqa: BLE001 -- best-effort, never breaks a finished pipeline
+            self._log(job, "READY", "warning", "Project Manifest failed to write.", str(exc))
 
     def _build(self, job: dict[str, Any], owner: str) -> None:
         files: list[EmittedFile] = []

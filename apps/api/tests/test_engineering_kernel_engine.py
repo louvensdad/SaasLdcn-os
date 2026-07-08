@@ -134,6 +134,20 @@ def test_delivered_evidence_files_are_detected_by_presence(make_project):
     assert depth_item.available is False and depth_item.path is None
 
 
+def test_project_manifest_is_detected_as_evidence_when_present(make_project):
+    project = make_project([("README.md", "# test\n"), ("ldcn.project.json", "{}")])
+    status_ = compute_kernel_status(project["project_id"])
+    manifest_item = _evidence(status_, "project_manifest")
+    assert manifest_item.available is True and manifest_item.path == "ldcn.project.json"
+
+
+def test_project_manifest_is_absent_when_not_written(make_project):
+    project = make_project()
+    status_ = compute_kernel_status(project["project_id"])
+    manifest_item = _evidence(status_, "project_manifest")
+    assert manifest_item.available is False and manifest_item.path is None
+
+
 def _register_second_user(client: TestClient) -> str:
     response = client.post(
         "/api/auth/register",

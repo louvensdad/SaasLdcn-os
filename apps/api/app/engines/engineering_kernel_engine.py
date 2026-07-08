@@ -17,6 +17,7 @@ _FILE_EVIDENCE = (
     ("product_completion_report", "Product Completion Report", "product-completion-report.json"),
     ("endpoint_ui_coverage", "Endpoint/UI Coverage", "endpoint-ui-coverage.json"),
     ("ui_depth_score", "UI Depth Score", "ui-depth-score.json"),
+    ("project_manifest", "Project Manifest", "ldcn.project.json"),
 )
 
 

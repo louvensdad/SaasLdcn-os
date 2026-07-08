@@ -130,6 +130,28 @@ def test_generation_job_carries_a_work_estimate_no_rush_policy(isolated_engine):
     assert persisted["workEstimate"] == job["workEstimate"]
 
 
+def test_project_manifest_is_written_to_the_delivered_project(isolated_engine):
+    # _write_project_manifest is only ever called from execute() right before READY,
+    # after the completeness gate -- exercised directly here (same pattern as
+    # test_skipped_build_persists_guide_and_does_not_raise calling _build directly)
+    # rather than mocking a full multi-step LLM pipeline just to reach that point.
+    engine, repository, root = isolated_engine
+    job = _create(engine)
+    generated_root = root / "generated-manifest-test"
+    generated_root.mkdir()
+    job["generatedProjectId"] = "generated-manifest-test"
+    job["resultPath"] = str(generated_root)
+
+    engine._write_project_manifest(job, _spec(), {"decisions": [{"area": "database", "choice": "PostgreSQL"}]})
+
+    manifest_path = generated_root / "ldcn.project.json"
+    assert manifest_path.is_file()
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert data["project_id"] == "generated-manifest-test"
+    assert data["decisions"] == [{"area": "database", "choice": "PostgreSQL"}]
+    assert "product-completion-report.json" in data["evidence_files"]
+
+
 def test_generation_job_usage_is_persisted_atomically(isolated_engine):
     engine, repository, _ = isolated_engine
     job = _create(engine)
