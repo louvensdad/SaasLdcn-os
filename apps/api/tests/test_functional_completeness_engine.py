@@ -74,6 +74,29 @@ public class {resource}Repository {{}}
 """
 
 
+def _nest_controller(resource: str) -> str:
+    return f"""import {{ Controller, Get, Post, Put, Delete, Body, Param }} from '@nestjs/common';
+import {{ {resource}Service }} from './{resource.lower()}.service';
+
+@Controller('{resource.lower()}s')
+export class {resource}Controller {{
+  constructor(private readonly service: {resource}Service) {{}}
+  @Get() list() {{}}
+  @Post() create(@Body() body: unknown) {{}}
+  @Put(':id') update(@Param('id') id: string) {{}}
+  @Delete(':id') remove(@Param('id') id: string) {{}}
+}}
+"""
+
+
+def _nest_service(resource: str) -> str:
+    return f"""import {{ Injectable }} from '@nestjs/common';
+
+@Injectable()
+export class {resource}Service {{}}
+"""
+
+
 def _spring_app(package: str) -> str:
     return f"""package {package};
 
@@ -331,3 +354,65 @@ def test_require_verified_allows_export_when_verified(make_project, monkeypatch)
     monkeypatch.setattr(meta_factory.quality_gate_engine, "evaluate", lambda *a, **k: _FakeQualityReport())
 
     meta_factory._require_verified(project["project_id"], force=False)
+
+
+def test_nestjs_controller_and_service_are_discovered_without_false_repository_warning(make_project):
+    files = [
+        ("src/projeto/projeto.controller.ts", _nest_controller("Projeto")),
+        ("src/projeto/projeto.service.ts", _nest_service("Projeto")),
+        ("package.json", "{\"name\": \"api\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="nestjs-discovery")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    resource = next(r for r in report.resources if r.resource == "Projeto")
+    assert resource.backend.controller is True
+    assert resource.backend.service is True
+    assert set(resource.backend.endpoints) == {"GET", "POST", "PUT", "DELETE"}
+    # Prisma/TypeORM-in-service is idiomatic NestJS -- must not get the
+    # Java-shaped "no matching Repository" warning.
+    assert not any(i.id == "backend_no_repository_Projeto" for i in report.issues)
+
+
+def test_nestjs_duplicate_controller_locations_is_blocked(make_project):
+    files = [
+        ("src/modules/projeto/projeto.controller.ts", _nest_controller("Projeto")),
+        ("src/modules/projeto/projeto.service.ts", _nest_service("Projeto")),
+        ("src/application/projeto/projeto.controller.ts", _nest_controller("Projeto")),
+        ("src/application/projeto/projeto.service.ts", _nest_service("Projeto")),
+        ("package.json", "{\"name\": \"api\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="nestjs-duplicate-tree")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status == "BLOCKED"
+    dup = next(i for i in report.issues if i.id == "duplicate_resource_implementation_Projeto")
+    assert dup.detail.count("projeto.controller.ts") == 2
+    assert "modules" in dup.detail and "application" in dup.detail
+
+
+def test_java_projects_are_unaffected_by_the_controllers_list_refactor(make_project):
+    files = _good_java_project_files()
+    project = make_project(files, name="java-still-works")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    resource = next(r for r in report.resources if r.resource == "Produto")
+    assert resource.backend.controller is True
+    assert resource.backend.service is True
+    assert resource.backend.repository is True
+    assert not any(i.id.startswith("duplicate_resource_implementation") for i in report.issues)
+
+
+def test_ts_project_with_no_nestjs_controllers_falls_back_to_needs_human_review(make_project):
+    files = [
+        ("src/index.ts", "console.log('plain express app, not nestjs');\n"),
+        ("package.json", "{\"name\": \"api\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="ts-unsupported-shape")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status == "NEEDS_HUMAN_REVIEW"
+    assert report.resources == []

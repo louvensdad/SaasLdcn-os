@@ -66,6 +66,7 @@ Seguranca (o contrario e proibido):
 - Senha: minimo 8 chars + complexidade (>=1 maiuscula, 1 minuscula, 1 numero).
 Arquitetura: se Hexagonal/Clean, toda dependencia de infra (db, jwt, email) tem uma Port (interface) no dominio e um Adapter na infra; o dominio nunca importa infra; TODO Port declarado TEM seu Adapter gerado.
 Testes: pelo menos 1 teste unitario REAL (nao vazio) por service/use-case gerado.
+Estrutura (vale para QUALQUER stack, nao so Java): gere EXATAMENTE UMA convencao de diretorios para o backend -- nunca o mesmo controller/service/entidade/modulo implementado em dois lugares diferentes (ex.: src/modules/X e src/application/X ao mesmo tempo nao sao permitidos coexistir). Se ja existe um frontend gerado separadamente (ex.: Next.js) que usa sua propria pasta src/ na raiz do projeto, o backend NUNCA reaproveita esse mesmo src/ -- coloque-o em uma pasta propria (ex.: backend/ ou api/) para nao colidir com a estrutura do frontend.
 Java: NUNCA use uma palavra reservada (interface, class, enum, package, import, record, default, etc.) como segmento de package -- "package com.app.interface;" nao compila. Gere EXATAMENTE UMA arvore de codigo-fonte backend (um unico @SpringBootApplication/entrypoint, um unico pom.xml/build.gradle raiz) -- nunca duas arvores concorrentes no mesmo projeto.
 </non_negotiable_rules>"""
 

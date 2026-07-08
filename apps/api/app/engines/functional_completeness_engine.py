@@ -59,6 +59,17 @@ _JAVA_CLASS_RE = re.compile(r"\bpublic\s+(?:final\s+|abstract\s+)?class\s+(\w+)"
 _JAVA_MAPPING_RE = re.compile(r"@(Get|Post|Put|Delete|Patch)Mapping\b")
 _JAVA_REQUEST_MAPPING_RE = re.compile(r"@RequestMapping\s*\([^)]*method\s*=\s*RequestMethod\.(\w+)")
 
+# NestJS (TypeScript) discovery -- same precision-favoring philosophy as the Java
+# patterns above: require an actual '@nestjs/common' import alongside the
+# decorator, not just a bare "@Controller"/"@Injectable" string, to avoid false
+# positives on unrelated decorators of the same name in other frameworks.
+_TS_CLASS_RE = re.compile(r"\bexport\s+class\s+(\w+)")
+_TS_CONTROLLER_DECORATOR_RE = re.compile(r"@Controller\s*\(")
+_TS_INJECTABLE_DECORATOR_RE = re.compile(r"@Injectable\s*\(")
+_TS_HTTP_METHOD_RE = re.compile(r"@(Get|Post|Put|Delete|Patch)\s*\(")
+_NESTJS_IMPORT_RE = re.compile(r"""from\s+['"]@nestjs/common['"]""")
+_TS_EXCLUDED_SUFFIXES = (".spec.ts", ".test.ts", ".d.ts", ".spec.js", ".test.js")
+
 
 def _strip_suffix(name: str, suffix: str) -> str:
     return name[: -len(suffix)] if name.lower().endswith(suffix.lower()) and len(name) > len(suffix) else name
@@ -133,16 +144,26 @@ class FunctionalCompletenessEngine:
             generated_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
         )
 
-    # ------------------------------------------------------- backend (Java)
+    # ------------------------------------------------- backend (Java + NestJS)
 
     def _discover_backend_resources(self, root: Path) -> tuple[list[ResourceCoverage], list[CompletenessIssue]]:
         java_files = [p for p in root.rglob("*.java") if "node_modules" not in p.parts]
-        if not java_files:
+        ts_files = [
+            p for p in (*root.rglob("*.ts"), *root.rglob("*.js"))
+            if "node_modules" not in p.parts and not p.name.endswith(_TS_EXCLUDED_SUFFIXES)
+        ]
+        if not java_files and not ts_files:
             return [], []
 
-        controllers: dict[str, dict[str, Any]] = {}
+        # resource -> every file that implements it (not just the last one seen) --
+        # tracking every location is what lets us detect the same resource
+        # implemented in multiple places below (confirmed live: a real NestJS +
+        # Next.js project had the same domain controller duplicated across 4
+        # different directory conventions, only one of them actually wired up).
+        controllers: dict[str, list[dict[str, Any]]] = {}
         services: set[str] = set()
         repositories: set[str] = set()
+        ts_resources: set[str] = set()
 
         for path in java_files:
             text = self._safe_read(path)
@@ -152,35 +173,70 @@ class FunctionalCompletenessEngine:
                 resource = _strip_suffix(class_name, "Controller")
                 methods = {m.group(1).upper() for m in _JAVA_MAPPING_RE.finditer(text)}
                 methods |= {m.group(1).upper() for m in _JAVA_REQUEST_MAPPING_RE.finditer(text)}
-                entry = controllers.setdefault(resource, {"file": str(path.relative_to(root)), "endpoints": set()})
-                entry["endpoints"] |= methods
+                controllers.setdefault(resource, []).append(
+                    {"file": str(path.relative_to(root)), "endpoints": methods}
+                )
             elif "@Service" in text:
                 services.add(_strip_suffix(class_name, "Service").lower())
             elif "@Repository" in text:
                 repositories.add(_strip_suffix(class_name, "Repository").lower())
 
+        for path in ts_files:
+            text = self._safe_read(path)
+            if not _NESTJS_IMPORT_RE.search(text):
+                continue
+            class_match = _TS_CLASS_RE.search(text)
+            class_name = class_match.group(1) if class_match else path.stem
+            if _TS_CONTROLLER_DECORATOR_RE.search(text):
+                resource = _strip_suffix(class_name, "Controller")
+                methods = {m.group(1).upper() for m in _TS_HTTP_METHOD_RE.finditer(text)}
+                controllers.setdefault(resource, []).append(
+                    {"file": str(path.relative_to(root)), "endpoints": methods}
+                )
+                ts_resources.add(resource)
+            elif _TS_INJECTABLE_DECORATOR_RE.search(text) and class_name.endswith("Service"):
+                services.add(_strip_suffix(class_name, "Service").lower())
+
         issues: list[CompletenessIssue] = []
         resources: list[ResourceCoverage] = []
-        for resource, info in controllers.items():
+        for resource, entries in controllers.items():
+            if len(entries) > 1:
+                files = [e["file"] for e in entries]
+                issues.append(CompletenessIssue(
+                    id=f"duplicate_resource_implementation_{resource}",
+                    title=f"Resource '{resource}' has controllers in multiple locations",
+                    severity="BLOCKER", category="structure", file=files[0],
+                    detail=(
+                        f"Found {len(entries)} separate controller implementations for '{resource}': "
+                        f"{files}. Only one implementation should exist -- pick one directory convention."
+                    ),
+                ))
+            endpoints: set[str] = set()
+            for entry in entries:
+                endpoints |= entry["endpoints"]
             has_service = resource.lower() in services
             has_repository = resource.lower() in repositories
+            is_ts_resource = resource in ts_resources
             if not has_service:
                 issues.append(CompletenessIssue(
                     id=f"backend_no_service_{resource}", title=f"Controller '{resource}' has no matching Service",
-                    severity="WARNING", category="backend", file=info["file"],
-                    detail=f"No @Service class found for resource '{resource}'.",
+                    severity="WARNING", category="backend", file=entries[0]["file"],
+                    detail=f"No service class found for resource '{resource}'.",
                 ))
-            elif not has_repository:
+            elif not has_repository and not is_ts_resource:
+                # Java-only warning: Prisma/TypeORM-in-service (no separate
+                # repository layer) is a common, legitimate NestJS pattern, not a
+                # gap -- flagging it for TS resources would be a false positive.
                 issues.append(CompletenessIssue(
                     id=f"backend_no_repository_{resource}", title=f"Service for '{resource}' has no matching Repository",
-                    severity="WARNING", category="backend", file=info["file"],
+                    severity="WARNING", category="backend", file=entries[0]["file"],
                     detail=f"No @Repository class found for resource '{resource}'.",
                 ))
             resources.append(ResourceCoverage(
                 resource=resource,
                 backend=BackendResourceCoverage(
                     controller=True, service=has_service, repository=has_repository,
-                    endpoints=sorted(info["endpoints"]),
+                    endpoints=sorted(endpoints),
                 ),
             ))
         return resources, issues
