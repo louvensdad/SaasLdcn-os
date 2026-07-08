@@ -55,9 +55,30 @@ def issue_phase(issue_id: str) -> str:
     return "architecture"
 
 
+def _security_finding_codes(report: CodebaseAnalysisReport) -> set[str]:
+    """The distinct `sec:<code>:...` finding codes present, e.g. 'sql_injection_risk'
+    or 'hardcoded_password'. A single blanket "there is a security issue" boolean
+    used to drive the SAME two secret-shaped actions (remove .env / rotate secrets)
+    regardless of what was actually found — confirmed live: a project with only
+    SQL-injection/eval/shell-injection findings (no secrets at all) still got told
+    to "rotate secrets", which doesn't address any of its real issues."""
+    codes: set[str] = set()
+    for issue in report.technical.issues:
+        if issue.category == "security" and issue.id.startswith("sec:"):
+            parts = issue.id.split(":")
+            if len(parts) >= 2:
+                codes.add(parts[1])
+    return codes
+
+
+# Secret-shaped findings: these are what "remove .env / rotate secrets" actually
+# addresses. Every other security code gets its own dedicated action below instead.
+_SECRET_CODES = {"hardcoded_password", "generic_api_key", "aws_access_key", "private_key"}
+
+
 def build_plan(report: CodebaseAnalysisReport) -> ModernizationPlan:
     scores = report.scores
-    has_secret = any(i.category == "security" for i in report.technical.issues)
+    finding_codes = _security_finding_codes(report)
 
     phases: dict[str, list[FixAction]] = {pid: [] for pid in PHASE_TITLES}
 
@@ -67,12 +88,20 @@ def build_plan(report: CodebaseAnalysisReport) -> ModernizationPlan:
         )
 
     # Fase 1 — críticas
-    if has_secret:
+    if finding_codes & _SECRET_CODES:
         add("critical", "remove_real_env", "Remover arquivos .env/secret reais do projeto", auto=True)
         add("critical", "rotate_secrets", "Revisar e rotacionar segredos embutidos no código", auto=False, extra=True)
+    if "sql_injection_risk" in finding_codes:
+        add("critical", "fix_sql_injection", "Reescrever consultas SQL vulneráveis usando parâmetros (nunca concatenação/f-string)", auto=False, extra=True)
+    if "shell_injection_risk" in finding_codes:
+        add("critical", "fix_shell_injection", "Remover shell=True / os.system com entrada não sanitizada", auto=False, extra=True)
+    if "dangerous_eval" in finding_codes:
+        add("critical", "remove_dangerous_eval", "Remover eval()/exec() de entrada não confiável", auto=False, extra=True)
 
     # Fase 2 — segurança
     add("security", "gitignore_missing", "Adicionar .gitignore com ignores comuns", auto=True)
+    if "weak_hash" in finding_codes:
+        add("security", "replace_weak_hash", "Substituir hash fraco (MD5/SHA1) por bcrypt/argon2", auto=False, extra=True)
     if scores.security < 70:
         add("security", "add_validation_ratelimit", "Adicionar validação de entrada e rate limiting", auto=False, extra=True)
         add("security", "fix_cors", "Corrigir CORS hardcoded e remover logs sensíveis", auto=False, extra=True)

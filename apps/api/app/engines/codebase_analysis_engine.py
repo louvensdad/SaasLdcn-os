@@ -25,6 +25,16 @@ _SECRET_PATTERNS: list[tuple[str, str, str]] = [
     ("generic_api_key", "high", r"(?i)(?:api[_-]?key|secret|token)\s*[:=]\s*['\"][A-Za-z0-9_\-]{16,}['\"]"),
     ("hardcoded_password", "medium", r"(?i)password\s*[:=]\s*['\"][^'\"]{6,}['\"]"),
     ("dangerous_eval", "medium", r"\b(?:eval|exec)\s*\("),
+    # SQL built by concatenation/f-string/%-formatting instead of a parameterized
+    # query -- the two conditions are order-independent lookaheads because the
+    # query string is very often assembled on one line ("SELECT ... " + var) and
+    # handed to .execute() on a different one, so anchoring on ".execute(" alone
+    # (as a single-line check) misses the common two-step pattern entirely.
+    ("sql_injection_risk", "high", r"(?i)(?=.*\b(?:select|insert|update|delete)\b)(?=.*(?:\+\s*['\"]|['\"]\s*\+|f['\"]|%\s*\())"),
+    # os.system() always shells out (no opt-in flag); subprocess.* only does when
+    # shell=True is explicitly passed -- flag both shapes of the same risk.
+    ("shell_injection_risk", "high", r"\bos\.system\(|\bsubprocess\.\w+\([^)]*shell\s*=\s*True"),
+    ("weak_hash", "medium", r"(?i)\bhashlib\.md5\("),
 ]
 
 # Exact-filename markers, checked in order. BACKEND manifests come first: a
@@ -90,7 +100,7 @@ def analyze(ingest_id: str, inventory: CodebaseInventory, service: CodebaseInges
     languages = sorted(inventory.languages, key=lambda k: inventory.languages[k], reverse=True)
 
     smells = _detect_smells(inventory, names)
-    dependency_notes = _dependency_notes(root, names)
+    dependency_notes = _dependency_notes(root, inventory)
     security = _scan_secrets(ingest_id, service)
 
     return Diagnosis(
@@ -142,16 +152,34 @@ def _detect_smells(inventory: CodebaseInventory, names: set[str]) -> list[Archit
     return smells
 
 
-def _dependency_notes(root: Path, names: set[str]) -> list[str]:
+def _find_manifest(root: Path, inventory: CodebaseInventory, filename: str) -> Path | None:
+    """Resolve a manifest's REAL relative path, wherever it actually sits in the
+    tree -- most real-world zips (GitHub's "Download ZIP", most archivers) wrap
+    the project in a single top-level folder, so `root / filename` silently
+    misses it and every check below was a permanent no-op for that (the common)
+    case. `names` only ever proved the file exists somewhere, never where."""
+    for item in inventory.files:
+        if Path(item.path).name == filename:
+            return root / item.path
+    return None
+
+
+def _dependency_notes(root: Path, inventory: CodebaseInventory) -> list[str]:
     notes: list[str] = []
-    if "requirements.txt" in names:
-        text = _read(root / "requirements.txt")
+    requirements = _find_manifest(root, inventory, "requirements.txt")
+    if requirements is not None:
+        text = _read(requirements)
         if re.search(r"(?i)\bdjango\s*[<=]+\s*[12]\.", text):
             notes.append("Django legado (< 3.x) detectado: fora de suporte de segurança.")
         if re.search(r"(?i)\bflask\s*[<=]+\s*0\.", text):
             notes.append("Flask 0.x detectado: versão muito antiga.")
-    if "package.json" in names:
-        text = _read(root / "package.json")
+        if re.search(r"(?i)\bwerkzeug\s*[<=]+\s*0\.", text):
+            notes.append("Werkzeug 0.x detectado: versão muito antiga, com CVEs conhecidos.")
+        if re.search(r"(?i)\brequests\s*[<=]+\s*2\.(?:1\d|[0-9])\D", text):
+            notes.append("requests < 2.20 detectado: versão com vulnerabilidades de verificação SSL conhecidas.")
+    package_json = _find_manifest(root, inventory, "package.json")
+    if package_json is not None:
+        text = _read(package_json)
         if re.search(r'"react"\s*:\s*"[\^~]?(?:1[0-6]|[0-9])\.', text):
             notes.append("React legado (< 17) detectado.")
         if re.search(r'"express"\s*:\s*"[\^~]?[0-3]\.', text):

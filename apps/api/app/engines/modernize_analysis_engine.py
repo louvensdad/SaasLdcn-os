@@ -73,9 +73,42 @@ def score_codebase(inventory: CodebaseInventory, diagnosis: Diagnosis) -> Codeba
     )
 
 
+
+# Per-finding root_cause/recommendation text: a blanket "move to env var, rotate
+# the secret" message is flatly wrong advice for a SQL-injection or weak-hash
+# finding (confirmed live testing a project with real SQL-injection/eval/shell-
+# injection issues: the report told the user to rotate a secret that didn't
+# exist for that finding). Falls back to the original secret-shaped message for
+# any code not listed here (e.g. hardcoded_password/generic_api_key/aws_access_
+# key/private_key), which is still accurate for those.
+_SECURITY_FINDING_GUIDANCE: dict[str, tuple[str, str]] = {
+    "sql_injection_risk": (
+        "Consulta SQL construída por concatenação/f-string/%-formatting em vez de parâmetros.",
+        "Reescrever usando query parametrizada (placeholders do driver, ex.: '?' ou '%s' com argumentos separados) — nunca interpolar entrada do usuário na string SQL.",
+    ),
+    "shell_injection_risk": (
+        "Comando de shell executado com entrada não sanitizada (os.system ou subprocess com shell=True).",
+        "Usar subprocess com uma lista de argumentos e shell=False; nunca repassar entrada do usuário para um shell.",
+    ),
+    "weak_hash": (
+        "Hash de senha/dado sensível usando um algoritmo criptograficamente quebrado (MD5).",
+        "Substituir por um algoritmo de hash de senha real (bcrypt, scrypt ou argon2), nunca MD5/SHA1 puro.",
+    ),
+    "dangerous_eval": (
+        "Execução de código arbitrário via eval()/exec().",
+        "Remover a avaliação dinâmica de código; usar uma alternativa segura e explícita para o que essa chamada faz.",
+    ),
+}
+_DEFAULT_SECURITY_GUIDANCE = (
+    "Credencial/segredo ou padrão inseguro encontrado no código-fonte.",
+    "Mover para variável de ambiente; rotacionar o segredo; nunca commitar.",
+)
+
+
 def _issues(diagnosis: Diagnosis) -> list[CodeIssue]:
     issues: list[CodeIssue] = []
     for finding in diagnosis.security_findings:
+        root_cause, recommendation = _SECURITY_FINDING_GUIDANCE.get(finding.code, _DEFAULT_SECURITY_GUIDANCE)
         issues.append(
             CodeIssue(
                 id=f"sec:{finding.code}:{finding.path}:{finding.line or 0}",
@@ -84,8 +117,8 @@ def _issues(diagnosis: Diagnosis) -> list[CodeIssue]:
                 category="security",
                 file=finding.path,
                 line=finding.line,
-                root_cause="Credencial/segredo ou padrão inseguro encontrado no código-fonte.",
-                recommendation="Mover para variável de ambiente; rotacionar o segredo; nunca commitar.",
+                root_cause=root_cause,
+                recommendation=recommendation,
                 # Code-level secret edits are not safe to auto-apply; flagged for review.
                 auto_fixable=False,
             )

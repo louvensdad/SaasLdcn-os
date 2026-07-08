@@ -56,6 +56,98 @@ def test_ingest_zip_diagnoses_and_plans(client):
     assert "PRESERV" in plan["preserved_logic_note"].upper()
 
 
+def test_ingest_zip_detects_dependency_and_security_issues_when_wrapped_in_a_folder(client):
+    """Real-world zips (GitHub's "Download ZIP", most archivers) wrap the project
+    in a single top-level folder. _dependency_notes used to do `root / filename`
+    directly, which silently missed the manifest whenever it wasn't at the exact
+    zip root -- confirmed live: a project uploaded this exact way reported
+    "nenhuma dependencia criticamente obsoleta" despite requirements.txt pinning
+    Flask 0.12.2/Werkzeug 0.11.15. Same content as _LEGACY, one folder deeper."""
+    wrapped = {f"my-legacy-project/{path}": content for path, content in _LEGACY.items()}
+    response = client.post(
+        "/api/modernize/ingest/zip",
+        files={"file": ("legacy-wrapped.zip", _zip(wrapped), "application/zip")},
+    )
+    assert response.status_code == 200, response.text
+    diag = response.json()["diagnosis"]
+    assert any("Flask" in note for note in diag["dependency_notes"])
+    codes = {f["code"] for f in diag["security_findings"]}
+    assert "hardcoded_password" in codes
+    assert "aws_access_key" in codes
+
+
+def test_ingest_zip_detects_sql_shell_and_weak_hash_risks(client):
+    files = {
+        "app.py": (
+            "def get_user(username):\n"
+            "    query = \"SELECT * FROM users WHERE username = '\" + username + \"'\"\n"
+            "    return db.execute(query)\n"
+            "\n"
+            "def run(cmd):\n"
+            "    subprocess.check_output(cmd, shell=True)\n"
+            "\n"
+            "def hash_pw(pw):\n"
+            "    return hashlib.md5(pw.encode()).hexdigest()\n"
+        ),
+    }
+    response = client.post(
+        "/api/modernize/ingest/zip",
+        files={"file": ("risky.zip", _zip(files), "application/zip")},
+    )
+    assert response.status_code == 200, response.text
+    codes = {f["code"] for f in response.json()["diagnosis"]["security_findings"]}
+    assert "sql_injection_risk" in codes
+    assert "shell_injection_risk" in codes
+    assert "weak_hash" in codes
+
+
+def test_ingest_zip_does_not_flag_parameterized_queries_as_sql_injection(client):
+    files = {"app.py": 'def get_user(uid):\n    return db.execute("SELECT * FROM users WHERE id = ?", (uid,))\n'}
+    response = client.post(
+        "/api/modernize/ingest/zip",
+        files={"file": ("safe.zip", _zip(files), "application/zip")},
+    )
+    assert response.status_code == 200, response.text
+    codes = {f["code"] for f in response.json()["diagnosis"]["security_findings"]}
+    assert "sql_injection_risk" not in codes
+
+
+def test_modernize_plan_names_the_real_security_issue_not_just_secrets(client):
+    """build_plan() used to key entirely off "is there any security finding" and
+    always propose the same two secret-shaped actions (remove .env / rotate
+    secrets) -- confirmed live: a project with ONLY a SQL-injection finding (no
+    secrets at all) got told to rotate a secret that didn't exist, and the actual
+    vulnerability was never mentioned anywhere in the plan."""
+    files = {
+        "app.py": (
+            "def get_user(username):\n"
+            "    query = \"SELECT * FROM users WHERE username = '\" + username + \"'\"\n"
+            "    return db.execute(query)\n"
+        ),
+    }
+    upload = client.post(
+        "/api/modernize/projects/upload",
+        files={"file": ("sqli-only.zip", _zip(files), "application/zip")},
+    )
+    assert upload.status_code == 201, upload.text
+    project_id = upload.json()["project_id"]
+
+    analyze = client.post(f"/api/modernize/{project_id}/analyze")
+    assert analyze.status_code == 200, analyze.text
+    body = analyze.json()
+
+    action_ids = {a["id"] for phase in body["plan"]["phases"] for a in phase["actions"]}
+    assert "fix_sql_injection" in action_ids
+    # No secret was planted -- the secret-shaped actions must not fire either.
+    assert "remove_real_env" not in action_ids
+    assert "rotate_secrets" not in action_ids
+
+    # The issue's own recommendation must actually address SQL injection, not
+    # tell the user to rotate a secret that was never found.
+    sql_issue = next(i for i in body["report"]["technical"]["issues"] if "sql_injection_risk" in i["id"])
+    assert "parametriz" in sql_issue["recommendation"].lower()
+
+
 def test_ingest_zip_rejects_zip_slip(client):
     malicious = io.BytesIO()
     with zipfile.ZipFile(malicious, "w") as zf:
