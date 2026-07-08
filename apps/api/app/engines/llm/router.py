@@ -22,6 +22,56 @@ from app.engines.llm.resilience import (
 from app.schemas.llm import LLMRequest, LLMResponse
 
 
+def _describe_schema_type(prop: dict, required_hint: bool = True) -> str:
+    if "$ref" in prop:
+        return "objeto"
+    prop_type = prop.get("type")
+    if prop_type == "array":
+        items = prop.get("items") or {}
+        item_type = "objeto" if "$ref" in items else (items.get("type") or "string")
+        return f"array de {item_type}"
+    if prop_type == "object":
+        return "objeto"
+    if prop_type is None and isinstance(prop.get("anyOf"), list):
+        types = sorted({opt.get("type") for opt in prop["anyOf"] if isinstance(opt, dict) and opt.get("type")})
+        return " ou ".join(types) if types else "string"
+    return {"string": "string", "integer": "number", "number": "number", "boolean": "boolean"}.get(prop_type, "string")
+
+
+def _render_schema_hint(schema: dict) -> str:
+    """Render the schema's top-level keys as plain, unmissable prompt text.
+
+    Only Anthropic/OpenAI/Google adapters actually forward req.json_schema to the
+    provider as an enforced structured-output contract; DeepSeek/OpenRouter/Ollama/
+    the custom OpenAI-compatible adapter only request generic "valid JSON" mode
+    (response_format={"type": "json_object"}) because those providers don't
+    reliably support strict schema enforcement. Without this, a model on one of
+    those four adapters has no explicit signal for the exact key names to emit —
+    confirmed live (2026-07-08): a 7-project audit on DeepSeek left
+    ProjectSpec.entities empty in every single generation, even though sibling
+    fields like business_rules/core_workflows were populated for the same
+    requests. Embedding the key list as text costs a few tokens and fixes the
+    weak-schema-provider path without weakening the strict-schema ones."""
+    properties = schema.get("properties") or {}
+    if not isinstance(properties, dict) or not properties:
+        return ""
+    required = set(schema.get("required") or [])
+    lines = [
+        f"- {name}: {_describe_schema_type(prop)}" + ("" if name in required else " (opcional)")
+        for name, prop in properties.items()
+        if isinstance(prop, dict)
+    ]
+    if not lines:
+        return ""
+    return (
+        "\n\n<json_output_keys>\n"
+        "Sua resposta JSON DEVE usar EXATAMENTE estas chaves de nivel superior "
+        "(nomes em ingles, exatamente como abaixo -- nunca traduza nem renomeie):\n"
+        + "\n".join(lines)
+        + "\n</json_output_keys>"
+    )
+
+
 class LLMRouter:
     """Selects a model (user choice -> role hint -> default) and dispatches to the
     matching provider adapter. Each provider receives its own parameter shape;
@@ -76,6 +126,11 @@ class LLMRouter:
         meta = MODEL_REGISTRY[model]
         provider = meta["provider"]
         settings = get_settings()
+
+        if req.json_schema:
+            hint = _render_schema_hint(req.json_schema)
+            if hint:
+                req = req.model_copy(update={"system": req.system + hint})
 
         # A user-owned key forces a real run with that key: never silently mock,
         # so the user learns if their own key is invalid / out of credit.
