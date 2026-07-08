@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -17,6 +18,8 @@ from app.engines.architectural_graph_engine import generate_graph_snapshot
 SENSITIVE_KEY_PATTERN = re.compile(r"(secret|token|password|api[_-]?key|private[_-]?key|credential)", re.IGNORECASE)
 SENSITIVE_VALUE_PATTERN = re.compile(r"(secret|token|password|api[_-]?key|private[_-]?key)\s*[:=]\s*\S+", re.IGNORECASE)
 SAFE_BOOLEAN_TRACE_KEYS = {"contains_secrets"}
+
+logger = logging.getLogger("ldcn.projects")
 
 
 class ProjectRepository:
@@ -84,7 +87,13 @@ class ProjectRepository:
             params.extend([int(limit), max(0, int(offset))])
         with self.connection() as conn:
             rows = conn.execute(query, params).fetchall()
-        return [self._row_to_project(dict(row)) for row in rows]
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                result.append(self._row_to_project(dict(row)))
+            except Exception:  # noqa: BLE001 — one corrupted row must not blank the whole listing
+                logger.warning("projects: skipped an unreadable row in list_projects")
+        return result
 
     def count_projects(self, user_id: str | None = None) -> int:
         with self.connection() as conn:
@@ -386,7 +395,13 @@ class ProjectRepository:
     def _deserialize_json(value: str | None) -> Any:
         if not value:
             return None
-        return json.loads(value)
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError):
+            # A single corrupted JSON column must not take down the whole row
+            # (and, transitively, every other project in the same listing).
+            logger.warning("projects: failed to decode a JSON column; treating as empty")
+            return None
 
     def _sanitize_snapshot(self, value: Any) -> Any:
         if isinstance(value, dict):

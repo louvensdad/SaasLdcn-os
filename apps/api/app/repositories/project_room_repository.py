@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +11,8 @@ from uuid import uuid4
 from app.core.config import get_settings
 from app.core.database import connection as database_connection, database_url_for
 from app.repositories.redaction import redact_text, redact_value
+
+logger = logging.getLogger("ldcn.project_rooms")
 
 
 # AI Project Room persistence. Each room is a ChatGPT-style conversation that the
@@ -121,7 +124,13 @@ class ProjectRoomRepository:
                 "SELECT * FROM project_rooms WHERE owner_user_id = ? ORDER BY updated_at DESC",
                 (owner_user_id,),
             ).fetchall()
-        return [self._row_to_room(dict(row)) for row in rows]
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                result.append(self._row_to_room(dict(row)))
+            except Exception:  # noqa: BLE001 — one corrupted row must not blank the owner's whole list
+                logger.warning("project_rooms: skipped an unreadable row for owner %s", owner_user_id)
+        return result
 
     def get_for_owner(self, room_id: str, owner_user_id: str) -> dict[str, Any] | None:
         with self.connection() as conn:
@@ -366,4 +375,10 @@ class ProjectRoomRepository:
     def _loads(value: str | None) -> Any:
         if not value:
             return None
-        return json.loads(value)
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError):
+            # A single corrupted JSON column must not take down the whole row
+            # (and, transitively, every other room this owner has).
+            logger.warning("project_rooms: failed to decode a JSON column; treating as empty")
+            return None
