@@ -151,6 +151,33 @@ class ProjectWriter:
             "verification_score": int(meta.get("verification_score") or 0),
         }
 
+    def set_functional_completeness(self, project_id: str, *, report: dict) -> None:
+        """Persist the Functional Completeness Gate verdict into the project marker,
+        mirroring set_verification/record_quality_gate_baseline. Build passing alone
+        never implies functional completeness -- this is a separate, stricter verdict
+        that _require_verified() also consults before allowing export."""
+        root = self._project_root(project_id)
+        marker = self._read_marker(root)
+        project_name = str(marker.get("project_name") or "meta-factory-project")
+        metadata = self._merge_metadata(marker.get("metadata"), {"functional_completeness": report})
+        files = marker.get("files")
+        if not isinstance(files, list):
+            files = self._existing_file_paths(root)
+        self._write_marker(
+            root, project_id, project_name, metadata, [str(p) for p in files],
+            owner=self._marker_owner(marker), workspace_id=marker.get("workspace_id"),
+        )
+        self.artifact_store.save_project(project_id, root, workspace_id=marker.get("workspace_id"))
+
+    def read_functional_completeness(self, project_id: str) -> dict | None:
+        """Return the persisted Functional Completeness Gate verdict, or None if it
+        has never been computed for this project."""
+        root = self._project_root(project_id)
+        meta = self._read_marker(root).get("metadata")
+        meta = meta if isinstance(meta, dict) else {}
+        report = meta.get("functional_completeness")
+        return report if isinstance(report, dict) else None
+
     def record_quality_gate_baseline(self, project_id: str, *, score: int, blocker_ids: list[str]) -> None:
         """Persist the pre-repair Quality Gate snapshot so /revalidate can report which
         BLOCKER issues were actually fixed and how much the score moved, instead of a

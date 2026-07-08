@@ -1,0 +1,333 @@
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+import pytest
+
+from app.engines.functional_completeness_engine import FunctionalCompletenessEngine
+from app.engines.generation_job_engine import GenerationJobEngine
+from app.routes import meta_factory
+from app.services.file_protocol import EmittedFile
+from app.services.project_writer import ProjectWriter
+from fastapi import HTTPException
+
+# Projects must live inside the workspace root (the engine enforces it, same as
+# QualityGateEngine), so we create them under the real DEFAULT_OUTPUT_ROOT and
+# clean up afterwards -- same pattern as test_quality_gate_auto_repair.py.
+
+
+@pytest.fixture
+def make_project():
+    created: list[Path] = []
+    writer = ProjectWriter()
+
+    def _make(files: list[tuple[str, str]], name: str = "completeness-test") -> dict:
+        result = writer.write(
+            [EmittedFile(path=path, content=content) for path, content in files], project_name=name,
+        )
+        created.append(Path(result.root_path))
+        return {"project_id": result.project_id, "generated_project_path": result.root_path}
+
+    yield _make
+    for root in created:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def _controller(package: str, resource: str) -> str:
+    return f"""package {package};
+
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/{resource.lower()}s")
+public class {resource}Controller {{
+    @GetMapping
+    public void list() {{}}
+    @PostMapping
+    public void create() {{}}
+    @PutMapping("/{{id}}")
+    public void update() {{}}
+    @DeleteMapping("/{{id}}")
+    public void remove() {{}}
+}}
+"""
+
+
+def _service(package: str, resource: str) -> str:
+    return f"""package {package};
+
+import org.springframework.stereotype.Service;
+
+@Service
+public class {resource}Service {{}}
+"""
+
+
+def _repository(package: str, resource: str) -> str:
+    return f"""package {package};
+
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class {resource}Repository {{}}
+"""
+
+
+def _spring_app(package: str) -> str:
+    return f"""package {package};
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class Application {{
+    public static void main(String[] args) {{ SpringApplication.run(Application.class, args); }}
+}}
+"""
+
+
+def _full_frontend_pages(resource: str) -> list[tuple[str, str]]:
+    slug = resource.lower()
+    return [
+        (f"app/{slug}/page.tsx", f"import {{ apiClient }} from '@/lib/api-client';\nexport default function List() {{ return <div>{slug} list isLoading error empty</div>; }}"),
+        (f"app/{slug}/new/page.tsx", f"import {{ apiClient }} from '@/lib/api-client';\nexport default function Create() {{ return <form>{slug}</form>; }}"),
+        (f"app/{slug}/[id]/edit/page.tsx", f"import {{ apiClient }} from '@/lib/api-client';\nexport default function Edit() {{ return <form>{slug}</form>; }}"),
+        (f"app/{slug}/[id]/page.tsx", f"import {{ apiClient }} from '@/lib/api-client';\nexport default function Detail() {{ return <div>{slug}</div>; }}"),
+        ("src/lib/api-client.ts", f"export const apiClient = {{ {slug}: () => fetch('/api/{slug}') }};"),
+        ("src/components/nav.tsx", f"export function Nav() {{ return <a href='/{slug}'>{slug}</a>; }}"),
+    ]
+
+
+def _good_java_project_files(resource: str = "Produto") -> list[tuple[str, str]]:
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/{resource}Controller.java", _controller(package, resource)),
+        (f"{java_dir}/{resource}Service.java", _service(package, resource)),
+        (f"{java_dir}/{resource}Repository.java", _repository(package, resource)),
+        ("pom.xml", "<project></project>"),
+        ("package.json", "{\"name\": \"frontend\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    files.extend(_full_frontend_pages(resource))
+    return files
+
+
+def test_java_reserved_word_package_is_blocked(make_project):
+    files = _good_java_project_files()
+    files.append((
+        "src/main/java/com/acme/app/interface/Broken.java",
+        "package com.acme.app.interface;\n\npublic class Broken {}\n",
+    ))
+    project = make_project(files, name="java-reserved-word")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status == "BLOCKED"
+    assert any(i.category == "java_safety" and "reserved word" in i.title.lower() for i in report.issues)
+
+
+def test_duplicate_backend_trees_is_blocked(make_project):
+    files = _good_java_project_files()
+    files.extend([
+        ("backend-v2/pom.xml", "<project></project>"),
+        ("backend-v2/src/main/java/com/acme/other/Application.java", _spring_app("com.acme.other")),
+    ])
+    project = make_project(files, name="java-duplicate-tree")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status == "BLOCKED"
+    assert any("duplicate" in i.id or "concurrent" in i.title.lower() for i in report.issues)
+
+
+def test_leaked_protocol_marker_is_blocked(make_project):
+    files = _good_java_project_files()
+    files.append((
+        "src/main/java/com/acme/app/Broken.java",
+        "<<<FILE path=\"x.java\">>>\npackage com.acme.app;\npublic class Broken {}\n<<<END>>>\n",
+    ))
+    project = make_project(files, name="java-paste-marker")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status == "BLOCKED"
+    assert any(i.category == "content_integrity" for i in report.issues)
+
+
+def test_readme_docker_compose_mismatch_is_blocked(make_project):
+    files = _good_java_project_files()
+    files = [(p, c) for p, c in files if p != "README.md"]
+    files.append(("README.md", "# App\nStart the database with `docker-compose up -d postgres`.\n" * 3))
+    project = make_project(files, name="readme-docker-mismatch")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status == "BLOCKED"
+    assert any(i.category == "documentation" for i in report.issues)
+
+
+def test_dashboard_only_frontend_never_verified(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        ("pom.xml", "<project></project>"),
+        ("package.json", "{\"name\": \"frontend\"}"),
+        ("README.md", "# App\n" * 10),
+        ("app/dashboard/page.tsx", "export default function Dashboard() { return <div>Dashboard</div>; }"),
+    ]
+    for resource in ("Produto", "Pedido", "Cliente"):
+        files.append((f"{java_dir}/{resource}Controller.java", _controller(package, resource)))
+        files.append((f"{java_dir}/{resource}Service.java", _service(package, resource)))
+        files.append((f"{java_dir}/{resource}Repository.java", _repository(package, resource)))
+    project = make_project(files, name="dashboard-only")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status != "VERIFIED"
+    assert report.status == "BLOCKED"
+    assert any(i.id == "frontend_incomplete_dashboard_only" for i in report.issues)
+    # Endpoint-without-page: every resource's frontend coverage is all-false.
+    for resource in report.resources:
+        assert resource.frontend is not None
+        assert not any([
+            resource.frontend.listPage, resource.frontend.createPage,
+            resource.frontend.editPage, resource.frontend.detailPage,
+        ])
+
+
+def test_mobile_login_only_without_token_storage_never_verified(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("README.md", "# App\n" * 10),
+        ("apps/mobile/src/screens/LoginScreen.tsx", "export default function LoginScreen() { return null; }"),
+    ]
+    project = make_project(files, name="mobile-login-only")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status != "VERIFIED"
+    assert any(i.id == "mobile_login_no_token_storage" for i in report.issues)
+    assert any(i.id == "mobile_login_only" for i in report.issues)
+
+
+def test_mobile_login_with_token_storage_is_recognized(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("README.md", "# App\n" * 10),
+        (
+            "apps/mobile/src/screens/LoginScreen.tsx",
+            "import * as SecureStore from 'expo-secure-store';\n"
+            "async function login() { await SecureStore.setItemAsync('token', 'x'); }\n"
+            "export default function LoginScreen() { return null; }",
+        ),
+        (
+            "apps/mobile/src/context/AuthContext.tsx",
+            "export function AuthProvider() { return null; }",
+        ),
+        ("apps/mobile/src/screens/ProdutoListScreen.tsx", "export default function ProdutoListScreen() { return null; }"),
+        ("apps/mobile/src/api/client.ts", "export const apiClient = { produto: () => fetch('/api/produtos') };"),
+    ]
+    project = make_project(files, name="mobile-login-real")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert not any(i.id == "mobile_login_no_token_storage" for i in report.issues)
+    assert not any(i.id == "mobile_login_only" for i in report.issues)
+
+
+def test_build_skipped_caps_at_partially_verified(make_project):
+    files = _good_java_project_files()
+    project = make_project(files, name="build-skipped")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project, build_skipped=True)
+    assert report.status == "PARTIALLY_VERIFIED"
+    assert report.build_skipped is True
+
+
+def test_fully_covered_project_is_verified(make_project):
+    files = _good_java_project_files()
+    project = make_project(files, name="fully-covered")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project, build_skipped=False)
+    assert report.status == "VERIFIED"
+    assert report.issues == [] or all(i.severity != "BLOCKER" for i in report.issues)
+    assert report.resources[0].coverage == 100
+
+
+def test_completeness_artifacts_written_to_disk(make_project):
+    files = _good_java_project_files()
+    project = make_project(files, name="artifacts-test")
+    job_engine = GenerationJobEngine()
+    job = {
+        "id": "job-artifacts-test",
+        "generatedProjectId": project["project_id"],
+        "resultPath": project["generated_project_path"],
+        "logs": [],
+    }
+    job_engine._evaluate_functional_completeness(job, "owner-1", build_skipped=False)
+
+    root = Path(project["generated_project_path"])
+    report_path = root / "product-completion-report.json"
+    coverage_path = root / "endpoint-ui-coverage.json"
+    depth_path = root / "ui-depth-score.json"
+    assert report_path.is_file()
+    assert coverage_path.is_file()
+    assert depth_path.is_file()
+
+    import json
+    coverage = json.loads(coverage_path.read_text(encoding="utf-8"))
+    assert isinstance(coverage, list) and coverage
+    assert {"resource", "backend", "frontend", "mobile", "coverage"} <= set(coverage[0].keys())
+
+    assert job["completenessStatus"] == "VERIFIED"
+    assert job["completenessSummary"]["status"] == "VERIFIED"
+
+
+def test_require_verified_blocks_export_when_not_verified(make_project, monkeypatch):
+    files = _good_java_project_files()
+    project = make_project(files, name="require-verified-block")
+    ProjectWriter().set_functional_completeness(project["project_id"], report={
+        "status": "BLOCKED",
+        "missing_features": ["Java package uses a reserved word"],
+        "issues": [{"severity": "BLOCKER", "title": "Java package uses a reserved word", "file": "Broken.java"}],
+    })
+
+    class _FakeQualityReport:
+        release_override = False
+        blocker_count = 0
+
+    monkeypatch.setattr(meta_factory.quality_gate_engine, "evaluate", lambda *a, **k: _FakeQualityReport())
+
+    with pytest.raises(HTTPException) as exc_info:
+        meta_factory._require_verified(project["project_id"], force=False)
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "FUNCTIONAL_COMPLETENESS_NOT_VERIFIED"
+
+    # The existing force-release escape hatch is unaffected.
+    meta_factory._require_verified(project["project_id"], force=True)
+
+
+def test_require_verified_allows_export_when_verified(make_project, monkeypatch):
+    files = _good_java_project_files()
+    project = make_project(files, name="require-verified-pass")
+    ProjectWriter().set_functional_completeness(project["project_id"], report={
+        "status": "VERIFIED", "missing_features": [], "issues": [],
+    })
+    ProjectWriter().set_verification(project["project_id"], verified=True, score=100)
+
+    class _FakeQualityReport:
+        release_override = False
+        blocker_count = 0
+
+    monkeypatch.setattr(meta_factory.quality_gate_engine, "evaluate", lambda *a, **k: _FakeQualityReport())
+
+    meta_factory._require_verified(project["project_id"], force=False)

@@ -1156,6 +1156,36 @@ def _require_verified(project_id: str, *, force: bool, user_id: str | None = Non
     if report.release_override:
         return  # conscious 'liberar com risco' already confirmed and audited
 
+    # Functional Completeness Gate (audit 2026-07-07/08): build passing is
+    # necessary but not sufficient -- a project can compile cleanly and still
+    # ship a Dashboard-only frontend, a broken Login-only mobile app, or a Java
+    # package named `interface`. None (never computed, e.g. a project generated
+    # before this gate existed) does not block, to stay backward-compatible.
+    try:
+        completeness = ProjectWriter().read_functional_completeness(project_id)
+    except ProjectWriteError:
+        completeness = None
+    if completeness is not None and completeness.get("status") != "VERIFIED":
+        if user_id:
+            _audit(user_id, "git_export_blocked")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "FUNCTIONAL_COMPLETENESS_NOT_VERIFIED",
+                "message": (
+                    f"Export blocked: functional completeness is {completeness.get('status')}, not VERIFIED. "
+                    "A passing build alone is not sufficient."
+                ),
+                "status": completeness.get("status"),
+                "missing_features": completeness.get("missing_features", []),
+                "issues": [
+                    {"severity": item.get("severity"), "title": item.get("title"), "file": item.get("file")}
+                    for item in (completeness.get("issues") or [])
+                    if item.get("severity") == "BLOCKER"
+                ],
+            },
+        )
+
     # A verified build ("sala de teste") is a sufficient, strong release signal.
     try:
         verdict = ProjectWriter().read_verification(project_id)

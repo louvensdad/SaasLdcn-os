@@ -14,6 +14,7 @@ from uuid import uuid4
 from app.engines.agent_executor import submit_agent
 from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, summarize_contract
 from app.engines.factory_pipeline import _run_agent
+from app.engines.functional_completeness_engine import functional_completeness_engine
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.ground_truth_engine import ground_truth_engine
 from app.services.execution_reality_guard import execution_reality_guard
@@ -240,6 +241,7 @@ class GenerationJobEngine:
             job["packageReady"] = True
             job["finishedAt"] = self._now()
             job["error"] = None
+            self._evaluate_functional_completeness(job, owner_user_id, build_skipped=build_skipped)
             for stage in logical_stages_for(steps):
                 if job["stageStatuses"].get(stage) != "skipped":
                     job["stageStatuses"][stage] = "success"
@@ -959,6 +961,54 @@ class GenerationJobEngine:
             job, owner, "repair_applied", stage=step.state, level="warning",
             message=f"Conflict Detector: {len(findings)} incoerencia(s) de dependencia corrigida(s) logo apos {step.logical}.",
         )
+
+    def _evaluate_functional_completeness(self, job: dict[str, Any], owner: str, *, build_skipped: bool) -> None:
+        """Build passing is necessary but not sufficient (audit 2026-07-07/08): run
+        the deterministic Functional Completeness Gate right before the job is
+        surfaced as READY, persist the verdict on the published project (so
+        _require_verified() can block export on it), and never let this step itself
+        take the pipeline down -- a completeness-check bug must degrade to
+        NEEDS_HUMAN_REVIEW, not crash a job that otherwise finished cleanly."""
+        project_id = job.get("generatedProjectId")
+        result_path = job.get("resultPath")
+        if not project_id or not result_path:
+            return
+        try:
+            report = functional_completeness_engine.evaluate(
+                {"project_id": project_id, "generated_project_path": result_path},
+                build_skipped=build_skipped,
+            )
+            report_data = report.model_dump(mode="json")
+            root = Path(result_path)
+            (root / "product-completion-report.json").write_text(
+                json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8",
+            )
+            (root / "endpoint-ui-coverage.json").write_text(
+                json.dumps([r.model_dump(mode="json") for r in report.resources], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            (root / "ui-depth-score.json").write_text(
+                json.dumps(report.ui_depth.model_dump(mode="json") if report.ui_depth else {}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            ProjectWriter().set_functional_completeness(project_id, report=report_data)
+            job["completenessStatus"] = report.status
+            job["completenessSummary"] = {
+                "status": report.status,
+                "backend_completeness": report.backend_completeness,
+                "frontend_completeness": report.frontend_completeness,
+                "mobile_completeness": report.mobile_completeness,
+                "blocker_count": sum(1 for i in report.issues if i.severity == "BLOCKER"),
+            }
+            self._log(
+                job, "READY", "warning" if report.status != "VERIFIED" else "info",
+                f"Functional Completeness Gate: {report.status}.",
+                "; ".join(report.missing_features) or None,
+            )
+        except Exception as exc:  # noqa: BLE001 -- never let the gate itself break a finished pipeline
+            job["completenessStatus"] = "NEEDS_HUMAN_REVIEW"
+            job["completenessSummary"] = {"status": "NEEDS_HUMAN_REVIEW", "error": str(exc)}
+            self._log(job, "READY", "warning", "Functional Completeness Gate failed to evaluate.", str(exc))
 
     def _build(self, job: dict[str, Any], owner: str) -> None:
         files: list[EmittedFile] = []

@@ -66,6 +66,7 @@ Seguranca (o contrario e proibido):
 - Senha: minimo 8 chars + complexidade (>=1 maiuscula, 1 minuscula, 1 numero).
 Arquitetura: se Hexagonal/Clean, toda dependencia de infra (db, jwt, email) tem uma Port (interface) no dominio e um Adapter na infra; o dominio nunca importa infra; TODO Port declarado TEM seu Adapter gerado.
 Testes: pelo menos 1 teste unitario REAL (nao vazio) por service/use-case gerado.
+Java: NUNCA use uma palavra reservada (interface, class, enum, package, import, record, default, etc.) como segmento de package -- "package com.app.interface;" nao compila. Gere EXATAMENTE UMA arvore de codigo-fonte backend (um unico @SpringBootApplication/entrypoint, um unico pom.xml/build.gradle raiz) -- nunca duas arvores concorrentes no mesmo projeto.
 </non_negotiable_rules>"""
 
 FRONTEND_RULES = """<non_negotiable_rules>
@@ -78,6 +79,7 @@ Env vars: convencao EXATA do framework, nunca misturar — Angular: environment.
 .env.example com todas as variaveis usadas.
 Dependencias (Dependency Registry — o build valida e BLOQUEIA violacoes): NUNCA invente nome de pacote npm; declare apenas pacotes que existem no registro publico. Radix UI: use SOMENTE primitives reais (react-accordion, react-alert-dialog, react-avatar, react-checkbox, react-dialog, react-dropdown-menu, react-label, react-popover, react-progress, react-radio-group, react-scroll-area, react-select, react-separator, react-slot, react-switch, react-tabs, react-toast, react-tooltip). "@radix-ui/react-badge" NAO EXISTE — Badge e sempre um componente local (components/ui/badge.tsx) com Tailwind, sem dependencia externa.
 Coerencia de versoes (Stack Compatibility Matrix — o build valida e CORRIGE violacoes): as versoes devem ser coerentes ENTRE SI, por ecossistema. Com React 18: react-dom/@types/react 18.x, @testing-library/react 13-16, Next 13/14, @testing-library/react-native 12.x (NUNCA 13+, que exige React 19), React Native 0.72-0.76, Expo SDK 50/51. Com React 19: react-dom/@types 19, Next 15, @testing-library/react-native 13/14, RN 0.78+, Expo SDK 53. Nunca misture os dois conjuntos; nunca declare peerDependencies impossiveis (ERESOLVE e bloqueado pelo Build Guard).
+Cobertura funcional (gate obrigatorio, nao apenas build): para CADA recurso/entidade exposto pelo backend (cada controller com endpoints GET/POST/PUT/DELETE), gere pelo menos listagem, criacao, edicao e detalhe -- com loading/error/empty state e integracao real com o API client. Um frontend com APENAS uma pagina de Dashboard quando o backend tem multiplos recursos e considerado incompleto e bloqueia a entrega.
 </non_negotiable_rules>"""
 
 MOBILE_RULES = """<non_negotiable_rules>
@@ -93,6 +95,11 @@ Armazenamento local: AsyncStorage (ou expo-secure-store para o token) -- nunca
 localStorage/sessionStorage (nao existem em React Native).
 .env.example com toda variavel referenciada (EXPO_PUBLIC_* -- convencao do Expo,
 nunca process.env.NEXT_PUBLIC_* nem import.meta.env, que sao de outros bundlers).
+Login REAL (gate obrigatorio): a tela de login DEVE persistir o token retornado
+via SecureStore/AsyncStorage e atualizar o estado de um AuthContext/AuthProvider
+apos autenticar -- nunca apenas navegar para a proxima tela sem guardar o token.
+Um app mobile com SOMENTE a tela de Login (sem telas dos recursos principais e
+sem navegacao autenticada) e considerado incompleto e bloqueia a entrega.
 </non_negotiable_rules>"""
 
 DEVOPS_RULES = """<non_negotiable_rules>

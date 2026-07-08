@@ -7,6 +7,7 @@ from pydantic import Field
 from app.schemas.common import ApiModel
 from app.schemas.orchestrator import ProjectSpec
 from app.schemas.generation_validation import ManualBuildFixGuide
+from app.schemas.functional_completeness import CompletenessStatus
 
 
 GenerationJobStatus = Literal[
@@ -154,6 +155,10 @@ class GenerationJob(ApiModel):
     manualBuildRetryCount: int = 0
     buildSkipAcknowledged: bool = False
     manualBuildFixGuide: ManualBuildFixGuide | None = None
+    # Functional Completeness Gate verdict (audit 2026-07-07/08): build passing
+    # alone never implies VERIFIED -- see FunctionalCompletenessReport. None until
+    # the job reaches READY and the gate has actually run.
+    completenessStatus: CompletenessStatus | None = None
     stackLock: dict[str, Any] | None = None
     artifacts: list[GenerationArtifact] = Field(default_factory=list)
     logs: list[GenerationJobLog] = Field(default_factory=list)
