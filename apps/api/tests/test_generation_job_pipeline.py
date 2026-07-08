@@ -130,6 +130,20 @@ def test_generation_job_carries_a_work_estimate_no_rush_policy(isolated_engine):
     assert persisted["workEstimate"] == job["workEstimate"]
 
 
+def test_generation_job_execution_plan_never_drifts_from_its_own_stage_statuses(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    assert job["executionPlan"] is not None
+    plan_ids = [p["id"] for p in job["executionPlan"]["phases"]]
+    assert plan_ids == list(job["stageStatuses"].keys())
+    assert "mobile" not in plan_ids
+
+    mobile_job = _create_mobile(engine)
+    mobile_plan_ids = [p["id"] for p in mobile_job["executionPlan"]["phases"]]
+    assert "mobile" in mobile_plan_ids
+    assert mobile_plan_ids == list(mobile_job["stageStatuses"].keys())
+
+
 def test_project_manifest_is_written_to_the_delivered_project(isolated_engine):
     # _write_project_manifest is only ever called from execute() right before READY,
     # after the completeness gate -- exercised directly here (same pattern as

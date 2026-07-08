@@ -9,6 +9,7 @@ from app.schemas.orchestrator import ProjectSpec
 from app.schemas.generation_validation import ManualBuildFixGuide
 from app.schemas.functional_completeness import CompletenessStatus
 from app.schemas.work_estimate import WorkEstimate
+from app.schemas.execution_plan import ExecutionPlan
 
 
 GenerationJobStatus = Literal[
@@ -164,6 +165,10 @@ class GenerationJob(ApiModel):
     # real ProjectSpec/blueprint, so the job never appears to promise an instant
     # result. See work_estimation_engine.estimate_generation_effort.
     workEstimate: WorkEstimate | None = None
+    # Execution Plan Engine: objective/input/output/risk/approval-criteria per real
+    # pipeline stage, computed once at job creation from the same stage list
+    # stageStatuses already uses -- see execution_plan_engine.build_execution_plan.
+    executionPlan: ExecutionPlan | None = None
     stackLock: dict[str, Any] | None = None
     artifacts: list[GenerationArtifact] = Field(default_factory=list)
     logs: list[GenerationJobLog] = Field(default_factory=list)

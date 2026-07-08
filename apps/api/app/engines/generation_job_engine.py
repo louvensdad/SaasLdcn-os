@@ -16,6 +16,7 @@ from app.engines.context_pack_builder import build_agent_context, compress_to_bu
 from app.engines.factory_pipeline import _run_agent
 from app.engines.functional_completeness_engine import functional_completeness_engine
 from app.engines.generation_validation_engine import generation_validation_engine
+from app.engines.execution_plan_engine import build_execution_plan
 from app.engines.ground_truth_engine import ground_truth_engine
 from app.engines.project_manifest_engine import build_project_manifest
 from app.engines.work_estimation_engine import estimate_generation_effort
@@ -181,7 +182,9 @@ class GenerationJobEngine:
         now = self._now()
         job_id = f"genjob_{uuid4().hex[:14]}"
         steps = steps_for(spec.delivery_type)
+        stages = logical_stages_for(steps)
         work_estimate = estimate_generation_effort(spec, blueprint, project_name=project_name)
+        execution_plan = build_execution_plan(spec.delivery_type, stages)
         data = {
             "id": job_id, "projectId": project_id, "generatedProjectId": None,
             "workspaceId": workspace_id, "status": "QUEUED", "currentStage": "QUEUED",
@@ -192,11 +195,12 @@ class GenerationJobEngine:
             "manualBuildRetryCount": 0, "buildSkipAcknowledged": False,
             "manualBuildFixGuide": None, "stackLock": None,
             "logs": [], "events": [], "checkpoints": [],
-            "stageStatuses": {stage: "waiting" for stage in logical_stages_for(steps)},
+            "stageStatuses": {stage: "waiting" for stage in stages},
             "projectName": project_name, "partial": True, "valid": False,
             "packageReady": False, "inputTokensTotal": 0, "outputTokensTotal": 0,
             "resultPath": None, "createdAt": now, "updatedAt": now,
             "workEstimate": work_estimate.model_dump(mode="json"),
+            "executionPlan": execution_plan.model_dump(mode="json"),
         }
         self.repository.create(owner_user_id, data, redact_value(spec.model_dump(mode="json")), redact_value(blueprint))
         self._log(data, "QUEUED", "info", "GenerationJob criado e persistido.")
