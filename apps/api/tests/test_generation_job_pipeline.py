@@ -119,6 +119,17 @@ def test_generation_creates_persistent_job(isolated_engine):
     assert persisted["provider"] == "anthropic" and persisted["blueprintVersion"] == 4
 
 
+def test_generation_job_carries_a_work_estimate_no_rush_policy(isolated_engine):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    assert job["workEstimate"] is not None
+    assert job["workEstimate"]["size_band"] in {"landing_page", "api_simples", "saas", "enterprise"}
+    assert job["workEstimate"]["no_rush_message"]
+
+    persisted = repository.get(job["id"], "user-1")
+    assert persisted["workEstimate"] == job["workEstimate"]
+
+
 def test_generation_job_usage_is_persisted_atomically(isolated_engine):
     engine, repository, _ = isolated_engine
     job = _create(engine)

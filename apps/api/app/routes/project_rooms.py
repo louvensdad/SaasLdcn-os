@@ -10,6 +10,9 @@ from fastapi.responses import StreamingResponse
 
 from app.core.deps import CurrentUser
 from app.engines.llm.base import LLMError
+from app.engines.work_estimation_engine import estimate_generation_effort
+from app.schemas.orchestrator import ProjectSpec
+from app.schemas.work_estimate import WorkEstimate
 from app.schemas.project_room import (
     AcknowledgePreviewRequest,
     CreateRoomRequest,
@@ -160,6 +163,22 @@ def import_project_room(payload: ImportPromptMasterRequest, user: CurrentUser) -
 @router.get("/project-rooms/{room_id}", response_model=ProjectRoom)
 def get_project_room(room_id: str, user: CurrentUser) -> ProjectRoom:
     return _to_model(_require(service.get_room(room_id, user["user_id"])))
+
+
+@router.get("/project-rooms/{room_id}/work-estimate", response_model=WorkEstimate)
+def get_project_room_work_estimate(room_id: str, user: CurrentUser) -> WorkEstimate:
+    """No Rush Policy: size the project and state a healthy delivery time before
+    the user commits to generating it. Deterministic, 0 LLM tokens."""
+    room = _require(service.get_room(room_id, user["user_id"]))
+    if not room.get("spec"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Spec ainda nao foi compilado para este projeto.",
+        )
+    spec = ProjectSpec.model_validate(room["spec"])
+    return estimate_generation_effort(
+        spec, room.get("architecture_blueprint"), project_name=room.get("title") or ""
+    )
 
 
 @router.post("/project-rooms/{room_id}/message", response_model=ProjectRoom)

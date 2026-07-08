@@ -153,6 +153,29 @@ def test_orchestrator_turn_carries_room_delivery_type_into_spec(client: TestClie
     assert body["spec"]["delivery_type"] == "mobile"
 
 
+def test_work_estimate_requires_a_compiled_spec_first(client: TestClient) -> None:
+    room = _create_room(client)  # empty raw_intent -> no spec compiled yet
+    response = client.get(f"/api/project-rooms/{room['room_id']}/work-estimate")
+    assert response.status_code == 409
+
+
+def test_work_estimate_is_available_once_a_spec_is_compiled(client: TestClient) -> None:
+    response = client.post(
+        "/api/project-rooms",
+        json={"title": "Loja online", "raw_intent": "quero uma loja online completa", "locale": "pt-BR"},
+    )
+    assert response.status_code == 201, response.text
+    room = response.json()
+    assert room["spec"] is not None
+
+    estimate = client.get(f"/api/project-rooms/{room['room_id']}/work-estimate")
+    assert estimate.status_code == 200, estimate.text
+    body = estimate.json()
+    assert body["size_band"] in {"landing_page", "api_simples", "saas", "enterprise"}
+    assert body["healthy_minimum_label"]
+    assert body["no_rush_message"]
+
+
 def test_create_project_room_defaults_preferred_language_to_auto(client: TestClient) -> None:
     room = _create_room(client)
     assert room["preferred_language"] == ""
