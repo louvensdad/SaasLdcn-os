@@ -241,12 +241,24 @@ class ProjectRoomService:
         ) or (
             blueprint.get("mode") == "llm" and not degraded and bool(blueprint.get("provider")) and blueprint.get("source") == "llm"
         )
+        blocking_readiness_items = [
+            item for item in readiness
+            if item.get("required") and item.get("status") != "passed" and item.get("id") != "engineering_review"
+        ]
+        readiness_passed = not blocking_readiness_items
+        readiness_detail = (
+            "Sem bloqueios anteriores a aprovacao."
+            if readiness_passed
+            else "Itens pendentes no checklist: " + ", ".join(
+                item.get("label", item.get("id", "?")) for item in blocking_readiness_items
+            ) + "."
+        )
         checks = [
             {"id": "prompt_master", "label": "PromptMaster", "passed": bool(room.get("prompt_master_md")), "detail": "PromptMaster aprovado." if room.get("prompt_master_md") else "PromptMaster ausente."},
             {"id": "blueprint", "label": "Blueprint ativo", "passed": bool(blueprint), "detail": f"Blueprint v{blueprint.get('version') or room.get('active_blueprint_version') or 1}." if blueprint else "Blueprint ausente."},
             {"id": "provider", "label": "Provider e modo", "passed": provider_valid, "detail": f"{blueprint.get('providerLabel') or 'Nenhum'} · {blueprint.get('mode') or 'indefinido'} · degraded={str(degraded).lower()}"},
             {"id": "decisions", "label": "Decisoes arquiteturais", "passed": bool(blueprint.get("decisions")), "detail": f"{len(blueprint.get('decisions') or [])} decisoes persistidas."},
-            {"id": "readiness", "label": "Checklist de readiness", "passed": not any(item.get("required") and item.get("status") != "passed" and item.get("id") != "engineering_review" for item in readiness), "detail": "Sem bloqueios anteriores a aprovacao."},
+            {"id": "readiness", "label": "Checklist de readiness", "passed": readiness_passed, "detail": readiness_detail},
         ]
         blockers = [item["detail"] for item in checks if not item["passed"]]
         valid = not blockers

@@ -57,7 +57,17 @@ console.log("Iniciando frontend em http://localhost:3000");
 start(
   "backend",
   "python",
-  ["-m", "uvicorn", "app.main:app", "--reload", "--host", "127.0.0.1", "--port", "8001"],
+  [
+    "-m", "uvicorn", "app.main:app", "--reload", "--host", "127.0.0.1", "--port", "8001",
+    // The dev SQLite DB lives at apps/api/app/data/ldcn_os.db, inside the watched
+    // tree. Every request that persists something (almost all of them) touches
+    // that file, which resets WatchFiles' debounce on every write -- under any
+    // real traffic the reloader can detect a source change but never find a quiet
+    // window to actually restart (observed live: "Reloading..." logged once, no
+    // "Started server process" for it, ever). Exclude the data directory so code
+    // edits still reload promptly.
+    "--reload-exclude", "app/data/*",
+  ],
   path.join(rootDir, "apps", "api"),
 );
 start(

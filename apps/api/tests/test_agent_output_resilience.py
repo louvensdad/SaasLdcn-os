@@ -14,6 +14,11 @@ from app.schemas.llm import LLMRequest, LLMResponse, Provider
 from app.services.file_protocol import parse_agent_output
 
 MARKERS = '<<<FILE path="openapi.yaml">>>\nopenapi: 3.1.0\n<<<END>>>'
+# Observed live from DeepSeek (2026-07-07, genjob_7b908e080e424e): the opening
+# tag's closing angle brackets came out as ">>" instead of the documented ">>>".
+# The strict marker regex found zero matches on an otherwise perfectly
+# well-formed 58-file response, discarding all of it as "no FILE blocks found".
+MARKERS_TWO_ANGLE_BRACKETS = '<<<FILE path="openapi.yaml">>\nopenapi: 3.1.0\n<<<END>>>'
 MD_INFO = "```yaml openapi.yaml\nopenapi: 3.1.0\n```"
 MD_LABEL = "**src/Main.java**\n```java\nclass Main {}\n```"
 MD_INLINE = "```\n# file: app/models.py\nclass User: pass\n```"
@@ -42,6 +47,12 @@ class _StaticAdapter(LLMAdapter):
 def test_markers_strategy_full_confidence():
     r = parse_agent_output(MARKERS, agent_role="contracts")
     assert r.ok and r.parser_strategy == "markers" and r.parser_confidence == 1.0
+
+
+def test_markers_tolerate_two_closing_angle_brackets():
+    r = parse_agent_output(MARKERS_TWO_ANGLE_BRACKETS, agent_role="contracts")
+    assert r.ok and r.parser_strategy == "markers" and r.parser_confidence == 1.0
+    assert [f.path for f in r.files] == ["openapi.yaml"]
 
 
 def test_markdown_info_string_path():

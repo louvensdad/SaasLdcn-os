@@ -26,7 +26,11 @@ from app.data.agent_territories import territory_violations
 # empty / unparseable reply is an error.
 
 _FILE_RE = re.compile(
-    r'<<<FILE\s+path="(?P<path>[^"]+)">>>\r?\n(?P<body>.*?)\r?\n?<<<END>>>',
+    # The opening tag's closing angle brackets: models are supposed to emit
+    # exactly ">>>", but some (observed live with DeepSeek) emit ">>" instead.
+    # Accepting 2+ recovers perfectly well-formed file content that would
+    # otherwise be discarded wholesale as "no FILE blocks found".
+    r'<<<FILE\s+path="(?P<path>[^"]+)">{2,}\s*\r?\n(?P<body>.*?)\r?\n?<<<END>>>',
     re.DOTALL,
 )
 _MANIFEST_RE = re.compile(r"<<<MANIFEST>>>\r?\n(?P<json>.*?)\r?\n?<<<END>>>", re.DOTALL)

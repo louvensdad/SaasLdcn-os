@@ -11,7 +11,7 @@ BuildStageStatus = Literal["passed", "failed", "skipped", "skipped_after_failure
 
 
 class DependencyFinding(ApiModel):
-    ecosystem: Literal["pypi", "npm", "maven"]
+    ecosystem: Literal["pypi", "npm", "maven", "nuget", "go", "crates", "rubygems", "packagist"]
     name: str
     requested_version: str | None = None
     latest_version: str | None = None

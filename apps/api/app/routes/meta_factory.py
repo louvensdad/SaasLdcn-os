@@ -1255,9 +1255,25 @@ def _export_generated_project(
         if finding.get("severity") in {"high", "critical"}
     ]
     if blockers:
+        # Without the actual findings, this 409 is unactionable: the Quality Report
+        # card the user just looked at (a DIFFERENT scanner, quality_gate_engine)
+        # can legitimately show zero blockers while this export-time scan (
+        # GeneratedProjectQualityEngine, file-content regex based) finds some --
+        # so at minimum tell the user what was found instead of a bare message.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Export blocked by high or critical generated-project security findings.",
+            detail={
+                "code": "EXPORT_SECURITY_FINDINGS_BLOCKED",
+                "message": "Export blocked by high or critical generated-project security findings.",
+                "findings": [
+                    {
+                        "severity": finding.get("severity"),
+                        "title": finding.get("title") or finding.get("message"),
+                        "file_path": finding.get("file_path"),
+                    }
+                    for finding in blockers
+                ],
+            },
         )
 
     files = _generated_project_service.export_files(project)

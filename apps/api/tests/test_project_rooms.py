@@ -656,6 +656,16 @@ def test_engineering_review_uses_active_llm_blueprint_metadata(client: TestClien
     assert validation_body["degraded"] is False
     assert validation_body["checks"][2]["passed"] is True
 
+    # Before Stack Approval Gate + the rest of the readiness checklist are
+    # satisfied, the "readiness" check must fail *and* its detail message must
+    # actually name what's pending -- not the pass-case "no blockers" text
+    # (a live smoke test caught this: the message previously claimed "no
+    # blockers" while simultaneously being reported as a blocker).
+    readiness_check = next(c for c in validation_body["checks"] if c["id"] == "readiness")
+    assert readiness_check["passed"] is False
+    assert "sem bloqueios" not in readiness_check["detail"].lower()
+    assert "pendentes" in readiness_check["detail"].lower()
+
 
 # --- delete ------------------------------------------------------------------ #
 

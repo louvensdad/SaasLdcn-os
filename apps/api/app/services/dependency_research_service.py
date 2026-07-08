@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any
@@ -249,6 +250,129 @@ class DependencyResearchService:
                 continue
             lookup = self.latest_maven(group, artifact)
             findings.append(self._finding("maven", f"{group}:{artifact}", version, lookup, path, skipped))
+        return findings
+
+    def _audit_composer(self, path: str, text: str, skipped: list[str]) -> list[DependencyFinding]:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return [
+                DependencyFinding(
+                    ecosystem="packagist", name="composer.json", requested_version=None,
+                    latest_version=None, status="missing",
+                    message="composer.json is not valid JSON.", manifest_path=path,
+                )
+            ]
+        findings: list[DependencyFinding] = []
+        for section in ["require", "require-dev"]:
+            deps = data.get(section) or {}
+            if not isinstance(deps, dict):
+                continue
+            for name, requested in deps.items():
+                # "php" and "ext-*" are platform/runtime requirements, not packagist packages.
+                if not isinstance(name, str) or name == "php" or name.startswith("ext-"):
+                    continue
+                if not _SAFE_NAME_RE.match(name):
+                    continue
+                lookup = self.latest_packagist(name)
+                findings.append(self._finding("packagist", name, str(requested), lookup, path, skipped))
+        return findings
+
+    def _audit_go_mod(self, path: str, text: str, skipped: list[str]) -> list[DependencyFinding]:
+        findings: list[DependencyFinding] = []
+        in_require_block = False
+        for raw_line in text.splitlines():
+            line = raw_line.split("//", 1)[0].strip()
+            if not line:
+                continue
+            if line == "require (":
+                in_require_block = True
+                continue
+            if in_require_block and line == ")":
+                in_require_block = False
+                continue
+            if line.startswith("require "):
+                line = line[len("require "):].strip()
+            elif not in_require_block:
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            module, version = parts[0], parts[1]
+            if not _SAFE_NAME_RE.match(module):
+                continue
+            lookup = self.latest_go(module)
+            findings.append(self._finding("go", module, version, lookup, path, skipped))
+        return findings
+
+    def _audit_cargo(self, path: str, text: str, skipped: list[str]) -> list[DependencyFinding]:
+        try:
+            data = tomllib.loads(text)
+        except tomllib.TOMLDecodeError:
+            return [
+                DependencyFinding(
+                    ecosystem="crates", name="Cargo.toml", requested_version=None,
+                    latest_version=None, status="missing",
+                    message="Cargo.toml is not valid TOML.", manifest_path=path,
+                )
+            ]
+        findings: list[DependencyFinding] = []
+        for section in ["dependencies", "dev-dependencies", "build-dependencies"]:
+            deps = data.get(section) or {}
+            if not isinstance(deps, dict):
+                continue
+            for name, spec in deps.items():
+                if not isinstance(name, str) or not _SAFE_NAME_RE.match(name):
+                    continue
+                requested = spec.get("version") if isinstance(spec, dict) else spec
+                if not isinstance(requested, str):
+                    continue
+                lookup = self.latest_crates(name)
+                findings.append(self._finding("crates", name, requested, lookup, path, skipped))
+        return findings
+
+    def _audit_gemfile(self, path: str, text: str, skipped: list[str]) -> list[DependencyFinding]:
+        findings: list[DependencyFinding] = []
+        gem_re = re.compile(r"""^\s*gem\s+['"]([A-Za-z0-9_.-]+)['"](?:\s*,\s*['"]([^'"]+)['"])?""")
+        for line in text.splitlines():
+            match = gem_re.match(line)
+            if not match:
+                continue
+            name, requested = match.group(1), match.group(2)
+            if not _SAFE_NAME_RE.match(name):
+                continue
+            lookup = self.latest_rubygems(name)
+            findings.append(self._finding("rubygems", name, requested, lookup, path, skipped))
+        return findings
+
+    def _audit_csproj(self, path: str, text: str, skipped: list[str]) -> list[DependencyFinding]:
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError:
+            return [
+                DependencyFinding(
+                    ecosystem="nuget", name=".csproj", requested_version=None,
+                    latest_version=None, status="missing",
+                    message=".csproj is not valid XML.", manifest_path=path,
+                )
+            ]
+        findings: list[DependencyFinding] = []
+        for ref in root.findall(".//{*}PackageReference"):
+            name = ref.get("Include")
+            version = ref.get("Version") or self._xml_text(ref, "Version")
+            if not name or not _SAFE_NAME_RE.match(name):
+                continue
+            if not version:
+                findings.append(
+                    DependencyFinding(
+                        ecosystem="nuget", name=name, requested_version=None, latest_version=None,
+                        status="managed", message="Dependency version is managed centrally (Directory.Packages.props).",
+                        manifest_path=path,
+                    )
+                )
+                continue
+            lookup = self.latest_nuget(name)
+            findings.append(self._finding("nuget", name, version, lookup, path, skipped))
         return findings
 
     def _finding(
