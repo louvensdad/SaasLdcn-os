@@ -12,6 +12,7 @@ import {
   Code2,
   Cpu,
   Database,
+  Download,
   FileCode2,
   FlaskConical,
   GitBranch,
@@ -452,17 +453,33 @@ function DevOpsPanel({ overview }: { readonly overview: EngineeringLabOverview }
 
 function ExportPanel({ overview }: { readonly overview: EngineeringLabOverview }) {
   const { t } = useLocale();
+  const summary = {
+    project_id: overview.project_id,
+    health_score: overview.health_score,
+    security_findings: overview.diagnosis.security_findings.length,
+    code_smells: overview.diagnosis.smells.length,
+    api_endpoints: overview.api_endpoints.length,
+  };
+
+  function downloadFullReport() {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(overview, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${overview.project_id}-engineering-lab-report.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <Card className="space-y-4">
-      <h2 className="text-lg font-semibold">{t('lab.export')}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">{t('lab.export')}</h2>
+        <Button onClick={downloadFullReport} className="h-9">
+          <Download className="h-4 w-4" /> Baixar relatorio completo (JSON)
+        </Button>
+      </div>
       <p className="text-sm text-[color:var(--muted)]">{t('lab.exportHint')}</p>
-      <pre className="max-h-72 overflow-auto rounded-[var(--radius-md)] bg-black/40 p-4 text-xs">{JSON.stringify({
-        project_id: overview.project_id,
-        health_score: overview.health_score,
-        security_findings: overview.diagnosis.security_findings.length,
-        code_smells: overview.diagnosis.smells.length,
-        api_endpoints: overview.api_endpoints.length,
-      }, null, 2)}</pre>
+      <pre className="max-h-72 overflow-auto rounded-[var(--radius-md)] bg-black/40 p-4 text-xs">{JSON.stringify(summary, null, 2)}</pre>
     </Card>
   );
 }

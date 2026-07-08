@@ -109,7 +109,7 @@ class ExecutionTerminalService:
         timed_out = False
         try:
             proc = subprocess.Popen(
-                full, cwd=str(workdir), text=True, shell=False,
+                full, cwd=str(workdir), text=True, encoding="utf-8", errors="replace", shell=False,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1,
             )
         except (FileNotFoundError, OSError) as exc:

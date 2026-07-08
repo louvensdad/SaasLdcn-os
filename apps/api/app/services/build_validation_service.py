@@ -825,7 +825,7 @@ class BuildValidationService:
         start = time.monotonic()
         try:
             popen = psutil.Popen if psutil is not None else subprocess.Popen
-            proc = popen(full, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
+            proc = popen(full, cwd=cwd, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
         except FileNotFoundError:
             message = f"Executavel '{exe}' nao encontrado no PATH do servidor."
             self._emit(sink, {"type": "command_skipped", "level": "warning", "command": display,

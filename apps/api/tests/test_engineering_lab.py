@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from app.engines.engineering_lab_engine import engineering_lab_engine
-from app.services.project_writer import DEFAULT_OUTPUT_ROOT
+from app.services.file_protocol import EmittedFile
+from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
 
 
 def _project_root(project_id: str) -> Path:
@@ -15,6 +18,20 @@ def _project_root(project_id: str) -> Path:
     shutil.rmtree(root, ignore_errors=True)
     root.mkdir(parents=True)
     return root
+
+
+def _register_second_user(client: TestClient) -> str:
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "email": f"other_{uuid4().hex}@example.com",
+            "password": "OtherPassword123!",
+            "full_name": "Other User",
+            "privacy_policy_accepted": True,
+        },
+    )
+    assert response.status_code in (200, 201), response.text
+    return response.json()["tokens"]["access_token"]
 
 
 def test_engineering_lab_overview_uses_real_project_files() -> None:
@@ -128,3 +145,78 @@ def test_engineering_lab_terminal_rejects_inline_eval_but_allows_module_flags() 
         assert result.exit_code == 0
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def test_engineering_lab_terminal_decodes_non_ascii_output_as_utf8() -> None:
+    """subprocess.run(text=True) with no explicit encoding decodes with
+    locale.getpreferredencoding() -- cp1252 on this Windows environment, not
+    UTF-8 -- silently mangling any non-ASCII stdout/stderr into mojibake.
+    The child writes raw UTF-8 bytes directly to the stdout buffer (bypassing
+    its own text layer's encoding) so this test isolates the parent's decode,
+    which is exactly what was fixed."""
+    project_id = "lab-test-encoding"
+    root = _project_root(project_id)
+    try:
+        (root / "print_accented.py").write_text(
+            "import sys\n"
+            "sys.stdout.buffer.write('acentuacao real: áéíóú ção'.encode('utf-8'))\n",
+            encoding="utf-8",
+        )
+        result = engineering_lab_engine.run_terminal(project_id, "python print_accented.py", 10)
+        assert result.exit_code == 0
+        stdout = "".join(chunk.text for chunk in result.output if chunk.kind == "stdout")
+        assert "áéíóú ção" in stdout
+        assert "�" not in stdout
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+# --- route-level (HTTP) coverage -------------------------------------------- #
+# The tests above exercise EngineeringLabEngine directly; nothing previously
+# drove the actual /api/engineering-lab/* routes end-to-end, so the ownership
+# check (_assert_owns_project), auth wiring, and audit event were unverified at
+# the HTTP layer.
+
+def test_engineering_lab_routes_overview_and_terminal_via_http(client: TestClient) -> None:
+    me = client.get("/api/auth/me")
+    assert me.status_code == 200, me.text
+    owner_id = me.json()["user_id"]
+
+    result = ProjectWriter().write(
+        [EmittedFile(path="package.json", content='{"name": "http-lab-test", "dependencies": {}}')],
+        project_name="http-lab-test", owner=owner_id,
+    )
+    try:
+        overview = client.get(f"/api/engineering-lab/projects/{result.project_id}/overview")
+        assert overview.status_code == 200, overview.text
+        assert overview.json()["project_id"] == result.project_id
+
+        terminal = client.post(
+            f"/api/engineering-lab/projects/{result.project_id}/terminal",
+            json={"command": "python --version", "timeout_seconds": 30},
+        )
+        assert terminal.status_code == 200, terminal.text
+    finally:
+        shutil.rmtree(result.root_path, ignore_errors=True)
+
+
+def test_engineering_lab_routes_are_owner_scoped(client: TestClient) -> None:
+    me = client.get("/api/auth/me")
+    owner_id = me.json()["user_id"]
+    result = ProjectWriter().write(
+        [EmittedFile(path="package.json", content='{"name": "owner-scoped-test", "dependencies": {}}')],
+        project_name="owner-scoped-test", owner=owner_id,
+    )
+    try:
+        other_token = _register_second_user(client)
+        headers = {"Authorization": f"Bearer {other_token}"}
+        overview = client.get(f"/api/engineering-lab/projects/{result.project_id}/overview", headers=headers)
+        assert overview.status_code == 404
+        terminal = client.post(
+            f"/api/engineering-lab/projects/{result.project_id}/terminal",
+            json={"command": "npm --version", "timeout_seconds": 5},
+            headers=headers,
+        )
+        assert terminal.status_code == 404
+    finally:
+        shutil.rmtree(result.root_path, ignore_errors=True)
