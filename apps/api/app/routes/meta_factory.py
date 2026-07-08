@@ -18,7 +18,7 @@ from app.core.deps import CurrentUser
 from app.engines.auto_repair_engine import auto_repair_engine
 from app.engines.engineering_kernel_engine import compute_kernel_status
 from app.engines.quality_gate_engine import quality_gate_engine
-from app.schemas.engineering_kernel import EngineeringKernelStatus
+from app.schemas.engineering_kernel import AcknowledgeHumanReviewRequest, EngineeringKernelStatus
 from app.repositories.user_repository import AuditLogRepository
 from app.repositories.tenant_repository import TenantAccessError, TenantRepository, WORKSPACE_WRITE_ROLES
 from app.repositories.blueprint_approval_repository import BlueprintApprovalRepository, hash_blueprint
@@ -100,6 +100,11 @@ def _llm_http_error(exc: Exception) -> HTTPException:
 # The exact phrase a user must type to consciously release a project with unresolved
 # problems. Locale-independent on purpose: it is an explicit, auditable acknowledgement.
 CONSCIOUS_RELEASE_PHRASE = "LIBERAR COM RISCO"
+
+# A distinct, narrower phrase for NEEDS_HUMAN_REVIEW: "a human looked and it's fine"
+# is a different, more honest claim than "liberar com risco" -- BLOCKED means a real
+# structural defect, NEEDS_HUMAN_REVIEW just means the gate couldn't auto-verify it.
+CONSCIOUS_HUMAN_REVIEW_PHRASE = "REVISADO PELO HUMANO"
 
 
 def _audit(user_id: str, event_code: str) -> None:
@@ -1162,6 +1167,9 @@ def _require_verified(project_id: str, *, force: bool, user_id: str | None = Non
     if kernel.override_active:
         return  # conscious 'liberar com risco' already confirmed and audited
 
+    if kernel.functional_completeness_status == "NEEDS_HUMAN_REVIEW" and kernel.human_review_acknowledged:
+        return  # narrower, honest acknowledgment -- doesn't require 'liberar com risco'
+
     # Functional Completeness Gate (audit 2026-07-07/08): build passing is
     # necessary but not sufficient -- a project can compile cleanly and still
     # ship a Dashboard-only frontend, a broken Login-only mobile app, or a Java
@@ -1222,6 +1230,30 @@ def get_engineering_kernel_status(project_id: str, user: CurrentUser) -> Enginee
         return compute_kernel_status(project_id)
     except ProjectWriteError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generated project was not found.") from exc
+
+
+@router.post("/meta-factory/{project_id}/acknowledge-human-review", response_model=EngineeringKernelStatus)
+def acknowledge_human_review(project_id: str, payload: AcknowledgeHumanReviewRequest, user: CurrentUser) -> EngineeringKernelStatus:
+    """Conscious 'revisado pelo humano': a narrower acknowledgment than force-release,
+    only valid while the Functional Completeness Gate reports NEEDS_HUMAN_REVIEW."""
+    _owned_meta_project(project_id, user)
+    if payload.confirmation.strip() != CONSCIOUS_HUMAN_REVIEW_PHRASE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f'Confirmação inválida. Digite exatamente: "{CONSCIOUS_HUMAN_REVIEW_PHRASE}".',
+        )
+    try:
+        kernel = compute_kernel_status(project_id)
+    except ProjectWriteError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generated project was not found.") from exc
+    if kernel.functional_completeness_status != "NEEDS_HUMAN_REVIEW":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Não há revisão humana pendente para este projeto.")
+    try:
+        ProjectWriter().set_human_review_acknowledgment(project_id, by_user=user["user_id"], reason="human review acknowledged")
+    except ProjectWriteError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _audit(user["user_id"], "human_review_acknowledged")
+    return compute_kernel_status(project_id)
 
 
 @router.get("/meta-factory/{project_id}/files", response_model=GeneratedProjectFilesResponse)

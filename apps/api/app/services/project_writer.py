@@ -263,6 +263,42 @@ class ProjectWriter:
         override = meta.get("release_override")
         return override if isinstance(override, dict) else None
 
+    def set_human_review_acknowledgment(self, project_id: str, *, by_user: str, reason: str) -> None:
+        """Record a conscious NEEDS_HUMAN_REVIEW acknowledgment -- distinct from
+        set_release_override: this is 'a human looked and it's fine', not 'liberar
+        com risco'. Kept as its own metadata key so the two concepts never conflate."""
+        root = self._project_root(project_id)
+        marker = self._read_marker(root)
+        project_name = str(marker.get("project_name") or "meta-factory-project")
+        metadata = self._merge_metadata(
+            marker.get("metadata"),
+            {
+                "human_review_acknowledgment": {
+                    "active": True,
+                    "by": by_user,
+                    "reason": reason,
+                    "at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+                }
+            },
+        )
+        files = marker.get("files")
+        if not isinstance(files, list):
+            files = self._existing_file_paths(root)
+        self._write_marker(
+            root, project_id, project_name, metadata, [str(p) for p in files],
+            owner=self._marker_owner(marker), workspace_id=marker.get("workspace_id"),
+        )
+        self.artifact_store.save_project(project_id, root, workspace_id=marker.get("workspace_id"))
+
+    def read_human_review_acknowledgment(self, project_id: str) -> dict | None:
+        """Return the persisted NEEDS_HUMAN_REVIEW acknowledgment, or None if the
+        project was never acknowledged. Mirrors read_release_override."""
+        root = self._project_root(project_id)
+        meta = self._read_marker(root).get("metadata")
+        meta = meta if isinstance(meta, dict) else {}
+        ack = meta.get("human_review_acknowledgment")
+        return ack if isinstance(ack, dict) else None
+
     def read_owner(self, project_id: str) -> str | None:
         """Return the recorded owner user id for a generated project, or None.
 

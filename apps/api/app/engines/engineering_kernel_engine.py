@@ -30,6 +30,7 @@ def compute_kernel_status(project_id: str) -> EngineeringKernelStatus:
     completeness = writer.read_functional_completeness(project_id)
     baseline = writer.read_quality_gate_baseline(project_id)
     override = writer.read_release_override(project_id)
+    human_review = writer.read_human_review_acknowledgment(project_id)
 
     project = _meta_project(project_id)
     report = quality_gate_engine.evaluate(project, run_build=False)
@@ -50,6 +51,7 @@ def compute_kernel_status(project_id: str) -> EngineeringKernelStatus:
         reason = "Build não verificado formalmente e nenhum bloqueador crítico encontrado."
 
     override_reason = override.get("reason") if override else None
+    human_review_reason = human_review.get("reason") if human_review else None
 
     files = GeneratedProjectService().list_files(project)
     file_names = {entry["relative_path"] for entry in files["files"]}
@@ -59,6 +61,7 @@ def compute_kernel_status(project_id: str) -> EngineeringKernelStatus:
         EvidenceItem(id="quality_gate_baseline", label="Quality Gate Baseline", available=baseline is not None, source="marker"),
         EvidenceItem(id="functional_completeness", label="Functional Completeness Report", available=completeness is not None, source="marker"),
         EvidenceItem(id="release_override", label="Release Override", available=override is not None, source="marker"),
+        EvidenceItem(id="human_review_acknowledgment", label="Human Review Acknowledgment", available=human_review is not None, source="marker"),
     ]
     for evidence_id, label, filename in _FILE_EVIDENCE:
         evidence.append(
@@ -74,6 +77,8 @@ def compute_kernel_status(project_id: str) -> EngineeringKernelStatus:
         reason=reason,
         override_active=report.release_override,
         override_reason=override_reason,
+        human_review_acknowledged=human_review is not None,
+        human_review_reason=human_review_reason,
         build_verified=bool(verdict.get("verified")),
         quality_gate_blocker_count=report.blocker_count,
         functional_completeness_status=completeness_status,

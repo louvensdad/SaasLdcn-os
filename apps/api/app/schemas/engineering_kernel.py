@@ -32,8 +32,18 @@ class EngineeringKernelStatus(ApiModel):
     reason: str
     override_active: bool = False
     override_reason: str | None = None
+    # Distinct from override_active/override_reason: a narrower, honest
+    # acknowledgment for NEEDS_HUMAN_REVIEW ("we couldn't auto-verify this")
+    # rather than the heavier "liberar com risco" override meant for BLOCKED
+    # ("this has a real structural defect"). Never fakes state == VERIFIED.
+    human_review_acknowledged: bool = False
+    human_review_reason: str | None = None
     build_verified: bool = False
     quality_gate_blocker_count: int = 0
     functional_completeness_status: CompletenessStatus | None = None
     evidence: list[EvidenceItem] = Field(default_factory=list)
     generated_at: str
+
+
+class AcknowledgeHumanReviewRequest(ApiModel):
+    confirmation: str  # must equal CONSCIOUS_HUMAN_REVIEW_PHRASE exactly

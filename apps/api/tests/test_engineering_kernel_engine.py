@@ -97,6 +97,26 @@ def test_release_override_is_reported(make_project):
     assert _evidence(status_, "release_override").available is True
 
 
+def test_needs_human_review_without_acknowledgment_is_not_acknowledged(make_project):
+    project = make_project()
+    ProjectWriter().set_functional_completeness(project["project_id"], report={"status": "NEEDS_HUMAN_REVIEW", "issues": []})
+    status_ = compute_kernel_status(project["project_id"])
+    assert status_.state == "NEEDS_HUMAN_REVIEW"
+    assert status_.human_review_acknowledged is False
+    assert _evidence(status_, "human_review_acknowledgment").available is False
+
+
+def test_needs_human_review_acknowledgment_does_not_fake_verified(make_project):
+    project = make_project()
+    ProjectWriter().set_functional_completeness(project["project_id"], report={"status": "NEEDS_HUMAN_REVIEW", "issues": []})
+    ProjectWriter().set_human_review_acknowledgment(project["project_id"], by_user="user-1", reason="revisado pelo humano")
+    status_ = compute_kernel_status(project["project_id"])
+    assert status_.human_review_acknowledged is True
+    assert status_.human_review_reason == "revisado pelo humano"
+    assert status_.state == "NEEDS_HUMAN_REVIEW"  # still true that the gate couldn't auto-verify it
+    assert _evidence(status_, "human_review_acknowledgment").available is True
+
+
 def test_delivered_evidence_files_are_detected_by_presence(make_project):
     project = make_project(
         [
@@ -163,3 +183,61 @@ def test_engineering_kernel_route_is_owner_scoped(client: TestClient) -> None:
 def test_engineering_kernel_route_404s_for_a_nonexistent_project(client: TestClient) -> None:
     response = client.get("/api/meta-factory/does-not-exist-xyz/engineering-kernel")
     assert response.status_code == 404
+
+
+def test_acknowledge_human_review_rejects_the_wrong_phrase(client: TestClient) -> None:
+    me = client.get("/api/auth/me")
+    owner_id = me.json()["user_id"]
+    result = ProjectWriter().write(
+        [EmittedFile(path="README.md", content="# test\n")], project_name="ack-wrong-phrase", owner=owner_id,
+    )
+    try:
+        ProjectWriter().set_functional_completeness(result.project_id, report={"status": "NEEDS_HUMAN_REVIEW", "issues": []})
+        response = client.post(
+            f"/api/meta-factory/{result.project_id}/acknowledge-human-review", json={"confirmation": "errado"},
+        )
+        assert response.status_code == 400
+    finally:
+        shutil.rmtree(result.root_path, ignore_errors=True)
+
+
+def test_acknowledge_human_review_requires_needs_human_review_state(client: TestClient) -> None:
+    me = client.get("/api/auth/me")
+    owner_id = me.json()["user_id"]
+    result = ProjectWriter().write(
+        [EmittedFile(path="README.md", content="# test\n")], project_name="ack-no-review-pending", owner=owner_id,
+    )
+    try:
+        ProjectWriter().set_verification(result.project_id, verified=True, score=100)
+        response = client.post(
+            f"/api/meta-factory/{result.project_id}/acknowledge-human-review",
+            json={"confirmation": "REVISADO PELO HUMANO"},
+        )
+        assert response.status_code == 409
+    finally:
+        shutil.rmtree(result.root_path, ignore_errors=True)
+
+
+def test_acknowledge_human_review_succeeds_and_unblocks_export(client: TestClient) -> None:
+    me = client.get("/api/auth/me")
+    owner_id = me.json()["user_id"]
+    result = ProjectWriter().write(
+        [EmittedFile(path="README.md", content="# test\n")], project_name="ack-success", owner=owner_id,
+    )
+    try:
+        ProjectWriter().set_functional_completeness(result.project_id, report={"status": "NEEDS_HUMAN_REVIEW", "issues": []})
+        response = client.post(
+            f"/api/meta-factory/{result.project_id}/acknowledge-human-review",
+            json={"confirmation": "REVISADO PELO HUMANO"},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["human_review_acknowledged"] is True
+        assert body["state"] == "NEEDS_HUMAN_REVIEW"  # honest -- not faked as VERIFIED
+
+        # The release gate no longer blocks on FUNCTIONAL_COMPLETENESS_NOT_VERIFIED
+        # for this project now that it's been acknowledged.
+        download = client.post(f"/api/meta-factory/{result.project_id}/prepare-download")
+        assert download.status_code != 409, download.text
+    finally:
+        shutil.rmtree(result.root_path, ignore_errors=True)
