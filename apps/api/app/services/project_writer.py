@@ -253,6 +253,16 @@ class ProjectWriter:
         )
         self.artifact_store.save_project(project_id, root, workspace_id=marker.get("workspace_id"))
 
+    def read_release_override(self, project_id: str) -> dict | None:
+        """Return the persisted 'liberar mesmo assim' override record, or None if
+        the project was never force-released. Mirrors read_verification/
+        read_functional_completeness/read_quality_gate_baseline."""
+        root = self._project_root(project_id)
+        meta = self._read_marker(root).get("metadata")
+        meta = meta if isinstance(meta, dict) else {}
+        override = meta.get("release_override")
+        return override if isinstance(override, dict) else None
+
     def read_owner(self, project_id: str) -> str | None:
         """Return the recorded owner user id for a generated project, or None.
 

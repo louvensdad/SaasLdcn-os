@@ -16,7 +16,9 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from app.core.config import get_settings
 from app.core.deps import CurrentUser
 from app.engines.auto_repair_engine import auto_repair_engine
+from app.engines.engineering_kernel_engine import compute_kernel_status
 from app.engines.quality_gate_engine import quality_gate_engine
+from app.schemas.engineering_kernel import EngineeringKernelStatus
 from app.repositories.user_repository import AuditLogRepository
 from app.repositories.tenant_repository import TenantAccessError, TenantRepository, WORKSPACE_WRITE_ROLES
 from app.repositories.blueprint_approval_repository import BlueprintApprovalRepository, hash_blueprint
@@ -1152,8 +1154,12 @@ def _require_verified(project_id: str, *, force: bool, user_id: str | None = Non
     if force:
         return
 
-    report = quality_gate_engine.evaluate(_meta_project(project_id), run_build=False)
-    if report.release_override:
+    try:
+        kernel = compute_kernel_status(project_id)
+    except ProjectWriteError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    if kernel.override_active:
         return  # conscious 'liberar com risco' already confirmed and audited
 
     # Functional Completeness Gate (audit 2026-07-07/08): build passing is
@@ -1161,11 +1167,11 @@ def _require_verified(project_id: str, *, force: bool, user_id: str | None = Non
     # ship a Dashboard-only frontend, a broken Login-only mobile app, or a Java
     # package named `interface`. None (never computed, e.g. a project generated
     # before this gate existed) does not block, to stay backward-compatible.
-    try:
-        completeness = ProjectWriter().read_functional_completeness(project_id)
-    except ProjectWriteError:
-        completeness = None
-    if completeness is not None and completeness.get("status") != "VERIFIED":
+    if kernel.functional_completeness_status is not None and kernel.functional_completeness_status != "VERIFIED":
+        try:
+            completeness = ProjectWriter().read_functional_completeness(project_id) or {}
+        except ProjectWriteError:
+            completeness = {}
         if user_id:
             _audit(user_id, "git_export_blocked")
         raise HTTPException(
@@ -1173,10 +1179,10 @@ def _require_verified(project_id: str, *, force: bool, user_id: str | None = Non
             detail={
                 "code": "FUNCTIONAL_COMPLETENESS_NOT_VERIFIED",
                 "message": (
-                    f"Export blocked: functional completeness is {completeness.get('status')}, not VERIFIED. "
+                    f"Export blocked: functional completeness is {kernel.functional_completeness_status}, not VERIFIED. "
                     "A passing build alone is not sufficient."
                 ),
-                "status": completeness.get("status"),
+                "status": kernel.functional_completeness_status,
                 "missing_features": completeness.get("missing_features", []),
                 "issues": [
                     {"severity": item.get("severity"), "title": item.get("title"), "file": item.get("file")}
@@ -1187,25 +1193,35 @@ def _require_verified(project_id: str, *, force: bool, user_id: str | None = Non
         )
 
     # A verified build ("sala de teste") is a sufficient, strong release signal.
-    try:
-        verdict = ProjectWriter().read_verification(project_id)
-    except ProjectWriteError:
-        verdict = {"verified": False}
-    if verdict.get("verified"):
+    if kernel.state == "VERIFIED":
         return
 
     # Not verified: hard-block on critical Quality Gate problems. With no blockers the
     # gate has passed (passar 100% -> liberar), so delivery is allowed.
-    if report.blocker_count > 0:
+    if kernel.state == "BLOCKED":
         if user_id:
             _audit(user_id, "git_export_blocked")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Exportação bloqueada porque ainda existem {report.blocker_count} problema(s) "
+                f"Exportação bloqueada porque ainda existem {kernel.quality_gate_blocker_count} problema(s) "
                 "crítico(s). Corrija automaticamente, rode a validação novamente ou veja os problemas."
             ),
         )
+    # kernel.state == "PARTIALLY_VERIFIED" and not blocked by completeness -> falls
+    # through exactly like before (allowed, with no explicit prior label).
+
+
+@router.get("/meta-factory/{project_id}/engineering-kernel", response_model=EngineeringKernelStatus)
+def get_engineering_kernel_status(project_id: str, user: CurrentUser) -> EngineeringKernelStatus:
+    """Single source of truth for 'what state is this project in' -- consolidates
+    build verification, the Quality Gate, and the Functional Completeness Gate
+    instead of every caller re-deriving the same precedence independently."""
+    _owned_meta_project(project_id, user)
+    try:
+        return compute_kernel_status(project_id)
+    except ProjectWriteError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generated project was not found.") from exc
 
 
 @router.get("/meta-factory/{project_id}/files", response_model=GeneratedProjectFilesResponse)
