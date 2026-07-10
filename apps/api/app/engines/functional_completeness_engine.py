@@ -70,6 +70,28 @@ _TS_HTTP_METHOD_RE = re.compile(r"@(Get|Post|Put|Delete|Patch)\s*\(")
 _NESTJS_IMPORT_RE = re.compile(r"""from\s+['"]@nestjs/common['"]""")
 _TS_EXCLUDED_SUFFIXES = (".spec.ts", ".test.ts", ".d.ts", ".spec.js", ".test.js")
 
+# Next.js App Router API routes -- a THIRD legitimate backend pattern (alongside
+# Java and NestJS), confirmed live: 2 of 6 real generated projects audited use
+# this instead of a separate backend framework. Unlike Java/NestJS's "one
+# controller class = one file" convention, one Next.js resource routinely spans
+# multiple route.ts files (list/create at api/x/route.ts, get/update/delete at
+# api/x/[id]/route.ts) -- resources discovered this way are exempt from the
+# duplicate-location check below, which would otherwise be a wall of false
+# positives on every real Next.js API-routes project.
+_NEXT_ROUTE_METHOD_RE = re.compile(r"export\s+(?:async\s+)?function\s+(GET|POST|PUT|DELETE|PATCH)\b")
+_GENERIC_NEXT_SEGMENTS = {"api", "admin", "internal", "v1", "v2"}
+
+# FastAPI -- confirmed live in a real generated project. Keeps the Java-style
+# "one router per file" convention, so duplicate-location detection still
+# applies. Must exclude venv directories: a real project's own
+# .ldcn-venv/Lib/site-packages/fastapi/routing.py contains dozens of matches
+# for "APIRouter" in FastAPI's own source, which would otherwise be scanned as
+# if it were the generated project's code.
+_FASTAPI_ROUTER_RE = re.compile(r"APIRouter\s*\(")
+_FASTAPI_PREFIX_RE = re.compile(r"""prefix\s*=\s*["']/([\w-]+)["']""")
+_FASTAPI_METHOD_RE = re.compile(r"@router\.(get|post|put|delete|patch)\s*\(", re.IGNORECASE)
+_PY_EXCLUDED_DIRS = {"node_modules", ".venv", "venv", ".ldcn-venv", "site-packages", "__pycache__"}
+
 
 def _strip_suffix(name: str, suffix: str) -> str:
     return name[: -len(suffix)] if name.lower().endswith(suffix.lower()) and len(name) > len(suffix) else name
@@ -152,7 +174,15 @@ class FunctionalCompletenessEngine:
             p for p in (*root.rglob("*.ts"), *root.rglob("*.js"))
             if "node_modules" not in p.parts and not p.name.endswith(_TS_EXCLUDED_SUFFIXES)
         ]
-        if not java_files and not ts_files:
+        next_route_files = [
+            p for p in (*root.rglob("route.ts"), *root.rglob("route.js"))
+            if "node_modules" not in p.parts
+        ]
+        py_files = [
+            p for p in root.rglob("*.py")
+            if not any(part in _PY_EXCLUDED_DIRS for part in p.parts)
+        ]
+        if not java_files and not ts_files and not next_route_files and not py_files:
             return [], []
 
         # resource -> every file that implements it (not just the last one seen) --
@@ -163,7 +193,12 @@ class FunctionalCompletenessEngine:
         controllers: dict[str, list[dict[str, Any]]] = {}
         services: set[str] = set()
         repositories: set[str] = set()
-        ts_resources: set[str] = set()
+        no_repository_layer_resources: set[str] = set()  # TS/Next.js/FastAPI: no separate repository class is idiomatic
+        # Next.js resources legitimately span multiple route.ts files per
+        # resource (list/create vs get/update/delete) -- exempt from the
+        # duplicate-location check below, unlike Java/NestJS/FastAPI's
+        # one-controller-per-file convention.
+        nextjs_resources: set[str] = set()
 
         for path in java_files:
             text = self._safe_read(path)
@@ -193,14 +228,51 @@ class FunctionalCompletenessEngine:
                 controllers.setdefault(resource, []).append(
                     {"file": str(path.relative_to(root)), "endpoints": methods}
                 )
-                ts_resources.add(resource)
+                no_repository_layer_resources.add(resource)
             elif _TS_INJECTABLE_DECORATOR_RE.search(text) and class_name.endswith("Service"):
                 services.add(_strip_suffix(class_name, "Service").lower())
+
+        for path in next_route_files:
+            text = self._safe_read(path)
+            methods = {m.group(1).upper() for m in _NEXT_ROUTE_METHOD_RE.finditer(text)}
+            if not methods:
+                continue
+            rel_parts = path.relative_to(root).parts
+            if "api" not in rel_parts:
+                continue
+            api_idx = rel_parts.index("api")
+            segments = [
+                s for s in rel_parts[api_idx + 1 : -1]
+                if not (s.startswith("[") and s.endswith("]")) and s.lower() not in _GENERIC_NEXT_SEGMENTS
+            ]
+            if not segments:
+                continue
+            resource = segments[0].capitalize()
+            controllers.setdefault(resource, []).append(
+                {"file": str(path.relative_to(root)), "endpoints": methods}
+            )
+            no_repository_layer_resources.add(resource)
+            nextjs_resources.add(resource)
+
+        for path in py_files:
+            text = self._safe_read(path)
+            if not _FASTAPI_ROUTER_RE.search(text):
+                continue
+            prefix_match = _FASTAPI_PREFIX_RE.search(text)
+            resource = (
+                prefix_match.group(1).capitalize() if prefix_match
+                else _strip_suffix(path.stem, "_controller").capitalize()
+            )
+            methods = {m.group(1).upper() for m in _FASTAPI_METHOD_RE.finditer(text)}
+            controllers.setdefault(resource, []).append(
+                {"file": str(path.relative_to(root)), "endpoints": methods}
+            )
+            no_repository_layer_resources.add(resource)  # shares the "no separate repository layer" exemption
 
         issues: list[CompletenessIssue] = []
         resources: list[ResourceCoverage] = []
         for resource, entries in controllers.items():
-            if len(entries) > 1:
+            if len(entries) > 1 and resource not in nextjs_resources:
                 files = [e["file"] for e in entries]
                 issues.append(CompletenessIssue(
                     id=f"duplicate_resource_implementation_{resource}",
@@ -216,14 +288,14 @@ class FunctionalCompletenessEngine:
                 endpoints |= entry["endpoints"]
             has_service = resource.lower() in services
             has_repository = resource.lower() in repositories
-            is_ts_resource = resource in ts_resources
+            skip_repository_check = resource in no_repository_layer_resources
             if not has_service:
                 issues.append(CompletenessIssue(
                     id=f"backend_no_service_{resource}", title=f"Controller '{resource}' has no matching Service",
                     severity="WARNING", category="backend", file=entries[0]["file"],
                     detail=f"No service class found for resource '{resource}'.",
                 ))
-            elif not has_repository and not is_ts_resource:
+            elif not has_repository and not skip_repository_check:
                 # Java-only warning: Prisma/TypeORM-in-service (no separate
                 # repository layer) is a common, legitimate NestJS pattern, not a
                 # gap -- flagging it for TS resources would be a false positive.
@@ -263,7 +335,7 @@ class FunctionalCompletenessEngine:
             if "@SpringBootApplication" in text:
                 spring_app_files.append(path)
 
-        if len(spring_app_files) > 1:
+        if len(spring_app_files) > 1 and not self._looks_like_microservice_workspace(root):
             issues.append(CompletenessIssue(
                 id="java_duplicate_application", title="Multiple @SpringBootApplication entrypoints found",
                 severity="BLOCKER", category="java_safety", file=None,
@@ -273,7 +345,19 @@ class FunctionalCompletenessEngine:
                 ),
             ))
 
-        issues.extend(self._duplicate_backend_tree_check(root))
+        if not self._looks_like_microservice_workspace(root):
+            issues.extend(self._duplicate_backend_tree_check(root))
+        return issues
+
+    @staticmethod
+    def _looks_like_microservice_workspace(root: Path) -> bool:
+        module_roots = [
+            p.parent for p in root.rglob("pom.xml")
+            if (p.parent / "src" / "main" / "java").is_dir()
+        ]
+        service_like = [p for p in module_roots if p.name.endswith("-service") or p.name in {"api-gateway", "gateway"}]
+        has_aggregator = (root / "pom.xml").is_file() or (root / "settings.gradle").is_file() or (root / "settings.gradle.kts").is_file()
+        return has_aggregator and len(service_like) >= 2
         return issues
 
     def _duplicate_backend_tree_check(self, root: Path) -> list[CompletenessIssue]:

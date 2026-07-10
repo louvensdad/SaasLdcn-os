@@ -416,3 +416,71 @@ def test_ts_project_with_no_nestjs_controllers_falls_back_to_needs_human_review(
     report = engine.evaluate(project)
     assert report.status == "NEEDS_HUMAN_REVIEW"
     assert report.resources == []
+
+
+def _next_route(*methods: str) -> str:
+    handlers = "\n".join(
+        f"export async function {m}(request) {{ return Response.json({{}}); }}" for m in methods
+    )
+    return f"import {{ NextRequest, NextResponse }} from 'next/server';\n\n{handlers}\n"
+
+
+def test_nextjs_api_routes_merge_into_one_resource_without_duplicate_blocker(make_project):
+    files = [
+        ("src/app/api/produtos/route.ts", _next_route("GET", "POST")),
+        ("src/app/api/produtos/[id]/route.ts", _next_route("GET", "PUT", "DELETE")),
+        ("package.json", "{\"name\": \"web\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="nextjs-api-routes")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    resource = next(r for r in report.resources if r.resource == "Produtos")
+    assert set(resource.backend.endpoints) == {"GET", "POST", "PUT", "DELETE"}
+    assert not any(i.id.startswith("duplicate_resource_implementation") for i in report.issues)
+
+
+def _fastapi_router(prefix: str, *methods: str) -> str:
+    handlers = "\n".join(f"@router.{m.lower()}('/')\ndef handler_{m.lower()}(): ..." for m in methods)
+    return f"from fastapi import APIRouter\n\nrouter = APIRouter(prefix='/{prefix}')\n\n{handlers}\n"
+
+
+def test_fastapi_duplicate_router_prefix_is_blocked(make_project):
+    files = [
+        ("app/controllers/ativo_controller.py", _fastapi_router("ativos", "GET", "POST")),
+        ("app/routers/ativos_v2.py", _fastapi_router("ativos", "GET")),
+        ("package.json", "{\"name\": \"api\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="fastapi-duplicate")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status == "BLOCKED"
+    assert any(i.id == "duplicate_resource_implementation_Ativos" for i in report.issues)
+
+
+def test_fastapi_single_router_is_discovered_without_false_repository_warning(make_project):
+    files = [
+        ("app/controllers/ativo_controller.py", _fastapi_router("ativos", "GET", "POST")),
+        ("package.json", "{\"name\": \"api\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="fastapi-single")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    resource = next(r for r in report.resources if r.resource == "Ativos")
+    assert set(resource.backend.endpoints) == {"GET", "POST"}
+    assert not any(i.id == "backend_no_repository_Ativos" for i in report.issues)
+
+
+def test_fastapi_router_inside_a_virtualenv_is_never_discovered(make_project):
+    files = [
+        (".ldcn-venv/Lib/site-packages/fastapi/routing.py", _fastapi_router("internal", "GET")),
+        ("package.json", "{\"name\": \"api\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="fastapi-venv-guard")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status == "NEEDS_HUMAN_REVIEW"
+    assert report.resources == []
