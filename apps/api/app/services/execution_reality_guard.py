@@ -44,6 +44,11 @@ _SUCCESS_CLAIM_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Short, syntax-neutral placeholder: no quotes/backslashes/control characters,
+# so it's safe to substitute inline inside a JSON string, YAML scalar, code
+# string literal, or plain text without breaking the surrounding structure.
+_SANITIZED_PLACEHOLDER = "[Reality Guard] instrucao removida"
+
 
 @dataclass(frozen=True)
 class RealityViolation:
@@ -127,25 +132,20 @@ class ExecutionRealityGuard:
         return result
 
     def sanitize(self, text: str, state: GroundTruthState, *, mode: Mode = "response") -> tuple[str, GuardResult]:
-        """Force an honest response: every line carrying a violation is replaced
-        by a diagnostic note that states the real reason it was removed."""
+        """Replace only the specific violating phrase in place (not the whole
+        line) so the surrounding syntax of ANY file format -- JSON, YAML, code --
+        stays structurally valid. A full-line markdown-style replacement used to
+        corrupt real JSON files during generation (confirmed live: a translations
+        file got a "> [Reality Guard] ..." line spliced into it, breaking JSON
+        syntax and taking down every page of the generated app)."""
         result = self.validate(text, state, mode=mode)
         if result.ok:
             return text, result
-        lines = text.splitlines()
-        sanitized: list[str] = []
-        for line in lines:
-            hits = [v for v in result.violations if v.excerpt.split("\n")[0][:40] and v.excerpt[:40] in line]
-            if not hits:
-                line_result = self.validate(line, state, mode=mode)
-                hits = line_result.violations
-            if hits:
-                sanitized.append(
-                    f"> [Reality Guard] Instrucao removida ({hits[0].rule}): {hits[0].reason}"
-                )
-            else:
-                sanitized.append(line)
-        return "\n".join(sanitized), result
+        sanitized = text
+        for violation in result.violations:
+            if violation.excerpt and violation.excerpt in sanitized:
+                sanitized = sanitized.replace(violation.excerpt, _SANITIZED_PLACEHOLDER)
+        return sanitized, result
 
     def regeneration_directive(self, state: GroundTruthState, result: GuardResult) -> str:
         """Failure-aware prompting for the regeneration attempt after a rejected

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 from pathlib import Path
@@ -80,6 +81,23 @@ def test_git_clone_only_when_repo_exists():
     assert any(violation.rule == "git_clone_without_repo" for violation in blocked_artifact.violations)
     allowed = execution_reality_guard.validate(text, _ready_state(repo_created=True), mode="response")
     assert allowed.ok
+
+
+# --- 2b. sanitize() must not corrupt structured formats (JSON/YAML/code) -----
+
+def test_sanitize_keeps_json_valid_after_removing_a_fabricated_claim():
+    # The exact incident: sanitize() used to replace the WHOLE line with a
+    # markdown blockquote, which is invalid inside a JSON string value and
+    # broke every page of the generated app (confirmed live in a real
+    # generation, 2026-07-08). The fix substitutes only the violating phrase
+    # in place, so the surrounding JSON stays syntactically valid.
+    original = json.dumps({"app_name": "KanbanFlow", "welcome_message": "O projeto foi gerado com sucesso!"})
+    sanitized, result = execution_reality_guard.sanitize(original, _failed_state(), mode="artifact")
+    assert not result.ok
+    parsed = json.loads(sanitized)  # must not raise -- still valid JSON
+    assert parsed["app_name"] == "KanbanFlow"
+    assert "gerado com sucesso" not in parsed["welcome_message"]
+    assert "[Reality Guard]" in parsed["welcome_message"]
 
 
 # --------------------- 3. docker-compose so aparece quando o build e READY ---
