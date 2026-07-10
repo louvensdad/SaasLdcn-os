@@ -565,6 +565,25 @@ def test_frontend_type_matching_openapi_schema_has_no_drift_issue(make_project):
     assert not any(i.id == "contract_drift_Workspace" for i in report.issues)
 
 
+def test_contract_drift_ignores_stale_types_in_apps_mobile(make_project):
+    # Confirmed live (2026-07-10): InvestTrack has a real, correct web frontend
+    # type PLUS an entirely separate apps/mobile/ (Expo) tree with its own
+    # stale English-named type of the same schema name -- the drift check was
+    # scanning both combined, so a fully-correct web type still got flagged as
+    # drifted because rglob("*.ts") picked up apps/mobile/ too.
+    files = [
+        ("openapi.yaml", _VALID_OPENAPI_WORKSPACE),
+        ("src/lib/types.ts", "export interface Workspace {\n  id: string;\n  nome: string;\n  descricao?: string;\n}\n"),
+        ("apps/mobile/src/types/api.ts", "export interface Workspace {\n  id: string;\n  name: string;\n  description?: string;\n}\n"),
+        ("package.json", "{\"name\": \"web\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="openapi-no-drift-with-mobile")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert not any(i.id == "contract_drift_Workspace" for i in report.issues)
+
+
 def test_duplicate_openapi_specs_with_different_content_are_flagged(make_project):
     files = [
         ("openapi.yaml", _VALID_OPENAPI_WORKSPACE),

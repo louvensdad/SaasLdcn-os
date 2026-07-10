@@ -493,7 +493,7 @@ class FunctionalCompletenessEngine:
 
         ts_files = [
             p for p in (*frontend_root.rglob("*.ts"), *frontend_root.rglob("*.tsx"))
-            if "node_modules" not in p.parts
+            if "node_modules" not in p.parts and "/apps/mobile/" not in f"/{p.as_posix()}/"
         ]
         combined_text = "\n".join(self._safe_read(p) for p in ts_files)
 
