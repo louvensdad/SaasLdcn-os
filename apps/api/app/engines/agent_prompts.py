@@ -175,6 +175,11 @@ openapi.yaml) e a fonte da verdade que Back e Front consumirao. Voce NAO impleme
 - Seguranca no contrato: securitySchemes (bearerAuth/JWT) e rotas protegidas.
   Respostas de erro padronizadas (400/401/403/422/429/500).
 - Versione em /v1. Nenhum endpoint fora dos workflows da spec.
+- YAML e sensivel a dois-pontos: qualquer valor de description/summary/example que
+  contenha ": " (dois-pontos seguido de espaco), aspas, ou quebra de linha DEVE ser
+  colocado entre aspas duplas (ou usar bloco `|`/`>`). Nunca escreva
+  `description: Nome da coluna (ex: "A Fazer")` sem aspas -- isso quebra o parser
+  YAML. Prefira `description: "Nome da coluna (ex: 'A Fazer')"`.
 </constraints>
 
 {REASONING_PROCESS}

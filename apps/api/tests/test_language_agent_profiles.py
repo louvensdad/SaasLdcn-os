@@ -78,6 +78,14 @@ def test_orchestrator_prompt_carries_specialist_catalog_and_respects_user_choice
     assert "RESPEITE-OS" in ORCHESTRATOR_SYSTEM_PROMPT  # explicit user stack wins
 
 
+def test_contracts_prompt_warns_about_unquoted_yaml_colons():
+    # Confirmed live (2026-07-08): the Contracts Agent wrote
+    # `description: Nome da coluna (ex: "A Fazer")` unquoted into openapi.yaml,
+    # and the bare ": " broke YAML parsing for the whole file.
+    assert "dois-pontos" in AGENT_PROMPTS["contracts"]
+    assert "aspas" in AGENT_PROMPTS["contracts"]
+
+
 def test_ecosystem_brief_is_role_agnostic_and_graceful():
     brief = ecosystem_brief("go", "Gin")
     assert '<ecosystem_knowledge language="go"' in brief
