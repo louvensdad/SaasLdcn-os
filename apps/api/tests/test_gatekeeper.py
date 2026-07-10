@@ -64,8 +64,30 @@ def test_gatekeeper_preview_approved(client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["decision"] == "approved"
-    assert len(payload["checks"]) == 17
+    assert len(payload["checks"]) == 19
     assert all(check["status"] == "passed" for check in payload["checks"])
+
+
+def test_gatekeeper_blocks_prompt_master_missing_file_contract_sections(client):
+    blueprint = _build_blueprint(client)
+    prompt_master = _build_prompt_master(client, blueprint)
+    prompt_master["sections"] = [
+        section for section in prompt_master["sections"]
+        if section["id"] not in {"required_files", "forbidden_files"}
+    ]
+
+    response = client.post(
+        "/api/gatekeeper/preview",
+        json={"blueprint": blueprint, "prompt_master": prompt_master},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["decision"] == "blocked"
+    required_check = next(check for check in payload["checks"] if check["id"] == "required_files_check")
+    forbidden_check = next(check for check in payload["checks"] if check["id"] == "forbidden_files_check")
+    assert required_check["status"] == "failed"
+    assert forbidden_check["status"] == "failed"
 
 
 def test_gatekeeper_prompt_master_invalid_blocks(client):

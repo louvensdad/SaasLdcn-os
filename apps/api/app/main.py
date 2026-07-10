@@ -12,6 +12,7 @@ from app.core.logging import RequestIdMiddleware, RequestLoggingMiddleware, logg
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.routes import (
+    agent_foundation,
     ai_status,
     analytics,
     architectural_graph,
@@ -111,6 +112,7 @@ def create_application() -> FastAPI:
     app.include_router(templates.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(tenants.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(skills.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(agent_foundation.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(system_status.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(roadmap.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(projects.router, prefix=settings.api_prefix, dependencies=protected)

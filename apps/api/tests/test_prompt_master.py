@@ -68,6 +68,7 @@ def test_prompt_master_contains_all_mandatory_sections(client):
         "Architecture Profile",
         "Business Modules",
         "Endpoint Plan",
+        "Required Files",
         "Capability Plan",
         "Security Requirements",
         "Data Model Hints",
@@ -75,10 +76,27 @@ def test_prompt_master_contains_all_mandatory_sections(client):
         "Documentation Requirements",
         "Quality Gates",
         "Forbidden Decisions",
+        "Forbidden Files",
         "Generation Constraints",
         "Locale / Language Rules",
         "Trace",
     ]
+
+
+def test_prompt_master_declares_required_and_forbidden_files(client):
+    blueprint = _build_blueprint(client)
+
+    response = client.post("/api/prompt-master/preview", json={"blueprint": blueprint})
+
+    assert response.status_code == 200
+    sections = {item["id"]: item for item in response.json()["sections"]}
+    required_files = sections["required_files"]
+    forbidden_files = sections["forbidden_files"]
+    assert "package.json" in required_files["bullets"]
+    assert "src/main.ts" in required_files["bullets"]
+    assert any("README.md" in item for item in required_files["bullets"])
+    assert any(".env" in item for item in forbidden_files["bullets"])
+    assert any("NestJS" in item or "nestjs" in item for item in forbidden_files["bullets"])
 
 
 def test_prompt_master_trace_does_not_contain_secrets(client):

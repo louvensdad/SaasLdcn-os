@@ -19,12 +19,14 @@ CHECK_DEFINITIONS = [
     ("architecture_compatibility_check", "Architecture Compatibility Check"),
     ("business_module_check", "Business Module Check"),
     ("endpoint_plan_check", "Endpoint Plan Check"),
+    ("required_files_check", "Required Files Check"),
     ("capability_dependency_check", "Capability Dependency Check"),
     ("engineering_readiness_check", "Engineering Readiness Check"),
     ("security_baseline_check", "Security Baseline Check"),
     ("testing_baseline_check", "Testing Baseline Check"),
     ("documentation_baseline_check", "Documentation Baseline Check"),
     ("generation_constraint_check", "Generation Constraint Check"),
+    ("forbidden_files_check", "Forbidden Files Check"),
     ("locale_i18n_check", "Locale/i18n Check"),
     ("secret_exposure_check", "Secret Exposure Check"),
     ("trace_safety_check", "Trace Safety Check"),
@@ -70,12 +72,14 @@ def run_gatekeeper_checks(blueprint: dict[str, Any], prompt_master: dict[str, An
         _architecture_compatibility_check(blueprint, prompt_master),
         _business_module_check(blueprint, prompt_master),
         _endpoint_plan_check(blueprint, prompt_master),
+        _required_files_check(blueprint, prompt_master),
         _capability_dependency_check(blueprint, prompt_master),
         _engineering_readiness_check(blueprint, prompt_master),
         _security_baseline_check(blueprint, prompt_master),
         _testing_baseline_check(blueprint, prompt_master),
         _documentation_baseline_check(blueprint, prompt_master),
         _generation_constraint_check(blueprint, prompt_master),
+        _forbidden_files_check(blueprint, prompt_master),
         _locale_i18n_check(blueprint, prompt_master),
         _secret_exposure_check(blueprint, prompt_master),
         _trace_safety_check(blueprint, prompt_master),
@@ -244,6 +248,44 @@ def _endpoint_plan_check(blueprint: dict[str, Any], prompt_master: dict[str, Any
         "Verifies that the Prompt Master endpoint plan covers the blueprint endpoint set.",
     )
 
+
+def _required_files_check(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> dict[str, Any]:
+    section = _find_section(prompt_master, "required_files")
+    technology_graph = blueprint["technology_graph"]
+    language_id = technology_graph["language"]["id"]
+    framework_id = technology_graph["framework"]["id"]
+    expected = ["README.md"]
+    if language_id == "typescript":
+        expected.append("package.json")
+    elif language_id == "python":
+        expected.append("pyproject.toml")
+    elif language_id == "java":
+        expected.append("pom.xml")
+    if framework_id == "nestjs":
+        expected.append("src/main.ts")
+    elif framework_id == "fastapi":
+        expected.append("app/main.py")
+
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if section is None:
+        blockers.append("Prompt Master is missing the Required Files section.")
+    else:
+        combined = f"{section['content']} {' '.join(section['bullets'])}".lower()
+        for expected_file in expected:
+            if expected_file.lower() not in combined:
+                blockers.append(f"Required Files section is missing stack file '{expected_file}'.")
+        if "test" not in combined:
+            warnings.append("Required Files section does not explicitly mention test files.")
+
+    return _build_check(
+        "required_files_check",
+        "Required Files Check",
+        blockers,
+        warnings,
+        expected,
+        "Verifies that the Prompt Master declares stack-specific required files before generation.",
+    )
 
 def _capability_dependency_check(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> dict[str, Any]:
     blockers: list[str] = []
@@ -457,6 +499,30 @@ def _generation_constraint_check(blueprint: dict[str, Any], prompt_master: dict[
         "Verifies that the Prompt Master remains preview-only and non-generative.",
     )
 
+
+def _forbidden_files_check(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> dict[str, Any]:
+    del blueprint
+    section = _find_section(prompt_master, "forbidden_files")
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if section is None:
+        blockers.append("Prompt Master is missing the Forbidden Files section.")
+    else:
+        combined = f"{section['content']} {' '.join(section['bullets'])}".lower()
+        for required_phrase in (".env", "secret", "node_modules"):
+            if required_phrase not in combined:
+                blockers.append(f"Forbidden Files section is missing unsafe pattern '{required_phrase}'.")
+        if "contradicts the selected technology graph" not in combined:
+            warnings.append("Forbidden Files section does not explicitly guard against stack drift files.")
+
+    return _build_check(
+        "forbidden_files_check",
+        "Forbidden Files Check",
+        blockers,
+        warnings,
+        ["forbidden_files"],
+        "Verifies that the Prompt Master declares unsafe file patterns and stack-drift artifacts as forbidden.",
+    )
 
 def _locale_i18n_check(blueprint: dict[str, Any], prompt_master: dict[str, Any]) -> dict[str, Any]:
     blockers: list[str] = []

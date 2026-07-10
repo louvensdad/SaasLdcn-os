@@ -3,6 +3,7 @@ from __future__ import annotations
 import concurrent.futures as cf
 import hashlib
 import json
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -39,7 +40,7 @@ from app.services.stack_compatibility import STACK_LOCK_FILE, StackLock, stack_c
 # The watchdog sits just above that worst case: a step that exceeds it is a genuine
 # hang (an adapter ignoring its own timeout, a never-resolving await, a wedged
 # socket) and is converted into a STALLED job instead of a forever-"running" one.
-STAGE_TIMEOUT_SECONDS = 1500  # 25 min — bounds any single step; never infinite
+STAGE_TIMEOUT_SECONDS = 1500  # 25 min ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bounds any single step; never infinite
 
 # Statuses that no longer occupy an agent worker: a job in one of these is done,
 # awaiting the user, or parked. Everything else (QUEUED + the *_RUNNING/*_GENERATING
@@ -48,6 +49,17 @@ TERMINAL_STATUSES = frozenset({"READY", "FAILED", "PAUSED", "NEEDS_USER_ACTION",
 MAX_MANUAL_BUILD_RETRIES = 3
 
 LOGICAL_STAGES = ["contracts", "database", "backend", "frontend", "mobile", "security", "tests", "docs", "build", "package"]
+JAVA_RESERVED_PACKAGE_SEGMENTS = frozenset({
+    "abstract", "assert", "boolean", "break", "byte", "case", "catch",
+    "char", "class", "const", "continue", "default", "do", "double",
+    "else", "enum", "extends", "final", "finally", "float", "for",
+    "goto", "if", "implements", "import", "instanceof", "int", "interface",
+    "long", "native", "new", "package", "private", "protected", "public",
+    "return", "short", "static", "strictfp", "super", "switch",
+    "synchronized", "this", "throw", "throws", "transient", "try", "void",
+    "volatile", "while", "true", "false", "null", "record", "sealed",
+    "permits", "non-sealed", "var", "yield",
+})
 
 
 def _usage_totals(parsed: Any, response: Any) -> tuple[int, int]:
@@ -144,7 +156,7 @@ class StageFailure(RuntimeError):
 
 class StageStalled(RuntimeError):
     """A stage exceeded its timeout (provider/task never resolved). The job is
-    marked STALLED — recoverable — instead of being left forever in 'running'."""
+    marked STALLED ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â recoverable ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â instead of being left forever in 'running'."""
 
     def __init__(self, message: str, *, diagnostic: dict[str, Any]):
         super().__init__(message)
@@ -331,8 +343,8 @@ class GenerationJobEngine:
             self._finalize_pipeline(job, owner_user_id, outcome="FAILED", message=f"Falha inesperada da pipeline: {exc}")
 
     def _finalize_pipeline(self, job: dict[str, Any], owner: str, *, outcome: str, message: str) -> None:
-        """State Transition Finalizer: EVERY pipeline run — success, degraded
-        continuation (build skipped), user-action block, stall or crash — ends
+        """State Transition Finalizer: EVERY pipeline run ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â success, degraded
+        continuation (build skipped), user-action block, stall or crash ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ends
         here. It stamps finishedAt and emits the mandatory PIPELINE_COMPLETE
         execution event, so the frontend always receives a terminal signal and
         can never be left waiting for a BUILD_SUCCESS that will not come.
@@ -413,7 +425,7 @@ class GenerationJobEngine:
         job["error"] = None
         self._log(job, job["currentStage"], "info", "Continuando a partir do ultimo checkpoint.")
         self._save(job, owner_user_id)
-        # Resume in the SAME mode the job was created with — a job started in
+        # Resume in the SAME mode the job was created with ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â a job started in
         # "deterministic" mode (no LLM provider required) must not silently
         # switch to real LLM calls (or demand a provider it never needed) just
         # because it stalled/paused and is being resumed.
@@ -560,7 +572,7 @@ class GenerationJobEngine:
         # Ground Truth State Engine: the REAL system state is mandatory in every
         # LLM context (appended AFTER compression so it always survives). The
         # model can never guess whether the build passed, a repo exists or the
-        # pipeline finished — it is told, and in failure state it is put in
+        # pipeline finished ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â it is told, and in failure state it is put in
         # DIAGNOSTIC ONLY mode.
         ground_truth = ground_truth_engine.from_job(job)
         context += "\n\n" + ground_truth_engine.prompt_block(ground_truth)
@@ -583,7 +595,7 @@ class GenerationJobEngine:
         token_estimate = estimate_tokens(context)
         checkpoint = self._checkpoint(job, step, payload_bytes, token_estimate)
         # Persist the running checkpoint BEFORE the (potentially hanging) LLM call so
-        # a stall/crash recovery — which reloads from the repository — still sees it.
+        # a stall/crash recovery ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â which reloads from the repository ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â still sees it.
         self._save(job, owner)
         if mode == "deterministic":
             self._deterministic_stage_fallback(job, owner, step)
@@ -671,7 +683,7 @@ class GenerationJobEngine:
                 response, parsed = retry_response, retry_parsed
         except (StageStalled, JobPaused):
             raise
-        except Exception:  # noqa: BLE001 — regeneration is best-effort; sanitization below is the guarantee
+        except Exception:  # noqa: BLE001 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â regeneration is best-effort; sanitization below is the guarantee
             pass
 
         # Whatever still contradicts reality is forcibly sanitized (never shown).
@@ -703,7 +715,7 @@ class GenerationJobEngine:
         return within the stage ceiling the wait is abandoned (future cancelled,
         worker bounded by the adapter's own request timeout) and the stage is
         converted into a recoverable STALLED state. This is the single guarantee
-        that BACKEND_GENERATING — or any LLM stage — can never sit in 'running'
+        that BACKEND_GENERATING ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â or any LLM stage ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â can never sit in 'running'
         forever waiting on a provider/task that never resolves."""
         timeout_seconds = float(self.stage_timeout_seconds)
         deadline = time.monotonic() + timeout_seconds
@@ -772,7 +784,7 @@ class GenerationJobEngine:
             self._check_stack_conflicts(job, owner, step)
             self._check_import_graph(job, owner, step)
         # Warning policy gate: classify everything this stage produced. Only
-        # blocking_warning / error / critical stop the pipeline — documentation,
+        # blocking_warning / error / critical stop the pipeline ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â documentation,
         # coverage, TODO, traceability, territory-drift and synthesized-manifest
         # warnings are advisory and MUST NOT block (the "valid + 116 warnings"
         # backend stall). A blocking set becomes NEEDS_USER_ACTION (recoverable),
@@ -811,7 +823,7 @@ class GenerationJobEngine:
 
     def _persist_dependency_graph(self, job: dict[str, Any], owner: str, step: PipelineStep, blueprint: dict[str, Any]) -> None:
         """Carry the architecture-level Dependency Graph Engine snapshot (nodes,
-        edges, propagation rules, impact/readiness/risk profiles — already
+        edges, propagation rules, impact/readiness/risk profiles ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â already
         computed pre-generation from the room's approved stack/capabilities by
         `dependency_graph_engine.generate_dependency_snapshot`, see
         `blueprint_engine.py`) into the generation job itself. Previously this
@@ -866,7 +878,7 @@ class GenerationJobEngine:
         Keyed by "{logical_stage}/{name}", not the bare artifact name: a chunked
         stage (e.g. BACKEND_CHUNKS) legitimately re-emits the same "package.json"
         several times as it accumulates dependencies, and those must collapse to
-        one entry (the latest content) — but backend and frontend each emit their
+        one entry (the latest content) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â but backend and frontend each emit their
         own "package.json" at a DIFFERENT path with the SAME bare name, and keying
         by bare name alone let the later stage's manifest silently clobber the
         earlier one's entry in this dict (findable on disk the whole time, just
@@ -897,7 +909,7 @@ class GenerationJobEngine:
         """Import Graph Engine v1 (TS/JS only): parses the imports of every
         generated source file emitted so far and cross-checks them against the
         manifests emitted in the same job. Report-only by design (user
-        decision) — a regex parser can false-positive on syntax it doesn't
+        decision) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â a regex parser can false-positive on syntax it doesn't
         recognize, and BUILD_RUNNING's real typecheck/bundler remains the
         authoritative gate. Value-add over the compiler: undeclared external
         packages and cross-stack leakage (e.g. apps/web importing straight from
@@ -933,7 +945,7 @@ class GenerationJobEngine:
         Compatibility Matrix, and reconciles the same dependency declared with
         different versions across manifests (monorepo drift). Auto-fixes are
         applied in place (artifact content + file on disk); a manifest that
-        cannot even be parsed is a hard block — everything else this engine
+        cannot even be parsed is a hard block ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â everything else this engine
         can diagnose has a deterministic fix, so it repairs rather than stops
         the pipeline (see stack_compatibility.py)."""
         manifests, parse_errors = self._collect_manifest_artifacts(job)
@@ -1036,6 +1048,93 @@ class GenerationJobEngine:
         except Exception as exc:  # noqa: BLE001 -- best-effort, never breaks a finished pipeline
             self._log(job, "READY", "warning", "Project Manifest failed to write.", str(exc))
 
+    @staticmethod
+    def _ensure_maven_dependencies_for_imports(path: str, content: str, latest: dict[str, str]) -> str:
+        if not path.endswith("pom.xml") or "<dependencies>" not in content:
+            return content
+        module_prefix = "" if path == "pom.xml" else path.rsplit("/", 1)[0] + "/"
+        sources = "\n".join(
+            source for source_path, source in latest.items()
+            if source_path.startswith(module_prefix) and source_path.endswith(".java")
+        )
+        snippets = [
+            ("spring-boot-starter-data-jpa", ("jakarta.persistence", "org.springframework.data.jpa", "org.springframework.data.annotation"), """
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>"""),
+            ("spring-boot-starter-amqp", ("org.springframework.amqp",), """
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>"""),
+            ("springdoc-openapi-starter-webmvc-ui", ("io.swagger.v3.oas.models",), """
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.3.0</version>
+        </dependency>"""),
+            ("jjwt-api", ("io.jsonwebtoken",), """
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.11.5</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
+        </dependency>"""),
+            ("bucket4j-core", ("io.github.bucket4j",), """
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-core</artifactId>
+            <version>8.7.0</version>
+        </dependency>"""),
+        ]
+        additions: list[str] = []
+        for marker, import_prefixes, snippet in snippets:
+            if marker in content or marker in "\n".join(additions):
+                continue
+            if any(import_prefix in sources for import_prefix in import_prefixes):
+                additions.append(snippet)
+        if not additions:
+            return content
+        return content.replace("</dependencies>", "\n" + "\n".join(additions) + "\n    </dependencies>", 1)
+    @staticmethod
+    def _normalize_build_files(latest: dict[str, str]) -> dict[str, str]:
+        """Repair cross-agent file inconsistencies before publishing/building."""
+        normalized = dict(latest)
+        root_pom = normalized.get("pom.xml")
+        if root_pom and "<modules>" in root_pom:
+            module_dirs = sorted({
+                path.split("/", 1)[0]
+                for path in normalized
+                if "/" in path
+                and path.endswith("/pom.xml")
+                and path.count("/") == 1
+                and not path.startswith(("node_modules/", ".next/"))
+            })
+            if module_dirs:
+                modules_xml = "\n".join(f"        <module>{module}</module>" for module in module_dirs)
+                root_pom = re.sub(
+                    r"(?s)\s*<modules>.*?</modules>",
+                    f"\n    <modules>\n{modules_xml}\n    </modules>",
+                    root_pom,
+                    count=1,
+                )
+                normalized["pom.xml"] = root_pom
+        for path, content in list(normalized.items()):
+            if path.endswith("pom.xml"):
+                normalized[path] = GenerationJobEngine._ensure_maven_dependencies_for_imports(path, content, normalized)
+        return normalized
     def _build(self, job: dict[str, Any], owner: str) -> None:
         files: list[EmittedFile] = []
         latest: dict[str, str] = {}
@@ -1053,7 +1152,7 @@ class GenerationJobEngine:
                 # apps/frontend, ...): naive last-write-wins here silently
                 # dropped the earlier stage's entire dependency list from the
                 # published project (confirmed against a real end-to-end
-                # generation — the backend's NestJS/TypeORM deps never made it
+                # generation ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â the backend's NestJS/TypeORM deps never made it
                 # into the final package.json at all). Merge instead of overwrite.
                 content = self._merge_package_json(previous, content)
             elif previous is not None and lower_name.endswith("tsconfig.json"):
@@ -1065,6 +1164,7 @@ class GenerationJobEngine:
                 # scans the whole shared src/ tree, not just its own files).
                 content = self._merge_tsconfig_json(previous, content)
             latest[name] = content
+        latest = self._normalize_build_files(latest)
         files = [EmittedFile(path=name, content=content) for name, content in latest.items()]
         if not files:
             raise StageFailure("Nenhum arquivo valido para build.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", "Nenhum arquivo valido para build."))
@@ -1141,11 +1241,44 @@ class GenerationJobEngine:
         job["valid"] = True
 
     @staticmethod
+    def _sanitize_java_reserved_package_segments(name: str, content: str) -> tuple[str, str, bool]:
+        """Repair Java package path/declaration segments that are reserved words.
+
+        Providers still occasionally emit Clean Architecture folders like
+        ``.../interface/...`` and a matching ``package ...interface...``. That is
+        invalid Java, so repair the artifact before it reaches build/publish.
+        """
+        if not name.lower().endswith(".java"):
+            return name, content, False
+
+        repaired = False
+
+        def safe_segment(segment: str) -> str:
+            nonlocal repaired
+            if segment in JAVA_RESERVED_PACKAGE_SEGMENTS:
+                repaired = True
+                return f"{segment}_"
+            return segment
+
+        safe_name = "/".join(safe_segment(part) for part in name.split("/"))
+
+        def repair_package(match: re.Match[str]) -> str:
+            prefix, package_name, wildcard, suffix = match.groups()
+            safe_package = ".".join(safe_segment(part) for part in package_name.split("."))
+            return f"{prefix}{safe_package}{wildcard or ''}{suffix}"
+
+        repaired_content = re.sub(
+            r"(?m)^(\s*(?:package|import)\s+)([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)(\.\*)?(\s*;)",
+            repair_package,
+            content,
+        )
+        return safe_name, repaired_content, repaired
+    @staticmethod
     def _merge_package_json(previous: str, current: str) -> str:
         """Union dependencies/scripts from an earlier stage's package.json into
         the later stage's, instead of the later one silently replacing it. Falls
         back to `current` unchanged if either side doesn't parse as a JSON
-        object — publishing whatever the pipeline actually produced is safer
+        object ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â publishing whatever the pipeline actually produced is safer
         than raising mid-build over a merge nicety."""
         try:
             before = json.loads(previous)
@@ -1168,7 +1301,7 @@ class GenerationJobEngine:
     @staticmethod
     def _merge_tsconfig_json(previous: str, current: str) -> str:
         """Union compilerOptions from an earlier stage's tsconfig.json into the
-        later stage's, instead of the later one silently replacing it — same
+        later stage's, instead of the later one silently replacing it ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â same
         collision and fix shape as _merge_package_json. Any key only the
         earlier stage set (e.g. a NestJS backend's "experimentalDecorators")
         survives untouched; the later stage's value wins on an exact key
@@ -1265,6 +1398,9 @@ class GenerationJobEngine:
     def _write_text_artifact(self, job: dict[str, Any], owner: str, step: PipelineStep, name: str, content: str, kind: str, *, valid: bool, warnings: list[str] | None = None) -> dict[str, Any]:
         self._assert_not_paused(job, owner)
         safe_name = "/".join(part for part in Path(name).as_posix().split("/") if part not in {"", ".", ".."})
+        safe_name, content, java_repaired = self._sanitize_java_reserved_package_segments(safe_name, content)
+        if java_repaired:
+            warnings = [*(warnings or []), "java_reserved_package_segment_repaired"]
         root = (self.checkpoint_root / job["id"]).resolve()
         target = (root / step.logical / safe_name).resolve()
         if root not in target.parents:
@@ -1272,7 +1408,7 @@ class GenerationJobEngine:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         data = content.encode("utf-8")
-        artifact = {"id": f"art_{uuid4().hex[:12]}", "stage": f"{step.logical}.{step.chunk}" if step.chunk else step.logical, "name": name, "kind": kind, "path": str(target), "size_bytes": len(data), "checksum": hashlib.sha256(data).hexdigest(), "valid": valid, "warnings": warnings or [], "created_at": self._now()}
+        artifact = {"id": f"art_{uuid4().hex[:12]}", "stage": f"{step.logical}.{step.chunk}" if step.chunk else step.logical, "name": safe_name, "kind": kind, "path": str(target), "size_bytes": len(data), "checksum": hashlib.sha256(data).hexdigest(), "valid": valid, "warnings": warnings or [], "created_at": self._now()}
         job["artifacts"].append(artifact)
         self._emit(job, owner, "artifact_written", stage=step.state, message=f"Arquivo gerado: {name} ({len(data)} bytes).", artifact_path=name)
         self._save(job, owner)
@@ -1313,7 +1449,7 @@ class GenerationJobEngine:
         snapshot = self._context_snapshot(job, stage, steps)
         recommended = (
             "Esta etapa excedeu o tempo limite. Reexecute o Backend, continue com warnings, "
-            "troque o provider ou use o fallback determinístico desta etapa."
+            "troque o provider ou use o fallback determinÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­stico desta etapa."
             if kind == "stall"
             else "Reexecute somente esta etapa em modo particionado; se persistir, troque o provider ou use o fallback especifico."
         )
@@ -1350,7 +1486,7 @@ class GenerationJobEngine:
         last_log = None
         if logs:
             entry = logs[-1]
-            last_log = entry["message"] + (f" — {entry['detail']}" if entry.get("detail") else "")
+            last_log = entry["message"] + (f" ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â {entry['detail']}" if entry.get("detail") else "")
         last_success = next(
             (item["stage"] for item in reversed(job.get("checkpoints", [])) if item["status"] == "success"),
             None,
@@ -1475,3 +1611,6 @@ class GenerationJobEngine:
 
 
 generation_job_engine = GenerationJobEngine()
+
+
+

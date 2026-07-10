@@ -16,6 +16,7 @@ MANDATORY_SECTIONS = [
     ("architecture_profile", "Architecture Profile"),
     ("business_modules", "Business Modules"),
     ("endpoint_plan", "Endpoint Plan"),
+    ("required_files", "Required Files"),
     ("capability_plan", "Capability Plan"),
     ("security_requirements", "Security Requirements"),
     ("data_model_hints", "Data Model Hints"),
@@ -23,6 +24,7 @@ MANDATORY_SECTIONS = [
     ("documentation_requirements", "Documentation Requirements"),
     ("quality_gates", "Quality Gates"),
     ("forbidden_decisions", "Forbidden Decisions"),
+    ("forbidden_files", "Forbidden Files"),
     ("generation_constraints", "Generation Constraints"),
     ("locale_language_rules", "Locale / Language Rules"),
     ("trace", "Trace"),
@@ -173,6 +175,13 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
             ] or ["No endpoints were selected."],
         ),
         _section(
+            "required_files",
+            "Required Files",
+            "Minimum file-level contract future generation phases must satisfy for the selected stack.",
+            "Generated output must include the stack-specific project files below before it can be treated as structurally complete.",
+            _required_file_bullets(technology_graph, endpoints),
+        ),
+        _section(
             "capability_plan",
             "Capability Plan",
             "Cross-cutting capabilities that must shape project scope and implementation sequencing.",
@@ -240,6 +249,13 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
             "Explicit anti-decisions that prevent scope drift or silent stack invention.",
             "These decisions are forbidden unless a new blueprint revision is produced and approved.",
             _forbidden_decisions(blueprint, recommendation_lines),
+        ),
+        _section(
+            "forbidden_files",
+            "Forbidden Files",
+            "File patterns that future generation phases must not emit for this stack contract.",
+            "These files indicate secret leakage, dependency drift, framework substitution, or unsafe generated artifacts.",
+            _forbidden_file_bullets(technology_graph),
         ),
         _section(
             "generation_constraints",
@@ -423,6 +439,61 @@ def _data_model_hints(modules: list[dict[str, Any]], endpoints: list[dict[str, A
     endpoint_hints = [f"Map endpoint '{endpoint['id']}' to the owning module '{endpoint.get('business_module_id') or 'unassigned'}'." for endpoint in endpoints]
     return module_hints + endpoint_hints or ["No module or endpoint hints were available."]
 
+
+def _required_file_bullets(technology_graph: dict[str, Any], endpoints: list[dict[str, Any]]) -> list[str]:
+    language_id = technology_graph["language"]["id"]
+    framework_id = technology_graph["framework"]["id"]
+    architecture_id = technology_graph["architecture"]["id"]
+
+    bullets = [
+        "README.md with setup, run, test, and stack summary instructions.",
+        "A dependency manifest matching the selected stack.",
+        "Automated test files covering selected endpoints and business rules.",
+    ]
+
+    if language_id == "typescript":
+        bullets.extend(["package.json", "tsconfig.json"])
+    elif language_id == "python":
+        bullets.extend(["pyproject.toml or requirements.txt", "app/main.py"])
+    elif language_id == "java":
+        bullets.extend(["pom.xml or build.gradle", "src/main/java application entrypoint"])
+
+    if framework_id == "nestjs":
+        bullets.extend(["src/main.ts", "src/app.module.ts", "controller/service/module files for each selected business module"])
+    elif framework_id == "nextjs":
+        bullets.extend(["app or src/app route tree", "shared API client for selected endpoints"])
+    elif framework_id == "fastapi":
+        bullets.extend(["app/main.py", "router files for selected endpoint groups"])
+    elif framework_id == "spring_boot":
+        bullets.extend(["Spring Boot application class", "controller/service/repository packages for selected modules"])
+
+    if architecture_id == "microservices":
+        bullets.append("Per-service README or service manifest documenting ownership boundaries.")
+    if endpoints:
+        bullets.append("Contract or route declaration covering every selected endpoint id.")
+
+    return list(dict.fromkeys(bullets))
+
+
+def _forbidden_file_bullets(technology_graph: dict[str, Any]) -> list[str]:
+    framework_id = technology_graph["framework"]["id"]
+    forbidden = [
+        ".env with real secrets or credentials.",
+        "Generated files containing API keys, tokens, private keys, passwords, or provider secrets.",
+        "node_modules/, .venv/, target/, dist/, build/, coverage/, or other generated dependency/build directories.",
+        "Lockfiles or manifests for a framework that contradicts the selected technology graph.",
+    ]
+
+    if framework_id == "nestjs":
+        forbidden.extend(["Next.js-only app/page files unless a frontend stack is separately approved.", "Spring Boot or FastAPI source trees in the NestJS backend output."])
+    elif framework_id == "nextjs":
+        forbidden.extend(["NestJS backend trees unless a backend stack is separately approved.", "Spring Boot or FastAPI source trees in the Next.js frontend output."])
+    elif framework_id == "fastapi":
+        forbidden.extend(["NestJS or Spring Boot source trees in the FastAPI output.", "package.json used as the primary backend manifest."])
+    elif framework_id == "spring_boot":
+        forbidden.extend(["NestJS or FastAPI source trees in the Spring Boot output.", "package.json used as the primary backend manifest."])
+
+    return forbidden
 
 def _forbidden_decisions(blueprint: dict[str, Any], recommendation_lines: list[str]) -> list[str]:
     technology_graph = blueprint["technology_graph"]
