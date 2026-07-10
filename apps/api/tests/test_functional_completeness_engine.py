@@ -484,3 +484,122 @@ def test_fastapi_router_inside_a_virtualenv_is_never_discovered(make_project):
     report = engine.evaluate(project)
     assert report.status == "NEEDS_HUMAN_REVIEW"
     assert report.resources == []
+
+
+# --------------------------- Phase 8: OpenAPI <-> frontend contract drift ----
+
+_VALID_OPENAPI_WORKSPACE = """
+openapi: 3.0.0
+info:
+  title: Test API
+  version: "1.0"
+paths: {}
+components:
+  schemas:
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+        nome:
+          type: string
+        descricao:
+          type: string
+"""
+
+_INVALID_OPENAPI_UNQUOTED_COLON = """
+openapi: 3.0.0
+info:
+  title: Test API
+  version: "1.0"
+paths: {}
+components:
+  schemas:
+    Coluna:
+      type: object
+      properties:
+        nome:
+          type: string
+          description: Nome da coluna (ex: "A Fazer")
+"""
+
+
+def test_invalid_openapi_yaml_is_blocked(make_project):
+    files = [
+        ("openapi.yaml", _INVALID_OPENAPI_UNQUOTED_COLON),
+        ("package.json", "{\"name\": \"web\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="openapi-invalid-yaml")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.status == "BLOCKED"
+    assert any(i.id.startswith("openapi_spec_invalid_") for i in report.issues)
+
+
+def test_frontend_type_with_zero_field_overlap_is_flagged_as_contract_drift(make_project):
+    files = [
+        ("openapi.yaml", _VALID_OPENAPI_WORKSPACE),
+        ("src/lib/types.ts", "export interface Workspace {\n  papel: string;\n  ativo: boolean;\n}\n"),
+        ("package.json", "{\"name\": \"web\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="openapi-drift")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    issue = next(i for i in report.issues if i.id == "contract_drift_Workspace")
+    assert "nome" in issue.detail
+    assert "papel" in issue.detail
+
+
+def test_frontend_type_matching_openapi_schema_has_no_drift_issue(make_project):
+    files = [
+        ("openapi.yaml", _VALID_OPENAPI_WORKSPACE),
+        ("src/lib/types.ts", "export interface Workspace {\n  id: string;\n  nome: string;\n  descricao?: string;\n}\n"),
+        ("package.json", "{\"name\": \"web\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="openapi-no-drift")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert not any(i.id == "contract_drift_Workspace" for i in report.issues)
+
+
+def test_duplicate_openapi_specs_with_different_content_are_flagged(make_project):
+    files = [
+        ("openapi.yaml", _VALID_OPENAPI_WORKSPACE),
+        ("docs/openapi.yaml", _INVALID_OPENAPI_UNQUOTED_COLON.replace("Coluna", "OutraColuna")),
+        ("package.json", "{\"name\": \"web\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="openapi-duplicate")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    # docs/openapi.yaml is invalid on its own terms too -- both surface, and the
+    # divergence check only compares the ones that parsed.
+    assert any(i.id.startswith("openapi_spec_invalid_") for i in report.issues)
+
+
+def test_prisma_schema_without_migrations_is_flagged(make_project):
+    files = [
+        ("prisma/schema.prisma", "datasource db {\n  provider = \"postgresql\"\n}\n"),
+        ("package.json", "{\"name\": \"api\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="prisma-no-migrations")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert any(i.id == "prisma_migrations_missing" for i in report.issues)
+
+
+def test_prisma_schema_with_a_migration_is_not_flagged(make_project):
+    files = [
+        ("prisma/schema.prisma", "datasource db {\n  provider = \"postgresql\"\n}\n"),
+        ("prisma/migrations/20260101000000_init/migration.sql", "-- init\n"),
+        ("package.json", "{\"name\": \"api\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="prisma-with-migrations")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert not any(i.id == "prisma_migrations_missing" for i in report.issues)

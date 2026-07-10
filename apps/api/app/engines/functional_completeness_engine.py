@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
 from fastapi import HTTPException, status
 
 from app.core.config import BASE_DIR
@@ -92,6 +94,17 @@ _FASTAPI_PREFIX_RE = re.compile(r"""prefix\s*=\s*["']/([\w-]+)["']""")
 _FASTAPI_METHOD_RE = re.compile(r"@router\.(get|post|put|delete|patch)\s*\(", re.IGNORECASE)
 _PY_EXCLUDED_DIRS = {"node_modules", ".venv", "venv", ".ldcn-venv", "site-packages", "__pycache__"}
 
+# OpenAPI <-> frontend contract drift -- confirmed live: TeamSync's types.ts opens
+# with "// Tipos derivados do contrato OpenAPI" (types derived from the OpenAPI
+# contract), but nothing ever checked the two actually agree. Field-name-only
+# comparison (no type/shape checking), matching this engine's regex/heuristic
+# philosophy throughout.
+_OPENAPI_SPEC_NAMES = ("openapi.yaml", "openapi.yml", "openapi.json")
+_OPENAPI_SPEC_DIRS = (".", "docs")
+_TS_INTERFACE_RE = re.compile(r"\b(?:export\s+)?interface\s+(\w+)\s*\{")
+_TS_TYPE_ALIAS_RE = re.compile(r"\b(?:export\s+)?type\s+(\w+)\s*=\s*\{")
+_TS_FIELD_NAME_RE = re.compile(r"^\s*(\w+)\s*\??\s*:", re.MULTILINE)
+
 
 def _strip_suffix(name: str, suffix: str) -> str:
     return name[: -len(suffix)] if name.lower().endswith(suffix.lower()) and len(name) > len(suffix) else name
@@ -126,8 +139,13 @@ class FunctionalCompletenessEngine:
         issues.extend(self._java_safety_checks(root))
         issues.extend(self._protocol_marker_leaks(root))
         issues.extend(self._readme_truth_guard(root))
+        issues.extend(self._prisma_migrations_check(root))
 
         frontend_root = self._find_frontend_root(root)
+        openapi_spec, openapi_issues = self._openapi_contract_validity(root)
+        issues.extend(openapi_issues)
+        if openapi_spec is not None:
+            issues.extend(self._openapi_frontend_contract_drift(openapi_spec, frontend_root))
         frontend_completeness, frontend_issues = self._frontend_completeness(root, frontend_root, resources)
         issues.extend(frontend_issues)
 
@@ -410,6 +428,117 @@ class FunctionalCompletenessEngine:
             )
             for index_, message in enumerate(inconsistencies)
         ]
+
+    def _prisma_migrations_check(self, root: Path) -> list[CompletenessIssue]:
+        schema_path = next((p for p in root.rglob("schema.prisma") if "node_modules" not in p.parts), None)
+        if schema_path is None:
+            return []
+        migrations_dir = schema_path.parent / "migrations"
+        has_migration = migrations_dir.is_dir() and any(p.is_dir() for p in migrations_dir.iterdir())
+        if has_migration:
+            return []
+        return [CompletenessIssue(
+            id="prisma_migrations_missing", title="Prisma schema has no migrations",
+            severity="WARNING", category="database", file=str(schema_path.relative_to(root)),
+            detail=(
+                "schema.prisma exists but prisma/migrations/ has no migration folders -- the project has no "
+                "reproducible way to create its own database schema outside of dev-time `prisma db push`."
+            ),
+        )]
+
+    def _openapi_contract_validity(self, root: Path) -> tuple[dict[str, Any] | None, list[CompletenessIssue]]:
+        candidates: list[tuple[Path, dict[str, Any] | None, str | None]] = []
+        for dir_name in _OPENAPI_SPEC_DIRS:
+            for spec_name in _OPENAPI_SPEC_NAMES:
+                path = root / dir_name / spec_name
+                if not path.is_file():
+                    continue
+                text = self._safe_read(path)
+                try:
+                    parsed = json.loads(text) if spec_name.endswith(".json") else yaml.safe_load(text)
+                    candidates.append((path, parsed, None))
+                except (yaml.YAMLError, json.JSONDecodeError) as exc:
+                    candidates.append((path, None, str(exc)))
+
+        issues: list[CompletenessIssue] = []
+        for path, parsed, error in candidates:
+            if error is not None:
+                issues.append(CompletenessIssue(
+                    id=f"openapi_spec_invalid_{path.as_posix()}", title="OpenAPI spec is not valid YAML/JSON",
+                    severity="BLOCKER", category="content_integrity", file=str(path.relative_to(root)),
+                    detail=f"Failed to parse: {error}",
+                ))
+
+        valid = [(path, parsed) for path, parsed, error in candidates if error is None]
+        if len(valid) > 1 and any(parsed != valid[0][1] for _, parsed in valid[1:]):
+            issues.append(CompletenessIssue(
+                id="duplicate_openapi_spec", title="Multiple OpenAPI spec files disagree with each other",
+                severity="WARNING", category="content_integrity", file=str(valid[0][0].relative_to(root)),
+                detail=(
+                    f"Found {len(valid)} OpenAPI spec files with different content: "
+                    f"{[str(p.relative_to(root)) for p, _ in valid]}. Pick one canonical source of truth."
+                ),
+            ))
+
+        return (valid[0][1] if valid else None), issues
+
+    def _openapi_frontend_contract_drift(
+        self, openapi_spec: dict[str, Any], frontend_root: Path | None,
+    ) -> list[CompletenessIssue]:
+        if frontend_root is None:
+            return []
+        schemas = ((openapi_spec.get("components") or {}).get("schemas")) or {}
+        if not schemas:
+            return []
+
+        ts_files = [
+            p for p in (*frontend_root.rglob("*.ts"), *frontend_root.rglob("*.tsx"))
+            if "node_modules" not in p.parts
+        ]
+        combined_text = "\n".join(self._safe_read(p) for p in ts_files)
+
+        issues: list[CompletenessIssue] = []
+        for schema_name, schema_def in schemas.items():
+            properties = (schema_def or {}).get("properties")
+            if not isinstance(properties, dict) or not properties:
+                continue
+            body = self._find_ts_type_body(combined_text, schema_name)
+            if body is None:
+                continue  # no matching frontend type -- nothing to compare, not a drift signal
+            frontend_fields = {m.group(1) for m in _TS_FIELD_NAME_RE.finditer(body)}
+            spec_fields = set(properties.keys())
+            if not spec_fields:
+                continue
+            if not (spec_fields & frontend_fields):
+                issues.append(CompletenessIssue(
+                    id=f"contract_drift_{schema_name}", title=f"Frontend type '{schema_name}' doesn't match its OpenAPI schema",
+                    severity="WARNING", category="contract",
+                    file=f"openapi schema '{schema_name}'",
+                    detail=(
+                        f"OpenAPI declares fields {sorted(spec_fields)} for '{schema_name}', but the matching "
+                        f"frontend interface/type declares {sorted(frontend_fields)} -- zero overlap. "
+                        "The frontend type was likely written by hand and drifted from the real contract."
+                    ),
+                ))
+        return issues
+
+    @staticmethod
+    def _find_ts_type_body(text: str, name: str) -> str | None:
+        for pattern in (_TS_INTERFACE_RE, _TS_TYPE_ALIAS_RE):
+            for match in pattern.finditer(text):
+                if match.group(1) != name:
+                    continue
+                depth = 1
+                start = match.end()
+                pos = start
+                while pos < len(text) and depth > 0:
+                    if text[pos] == "{":
+                        depth += 1
+                    elif text[pos] == "}":
+                        depth -= 1
+                    pos += 1
+                return text[start : pos - 1]
+        return None
 
     # ------------------------------------------------------------ frontend
 
