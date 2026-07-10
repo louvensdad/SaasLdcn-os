@@ -61,6 +61,7 @@ Arquivos obrigatorios: o arquivo de config principal do framework (ex.: applicat
 Seguranca (o contrario e proibido):
 - Erro 500: mensagem GENERICA ao cliente + correlationId; stacktrace/detalhes SOMENTE no log. Nunca retornar ex.getMessage()/str(e)/error.message ao cliente.
 - JWT: obter o usuario via contexto de auth do framework (@AuthenticationPrincipal, request.user, decorator @GetUser). NUNCA parsear o header Authorization manualmente no controller.
+- JWT persistido: todo token que sera salvo no banco (ex.: refresh token) DEVE incluir um claim jti (UUID unico por token). Sem jti, dois tokens gerados no mesmo segundo para o mesmo usuario (sub+exp+type identicos) colidem byte-a-byte e violam uma constraint UNIQUE na tabela de tokens, quebrando o endpoint com 500.
 - Swagger/OpenAPI: desabilitado por padrao em producao (ex.: springdoc.swagger-ui.enabled=${SWAGGER_ENABLED:false}) ou protegido por auth ADMIN.
 - Rate limiting: derivar o IP do primeiro item de X-Forwarded-For, com fallback ao remote addr.
 - Senha: minimo 8 chars + complexidade (>=1 maiuscula, 1 minuscula, 1 numero).

@@ -15,7 +15,7 @@ from app.data.language_agent_profiles import (
     resolve_language_id,
     specialist_catalog,
 )
-from app.engines.agent_prompts import AGENT_PROMPTS, ORCHESTRATOR_SYSTEM_PROMPT, system_prompt_for
+from app.engines.agent_prompts import AGENT_PROMPTS, BACKEND_RULES, ORCHESTRATOR_SYSTEM_PROMPT, system_prompt_for
 from app.engines.architect_engine import _deterministic_blueprint
 from app.engines.llm.mock_adapter import _role_for_system
 from app.engines.prompt_master_md_engine import build_prompt_master_md
@@ -67,6 +67,31 @@ def test_every_profile_is_complete():
         assert profile["ecosystem_notes"].strip(), language_id
         assert profile["manifest"].strip(), language_id
         assert isinstance(profile.get("aliases", []), list), language_id
+
+
+def test_python_backend_rules_warn_about_package_vs_flat_file_duplication():
+    # Confirmed live (2026-07-09): app/domain/models/__init__.py and
+    # app/domain/interfaces/__init__.py were left empty while a complete,
+    # correctly-named flat models.py/interfaces.py sat unused as a sibling --
+    # Python silently prefers the package, orphaning every import.
+    rules = LANGUAGE_AGENT_PROFILES["python"]["backend_rules"]
+    assert "__init__.py" in rules
+    assert "reexportar" in rules
+
+
+def test_python_backend_rules_warn_about_passlib_bcrypt_pin():
+    # Confirmed live (2026-07-09): passlib==1.7.4 + unpinned bcrypt (resolved to
+    # 5.0.0) broke registration with "password cannot be longer than 72 bytes"
+    # on a short password.
+    rules = LANGUAGE_AGENT_PROFILES["python"]["backend_rules"]
+    assert "bcrypt<4.1" in rules
+
+
+def test_backend_rules_require_jti_on_persisted_jwts():
+    # Confirmed live (2026-07-09): a refresh token issued right after login (same
+    # wall-clock second) encoded identically to the login's own token and
+    # violated a UNIQUE constraint on the stored token column, 500ing /auth/refresh.
+    assert "jti" in BACKEND_RULES
 
 
 # --------------------------------------------------------------------------- #

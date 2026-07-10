@@ -29,7 +29,9 @@ Layout: pacote app/ com __init__.py em todo diretorio; entrypoint claro (uvicorn
 Config: pydantic-settings (FastAPI) ou settings.py (Django) lendo SOMENTE de env vars; .env.example completo.
 Tipagem: type hints em todo servico/use-case; modelos Pydantic para request/response.
 Testes: pytest + httpx/TestClient; conftest.py com fixtures; nunca teste vazio.
-Execucao local: `pip install -r requirements.txt` + comando de run documentado que funciona.""",
+Execucao local: `pip install -r requirements.txt` + comando de run documentado que funciona.
+Pacotes vs arquivos achatados: um diretorio-pacote (com __init__.py) e um arquivo .py de MESMO NOME nunca podem coexistir no mesmo nivel (ex.: app/domain/models.py E app/domain/models/ juntos) -- o Python silenciosamente prefere o pacote e ignora o arquivo achatado, quebrando qualquer import que dependia dele. Se um modulo for dividido em pacote, __init__.py DEVE reexportar TUDO que os arquivos-irmaos definem -- um __init__.py vazio ou so com comentario orfaniza todo import desse modulo (confirmado ao vivo: app/domain/models/__init__.py e app/domain/interfaces/__init__.py vazios quebraram o backend inteiro com ImportError).
+Hash de senha: se usar passlib[bcrypt], SEMPRE pinar bcrypt<4.1 no requirements.txt -- passlib==1.7.4 e incompativel com bcrypt>=4.1 e falha com o erro enganoso "password cannot be longer than 72 bytes" mesmo em senhas curtas. Alternativa mais segura: usar a lib bcrypt diretamente, sem passlib.""",
         "ecosystem_notes": """Python: instala com `pip install -r requirements.txt`; testes com `pytest`; imagem Docker base python:3.12-slim; entrypoint uvicorn/gunicorn (FastAPI) ou gunicorn wsgi (Django); lint ruff.""",
     },
     "typescript": {
