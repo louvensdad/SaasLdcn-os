@@ -334,6 +334,36 @@ def _priority_truncate(text: str, budget_chars: int) -> str:
     return out
 
 
+# Backend/mobile generation is chunked into many independent, stateless LLM
+# calls (structure, domain_entities, controllers, services, repositories, ...).
+# Each call otherwise has no idea what a PRIOR chunk already decided, so it
+# re-derives its own file-layout convention from scratch — which is how the
+# SAME microservice ends up written at three different path prefixes
+# (root/, backend/, services/) with drifting names (appointment-service vs
+# appointments-service) across chunks of one generation run.
+_MODULE_MANIFEST_BASENAMES = (
+    "pom.xml", "build.gradle", "build.gradle.kts", "go.mod", "Cargo.toml",
+    "composer.json", "package.json",
+)
+
+
+def module_roots_from_emitted(emitted_files: tuple[str, ...]) -> tuple[str, ...]:
+    """Directories of already-emitted backend module manifests (one per
+    microservice), excluding the project root itself. Passed back into every
+    later backend chunk so it reuses the SAME module paths instead of
+    inventing a new prefix or a differently-spelled service name."""
+    roots: set[str] = set()
+    for path in emitted_files:
+        normalized = path.replace("\\", "/").lstrip("/")
+        basename = normalized.rsplit("/", 1)[-1]
+        if basename not in _MODULE_MANIFEST_BASENAMES:
+            continue
+        parent = normalized.rsplit("/", 1)[0] if "/" in normalized else ""
+        if parent:  # skip the root-level manifest — only nested modules matter
+            roots.add(parent)
+    return tuple(sorted(roots))
+
+
 # --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
@@ -344,6 +374,7 @@ def build_agent_context(
     *,
     contract_summary: str = "",
     emitted_files: tuple[str, ...] = (),
+    module_roots: tuple[str, ...] = (),
     budget_chars: int | None = None,
 ) -> tuple[str, ContextPackDiagnostics]:
     """Assemble a focused, deduped, budget-bounded context for one agent."""
@@ -359,6 +390,18 @@ def build_agent_context(
         if len(emitted_files) > len(shown):
             block += f"\n… (+{len(emitted_files) - len(shown)} arquivos)"
         parts.append(block + "\n</emitted_files>")
+    if module_roots and role in {"backend", "mobile"}:
+        shown_roots = list(module_roots)[:40]
+        block = (
+            "<established_module_paths>\n"
+            "Os modulos abaixo JA foram criados por um chunk anterior desta mesma geracao "
+            "(cada um e a pasta de um pom.xml/build.gradle/go.mod/etc. real). Escreva os "
+            "arquivos deste modulo usando EXATAMENTE um desses caminhos como raiz — nunca "
+            "crie uma copia paralela sob outro prefixo (ex.: 'backend/' ou 'services/') "
+            "nem renomeie o modulo (singular/plural, sinonimos etc.).\n"
+            + "\n".join(shown_roots) + "\n</established_module_paths>"
+        )
+        parts.append(block)
 
     context = "\n\n".join(p for p in parts if p.strip())
     diag = ContextPackDiagnostics(

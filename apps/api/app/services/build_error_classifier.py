@@ -31,6 +31,46 @@ _MISSING_SCRIPT_RE = re.compile(r"[Mm]issing script:?\s*\"?([A-Za-z0-9:_-]+)\"?"
 _ENOENT_FILE_RE = re.compile(r"ENOENT[:,].*?open\s+'([^']+)'|ENOENT[:,].*?no such file or directory,?\s*(?:open\s+)?'?([^'\n]+)'?")
 _INVALID_NAME_RE = re.compile(r"Invalid (?:package )?name\s*:?\s*\"?([^\"\n]+)\"?", re.IGNORECASE)
 
+# javac's "package X does not exist" names the exact import path a Maven module
+# failed to resolve - the Java-side equivalent of npm's "Module not found".
+_JAVA_PACKAGE_NOT_EXIST_RE = re.compile(r"package ([\w.]+) does not exist")
+
+# Curated import-prefix -> Maven coordinate map (longest-prefix match; see
+# resolve_java_import). Spring Boot starters need no <version>: they're pinned by
+# spring-boot-starter-parent's dependencyManagement BOM, same as every service
+# pom.xml in a generated project already declares them. Third-party libraries
+# (JWT, OpenAPI, rate limiting) aren't in that BOM, so the repair step resolves
+# their latest version from Maven Central before adding them.
+JAVA_PACKAGE_TO_ARTIFACT: dict[str, tuple[str, str, bool]] = {
+    # import prefix: (groupId, artifactId, needs_explicit_version)
+    "jakarta.persistence": ("org.springframework.boot", "spring-boot-starter-data-jpa", False),
+    "org.springframework.data.jpa": ("org.springframework.boot", "spring-boot-starter-data-jpa", False),
+    "org.springframework.data.annotation": ("org.springframework.boot", "spring-boot-starter-data-jpa", False),
+    "org.springframework.data.redis": ("org.springframework.boot", "spring-boot-starter-data-redis", False),
+    "org.springframework.data.mongodb": ("org.springframework.boot", "spring-boot-starter-data-mongodb", False),
+    "org.springframework.amqp": ("org.springframework.boot", "spring-boot-starter-amqp", False),
+    "org.springframework.kafka": ("org.springframework.kafka", "spring-kafka", False),
+    "org.springframework.security": ("org.springframework.boot", "spring-boot-starter-security", False),
+    "org.springframework.validation": ("org.springframework.boot", "spring-boot-starter-validation", False),
+    "jakarta.validation": ("org.springframework.boot", "spring-boot-starter-validation", False),
+    "org.springframework.web": ("org.springframework.boot", "spring-boot-starter-web", False),
+    "org.springframework.mail": ("org.springframework.boot", "spring-boot-starter-mail", False),
+    "io.jsonwebtoken": ("io.jsonwebtoken", "jjwt-api", True),
+    "io.swagger.v3": ("org.springdoc", "springdoc-openapi-starter-webmvc-ui", True),
+    "io.github.bucket4j": ("com.bucket4j", "bucket4j-core", True),
+    "org.mapstruct": ("org.mapstruct", "mapstruct", True),
+}
+
+
+def resolve_java_import(java_package: str) -> tuple[str, str, bool] | None:
+    """Longest-prefix match of a Java import path against JAVA_PACKAGE_TO_ARTIFACT."""
+    parts = java_package.split(".")
+    for i in range(len(parts), 0, -1):
+        coord = JAVA_PACKAGE_TO_ARTIFACT.get(".".join(parts[:i]))
+        if coord is not None:
+            return coord
+    return None
+
 
 @dataclass(frozen=True)
 class ClassifiedBuildError:
@@ -170,6 +210,27 @@ class BuildErrorClassifier:
                 ),
                 package=None if local else name,
                 auto_fixable=not local,
+            )
+
+        java_missing = sorted(set(_JAVA_PACKAGE_NOT_EXIST_RE.findall(logs)))
+        if java_missing:
+            shown = ", ".join(java_missing[:5]) + ("..." if len(java_missing) > 5 else "")
+            return ClassifiedBuildError(
+                code="maven_dependency_not_found",
+                message=f"Dependencia(s) Maven ausente(s): {shown}.",
+                root_cause="O modulo Java importa pacote(s) que nao estao declarados como dependencia no pom.xml.",
+                suggested_fix="Adicionar a dependencia Maven correspondente ao pom.xml do modulo afetado.",
+                package=", ".join(java_missing),
+                auto_fixable=True,
+            )
+
+        if "[ERROR]" in logs and "cannot find symbol" in logs:
+            return ClassifiedBuildError(
+                code="java_compile_error",
+                message="Erro de compilacao Java (simbolo nao encontrado).",
+                root_cause="O codigo Java gerado referencia um simbolo que nao existe ou nao foi importado corretamente.",
+                suggested_fix="Revisar os erros do compilador Java e corrigir o codigo ou o import.",
+                auto_fixable=False,
             )
 
         if _TS_ERROR_RE.search(logs):

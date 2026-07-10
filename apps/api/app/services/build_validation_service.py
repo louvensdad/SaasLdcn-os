@@ -23,10 +23,11 @@ from app.schemas.generation_validation import (
     ClassifiedBuildErrorModel,
     ManualBuildFixGuide,
 )
-from app.services.build_error_classifier import ClassifiedBuildError, build_error_classifier
+from app.services.build_error_classifier import ClassifiedBuildError, build_error_classifier, resolve_java_import
 from app.services.dependency_registry import dependency_registry
 from app.services.dependency_research_service import dependency_research_service
 from app.services.stack_compatibility import stack_compatibility_engine
+from app.services.tailwind_theme_guard import tailwind_theme_guard
 
 # Receives partial execution-event dicts (type/command/cwd/stream/stdout/...). The
 # caller (job engine) enriches them with id/jobId/timestamp/stage. None = no console.
@@ -48,6 +49,11 @@ SECRET_LOG_RE = re.compile(
 NPM_MISSING_SPEC_RE = re.compile(r"The requested resource '([^']+)' could not be found")
 NPM_MISSING_URL_RE = re.compile(r"404\s+Not Found\s+-\s+GET\s+https://registry\.npmjs\.org/(\S+)")
 _NPM_MANIFEST_SECTIONS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
+
+# javac error lines look like "[ERROR] /abs/path/Module.java:[12,34] ...". The file
+# path pins down which reactor module actually failed, independent of whether the
+# "-rf :module" resume hint is present in the log.
+_JAVA_ERROR_FILE_RE = re.compile(r"\[ERROR\]\s+(\S+?\.java):\[\d+,\d+\]")
 
 # One initial command plus exactly two bounded recovery opportunities. The first
 # repair uses the complete deterministic policy; the second uses the conservative
@@ -285,6 +291,18 @@ class BuildValidationService:
             self._emit(sink, {
                 "type": "repair_applied", "level": "warning",
                 "message": f"Stack Compatibility: versao(oes) incoerente(s) com a stack travada ajustada(s) antes do install: {adjusted}.",
+            })
+
+        # Tailwind Theme Guard: complete tailwind.config.ts's shadcn/ui color
+        # tokens BEFORE the build ever runs, when globals.css declares the
+        # shadcn CSS-variable convention but the config never wires it up
+        # (the recurring "the `border-border` class does not exist" failure).
+        theme_result = tailwind_theme_guard.validate_and_fix(root, sink=sink)
+        if theme_result.fixed:
+            added = ", ".join(f.token for f in theme_result.findings if f.status == "added")
+            self._emit(sink, {
+                "type": "repair_applied", "level": "warning",
+                "message": f"Tailwind Theme Guard: token(s) de cor do shadcn/ui ausente(s) em tailwind.config.ts adicionado(s) antes do build: {added}.",
             })
 
         # Preflight Build Check (Build Guard): SIMULATE the install first.
@@ -643,6 +661,8 @@ class BuildValidationService:
         repairs: list[dict[str, Any]],
         classified: ClassifiedBuildError | None,
         fallback_logs: str,
+        *,
+        ecosystem: str = "node",
     ) -> ManualBuildFixGuide:
         conflict = classified.conflict if classified and isinstance(classified.conflict, dict) else {}
         dependencies = {
@@ -658,17 +678,25 @@ class BuildValidationService:
         if conflict.get("package") and conflict.get("suggested"):
             suggestions[str(conflict["package"])] = str(conflict["suggested"])
 
-        affected = sorted(
-            path.relative_to(root).as_posix()
-            for path in root.rglob("package.json")
-            if "node_modules" not in path.parts
-        )
+        if ecosystem == "maven":
+            affected = sorted(
+                path.relative_to(root).as_posix()
+                for path in root.rglob("pom.xml")
+                if "target" not in path.parts
+            )
+            command_list = ["mvn -q -DskipTests compile"]
+        else:
+            affected = sorted(
+                path.relative_to(root).as_posix()
+                for path in root.rglob("package.json")
+                if "node_modules" not in path.parts
+            )
+            command_list = ["npm install"]
+            command_list.extend(
+                f"npm install {package}@{version}" for package, version in suggestions.items()
+            )
+            command_list.append("npm run build")
         patches = [str(item["patch"]) for item in repairs if item.get("patch")]
-        command_list = ["npm install"]
-        command_list.extend(
-            f"npm install {package}@{version}" for package, version in suggestions.items()
-        )
-        command_list.append("npm run build")
 
         log_blocks: list[str] = []
         for item in commands:
@@ -744,7 +772,178 @@ class BuildValidationService:
         return removed
 
     def _maven(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
-        return self._compile_ecosystem(root, collector, sink, tool="mvn", command=["mvn", "-q", "-DskipTests", "compile"])
+        """Compile with the same bounded auto-repair policy as the npm build loop:
+        a missing pom.xml dependency ('package X does not exist') is resolved to a
+        Maven coordinate and added to the failing module's pom.xml, then the compile
+        is retried. Unlike npm, Maven has no separate install phase - resolution and
+        compilation happen in one `mvn compile`, so both stages pass or fail together."""
+        if not shutil.which("mvn"):
+            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": "mvn -q -DskipTests compile",
+                              "cwd": str(root), "message": "mvn nao esta disponivel no servidor; build pulado.", "exitCode": 127})
+            return self._skipped("mvn is unavailable on the server.")
+
+        commands: list[dict[str, Any]] = []
+        repairs: list[dict[str, Any]] = []
+        error_counts: dict[str, int] = {}
+        command = ["mvn", "-q", "-DskipTests", "compile"]
+
+        result = self._run(command, root, collector, "build", sink, records=commands, record_phase="build")
+        attempts = 1
+        classified: ClassifiedBuildError | None = None
+        while result.returncode != 0 and attempts < MAX_ATTEMPTS_PER_PHASE:
+            logs = result.stdout + result.stderr
+            classified = build_error_classifier.classify(logs)
+            if classified is None:
+                break
+            signature = f"{classified.code}:{classified.package or '-'}"
+            error_counts[signature] = error_counts.get(signature, 0) + 1
+            if error_counts[signature] > MAX_REPAIRS_PER_ERROR:
+                break
+            strategy = "standard" if attempts == 1 else "simplified"
+            self._emit(sink, {"type": "repair_started", "level": "warning",
+                              "message": f"Auto-reparo {strategy}: {classified.message} Causa raiz: {classified.root_cause}"})
+            patch, applied, detail = self._repair_maven_error(root, classified, logs, sink, simplified=strategy == "simplified")
+            repairs.append({
+                "phase": "build", "attempt": len(repairs) + 1,
+                "strategy": strategy, "error": classified.as_dict(), "patch": patch, "applied": applied, "detail": detail,
+            })
+            self._emit(sink, {
+                "type": "repair_applied" if applied else "repair_failed",
+                "level": "warning" if applied else "error",
+                "message": (f"Patch aplicado: {patch}" if applied else f"Sem correcao automatica segura: {classified.suggested_fix}"),
+            })
+            if not applied:
+                break
+            result = self._run(command, root, collector, "build", sink, records=commands, record_phase="build")
+            attempts += 1
+            if result.returncode == 0:
+                classified = None
+
+        logs = result.stdout + result.stderr
+        if repairs:
+            notes = "\n".join(
+                f"[auto-repair] {item['error']['message']} Patch: {item['patch'] or 'nenhum'} ({'aplicado' if item['applied'] else 'nao aplicado'})"
+                for item in repairs
+            )
+            logs = f"{notes}\n{logs}"
+
+        if result.returncode != 0:
+            # Matches _node's unconditional treatment: any compile that never
+            # passes is reported as the bounded recovery policy being exhausted,
+            # whether or not a repair was classified/applicable along the way.
+            report = BuildValidationReport(
+                installed="failed",
+                built="skipped_after_failure",
+                ok=False,
+                skipped_reason="Build skipped after two automatic recovery attempts.",
+                logs_tail=self._tail(logs),
+                recovery_status="SKIPPED_AFTER_FAILURE",
+            )
+            attached = self._attach_audit(report, commands, repairs, classified, None, None)
+            attached.manual_fix_guide = self._manual_fix_guide(root, commands, repairs, classified, logs, ecosystem="maven")
+            return attached
+
+        report = BuildValidationReport(installed="passed", built="passed", ok=True, logs_tail=self._tail(logs))
+        return self._attach_audit(report, commands, repairs, None, None, None)
+
+    def _maven_failed_module_poms(self, root: Path, logs: str) -> list[Path]:
+        """Walk up from each javac-reported .java file to the nearest pom.xml -
+        that's the reactor module actually failing, regardless of build order."""
+        poms: dict[Path, None] = {}
+        for match in _JAVA_ERROR_FILE_RE.finditer(logs):
+            current = Path(match.group(1)).parent
+            for _ in range(12):
+                if not current.exists() or current == current.parent:
+                    break
+                candidate = current / "pom.xml"
+                if candidate.is_file():
+                    poms[candidate] = None
+                    break
+                current = current.parent
+        return list(poms.keys())
+
+    def _repair_maven_error(
+        self, root: Path, classified: ClassifiedBuildError, logs: str, sink: EventSink | None,
+        *, simplified: bool = False,
+    ) -> tuple[str | None, bool, str]:
+        """Resolve each missing Java import to a known Maven coordinate and add it
+        to the pom.xml of the module that actually failed to compile."""
+        if classified.code != "maven_dependency_not_found" or not classified.package:
+            return None, False, "Erro sem correcao deterministica segura."
+        packages = [p.strip() for p in classified.package.split(",") if p.strip()]
+        pom_paths = self._maven_failed_module_poms(root, logs)
+        if not pom_paths:
+            return None, False, "Nao foi possivel identificar o modulo Maven que falhou."
+
+        resolved: dict[tuple[str, str], str | None] = {}
+        unresolved: list[str] = []
+        for package in packages:
+            coord = resolve_java_import(package)
+            if coord is None:
+                unresolved.append(package)
+                continue
+            group_id, artifact_id, needs_version = coord
+            version: str | None = None
+            if needs_version:
+                if simplified:
+                    continue
+                version = self._maven_registry_latest(group_id, artifact_id)
+                if version is None:
+                    unresolved.append(package)
+                    continue
+            resolved[(group_id, artifact_id)] = version
+
+        if not resolved:
+            detail = (
+                f"Pacote(s) sem mapeamento conhecido para uma coordenada Maven: {', '.join(unresolved)}."
+                if unresolved else "Modo simplificado nao adiciona dependencias com versao explicita."
+            )
+            return None, False, detail
+
+        added_labels: list[str] = []
+        for pom_path in pom_paths:
+            for (group_id, artifact_id), version in resolved.items():
+                if self._add_maven_dependency(pom_path, group_id, artifact_id, version):
+                    added_labels.append(f"{group_id}:{artifact_id}" + (f":{version}" if version else ""))
+        if not added_labels:
+            return None, False, "Dependencias resolvidas ja estavam declaradas nos pom.xml afetados."
+
+        modules = ", ".join(sorted({p.parent.name for p in pom_paths}))
+        detail = f"Sem mapeamento conhecido (nao corrigido): {', '.join(unresolved)}." if unresolved else ""
+        return (
+            f"Dependencia(s) Maven adicionada(s) em {modules}: {', '.join(sorted(set(added_labels)))}.",
+            True,
+            detail,
+        )
+
+    def _add_maven_dependency(self, pom_path: Path, group_id: str, artifact_id: str, version: str | None) -> bool:
+        try:
+            text = pom_path.read_text(encoding="utf-8")
+        except OSError:
+            return False
+        if f"<artifactId>{artifact_id}</artifactId>" in text:
+            return False
+        closing_tag = re.search(r"[ \t]*</dependencies>", text)
+        if closing_tag is None:
+            return False
+        indent = closing_tag.group(0)[: -len("</dependencies>")] or "    "
+        version_xml = f"\n{indent}    <version>{version}</version>" if version else ""
+        dep_xml = (
+            f"{indent}<dependency>\n"
+            f"{indent}    <groupId>{group_id}</groupId>\n"
+            f"{indent}    <artifactId>{artifact_id}</artifactId>{version_xml}\n"
+            f"{indent}</dependency>\n"
+        )
+        idx = closing_tag.start()
+        pom_path.write_text(text[:idx] + dep_xml + text[idx:], encoding="utf-8")
+        return True
+
+    def _maven_registry_latest(self, group_id: str, artifact_id: str) -> str | None:
+        try:
+            lookup = dependency_research_service.latest_maven(group_id, artifact_id)
+        except Exception:  # noqa: BLE001 — registry probe is best-effort
+            return None
+        return lookup.latest_version
 
     def _gradle(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
         wrapper = root / ("gradlew.bat" if sys.platform.startswith("win") else "gradlew")

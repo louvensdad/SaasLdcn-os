@@ -13,7 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.engines.agent_executor import submit_agent
-from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, summarize_contract
+from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, module_roots_from_emitted, summarize_contract
 from app.engines.factory_pipeline import _run_agent
 from app.engines.functional_completeness_engine import functional_completeness_engine
 from app.engines.generation_validation_engine import generation_validation_engine
@@ -559,7 +559,10 @@ class GenerationJobEngine:
         contract_summary = summarize_contract(f'<<<FILE path="openapi.yaml">>>\n{contract}\n<<<END>>>') if contract else ""
         emitted = tuple(item["name"] for item in job["artifacts"] if item["kind"] == "generated")
         role = step.role or step.logical
-        context, diagnostics = build_agent_context(role, mega, contract_summary=contract_summary, emitted_files=emitted)
+        module_roots = module_roots_from_emitted(emitted) if role in {"backend", "mobile"} else ()
+        context, diagnostics = build_agent_context(
+            role, mega, contract_summary=contract_summary, emitted_files=emitted, module_roots=module_roots,
+        )
         if step.chunk:
             context += (
                 f"\n\n<{step.logical}_chunk>{step.chunk}</{step.logical}_chunk>\n"

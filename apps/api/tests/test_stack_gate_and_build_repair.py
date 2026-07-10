@@ -53,6 +53,42 @@ def _completed(command: list[str], returncode: int, stdout: str = "", stderr: st
     return subprocess.CompletedProcess(command, returncode, stdout, stderr)
 
 
+_COMMON_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <artifactId>common</artifactId>
+    <packaging>jar</packaging>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
+</project>
+"""
+
+
+def _java_module(module: str = "common") -> tuple[Path, Path]:
+    """A minimal multi-module-style Maven layout: <root>/<module>/pom.xml plus one
+    .java source file, so the failed-module path-walk in
+    _maven_failed_module_poms has a real pom.xml to find."""
+    root = Path(tempfile.mkdtemp(prefix="ldcn-maven-"))
+    module_dir = root / module / "src" / "main" / "java" / "com" / "x"
+    module_dir.mkdir(parents=True, exist_ok=True)
+    java_file = module_dir / "CommonConfig.java"
+    java_file.write_text("package com.x;\n", encoding="utf-8")
+    (root / module / "pom.xml").write_text(_COMMON_POM, encoding="utf-8")
+    return root, java_file
+
+
+_MAVEN_MISSING_DEP_LOG_TEMPLATE = """[ERROR] {java_file}:[4,54] package org.springframework.data.jpa.repository.config does not exist
+[ERROR] {java_file}:[7,2] cannot find symbol
+[ERROR]   symbol: class EnableJpaAuditing
+[ERROR] {java_file}:[4,44] package org.springframework.amqp.rabbit.core does not exist
+[ERROR] -> [Help 1]
+[ERROR]   mvn <args> -rf :common
+"""
+
+
 class _ScriptedRuns:
     """Deterministic stand-in for BuildValidationService._run: returns the scripted
     results in order (repeating the last one), while still recording commands the
@@ -442,6 +478,125 @@ def test_classifier_covers_initial_error_catalog():
         assert classified is not None, logs
         assert classified.code == expected, f"{logs} -> {classified.code} != {expected}"
     assert build_error_classifier.classify("npm error code ECONNRESET") is None
+
+
+# --------------------------------------------- 13. Maven auto-repair loop ---
+
+def test_maven_build_repairs_missing_dependency_and_retries(monkeypatch):
+    root, java_file = _java_module()
+    try:
+        svc = BuildValidationService()
+        log = _MAVEN_MISSING_DEP_LOG_TEMPLATE.format(java_file=java_file.as_posix())
+        runs = _ScriptedRuns([
+            _completed(["mvn", "-q", "-DskipTests", "compile"], 1, stdout=log),
+            _completed(["mvn", "-q", "-DskipTests", "compile"], 0, stdout="BUILD SUCCESS"),
+        ])
+        monkeypatch.setattr(svc, "_run", runs)
+        monkeypatch.setattr(shutil, "which", lambda name: "C:/fake/mvn.cmd")
+        report = svc._maven(root, _MetricsCollector())
+
+        assert runs.calls == [["mvn", "-q", "-DskipTests", "compile"]] * 2
+        assert report.installed == "passed"
+        assert report.built == "passed"
+        assert report.ok is True
+        assert len(report.repairs) == 1
+        assert report.repairs[0].error.code == "maven_dependency_not_found"
+        assert report.repairs[0].applied is True
+
+        pom_text = (root / "common" / "pom.xml").read_text(encoding="utf-8")
+        assert "spring-boot-starter-data-jpa" in pom_text
+        assert "spring-boot-starter-amqp" in pom_text
+        # Spring Boot starters are managed by spring-boot-starter-parent's BOM:
+        # no explicit <version> should be injected for them.
+        assert "<artifactId>spring-boot-starter-data-jpa</artifactId>\n    </dependency>" in pom_text \
+            or "<artifactId>spring-boot-starter-data-jpa</artifactId>\n        </dependency>" in pom_text
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_maven_build_resolves_third_party_dependency_via_registry(monkeypatch):
+    root, java_file = _java_module()
+    try:
+        svc = BuildValidationService()
+        log = (
+            f"[ERROR] {java_file.as_posix()}:[3,1] package io.jsonwebtoken does not exist\n"
+            "[ERROR] -> [Help 1]\n"
+        )
+        runs = _ScriptedRuns([
+            _completed(["mvn", "-q", "-DskipTests", "compile"], 1, stdout=log),
+            _completed(["mvn", "-q", "-DskipTests", "compile"], 0, stdout="BUILD SUCCESS"),
+        ])
+        monkeypatch.setattr(svc, "_run", runs)
+        monkeypatch.setattr(shutil, "which", lambda name: "C:/fake/mvn.cmd")
+        # No live Maven Central call in the unit test: pin a fake resolved version.
+        monkeypatch.setattr(svc, "_maven_registry_latest", lambda group, artifact: "0.12.6")
+        report = svc._maven(root, _MetricsCollector())
+
+        assert report.built == "passed"
+        pom_text = (root / "common" / "pom.xml").read_text(encoding="utf-8")
+        assert "<artifactId>jjwt-api</artifactId>" in pom_text
+        assert "<version>0.12.6</version>" in pom_text
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_maven_build_exhausts_repair_and_produces_maven_manual_guide(monkeypatch):
+    root, java_file = _java_module()
+    try:
+        svc = BuildValidationService()
+        log = f"[ERROR] {java_file.as_posix()}:[3,1] package com.totally.unknown.thing does not exist\n"
+        runs = _ScriptedRuns([_completed(["mvn", "-q", "-DskipTests", "compile"], 1, stdout=log)])
+        monkeypatch.setattr(svc, "_run", runs)
+        monkeypatch.setattr(shutil, "which", lambda name: "C:/fake/mvn.cmd")
+        report = svc._maven(root, _MetricsCollector())
+
+        assert report.built == "skipped_after_failure"
+        assert report.ok is False
+        assert report.classified_error is not None
+        assert report.classified_error.code == "maven_dependency_not_found"
+        assert report.manual_fix_guide is not None
+        # A Maven failure must never hand the user npm commands to run.
+        assert report.manual_fix_guide.commands == ["mvn -q -DskipTests compile"]
+        assert any(f.endswith("pom.xml") for f in report.manual_fix_guide.affected_files)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_resolve_java_import_maps_known_packages_to_maven_coordinates():
+    from app.services.build_error_classifier import resolve_java_import
+
+    assert resolve_java_import("jakarta.persistence") == ("org.springframework.boot", "spring-boot-starter-data-jpa", False)
+    assert resolve_java_import("org.springframework.data.jpa.repository.config") == (
+        "org.springframework.boot", "spring-boot-starter-data-jpa", False,
+    )
+    assert resolve_java_import("io.jsonwebtoken") == ("io.jsonwebtoken", "jjwt-api", True)
+    assert resolve_java_import("io.swagger.v3.oas.models") == (
+        "org.springdoc", "springdoc-openapi-starter-webmvc-ui", True,
+    )
+    assert resolve_java_import("io.github.bucket4j") == ("com.bucket4j", "bucket4j-core", True)
+    assert resolve_java_import("com.totally.unknown.thing") is None
+
+
+def test_classifier_recognizes_maven_missing_dependency_and_java_compile_error():
+    log = (
+        "[ERROR] C:/proj/common/src/main/java/com/x/CommonConfig.java:[4,54] "
+        "package org.springframework.data.jpa.repository.config does not exist\n"
+        "[ERROR] C:/proj/common/src/main/java/com/x/CommonConfig.java:[7,2] cannot find symbol\n"
+        "[ERROR]   symbol: class EnableJpaAuditing\n"
+    )
+    classified = build_error_classifier.classify(log)
+    assert classified is not None
+    assert classified.code == "maven_dependency_not_found"
+    assert classified.auto_fixable is True
+    assert "org.springframework.data.jpa.repository.config" in classified.package
+
+    # A pure "cannot find symbol" failure (no missing-package line, e.g. a typo in
+    # code rather than an absent dependency) has no safe deterministic fix.
+    symbol_only = "[ERROR] X.java:[1,1] cannot find symbol\n[ERROR]   symbol: class Foo\n"
+    classified2 = build_error_classifier.classify(symbol_only)
+    assert classified2 is not None
+    assert classified2.code == "java_compile_error"
+    assert classified2.auto_fixable is False
 
 
 def test_classifier_extracts_the_real_package_from_webpack_s_cant_resolve_message():
