@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser
@@ -16,12 +19,14 @@ from app.schemas.auth import (
     UserRegisterRequest,
     UserUpdateRequest,
 )
-from app.services.auth_service import AuthService
+from app.services.auth_service import AuthService, OAuthError, OAuthNotConfiguredError
 from app.services.user_key_session_service import user_key_session
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 service = AuthService()
+
+_OAUTH_STATE_COOKIE = "ldcn_oauth_state"
 
 
 def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
@@ -97,6 +102,78 @@ def logout(request: Request, user: CurrentUser, payload: RefreshRequest | None =
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     _clear_refresh_cookie(response)
     return response
+
+
+def _oauth_callback_url(request: Request, provider: str) -> str:
+    settings = get_settings()
+    return f"{str(request.base_url).rstrip('/')}{settings.api_prefix}/auth/oauth/{provider}/callback"
+
+
+@router.get("/oauth/{provider}/start")
+def oauth_start(provider: Literal["google", "github"], request: Request) -> RedirectResponse:
+    settings = get_settings()
+    frontend_url = settings.frontend_base_url.rstrip("/")
+    redirect_uri = _oauth_callback_url(request, provider)
+    try:
+        authorize_url, state = service.oauth_authorize_url(provider, redirect_uri)
+    except OAuthNotConfiguredError:
+        return RedirectResponse(
+            f"{frontend_url}/login?oauth=error&reason=not_configured",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    response = RedirectResponse(authorize_url, status_code=status.HTTP_302_FOUND)
+    response.set_cookie(
+        key=_OAUTH_STATE_COOKIE,
+        value=state,
+        max_age=600,
+        httponly=True,
+        secure=settings.refresh_cookie_secure,
+        samesite="lax",
+        path=f"{settings.api_prefix}/auth/oauth",
+    )
+    return response
+
+
+@router.get("/oauth/{provider}/callback")
+def oauth_callback(
+    provider: Literal["google", "github"],
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    settings = get_settings()
+    frontend_url = settings.frontend_base_url.rstrip("/")
+    cookie_state = request.cookies.get(_OAUTH_STATE_COOKIE)
+
+    def _fail(reason: str) -> RedirectResponse:
+        redirect = RedirectResponse(
+            f"{frontend_url}/login?oauth=error&reason={reason}",
+            status_code=status.HTTP_302_FOUND,
+        )
+        redirect.delete_cookie(_OAUTH_STATE_COOKIE, path=f"{settings.api_prefix}/auth/oauth")
+        return redirect
+
+    if error:
+        return _fail("provider_denied")
+    if not code or not state or not cookie_state or state != cookie_state:
+        return _fail("invalid_state")
+
+    try:
+        payload, refresh_token = service.oauth_callback(
+            provider, code=code, redirect_uri=_oauth_callback_url(request, provider)
+        )
+    except OAuthNotConfiguredError:
+        return _fail("not_configured")
+    except OAuthError:
+        return _fail("exchange_failed")
+
+    del payload  # the frontend re-fetches the session from the refresh cookie
+    redirect = RedirectResponse(f"{frontend_url}/login?oauth=success", status_code=status.HTTP_302_FOUND)
+    _set_refresh_cookie(redirect, refresh_token)
+    redirect.delete_cookie(_OAUTH_STATE_COOKIE, path=f"{settings.api_prefix}/auth/oauth")
+    return redirect
 
 
 @router.get("/me", response_model=UserPublic)

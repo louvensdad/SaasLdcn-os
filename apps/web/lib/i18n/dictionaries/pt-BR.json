@@ -2920,6 +2920,7 @@
   "terminal.timeout": "Comando excedeu o tempo limite e foi encerrado.",
   "terminal.failed": "Falha ao executar o comando.",
   "terminal.finished": "Comando finalizado (exit {code}) em {ms} ms.",
+  "settings.ai.buyTokens": "Comprar créditos na {{provider}}",
   "shell.error.title": "Essa página encontrou um problema",
   "shell.error.description": "Algo deu errado ao renderizar essa tela. Você pode tentar novamente ou recarregar a página se o problema persistir.",
   "shell.error.retry": "Tentar novamente",

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timezone
+from typing import Literal
+from urllib.parse import urlencode
 
+import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
@@ -25,6 +29,49 @@ from app.schemas.auth import (
     UserRegisterRequest,
     UserUpdateRequest,
 )
+
+OAuthProvider = Literal["google", "github"]
+
+
+class OAuthError(Exception):
+    """Raised when an OAuth login attempt cannot be completed."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
+class OAuthNotConfiguredError(OAuthError):
+    """Raised when a provider's client id/secret is not set on this server."""
+
+
+# Static per-provider endpoints. Client id/secret come from Settings (per
+# environment); everything else about the exchange is fixed by the provider.
+_OAUTH_PROVIDER_SPEC: dict[OAuthProvider, dict[str, str]] = {
+    "google": {
+        "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "userinfo_url": "https://www.googleapis.com/oauth2/v3/userinfo",
+        "scope": "openid email profile",
+    },
+    "github": {
+        "authorize_url": "https://github.com/login/oauth/authorize",
+        "token_url": "https://github.com/login/oauth/access_token",
+        "userinfo_url": "https://api.github.com/user",
+        "scope": "read:user user:email",
+    },
+}
+
+
+def _oauth_credentials(provider: OAuthProvider) -> tuple[str, str]:
+    settings = get_settings()
+    if provider == "google":
+        client_id, client_secret = settings.google_client_id, settings.google_client_secret
+    else:
+        client_id, client_secret = settings.github_client_id, settings.github_client_secret
+    if not client_id or not client_secret:
+        raise OAuthNotConfiguredError(f"{provider} OAuth is not configured on this server.")
+    return client_id, client_secret
 
 
 def _now_iso() -> str:
@@ -81,7 +128,14 @@ class AuthService:
 
     def login(self, payload: UserLoginRequest) -> tuple[AuthResponse, str]:
         user = self.user_repository.get_by_email(payload.email)
-        if user is None or not user["is_active"] or not verify_password(payload.password, user["hashed_password"]):
+        # OAuth-only accounts have hashed_password=None: reject rather than pass
+        # None into verify_password, which expects a string hash.
+        if (
+            user is None
+            or not user["is_active"]
+            or not user["hashed_password"]
+            or not verify_password(payload.password, user["hashed_password"])
+        ):
             self.audit_repository.record(
                 user_id=user["user_id"] if user else None,
                 event_code="user_login_failed",
@@ -120,6 +174,132 @@ class AuthService:
             except TokenError:
                 pass
         self.audit_repository.record(user_id=user_id, event_code="user_logout")
+
+    # ------------------------------------------------------------------
+    # OAuth (Google / GitHub)
+    # ------------------------------------------------------------------
+    def oauth_authorize_url(self, provider: OAuthProvider, redirect_uri: str) -> tuple[str, str]:
+        """Build the provider's consent-screen URL plus a fresh CSRF state token.
+
+        The caller is responsible for round-tripping `state` (e.g. a short-lived
+        cookie) and checking it matches on callback.
+        """
+        client_id, _ = _oauth_credentials(provider)
+        spec = _OAUTH_PROVIDER_SPEC[provider]
+        state = secrets.token_urlsafe(24)
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": spec["scope"],
+            "state": state,
+        }
+        if provider == "google":
+            params["response_type"] = "code"
+            params["access_type"] = "online"
+            params["prompt"] = "select_account"
+        return f"{spec['authorize_url']}?{urlencode(params)}", state
+
+    def oauth_callback(self, provider: OAuthProvider, *, code: str, redirect_uri: str) -> tuple[AuthResponse, str]:
+        """Exchange an authorization code for the caller's identity and issue our
+        own session tokens, linking to an existing account by email or creating
+        a new OAuth-only account (per the user's decision: auto-link by email,
+        since both providers only hand us a verified email)."""
+        client_id, client_secret = _oauth_credentials(provider)
+        spec = _OAUTH_PROVIDER_SPEC[provider]
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                token_response = client.post(
+                    spec["token_url"],
+                    data={
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "code": code,
+                        "redirect_uri": redirect_uri,
+                        "grant_type": "authorization_code",
+                    },
+                    headers={"Accept": "application/json"},
+                )
+                token_response.raise_for_status()
+                access_token = token_response.json().get("access_token")
+                if not access_token:
+                    raise OAuthError("Provider did not return an access token.")
+
+                if provider == "google":
+                    subject, email, email_verified, full_name = self._google_identity(client, access_token)
+                else:
+                    subject, email, email_verified, full_name = self._github_identity(client, access_token)
+        except httpx.HTTPError as exc:
+            raise OAuthError("Unable to reach the OAuth provider.") from exc
+
+        if not subject:
+            raise OAuthError("Provider did not return a stable user identifier.")
+        if not email or not email_verified:
+            raise OAuthError("Provider account has no verified email address.")
+
+        user = self.user_repository.get_by_oauth(provider, subject)
+        if user is None:
+            existing = self.user_repository.get_by_email(email)
+            if existing is not None:
+                user = self.user_repository.link_oauth(existing["user_id"], provider, subject)
+            else:
+                user = self.user_repository.create_oauth_user(
+                    email=email,
+                    full_name=full_name,
+                    locale="pt-BR",
+                    oauth_provider=provider,
+                    oauth_subject=subject,
+                )
+                # No consent checkbox exists in the OAuth flow: starting a social
+                # login is treated as accepting the privacy policy, same as the
+                # implicit acceptance a password-based register() records.
+                user = self.user_repository.record_consent(user["user_id"], get_settings().privacy_policy_version)
+                TenantRepository(self.user_repository.database_url).ensure_personal_workspace(
+                    user["user_id"], user["full_name"],
+                )
+                self.audit_repository.record(user_id=user["user_id"], event_code="user_registered")
+
+        if user is None or not user["is_active"]:
+            raise OAuthError("This account is not available for sign-in.")
+
+        self.audit_repository.record(user_id=user["user_id"], event_code="user_login")
+        return self._issue_tokens(user)
+
+    @staticmethod
+    def _google_identity(client: httpx.Client, access_token: str) -> tuple[str | None, str | None, bool, str]:
+        response = client.get(
+            _OAUTH_PROVIDER_SPEC["google"]["userinfo_url"],
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        response.raise_for_status()
+        info = response.json()
+        email = info.get("email")
+        full_name = info.get("name") or (email.split("@")[0] if email else "User")
+        return info.get("sub"), email, bool(info.get("email_verified", False)), full_name
+
+    @staticmethod
+    def _github_identity(client: httpx.Client, access_token: str) -> tuple[str | None, str | None, bool, str]:
+        headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/vnd.github+json"}
+        user_response = client.get(_OAUTH_PROVIDER_SPEC["github"]["userinfo_url"], headers=headers)
+        user_response.raise_for_status()
+        info = user_response.json()
+        subject = str(info["id"]) if info.get("id") is not None else None
+        full_name = info.get("name") or info.get("login") or "User"
+
+        email = info.get("email")
+        email_verified = bool(email)
+        if not email:
+            # GitHub omits `email` from /user when the user's email is private;
+            # the verified primary address is only on /user/emails.
+            emails_response = client.get("https://api.github.com/user/emails", headers=headers)
+            emails_response.raise_for_status()
+            primary = next(
+                (entry for entry in emails_response.json() if entry.get("primary") and entry.get("verified")),
+                None,
+            )
+            if primary:
+                email = primary["email"]
+                email_verified = True
+        return subject, email, email_verified, full_name
 
     # ------------------------------------------------------------------
     # Profile

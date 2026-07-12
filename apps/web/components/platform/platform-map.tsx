@@ -70,8 +70,8 @@ export function PlatformMap() {
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
           <defs>
             <linearGradient id="mapEdge" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#06b6d4" />
-              <stop offset="100%" stopColor="#3b82f6" />
+              <stop offset="0%" style={{ stopColor: 'var(--accent)' }} />
+              <stop offset="100%" style={{ stopColor: 'var(--accent-2)' }} />
             </linearGradient>
           </defs>
           {NODES.map((node, index) => {

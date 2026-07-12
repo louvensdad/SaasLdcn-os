@@ -208,7 +208,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => void retryAuth()}
-                className="focus-ring rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-foreground,#0b0b0f)]"
+                className="focus-ring rounded-full bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-foreground)]"
               >
                 {t('auth.session.retry')}
               </button>

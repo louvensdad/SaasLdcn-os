@@ -2602,6 +2602,7 @@
   "terminal.timeout": "Command exceeded the time limit and was terminated.",
   "terminal.failed": "Failed to execute the command.",
   "terminal.finished": "Command finished (exit {code}) in {ms} ms.",
+  "settings.ai.buyTokens": "Buy credits for {{provider}}",
   "shell.error.title": "This page hit a snag",
   "shell.error.description": "Something went wrong while rendering this screen. You can try again, or reload the page if it keeps happening.",
   "shell.error.retry": "Try again",

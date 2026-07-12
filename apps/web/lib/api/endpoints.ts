@@ -17,6 +17,10 @@ export const apiEndpoints = {
     changePassword: `${API_BASE_URL}/api/auth/me/password`,
     consent: `${API_BASE_URL}/api/auth/me/consent`,
     exportData: `${API_BASE_URL}/api/auth/me/export`,
+    // Full-page redirect (not a fetch): the backend redirects on to the
+    // provider's consent screen, then back to /login with the refresh
+    // cookie already set.
+    oauthStart: (provider: 'google' | 'github') => `${API_BASE_URL}/api/auth/oauth/${provider}/start`,
   },
   localization: {
     locales: `${API_BASE_URL}/api/localization/locales`,

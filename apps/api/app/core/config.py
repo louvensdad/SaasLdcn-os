@@ -92,6 +92,23 @@ class Settings(BaseModel):
         default_factory=lambda: os.environ.get("LDCN_ENVIRONMENT", "local") == "production"
     )
 
+    # --- OAuth social login (Google / GitHub) ---
+    # Optional. When a provider's client id/secret is unset, its "Continue with
+    # ..." button on the login page fails gracefully (redirect back with
+    # oauth=error) instead of starting a flow. Register the app in each
+    # provider's console with the callback URL:
+    #   <this API's public base URL>/api/auth/oauth/{google,github}/callback
+    google_client_id: str = Field(default_factory=lambda: os.environ.get("LDCN_GOOGLE_CLIENT_ID", "").strip())
+    google_client_secret: str = Field(default_factory=lambda: os.environ.get("LDCN_GOOGLE_CLIENT_SECRET", "").strip())
+    github_client_id: str = Field(default_factory=lambda: os.environ.get("LDCN_GITHUB_CLIENT_ID", "").strip())
+    github_client_secret: str = Field(default_factory=lambda: os.environ.get("LDCN_GITHUB_CLIENT_SECRET", "").strip())
+    # Where the browser lands after the OAuth provider hands control back to our
+    # callback (both on success and on failure). Must be a URL the frontend is
+    # actually served from.
+    frontend_base_url: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_FRONTEND_URL", "http://localhost:3000")
+    )
+
     # --- Security headers / rate limiting (Fase B) ---
     security_headers_enabled: bool = True
     hsts_enabled: bool = Field(default_factory=lambda: os.environ.get("LDCN_ENVIRONMENT", "local") == "production")

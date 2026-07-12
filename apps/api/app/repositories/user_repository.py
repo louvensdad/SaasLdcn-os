@@ -64,6 +64,50 @@ class UserRepository:
             model = session.get(User, user_id)
             return self._model_to_user(model) if model else None
 
+    def get_by_oauth(self, provider: str, subject: str) -> dict[str, Any] | None:
+        with self._sessions() as session:
+            model = session.scalar(
+                select(User).where(User.oauth_provider == provider, User.oauth_subject == subject)
+            )
+            return self._model_to_user(model) if model else None
+
+    def create_oauth_user(
+        self, *, email: str, full_name: str, locale: str, oauth_provider: str, oauth_subject: str
+    ) -> dict[str, Any]:
+        now = _now()
+        with self._sessions.begin() as session:
+            if session.bind is not None and session.bind.dialect.name == "postgresql":
+                session.execute(text("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE"))
+            role = "admin" if (session.scalar(select(func.count()).select_from(User)) or 0) == 0 else "user"
+            model = User(
+                user_id=f"user_{uuid4().hex[:12]}",
+                email=email,
+                hashed_password=None,
+                full_name=full_name,
+                role=role,
+                locale=locale,
+                is_active=True,
+                oauth_provider=oauth_provider,
+                oauth_subject=oauth_subject,
+                consent_accepted_at=None,
+                consent_policy_version=None,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(model)
+            session.flush()
+            return self._model_to_user(model)
+
+    def link_oauth(self, user_id: str, provider: str, subject: str) -> dict[str, Any] | None:
+        with self._sessions.begin() as session:
+            model = session.get(User, user_id)
+            if model is None:
+                return None
+            model.oauth_provider = provider
+            model.oauth_subject = subject
+            model.updated_at = _now()
+        return self.get_by_id(user_id)
+
     def update_profile(self, user_id: str, *, full_name: str | None = None, locale: str | None = None) -> dict[str, Any] | None:
         with self._sessions.begin() as session:
             model = session.get(User, user_id)
@@ -145,6 +189,8 @@ class UserRepository:
             "role": model.role,
             "locale": model.locale,
             "is_active": bool(model.is_active),
+            "oauth_provider": model.oauth_provider,
+            "oauth_subject": model.oauth_subject,
             "consent_accepted_at": model.consent_accepted_at,
             "consent_policy_version": model.consent_policy_version,
             "created_at": model.created_at,

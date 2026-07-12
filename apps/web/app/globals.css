@@ -5,92 +5,16 @@
   --font-sans: "Inter", "SF Pro Display", "Segoe UI", system-ui, sans-serif;
   --font-display: "Bahnschrift", "Aptos Display", "Arial Narrow", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "IBM Plex Mono", "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", monospace;
-  /* Default identity: Engineering Runtime — near-black navy with a cyan→electric
-     blue operational palette; it is also the SSR default before hydration. */
-  --bg: #0a0e17;
-  --bg-2: #111827;
-  --surface: rgba(17, 24, 39, 0.72);
-  --surface-2: rgba(17, 24, 39, 0.86);
-  --surface-3: rgba(31, 41, 55, 0.6);
-  --border: rgba(31, 41, 55, 0.9);
-  --border-strong: rgba(55, 65, 81, 0.95);
-  --text: #f9fafb;
-  --muted: #9ca3af;
-  --muted-2: #6b7280;
-  --accent: #06b6d4;
-  --accent-2: #3b82f6;
-  --accent-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
-  --glow: rgba(6, 182, 212, 0.18);
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --control-bg: #111827;
-  --control-hover: #1f2937;
-  --control-selected: #06b6d4;
-  --control-selected-text: #0a0e17;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 0.875rem;
   --radius-xl: 1rem;
-  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.2);
-  --shadow-lift: 0 18px 48px rgba(0, 0, 0, 0.28);
-  --shadow-cinematic: 0 24px 72px rgba(0, 0, 0, 0.34);
   --transition-fast: 150ms;
   --transition-normal: 200ms;
   --transition-slow: 250ms;
-}
-
-[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0a0e17;
-  --bg-2: #111827;
-  --surface: rgba(17, 24, 39, 0.72);
-  --surface-2: rgba(17, 24, 39, 0.86);
-  --surface-3: rgba(31, 41, 55, 0.6);
-  --border: rgba(31, 41, 55, 0.9);
-  --border-strong: rgba(55, 65, 81, 0.95);
-  --text: #f9fafb;
-  --muted: #9ca3af;
-  --muted-2: #6b7280;
-  --accent: #06b6d4;
-  --accent-2: #3b82f6;
-  --accent-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
-  --glow: rgba(6, 182, 212, 0.18);
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --control-bg: #111827;
-  --control-hover: #1f2937;
-  --control-selected: #06b6d4;
-  --control-selected-text: #0a0e17;
-}
-
-[data-theme="light"] {
-  color-scheme: light;
-  --bg: #f4f7fb;
-  --bg-2: #eaf0f7;
-  --surface: rgba(255, 255, 255, 0.84);
-  --surface-2: rgba(255, 255, 255, 0.96);
-  --surface-3: rgba(226, 234, 244, 0.9);
-  --border: rgba(51, 65, 85, 0.18);
-  --border-strong: rgba(51, 65, 85, 0.32);
-  --text: #111827;
-  --muted: #526176;
-  --muted-2: #6b778a;
-  --accent: #047b91;
-  --accent-2: #2563eb;
-  --accent-gradient: linear-gradient(135deg, #047b91 0%, #2563eb 100%);
-  --glow: rgba(4, 123, 145, 0.16);
-  --success: #047857;
-  --warning: #a16207;
-  --danger: #c2414b;
-  --control-bg: #ffffff;
-  --control-hover: #e9f0f7;
-  --control-selected: #047b91;
-  --control-selected-text: #ffffff;
-  --shadow-soft: 0 10px 30px rgba(30, 41, 59, 0.1);
-  --shadow-lift: 0 18px 48px rgba(30, 41, 59, 0.14);
-  --shadow-cinematic: 0 24px 72px rgba(30, 41, 59, 0.18);
+  /* Color tokens (--bg, --accent, --shadow-*, etc.) are defined once,
+     below, in the "Instrument workbench" block — the live palette.
+     This is also the SSR default before hydration sets [data-theme]. */
 }
 
 html {
@@ -1051,6 +975,7 @@ body {
 
 :root,
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg: #12101c;
   --bg-2: #171421;
   --surface: #1d1929;
@@ -1064,6 +989,7 @@ body {
   --muted-2: #91869f;
   --accent: #a78bfa;
   --accent-2: #22b8c7;
+  --accent-foreground: #181124;
   --accent-gradient: linear-gradient(90deg, #a78bfa 0%, #22b8c7 100%);
   --glow: rgba(167, 139, 250, 0.14);
   --success: #4ade80;
@@ -1080,6 +1006,7 @@ body {
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --bg: #f8f7fc;
   --bg-2: #f0edf8;
   --surface: #ffffff;
@@ -1090,9 +1017,10 @@ body {
   --text: #241a36;
   --text-secondary: #493d59;
   --muted: #62576f;
-  --muted-2: #796d86;
+  --muted-2: #574a63;
   --accent: #6d28d9;
   --accent-2: #087f8c;
+  --accent-foreground: #ffffff;
   --accent-gradient: linear-gradient(90deg, #6d28d9 0%, #087f8c 100%);
   --glow: rgba(109, 40, 217, 0.1);
   --success: #087a48;

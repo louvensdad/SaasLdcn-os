@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, KeyRound, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, KeyRound, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
 
 import { userKeysClient, type KeyProvider, type KeySessionStatus } from '@/lib/api/user-keys';
+import { LLM_BUY_TOKENS_URL } from '@/lib/llm-provider-links';
 import { useLocale } from '@/hooks/use-locale';
 
 const PROVIDERS: ReadonlyArray<{ id: KeyProvider; label: string }> = [
@@ -99,6 +100,18 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
             {t('userKey.securityNote')}
           </p>
 
+          {!sessions.some((s) => s.provider === provider) && LLM_BUY_TOKENS_URL[provider] ? (
+            <a
+              href={LLM_BUY_TOKENS_URL[provider]}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-[color:var(--accent)] hover:underline"
+            >
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+              {t('settings.ai.buyTokens', { provider: PROVIDERS.find((p) => p.id === provider)?.label ?? provider })}
+            </a>
+          ) : null}
+
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={provider}
@@ -131,7 +144,7 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
               type="button"
               onClick={() => void save()}
               disabled={busy || apiKey.trim().length < 8 || !testResult?.ok}
-              className="inline-flex items-center gap-2 rounded-lg bg-[image:var(--accent-gradient)] px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-[image:var(--accent-gradient)] px-3 py-1.5 text-sm font-medium text-[color:var(--accent-foreground)] transition hover:opacity-90 disabled:opacity-50"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
               {t('userKey.save')}

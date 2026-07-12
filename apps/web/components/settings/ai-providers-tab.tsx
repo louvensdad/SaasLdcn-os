@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, KeyRound, ServerCog } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, KeyRound, ServerCog } from 'lucide-react';
 
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
 import { RetentionSelect, formatRemaining } from '@/components/settings/retention-select';
 import { userKeysClient, type KeyProvider, type KeySessionStatus, type KeySessionStatusResponse } from '@/lib/api/user-keys';
 import { llmSettingsClient } from '@/lib/api/llm-settings';
+import { LLM_BUY_TOKENS_URL } from '@/lib/llm-provider-links';
 import type { ActiveLlmSettings, LlmProviderId } from '@contracts/llm-settings.contract';
 import { useLocale } from '@/hooks/use-locale';
 
@@ -157,6 +158,17 @@ function ProviderKeyCard({ def, session, isDefault }: { readonly def: ProviderDe
           </div>
         ) : (
           <div className="space-y-3">
+            {LLM_BUY_TOKENS_URL[def.id as KeyProvider] ? (
+              <a
+                href={LLM_BUY_TOKENS_URL[def.id as KeyProvider]}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 ds-caption text-[color:var(--accent)] hover:underline"
+              >
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                {t('settings.ai.buyTokens', { provider: def.name })}
+              </a>
+            ) : null}
             <div className="flex flex-col gap-3 sm:flex-row">
               <Input
                 type="password"

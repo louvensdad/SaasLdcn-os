@@ -632,7 +632,7 @@ function MetaFactoryInner() {
             type="button"
             onClick={() => void handleOrchestrate()}
             disabled={busy !== null || intent.trim().length < 8}
-            className="ml-auto inline-flex items-center gap-2 rounded-xl bg-[image:var(--accent-gradient)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="ml-auto inline-flex items-center gap-2 rounded-xl bg-[image:var(--accent-gradient)] px-4 py-2 text-sm font-medium text-[color:var(--accent-foreground)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === 'spec' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {t('metaFactory.generateSpec')}
@@ -729,7 +729,7 @@ function MetaFactoryInner() {
               type="button"
               onClick={() => void handleGenerate()}
               disabled={busy !== null}
-              className="ml-auto inline-flex items-center gap-2 rounded-xl bg-[image:var(--accent-gradient)] px-5 py-2 text-sm font-medium text-white shadow-lg shadow-[0_8px_24px_color-mix(in_srgb,var(--accent)_30%,transparent)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="ml-auto inline-flex items-center gap-2 rounded-xl bg-[image:var(--accent-gradient)] px-5 py-2 text-sm font-medium text-[color:var(--accent-foreground)] shadow-lg shadow-[0_8px_24px_color-mix(in_srgb,var(--accent)_30%,transparent)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy === 'generate' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
               {t('metaFactory.generateProject')}

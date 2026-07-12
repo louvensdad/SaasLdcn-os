@@ -344,7 +344,7 @@ export function EmptyStatePremium() {
           Execute uma geração, modernização ou laboratório para popular este painel. Somente telemetria persistida pelo backend será exibida.
         </p>
         <div className="mt-7 flex flex-wrap gap-3">
-          <Link href="/meta-factory" className="focus-ring inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[color:var(--accent)] px-4 py-2.5 text-sm font-semibold text-[color:var(--accent-foreground,#071018)]"><Factory className="h-4 w-4" /> Abrir Meta-Fábrica</Link>
+          <Link href="/meta-factory" className="focus-ring inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[color:var(--accent)] px-4 py-2.5 text-sm font-semibold text-[color:var(--accent-foreground)]"><Factory className="h-4 w-4" /> Abrir Meta-Fábrica</Link>
           <Link href="/modernize" className="focus-ring inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[color:var(--border)] px-4 py-2.5 text-sm font-medium text-[color:var(--text)]"><RefreshCw className="h-4 w-4" /> Abrir Modernize</Link>
           <Link href="/engineering-laboratory" className="focus-ring inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[color:var(--border)] px-4 py-2.5 text-sm font-medium text-[color:var(--text)]"><FlaskConical className="h-4 w-4" /> Abrir Laboratório</Link>
         </div>
