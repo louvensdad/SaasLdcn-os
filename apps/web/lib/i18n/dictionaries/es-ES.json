@@ -2164,5 +2164,10 @@
   "terminal.rejected": "Comando rechazado por la allowlist.",
   "terminal.timeout": "El comando excedió el tiempo límite y fue terminado.",
   "terminal.failed": "Error al ejecutar el comando.",
-  "terminal.finished": "Comando finalizado (exit {code}) en {ms} ms."
+  "terminal.finished": "Comando finalizado (exit {code}) en {ms} ms.",
+  "shell.error.title": "Esta página encontró un problema",
+  "shell.error.description": "Algo salió mal al renderizar esta pantalla. Puedes intentarlo de nuevo o recargar la página si el problema persiste.",
+  "shell.error.retry": "Intentar de nuevo",
+  "shell.error.reload": "Recargar página",
+  "shell.error.digest": "Referencia: {{digest}}"
 }

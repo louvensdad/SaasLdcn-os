@@ -2164,5 +2164,10 @@
   "terminal.rejected": "Commande rejetée par l'allowlist.",
   "terminal.timeout": "La commande a dépassé le délai et a été arrêtée.",
   "terminal.failed": "Échec de l'exécution de la commande.",
-  "terminal.finished": "Commande terminée (exit {code}) en {ms} ms."
+  "terminal.finished": "Commande terminée (exit {code}) en {ms} ms.",
+  "shell.error.title": "Cette page a rencontré un problème",
+  "shell.error.description": "Une erreur s'est produite lors de l'affichage de cet écran. Réessayez, ou rechargez la page si le problème persiste.",
+  "shell.error.retry": "Réessayer",
+  "shell.error.reload": "Recharger la page",
+  "shell.error.digest": "Référence : {{digest}}"
 }
