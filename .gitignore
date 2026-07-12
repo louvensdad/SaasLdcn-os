@@ -34,6 +34,12 @@ reports/screenshots/
 # Browser/runtime report caches
 reports/cdp-search-profile*/
 
+# Local test-run artifacts (job dumps, flow logs, one-off run scripts)
+reports/plan-md/job-genjob_*.json
+reports/plan-md/project-room-flow-*.json
+reports/plan-md/project-room-flow-*.jsonl
+reports/plan-md/run-*.ps1
+
 # Generated archives
 *.zip
 
