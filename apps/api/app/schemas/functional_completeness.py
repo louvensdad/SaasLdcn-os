@@ -45,6 +45,7 @@ class FrontendResourceCoverage(ApiModel):
     createPage: bool = False
     editPage: bool = False
     detailPage: bool = False
+    deletePage: bool = False
     apiClient: bool = False
     inMenu: bool = False
 

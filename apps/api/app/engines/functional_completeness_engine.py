@@ -115,7 +115,8 @@ def _backend_resource_score(bc: BackendResourceCoverage) -> int:
 
 
 def _frontend_resource_score(fc: FrontendResourceCoverage) -> int:
-    return round(sum([fc.listPage, fc.createPage, fc.editPage, fc.detailPage, fc.apiClient, fc.inMenu]) / 6 * 100)
+    fields = [fc.listPage, fc.createPage, fc.editPage, fc.detailPage, fc.deletePage, fc.apiClient, fc.inMenu]
+    return round(sum(fields) / len(fields) * 100)
 
 
 def _mobile_resource_score(mc: MobileResourceCoverage) -> int:
@@ -574,11 +575,21 @@ class FunctionalCompletenessEngine:
             resource_pages = [p for p in page_files if needle in p.as_posix().lower()]
             if resource_pages:
                 covered_any = True
+            # Delete is almost never its own route (unlike list/create/edit/detail) --
+            # it's usually a button/confirm-dialog on the list or detail page that
+            # calls the DELETE method, so filename regex alone would never be true.
+            # Checked both ways: a dedicated delete route (rare, but matches the
+            # other 4 fields' convention) OR a DELETE call in the resource's own
+            # page content (the realistic common case).
+            resource_pages_text = "\n".join(self._safe_read(p) for p in resource_pages)
+            has_delete_route = any(re.search(r"delete", p.as_posix(), re.IGNORECASE) for p in resource_pages)
+            has_delete_call = bool(re.search(r"\.delete\(|method:\s*[\"']DELETE[\"']", resource_pages_text, re.IGNORECASE))
             resource.frontend = FrontendResourceCoverage(
                 listPage=any(not re.search(r"(new|create|edit|\[id]|detail)", p.as_posix(), re.IGNORECASE) for p in resource_pages),
                 createPage=any(re.search(r"(new|create)", p.as_posix(), re.IGNORECASE) for p in resource_pages),
                 editPage=any(re.search(r"edit", p.as_posix(), re.IGNORECASE) for p in resource_pages),
                 detailPage=any(re.search(r"(\[id]|detail)", p.as_posix(), re.IGNORECASE) for p in resource_pages),
+                deletePage=has_delete_route or has_delete_call,
                 apiClient=needle in api_text,
                 inMenu=needle in nav_text,
             )

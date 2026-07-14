@@ -113,7 +113,7 @@ public class Application {{
 def _full_frontend_pages(resource: str) -> list[tuple[str, str]]:
     slug = resource.lower()
     return [
-        (f"app/{slug}/page.tsx", f"import {{ apiClient }} from '@/lib/api-client';\nexport default function List() {{ return <div>{slug} list isLoading error empty</div>; }}"),
+        (f"app/{slug}/page.tsx", f"import {{ apiClient }} from '@/lib/api-client';\nasync function onDelete(id: string) {{ await apiClient.delete(`/{slug}/${{id}}`); }}\nexport default function List() {{ return <div>{slug} list isLoading error empty</div>; }}"),
         (f"app/{slug}/new/page.tsx", f"import {{ apiClient }} from '@/lib/api-client';\nexport default function Create() {{ return <form>{slug}</form>; }}"),
         (f"app/{slug}/[id]/edit/page.tsx", f"import {{ apiClient }} from '@/lib/api-client';\nexport default function Edit() {{ return <form>{slug}</form>; }}"),
         (f"app/{slug}/[id]/page.tsx", f"import {{ apiClient }} from '@/lib/api-client';\nexport default function Detail() {{ return <div>{slug}</div>; }}"),
@@ -214,7 +214,83 @@ def test_dashboard_only_frontend_never_verified(make_project):
         assert not any([
             resource.frontend.listPage, resource.frontend.createPage,
             resource.frontend.editPage, resource.frontend.detailPage,
+            resource.frontend.deletePage,
         ])
+
+
+def test_delete_button_calling_the_delete_method_is_detected_as_delete_coverage(make_project):
+    # Delete is almost never its own route -- it's a button on the list/detail
+    # page. This is the realistic case: no dedicated /delete route, just a
+    # confirm-and-call inline in the list page.
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("package.json", "{\"name\": \"frontend\"}"),
+        ("README.md", "# App\n" * 10),
+        (
+            "app/produtos/page.tsx",
+            "export default function ProdutosList() {\n"
+            "  async function onDelete(id: string) { await api.delete(`/produtos/${id}`); }\n"
+            "  return <div>Produtos</div>;\n"
+            "}\n",
+        ),
+    ]
+    project = make_project(files, name="produto-inline-remove-button")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    produto = next(r for r in report.resources if r.resource.lower() == "produto")
+    assert produto.frontend is not None
+    assert produto.frontend.deletePage is True
+    assert produto.frontend.listPage is True
+
+
+def test_dedicated_delete_route_is_also_detected_as_delete_coverage(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("package.json", "{\"name\": \"frontend\"}"),
+        ("README.md", "# App\n" * 10),
+        ("app/produtos/[id]/delete/page.tsx", "export default function ConfirmDelete() { return <div />; }"),
+    ]
+    project = make_project(files, name="produto-confirm-remove-route")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    produto = next(r for r in report.resources if r.resource.lower() == "produto")
+    assert produto.frontend is not None
+    assert produto.frontend.deletePage is True
+
+
+def test_resource_with_no_delete_signal_is_not_credited_with_delete_coverage(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("package.json", "{\"name\": \"frontend\"}"),
+        ("README.md", "# App\n" * 10),
+        ("app/produtos/page.tsx", "export default function ProdutosList() { return <div>Produtos</div>; }"),
+        ("app/produtos/new/page.tsx", "export default function NewProduto() { return <div />; }"),
+    ]
+    project = make_project(files, name="produto-no-removal-action")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    produto = next(r for r in report.resources if r.resource.lower() == "produto")
+    assert produto.frontend is not None
+    assert produto.frontend.deletePage is False
+    assert produto.frontend.listPage is True and produto.frontend.createPage is True
 
 
 def test_mobile_login_only_without_token_storage_never_verified(make_project):
