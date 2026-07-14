@@ -18,7 +18,9 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser
 from app.engines.auto_repair_engine import auto_repair_engine
 from app.engines.engineering_kernel_engine import compute_kernel_status
+from app.engines.llm_repair_engine import llm_repair_engine
 from app.engines.quality_gate_engine import quality_gate_engine
+from app.services.runtime_api_audit_service import runtime_api_audit_service
 from app.schemas.engineering_kernel import AcknowledgeHumanReviewRequest, EngineeringKernelStatus
 from app.repositories.user_repository import AuditLogRepository
 from app.repositories.tenant_repository import TenantAccessError, TenantRepository, WORKSPACE_WRITE_ROLES
@@ -27,6 +29,7 @@ from app.routes.project_rooms import service as project_room_service
 from app.services.project_room_service import ENGINEERING_APPROVED_STATUSES
 from app.schemas.auto_repair import ForceReleaseRequest, RepairResult, RevalidationResult
 from app.schemas.quality_gate import QualityGateReport
+from app.schemas.runtime_api_audit import RuntimeApiAuditReport
 from app.engines.completeness_review_engine import CompletenessReviewEngine
 from app.engines.context_pack_builder import build_agent_context, summarize_contract
 from app.engines.factory_pipeline import PIPELINE_ORDER, iter_factory_pipeline, iter_single_agent, run_factory_pipeline
@@ -1109,6 +1112,56 @@ def repair_project(project_id: str, user: CurrentUser) -> RepairResult:
             _audit(user["user_id"], "auto_repair_action_applied")
     _audit(user["user_id"], "auto_repair_completed" if result.failed_count == 0 else "auto_repair_failed")
     return result
+
+
+@router.post("/meta-factory/{project_id}/repair/llm", response_model=RepairResult)
+def repair_project_with_llm(project_id: str, payload: VerifyRequest, user: CurrentUser) -> RepairResult:
+    """LLM-driven Auto-Repair: for BLOCKER issues the deterministic engine has no
+    template for (hardcoded secrets, unmapped failed checks, ...) -- an explicit,
+    opt-in action (costs an LLM call), separate from the free/instant /repair above.
+    Run /repair first; call this for whatever it could not touch."""
+    project = _owned_meta_project(project_id, user)
+    report = quality_gate_engine.evaluate(project, run_build=False)
+    api_key = _resolve_api_key(user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice)
+    _audit(user["user_id"], "llm_repair_started")
+    try:
+        result = llm_repair_engine.repair(
+            project, report, payload.spec, user_model_choice=payload.user_model_choice, api_key=api_key,
+        )
+    except LLMError as exc:
+        _audit(user["user_id"], "llm_repair_failed")
+        raise _llm_http_error(exc) from exc
+    except Exception as exc:  # noqa: BLE001
+        _audit(user["user_id"], "llm_repair_failed")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    for action in result.actions:
+        if action.status == "applied":
+            _audit(user["user_id"], "llm_repair_action_applied")
+    _audit(user["user_id"], "llm_repair_completed" if result.failed_count == 0 else "llm_repair_failed")
+    return result
+
+
+@router.post("/meta-factory/{project_id}/runtime-audit", response_model=RuntimeApiAuditReport)
+def runtime_audit_project(project_id: str, user: CurrentUser) -> RuntimeApiAuditReport:
+    """Runtime API Auditor: actually START the generated backend and hit its real
+    GET endpoints, instead of only reading source text. No LLM, no api_key -- run
+    the install/build step first (POST .../validate?build=true) so a venv/deps
+    exist to start. Only Python/FastAPI is supported today (report.supported=False
+    for anything else, never a false pass)."""
+    project = _owned_meta_project(project_id, user)
+    _audit(user["user_id"], "runtime_audit_started")
+    try:
+        report = runtime_api_audit_service.audit(project)
+    except Exception as exc:  # noqa: BLE001
+        _audit(user["user_id"], "runtime_audit_failed")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not report.supported or not report.ready:
+        _audit(user["user_id"], "runtime_audit_failed")
+    elif report.crash_count > 0:
+        _audit(user["user_id"], "runtime_audit_crash_detected")
+    else:
+        _audit(user["user_id"], "runtime_audit_completed")
+    return report
 
 
 @router.post("/meta-factory/{project_id}/revalidate", response_model=RevalidationResult)

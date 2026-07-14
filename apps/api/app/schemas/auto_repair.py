@@ -8,6 +8,7 @@ from app.schemas.common import ApiModel
 from app.schemas.quality_gate import QualityGateReport
 
 RepairActionStatus = Literal["applied", "failed", "skipped"]
+RepairActionSource = Literal["deterministic", "llm"]
 
 
 class RepairAction(ApiModel):
@@ -17,6 +18,9 @@ class RepairAction(ApiModel):
     files_written: list[str] = Field(default_factory=list)
     files_deleted: list[str] = Field(default_factory=list)
     detail: str = ""
+    # "deterministic" (AutoRepairEngine, template stubs, no LLM) or "llm"
+    # (LlmRepairEngine, for issues the deterministic engine has no template for).
+    source: RepairActionSource = "deterministic"
 
 
 class RepairPlan(ApiModel):

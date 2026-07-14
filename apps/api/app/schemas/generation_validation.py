@@ -6,8 +6,21 @@ from pydantic import Field
 
 from app.schemas.common import ApiModel
 
-DependencyFindingStatus = Literal["missing", "outdated", "current", "managed", "skipped"]
+DependencyFindingStatus = Literal["missing", "outdated", "current", "managed", "skipped", "vulnerable"]
 BuildStageStatus = Literal["passed", "failed", "skipped", "skipped_after_failure"]
+VulnerabilitySeverity = Literal["CRITICAL", "HIGH", "MODERATE", "LOW", "UNKNOWN"]
+
+
+class VulnerabilityFinding(ApiModel):
+    """One known vulnerability affecting the exact requested version, from the
+    OSV.dev database (the same aggregator GitHub Advisory/PyPA/RustSec/etc. feed
+    into) — real CVE/GHSA IDs, not a curated table."""
+
+    id: str  # OSV/GHSA id, e.g. "GHSA-29mw-wpgm-hmr9"
+    aliases: list[str] = Field(default_factory=list)  # e.g. ["CVE-2020-28500"]
+    summary: str
+    severity: VulnerabilitySeverity = "UNKNOWN"
+    url: str = ""
 
 
 class DependencyFinding(ApiModel):
@@ -18,6 +31,7 @@ class DependencyFinding(ApiModel):
     status: DependencyFindingStatus
     message: str
     manifest_path: str
+    vulnerabilities: list[VulnerabilityFinding] = Field(default_factory=list)
 
 
 class DependencyAuditReport(ApiModel):

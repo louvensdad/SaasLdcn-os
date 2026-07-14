@@ -1,8 +1,18 @@
 import type { ContractMetadata } from './shared.contract';
 import type { GeneratedProjectQualityResponse } from './generated-project-quality.contract';
 
-export type DependencyFindingStatus = 'missing' | 'outdated' | 'current' | 'managed' | 'skipped';
+export type DependencyFindingStatus = 'missing' | 'outdated' | 'current' | 'managed' | 'skipped' | 'vulnerable';
 export type BuildStageStatus = 'passed' | 'failed' | 'skipped';
+export type VulnerabilitySeverity = 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN';
+
+// Real CVE/GHSA data from OSV.dev for the exact requested version, not a curated table.
+export interface VulnerabilityFinding {
+  readonly id: string;
+  readonly aliases: readonly string[];
+  readonly summary: string;
+  readonly severity: VulnerabilitySeverity;
+  readonly url: string;
+}
 
 export interface DependencyFinding {
   readonly ecosystem: 'pypi' | 'npm' | 'maven';
@@ -12,6 +22,7 @@ export interface DependencyFinding {
   readonly status: DependencyFindingStatus;
   readonly message: string;
   readonly manifest_path: string;
+  readonly vulnerabilities: readonly VulnerabilityFinding[];
 }
 
 export interface DependencyAuditReport {

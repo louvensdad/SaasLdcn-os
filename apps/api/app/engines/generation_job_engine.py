@@ -20,6 +20,7 @@ from app.engines.generation_validation_engine import generation_validation_engin
 from app.engines.execution_plan_engine import build_execution_plan
 from app.engines.ground_truth_engine import ground_truth_engine
 from app.engines.project_manifest_engine import build_project_manifest
+from app.engines.project_memory_engine import PROJECT_MEMORY_FILE, ProjectMemory, project_memory_engine
 from app.engines.work_estimation_engine import estimate_generation_effort
 from app.services.execution_reality_guard import execution_reality_guard
 from app.engines.llm.router import LLMRouter
@@ -304,6 +305,7 @@ class GenerationJobEngine:
             job["stageStatuses"][steps[self._step_index(job["currentStage"], steps)].logical if self._step_index(job["currentStage"], steps) >= 0 else "build"] = "failed"
             self._log(job, job["currentStage"], "error", str(exc), exc.diagnostic.get("recommended_action"))
             self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=str(exc))
+            self._record_known_problem(job, owner_user_id, steps, str(exc))
             self._finalize_pipeline(job, owner_user_id, outcome="NEEDS_USER_ACTION", message=str(exc))
         except StageStalled as exc:
             # A step ran past its timeout: never leave the job 'running'. Persist the
@@ -330,6 +332,7 @@ class GenerationJobEngine:
                 job["stageStatuses"][steps[stalled_index].logical] = "stalled"
             self._log(job, job["currentStage"], "warning", str(exc), exc.diagnostic.get("recommended_action"))
             self._emit(job, owner_user_id, "stalled", stage=job["currentStage"], level="warning", message=str(exc))
+            self._record_known_problem(job, owner_user_id, steps, str(exc))
             self._finalize_pipeline(job, owner_user_id, outcome="STALLED", message=str(exc))
         except Exception as exc:  # keep every checkpoint; never claim success
             job = self.repository.get(job_id, owner_user_id) or job
@@ -340,6 +343,7 @@ class GenerationJobEngine:
             job["packageReady"] = False
             self._log(job, job["currentStage"], "error", "Falha inesperada da pipeline.", str(exc))
             self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=f"Falha inesperada da pipeline: {exc}")
+            self._record_known_problem(job, owner_user_id, steps, f"Falha inesperada da pipeline: {exc}")
             self._finalize_pipeline(job, owner_user_id, outcome="FAILED", message=f"Falha inesperada da pipeline: {exc}")
 
     def _finalize_pipeline(self, job: dict[str, Any], owner: str, *, outcome: str, message: str) -> None:
@@ -534,6 +538,15 @@ class GenerationJobEngine:
             # above) so _build() carries this file into the final project root via
             # ProjectWriter, same as any other emitted source file.
             self._write_json_artifact(job, owner, step, STACK_LOCK_FILE, job["stackLock"], "generated")
+            # Project Memory is fixed HERE too, same reasoning as Stack Lock: the
+            # architecture/decisions this generation has already committed to must
+            # exist BEFORE the first LLM call, not be reverse-derived afterwards
+            # (that was the ldcn.project.json gap -- write-once, post-hoc, never
+            # read back). Persisted as a "generated" artifact and rewritten after
+            # every successful stage validation (see _record_stage_validated).
+            memory = project_memory_engine.build_initial(spec, blueprint)
+            job["projectMemory"] = memory.as_dict()
+            self._write_json_artifact(job, owner, step, PROJECT_MEMORY_FILE, job["projectMemory"], "generated")
             self._persist_dependency_graph(job, owner, step, blueprint)
         elif step.action == "plan":
             chunks = BACKEND_CHUNKS if step.logical == "backend" else MOBILE_CHUNKS if step.logical == "mobile" else []
@@ -579,6 +592,11 @@ class GenerationJobEngine:
         # DIAGNOSTIC ONLY mode.
         ground_truth = ground_truth_engine.from_job(job)
         context += "\n\n" + ground_truth_engine.prompt_block(ground_truth)
+        # Project Memory: read-before-write anti-hallucination context (Production
+        # Guarantee Engine spec, section 5). Appended after compression, same as
+        # Ground Truth above, so it always survives a partitioned/compressed retry.
+        memory = ProjectMemory.from_dict(job.get("projectMemory"))
+        context += "\n\n" + project_memory_engine.prompt_block(memory)
         # Stack Lock was fixed before generation started (PREPARING_CONTEXT): tell
         # the frontend/mobile agent the exact anchor versions so it emits matching
         # manifests instead of relying on the post-generation Auto Version Fixer.
@@ -807,6 +825,8 @@ class GenerationJobEngine:
             "warnings": classification.as_dict(),
         }
         self._write_json_artifact(job, owner, step, f"{step.logical}.validation.json", report, "validation")
+        if valid and not classification.blocking:
+            self._record_stage_validated(job, owner, step)
         if not valid:
             raise StageFailure(detail, diagnostic=self._diagnostic(job, step.state, step.logical, detail, validator="artifact_gate"))
         if classification.blocking:
@@ -823,6 +843,34 @@ class GenerationJobEngine:
                     reason="Warnings classificados como bloqueantes (blocking_warning/error/critical) exigem decisao do usuario.",
                 ),
             )
+
+    def _record_stage_validated(self, job: dict[str, Any], owner: str, step: PipelineStep) -> None:
+        """Append this stage's newly-generated, now-valid files to Project
+        Memory's validated_files and rewrite the artifact. Called only on a
+        clean pass (see _validate_stage) -- a stage that fails or gets a
+        blocking warning never marks its own output as validated."""
+        memory = ProjectMemory.from_dict(job.get("projectMemory"))
+        newly_validated = [
+            item["name"] for item in job["artifacts"]
+            if item["kind"] == "generated" and item["valid"] and item["stage"].split(".")[0] == step.logical
+        ]
+        project_memory_engine.record_validated_files(memory, newly_validated)
+        job["projectMemory"] = memory.as_dict()
+        self._write_json_artifact(job, owner, step, PROJECT_MEMORY_FILE, job["projectMemory"], "generated")
+
+    def _record_known_problem(self, job: dict[str, Any], owner: str, steps: list[PipelineStep], message: str) -> None:
+        """Best-effort: append a pipeline failure to Project Memory's
+        known_problems log. Never raises -- a memory-write failure must not
+        mask the real pipeline error already being handled by the caller."""
+        try:
+            index = self._step_index(job.get("currentStage"), steps)
+            step = steps[index] if index >= 0 else steps[-1]
+            memory = ProjectMemory.from_dict(job.get("projectMemory"))
+            project_memory_engine.record_known_problem(memory, step.logical, message)
+            job["projectMemory"] = memory.as_dict()
+            self._write_json_artifact(job, owner, step, PROJECT_MEMORY_FILE, job["projectMemory"], "generated")
+        except Exception:  # noqa: BLE001 -- best-effort, must never mask the original failure
+            pass
 
     def _persist_dependency_graph(self, job: dict[str, Any], owner: str, step: PipelineStep, blueprint: dict[str, Any]) -> None:
         """Carry the architecture-level Dependency Graph Engine snapshot (nodes,

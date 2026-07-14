@@ -10,11 +10,21 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
-from app.schemas.generation_validation import DependencyAuditReport, DependencyFinding
+from app.schemas.generation_validation import DependencyAuditReport, DependencyFinding, VulnerabilityFinding
 
 
 _REQ_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*(?:==|~=|>=|<=|>|<)?\s*([^#;\s]+)?")
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.@/+:-]+$")
+
+# OSV.dev speaks its own ecosystem names, not ours -- this is the exact mapping
+# (https://ossf.github.io/osv-schema/#ecosystems). Every ecosystem this service
+# already resolves versions for has a real OSV ecosystem, so CVE coverage is
+# additive to all 8, not a new npm-only special case.
+_OSV_ECOSYSTEM: dict[str, str] = {
+    "pypi": "PyPI", "npm": "npm", "maven": "Maven", "packagist": "Packagist",
+    "crates": "crates.io", "rubygems": "RubyGems", "nuget": "NuGet", "go": "Go",
+}
+_SEVERITY_RANK: dict[str, int] = {"UNKNOWN": 0, "LOW": 1, "MODERATE": 2, "HIGH": 3, "CRITICAL": 4}
 
 
 @dataclass(frozen=True)
@@ -29,6 +39,7 @@ class DependencyResearchService:
     def __init__(self, timeout: float = 2.5) -> None:
         self.timeout = timeout
         self._cache: dict[tuple[str, str], VersionLookup] = {}
+        self._vuln_cache: dict[tuple[str, str, str, str], list[VulnerabilityFinding]] = {}
 
     def latest_pypi(self, package: str) -> VersionLookup:
         if get_settings().force_mock:
@@ -166,7 +177,7 @@ class DependencyResearchService:
             return DependencyAuditReport(status="skipped", skipped_reason="No supported dependency manifest was emitted.")
         if skipped_reasons and not findings:
             return DependencyAuditReport(status="skipped", skipped_reason="; ".join(sorted(set(skipped_reasons))))
-        failed = any(f.status in {"missing", "outdated"} for f in findings)
+        failed = any(f.status in {"missing", "outdated", "vulnerable"} for f in findings)
         return DependencyAuditReport(status="failed" if failed else "passed", findings=findings)
 
     def _audit_requirements(self, path: str, text: str, skipped: list[str]) -> list[DependencyFinding]:
@@ -401,19 +412,98 @@ class DependencyResearchService:
             )
         normalized = self._normalize_requested(requested)
         status = "current" if normalized == lookup.latest_version else "outdated"
+        message = (
+            "Dependency is current."
+            if status == "current"
+            else f"Dependency version differs from latest registry version {lookup.latest_version}."
+        )
+        # CVE check: real, regardless of whether the requested version happens to
+        # also be "current" -- a package can be the newest release and STILL carry
+        # a disclosed, unpatched vulnerability. Checked against the exact requested
+        # (installed) version, not "latest", since that's what actually ships.
+        vulns = self.vulnerabilities_for(ecosystem, name, normalized)
+        if vulns:
+            status = "vulnerable"
+            worst = max(vulns, key=lambda v: _SEVERITY_RANK.get(v.severity, 0))
+            ids = ", ".join(sorted({v.id for v in vulns})[:5])
+            message = f"{len(vulns)} known vulnerability(ies) in {name}@{requested} (worst: {worst.severity}, {ids})."
         return DependencyFinding(
             ecosystem=ecosystem,
             name=name,
             requested_version=requested,
             latest_version=lookup.latest_version,
             status=status,
-            message=(
-                "Dependency is current."
-                if status == "current"
-                else f"Dependency version differs from latest registry version {lookup.latest_version}."
-            ),
+            message=message,
             manifest_path=path,
+            vulnerabilities=vulns,
         )
+
+    def vulnerabilities_for(self, ecosystem: str, name: str, version: str | None) -> list[VulnerabilityFinding]:
+        """Real, structured CVE/GHSA data from OSV.dev (the aggregator GitHub
+        Advisory/PyPA/RustSec/Go vuln DB/etc. all feed into) for the EXACT
+        requested version -- never a curated table, never invented. Fails open
+        (empty list) on any network/parsing problem or unmapped ecosystem: a CVE
+        check that can't reach the network must never block a pipeline on its own."""
+        osv_ecosystem = _OSV_ECOSYSTEM.get(ecosystem)
+        if not osv_ecosystem or not version or get_settings().force_mock:
+            return []
+        key = ("osv", ecosystem, name.lower(), version)
+        if key not in self._vuln_cache:
+            self._vuln_cache[key] = self._query_osv(osv_ecosystem, name, version)
+        return self._vuln_cache[key]
+
+    def _query_osv(self, osv_ecosystem: str, name: str, version: str) -> list[VulnerabilityFinding]:
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(
+                    "https://api.osv.dev/v1/query",
+                    json={"package": {"name": name, "ecosystem": osv_ecosystem}, "version": version},
+                )
+                response.raise_for_status()
+                vulns = response.json().get("vulns") or []
+        except httpx.HTTPError:
+            return []  # network/registry hiccup -- never block a pipeline on OSV being down
+        out: list[VulnerabilityFinding] = []
+        for vuln in vulns:
+            if not isinstance(vuln, dict) or not vuln.get("id"):
+                continue
+            severity = self._osv_severity(vuln)
+            references = vuln.get("references") or []
+            url = next((str(r.get("url")) for r in references if isinstance(r, dict) and r.get("url")), "")
+            out.append(VulnerabilityFinding(
+                id=str(vuln["id"]),
+                aliases=[str(a) for a in (vuln.get("aliases") or []) if isinstance(a, str)],
+                summary=str(vuln.get("summary") or vuln.get("details") or "")[:500],
+                severity=severity,
+                url=url,
+            ))
+        return out
+
+    @staticmethod
+    def _osv_severity(vuln: dict[str, Any]) -> str:
+        # OSV carries severity two ways: a simple GitHub-style band in
+        # database_specific.severity (most GHSA entries), or a raw CVSS vector
+        # string under severity[] (score-only, no precomputed band) -- fall back
+        # to parsing the CVSS base score into the same LOW/MODERATE/HIGH/CRITICAL
+        # bands GitHub itself uses, rather than reporting UNKNOWN whenever GitHub
+        # didn't set the simple field.
+        band = str((vuln.get("database_specific") or {}).get("severity") or "").upper()
+        if band in {"CRITICAL", "HIGH", "MODERATE", "LOW"}:
+            return band
+        for entry in vuln.get("severity") or []:
+            score = str((entry or {}).get("score") or "")
+            match = re.search(r"(\d+\.\d+)$", score) or re.search(r"^(\d+(?:\.\d+)?)$", score)
+            if not match:
+                continue
+            value = float(match.group(1))
+            if value >= 9.0:
+                return "CRITICAL"
+            if value >= 7.0:
+                return "HIGH"
+            if value >= 4.0:
+                return "MODERATE"
+            return "LOW"
+        return "UNKNOWN"
 
     def _cached(self, ecosystem: str, name: str, fn) -> VersionLookup:
         key = (ecosystem, name.lower())

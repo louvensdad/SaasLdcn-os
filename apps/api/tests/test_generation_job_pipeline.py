@@ -40,6 +40,7 @@ from app.schemas.generation_validation import (
 )
 from app.services.file_protocol import EmittedFile, ParsedAgentOutput, parse_agent_output
 from app.services.generated_project_service import DOWNLOAD_DIR
+from app.engines.project_memory_engine import PROJECT_MEMORY_FILE
 from app.services.stack_compatibility import DEFAULT_ANCHORS, STACK_LOCK_FILE
 
 
@@ -1357,6 +1358,74 @@ def test_frontend_llm_context_includes_stack_lock_hint(isolated_engine, monkeypa
     assert "<stack_lock>" in captured_contexts["frontend"]
     assert DEFAULT_ANCHORS["react"] in captured_contexts["frontend"]
     assert "<stack_lock>" not in captured_contexts["backend"]  # only frontend/mobile get the hint
+    # Project Memory is read-before-write: every LLM step, not just frontend/mobile.
+    assert "<project_memory>" in captured_contexts["backend"]
+    assert "<project_memory>" in captured_contexts["frontend"]
+
+
+def test_preparing_context_fixes_project_memory_before_any_llm_step(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)  # _create seeds blueprint={"decisions": []}
+    blueprint = {
+        "decisions": [
+            {"area": "database", "choice": "postgres", "justification": "dominio relacional"},
+            {"area": "frontend", "choice": "react ts"},
+        ]
+    }
+    _prepare(engine, job, _spec(), blueprint)
+
+    memory = job["projectMemory"]
+    assert memory["architecture"]["database"] == "postgres"
+    assert memory["architecture"]["frontend"] == "react ts"
+    assert {"decision": "database: postgres", "reason": "dominio relacional"} in memory["decisions"]
+    assert memory["known_problems"] == []
+    assert memory["validated_files"] == []
+
+    memory_artifact = next(a for a in job["artifacts"] if a["name"] == PROJECT_MEMORY_FILE)
+    assert memory_artifact["kind"] == "generated"  # carried into the project root by ProjectWriter
+    persisted = json.loads(Path(memory_artifact["path"]).read_text(encoding="utf-8"))
+    assert persisted["architecture"]["database"] == "postgres"
+
+
+def test_validate_stage_records_validated_files_into_project_memory(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec())
+    _seed_backend_artifact(engine, job, [])
+
+    engine._validate_stage(job, "user-1", _BACKEND_VALIDATE)
+
+    assert "src/controllers/order.controller.ts" in job["projectMemory"]["validated_files"]
+    memory_artifacts = [a for a in job["artifacts"] if a["name"] == PROJECT_MEMORY_FILE]
+    assert len(memory_artifacts) == 2  # prepare's initial write + this stage's update
+    latest = json.loads(Path(memory_artifacts[-1]["path"]).read_text(encoding="utf-8"))
+    assert "src/controllers/order.controller.ts" in latest["validated_files"]
+
+
+def test_validate_stage_failure_never_marks_its_own_output_validated(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec())
+    contracts_validate = next(step for step in STEPS if step.state == "CONTRACTS_VALIDATING")
+    # No openapi.yaml artifact seeded: contracts validation must fail.
+    with pytest.raises(StageFailure):
+        engine._validate_stage(job, "user-1", contracts_validate)
+    assert job["projectMemory"]["validated_files"] == []
+
+
+def test_stage_failure_records_known_problem_into_project_memory(isolated_engine, monkeypatch):
+    engine, repository, _ = isolated_engine
+    job = _create(engine)
+    invalid = ParsedAgentOutput(raw_response="provider output without files", errors=["invalid"])
+    monkeypatch.setattr("app.engines.generation_job_engine._run_agent", lambda *args, **kwargs: (None, invalid))
+    engine.execute(job["id"], "user-1", api_key="secret", user_model_choice="claude-sonnet-4")
+
+    failed = repository.get(job["id"], "user-1")
+    assert failed["status"] == "NEEDS_USER_ACTION"
+    assert failed["projectMemory"]["known_problems"]  # the failure was captured, not silently dropped
+    memory_artifact = next(a for a in reversed(failed["artifacts"]) if a["name"] == PROJECT_MEMORY_FILE)
+    persisted = json.loads(Path(memory_artifact["path"]).read_text(encoding="utf-8"))
+    assert persisted["known_problems"] == failed["projectMemory"]["known_problems"]
 
 
 def test_conflict_detector_restores_drifted_react_after_frontend_stage(isolated_engine):

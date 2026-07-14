@@ -8,14 +8,20 @@ import pytest
 from app.core.config import get_settings
 from app.engines import quality_gate_engine as gate_module
 from app.engines.auto_repair_engine import AutoRepairEngine
+from app.engines.llm_repair_engine import LlmRepairEngine
 from app.engines.quality_gate_engine import QualityGateEngine
 from app.repositories.user_repository import AuditLogRepository
 from app.routes import meta_factory
+from app.schemas.auto_repair import RepairResult
 from app.schemas.generation_validation import (
     BuildValidationReport,
     DependencyAuditReport,
     GenerationValidationReport,
 )
+from app.schemas.llm import LLMResponse, Provider
+from app.schemas.orchestrator import ProjectSpec, SuggestedStack
+from app.schemas.runtime_api_audit import RuntimeApiAuditReport
+from app.schemas.quality_gate import QualityGateReport, QualityIssue
 from app.services.file_protocol import EmittedFile
 from app.services.project_writer import ProjectWriteError, ProjectWriter
 
@@ -288,6 +294,192 @@ def test_repair_endpoint_applies_and_audits(client, make_project) -> None:
     events = {row["event_code"] for row in AuditLogRepository(get_settings().sqlite_path).list_for_user(user_id)}
     assert "auto_repair_started" in events
     assert "auto_repair_completed" in events
+
+
+def test_quality_gate_flags_an_unapproved_external_integration(make_project):
+    project = _make_min_backend(make_project, extra=[
+        ("requirements.txt", "fastapi==0.115.0\nstripe==7.0.0\n"),
+        ("ldcn.project.json", '{"selected_infrastructure_ids": []}'),
+    ])
+    report = QualityGateEngine().evaluate(project, run_build=False)
+    issue = next(i for i in report.issues if i.id == "external_integration_not_opted_in:stripe")
+    assert issue.severity == "BLOCKER"
+    assert report.passed is False
+
+
+def _spec() -> ProjectSpec:
+    return ProjectSpec(raw_intent="x", product_summary="Demo app", suggested_stack=SuggestedStack())
+
+
+def _gate_report(project_id: str, issues: list[QualityIssue]) -> QualityGateReport:
+    blockers = [i for i in issues if i.severity == "BLOCKER"]
+    return QualityGateReport(
+        project_id=project_id, passed=not blockers, can_release=not blockers, score=50, built=False,
+        blocker_count=len(blockers), warning_count=len(issues) - len(blockers), issues=issues,
+        generated_at="2026-07-14T00:00:00+00:00",
+    )
+
+
+def _unfixable_blocker(issue_id: str, file: str | None = "app/main.py") -> QualityIssue:
+    return QualityIssue(
+        id=issue_id, title=issue_id, severity="BLOCKER", category="security", file=file,
+        root_cause=f"root cause de {issue_id}", suggested_fix=f"suggested fix de {issue_id}", auto_fixable=False,
+    )
+
+
+class _RepairRouter:
+    """Repair agent stub: always emits one file, counts how many times it was called."""
+
+    def __init__(self, path: str = "app/main.py", content: str = "fixed = True\n") -> None:
+        self.path = path
+        self.content = content
+        self.calls = 0
+
+    def route(self, req, **kwargs):
+        self.calls += 1
+        text = f'<<<FILE path="{self.path}">>>\n{self.content}<<<END>>>'
+        return LLMResponse(provider=Provider.anthropic, model="claude-opus-4-8", text=text)
+
+
+class _NoFilesRouter:
+    def route(self, req, **kwargs):
+        return LLMResponse(provider=Provider.anthropic, model="claude-opus-4-8", text="Nao encontrei nada para corrigir.")
+
+
+def test_repairable_issues_excludes_auto_fixable_warnings_and_already_applied(make_project):
+    project = _make_min_backend(make_project)
+    fixable = QualityIssue(
+        id="readme_missing", title="readme", severity="BLOCKER", category="structure",
+        root_cause="x", suggested_fix="y", auto_fixable=True,
+    )
+    warning = QualityIssue(
+        id="warning:1", title="warning", severity="WARNING", category="quality",
+        root_cause="x", suggested_fix="y", auto_fixable=False,
+    )
+    already_applied = _unfixable_blocker("hardcoded_secret_already_fixed")
+    already_applied.fix_status = "applied"
+    genuine = _unfixable_blocker("hardcoded_secret")
+    report = _gate_report(project["project_id"], [fixable, warning, already_applied, genuine])
+
+    repairable = LlmRepairEngine().repairable_issues(report)
+
+    assert [i.id for i in repairable] == ["hardcoded_secret"]
+
+
+def test_llm_repair_applies_returned_files_and_reports_actions(make_project):
+    project = _make_min_backend(make_project)
+    report = _gate_report(project["project_id"], [_unfixable_blocker("hardcoded_secret")])
+    router = _RepairRouter(path="app/main.py", content="app = FastAPI()  # secret removed\n")
+
+    result = LlmRepairEngine().repair(project, report, _spec(), router=router)
+
+    assert result.applied_count == 1
+    assert result.actions[0].issue_id == "hardcoded_secret"
+    assert result.actions[0].source == "llm"
+    assert result.actions[0].status == "applied"
+    assert router.calls == 1
+    written = Path(project["generated_project_path"]) / "app/main.py"
+    assert "secret removed" in written.read_text(encoding="utf-8")
+
+
+def test_llm_repair_marks_skipped_when_agent_returns_no_files(make_project):
+    project = _make_min_backend(make_project)
+    report = _gate_report(project["project_id"], [_unfixable_blocker("hardcoded_secret")])
+
+    result = LlmRepairEngine().repair(project, report, _spec(), router=_NoFilesRouter())
+
+    assert result.applied_count == 0
+    assert result.skipped_count == 1
+    assert result.actions[0].source == "llm"
+
+
+def test_llm_repair_batches_large_backlogs_instead_of_dropping_the_remainder(make_project):
+    project = _make_min_backend(make_project)
+    issues = [_unfixable_blocker(f"issue-{i}", file=None) for i in range(10)]  # > _ISSUES_PER_CALL (8)
+    report = _gate_report(project["project_id"], issues)
+    router = _RepairRouter()
+
+    result = LlmRepairEngine().repair(project, report, _spec(), router=router)
+
+    assert len(result.actions) == 10  # every issue got an attempt, none silently dropped
+    assert router.calls == 2  # two batches: 8 + 2
+
+
+def test_llm_repair_leaves_auto_fixable_issues_to_the_deterministic_engine(make_project):
+    project = _make_min_backend(make_project)
+    fixable = QualityIssue(
+        id="readme_missing", title="readme", severity="BLOCKER", category="structure",
+        root_cause="x", suggested_fix="y", auto_fixable=True,
+    )
+    report = _gate_report(project["project_id"], [fixable])
+
+    result = LlmRepairEngine().repair(project, report, _spec(), router=_RepairRouter())
+
+    assert result.applied_count == 0  # nothing to do: readme_missing is deterministic-fixable
+    assert result.actions == []
+
+
+def test_llm_repair_endpoint_applies_and_audits(client, make_project, monkeypatch):
+    project = _make_min_backend(make_project)
+    project_id = project["project_id"]
+    user_id = client.get("/api/auth/me").json()["user_id"]
+
+    def fake_repair(_project, _report, _spec, **_kwargs):
+        return RepairResult(
+            project_id=project_id,
+            actions=[{"issue_id": "hardcoded_secret", "title": "x", "status": "applied", "source": "llm"}],
+            applied_count=1,
+        )
+
+    monkeypatch.setattr(meta_factory.llm_repair_engine, "repair", fake_repair)
+
+    response = client.post(
+        f"/api/meta-factory/{project_id}/repair/llm",
+        json={"spec": _spec().model_dump(mode="json")},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["applied_count"] == 1
+
+    events = {row["event_code"] for row in AuditLogRepository(get_settings().sqlite_path).list_for_user(user_id)}
+    assert "llm_repair_started" in events
+    assert "llm_repair_completed" in events
+    assert "llm_repair_action_applied" in events
+
+
+def test_runtime_audit_endpoint_reports_unsupported_and_audits(client, make_project):
+    project = _make_min_backend(make_project)  # a FastAPI project, but no .ldcn-venv
+    project_id = project["project_id"]
+    user_id = client.get("/api/auth/me").json()["user_id"]
+
+    response = client.post(f"/api/meta-factory/{project_id}/runtime-audit")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["supported"] is True
+    assert body["started"] is False  # no venv -- never even tried to start a process
+
+    events = {row["event_code"] for row in AuditLogRepository(get_settings().sqlite_path).list_for_user(user_id)}
+    assert "runtime_audit_started" in events
+    assert "runtime_audit_failed" in events
+
+
+def test_runtime_audit_endpoint_reports_crashes_via_audit_trail(client, make_project, monkeypatch):
+    project = _make_min_backend(make_project)
+    project_id = project["project_id"]
+    user_id = client.get("/api/auth/me").json()["user_id"]
+
+    def fake_audit(_project):
+        return RuntimeApiAuditReport(
+            project_id=project_id, supported=True, language="python", started=True, ready=True,
+            crash_count=1, generated_at="2026-07-14T00:00:00+00:00",
+        )
+
+    monkeypatch.setattr(meta_factory.runtime_api_audit_service, "audit", fake_audit)
+    response = client.post(f"/api/meta-factory/{project_id}/runtime-audit")
+    assert response.status_code == 200, response.text
+    assert response.json()["crash_count"] == 1
+
+    events = {row["event_code"] for row in AuditLogRepository(get_settings().sqlite_path).list_for_user(user_id)}
+    assert "runtime_audit_crash_detected" in events
 
 
 def _make_min_backend(make_project, *, extra: list[tuple[str, str]] | None = None) -> dict:

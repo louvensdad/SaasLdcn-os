@@ -56,3 +56,17 @@ def test_manifest_evidence_files_is_a_fixed_known_list():
     assert manifest.evidence_files
     assert "product-completion-report.json" in manifest.evidence_files
     assert "README.md" in manifest.evidence_files
+
+
+def test_manifest_carries_selected_infrastructure_ids_from_dependency_graph_snapshot():
+    spec = _spec()
+    blueprint = {"dependency_graph_snapshot": {"infrastructure_ids": ["stripe", "postgresql"]}}
+    manifest = build_project_manifest("proj-6", "Proj", spec, blueprint)
+    assert manifest.selected_infrastructure_ids == ["stripe", "postgresql"]
+
+
+def test_manifest_selected_infrastructure_ids_empty_without_a_snapshot():
+    spec = _spec()
+    assert build_project_manifest("proj-7", "Proj", spec, None).selected_infrastructure_ids == []
+    assert build_project_manifest("proj-8", "Proj", spec, {}).selected_infrastructure_ids == []
+    assert build_project_manifest("proj-9", "Proj", spec, {"dependency_graph_snapshot": "not-a-dict"}).selected_infrastructure_ids == []

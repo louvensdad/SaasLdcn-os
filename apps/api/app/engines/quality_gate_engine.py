@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.engines.external_integration_audit_engine import external_integration_audit_engine
 from app.engines.generated_project_quality_engine import GeneratedProjectQualityEngine
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.schemas.quality_gate import QualityGateReport, QualityIssue
@@ -17,6 +18,8 @@ from app.schemas.quality_gate import QualityGateReport, QualityIssue
 # Severity policy: anything that makes the project unsafe or non-functional
 # (broken build, missing mandatory file, real secret/.env, path traversal,
 # missing dependency) is a BLOCKER. Docs/coverage/quality nits are WARNING.
+
+_SEVERITY_RANK: dict[str, int] = {"UNKNOWN": 0, "LOW": 1, "MODERATE": 2, "HIGH": 3, "CRITICAL": 4}
 
 # check_id -> (auto_fix_id | None, human root cause, human suggested fix)
 # A non-None auto_fix_id means the AutoRepairEngine can fix it deterministically.
@@ -134,9 +137,26 @@ class QualityGateEngine:
                 )
             )
 
-        # 4. Dependency audit (only when we built): missing -> BLOCKER, outdated -> WARNING.
+        # 4. Dependency audit (only when we built): missing/vulnerable(CRITICAL|HIGH)
+        # -> BLOCKER, outdated/vulnerable(MODERATE|LOW|UNKNOWN) -> WARNING.
         if dependency is not None and dependency.status == "failed":
             for finding in dependency.findings:
+                if finding.status == "vulnerable":
+                    worst = max((v.severity for v in finding.vulnerabilities), key=lambda s: _SEVERITY_RANK.get(s, 0), default="UNKNOWN")
+                    ids = ", ".join(sorted({v.id for v in finding.vulnerabilities})[:5])
+                    issues.append(
+                        QualityIssue(
+                            id=f"dependency_cve:{finding.ecosystem}:{finding.name}",
+                            title=f"Vulnerabilidade conhecida em {finding.name}@{finding.requested_version}",
+                            severity="BLOCKER" if worst in {"CRITICAL", "HIGH"} else "WARNING",
+                            category="dependency",
+                            file=finding.manifest_path,
+                            root_cause=finding.message,
+                            suggested_fix=f"Atualizar {finding.name} para uma versão sem os CVEs/GHSAs listados ({ids}).",
+                            auto_fixable=False,
+                        )
+                    )
+                    continue
                 blocker = finding.status == "missing"
                 issues.append(
                     QualityIssue(
@@ -153,6 +173,11 @@ class QualityGateEngine:
 
         # 5. Extra deterministic detections beyond quality_check.
         issues.extend(self._extra_detections(project, quality))
+
+        # 5b. External Integration Audit: opt-in enforcement + resilience/test
+        # coverage for third-party providers (Stripe, SendGrid, ...). Runs even
+        # when run_build=False -- it's pure file inspection, no build needed.
+        issues.extend(external_integration_audit_engine.audit(project))
 
         # 6. Quality warnings -> WARNING (non-blocking).
         for warning in quality.get("warnings") or []:

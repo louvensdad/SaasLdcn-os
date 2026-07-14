@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from app.services.dependency_research_service import DependencyResearchService, VersionLookup
 
 
-def test_audit_requirements_reports_outdated_without_network(monkeypatch):
-    service = DependencyResearchService()
+@pytest.fixture
+def service(monkeypatch):
+    svc = DependencyResearchService()
+    # audit_manifest() now also checks OSV.dev for CVEs per dependency (real
+    # network in production); every test in this file is named "_without_network"
+    # on purpose, so stub that check too, same as every other per-ecosystem lookup.
+    monkeypatch.setattr(svc, "vulnerabilities_for", lambda *a, **k: [])
+    return svc
 
+
+def test_audit_requirements_reports_outdated_without_network(monkeypatch, service):
     monkeypatch.setattr(
         service,
         "latest_pypi",
@@ -30,8 +40,7 @@ def test_audit_requirements_reports_outdated_without_network(monkeypatch):
 # (caught live: 'DependencyResearchService' object has no attribute '_audit_csproj'
 # on a real .NET generation job's BUILD_RUNNING stage).
 
-def test_audit_csproj_reports_outdated_without_network(monkeypatch):
-    service = DependencyResearchService()
+def test_audit_csproj_reports_outdated_without_network(monkeypatch, service):
     monkeypatch.setattr(service, "latest_nuget", lambda name: VersionLookup("nuget", name, "9.0.0"))
 
     report = service.audit_manifest([
@@ -61,8 +70,7 @@ def test_audit_csproj_invalid_xml_is_reported_not_raised():
     assert report.findings[0].status == "missing"
 
 
-def test_audit_go_mod_reports_outdated_without_network(monkeypatch):
-    service = DependencyResearchService()
+def test_audit_go_mod_reports_outdated_without_network(monkeypatch, service):
     monkeypatch.setattr(service, "latest_go", lambda module: VersionLookup("go", module, "v1.10.0"))
 
     go_mod = (
@@ -80,8 +88,7 @@ def test_audit_go_mod_reports_outdated_without_network(monkeypatch):
     assert names == {"github.com/gin-gonic/gin", "golang.org/x/text"}
 
 
-def test_audit_cargo_reports_outdated_without_network(monkeypatch):
-    service = DependencyResearchService()
+def test_audit_cargo_reports_outdated_without_network(monkeypatch, service):
     monkeypatch.setattr(service, "latest_crates", lambda name: VersionLookup("crates", name, "2.0.0"))
 
     cargo_toml = (
@@ -95,8 +102,7 @@ def test_audit_cargo_reports_outdated_without_network(monkeypatch):
     assert names == {"axum", "serde"}
 
 
-def test_audit_gemfile_reports_outdated_without_network(monkeypatch):
-    service = DependencyResearchService()
+def test_audit_gemfile_reports_outdated_without_network(monkeypatch, service):
     monkeypatch.setattr(service, "latest_rubygems", lambda name: VersionLookup("rubygems", name, "8.0.0"))
 
     gemfile = "source 'https://rubygems.org'\n\ngem 'rails', '~> 7.0'\ngem \"puma\"\n"
@@ -107,8 +113,7 @@ def test_audit_gemfile_reports_outdated_without_network(monkeypatch):
     assert names == {"rails", "puma"}
 
 
-def test_audit_composer_reports_outdated_without_network(monkeypatch):
-    service = DependencyResearchService()
+def test_audit_composer_reports_outdated_without_network(monkeypatch, service):
     monkeypatch.setattr(service, "latest_packagist", lambda name: VersionLookup("packagist", name, "12.0.0"))
 
     composer_json = json.dumps({

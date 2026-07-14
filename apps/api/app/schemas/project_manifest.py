@@ -41,4 +41,10 @@ class ProjectManifest(ApiModel):
     # manifest claiming live availability would go stale the moment a
     # human-review/override action changes state after generation.
     evidence_files: list[str] = Field(default_factory=list)
+    # External infrastructure/provider ids the user explicitly opted into via the
+    # Wizard (Stripe, SendGrid, ...), carried from the blueprint's Dependency
+    # Graph snapshot. This is the ONLY source of truth External Integration
+    # Audit (external_integration_audit_engine.py) checks a detected provider
+    # SDK against -- never re-derived from what the LLM happened to generate.
+    selected_infrastructure_ids: list[str] = Field(default_factory=list)
     generated_at: str

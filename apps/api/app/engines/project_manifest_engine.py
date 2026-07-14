@@ -41,6 +41,9 @@ def build_project_manifest(
         ProjectManifestDecision(area=str(item.get("area", "")), choice=str(item.get("choice", "")))
         for item in ((blueprint or {}).get("decisions") or [])
     ]
+    snapshot = (blueprint or {}).get("dependency_graph_snapshot")
+    raw_ids = snapshot.get("infrastructure_ids") if isinstance(snapshot, dict) else None
+    selected_infrastructure_ids = [str(item) for item in (raw_ids or [])]
     return ProjectManifest(
         project_id=project_id,
         project_name=project_name,
@@ -48,5 +51,6 @@ def build_project_manifest(
         modules=modules,
         decisions=decisions,
         evidence_files=list(_KNOWN_EVIDENCE_FILES),
+        selected_infrastructure_ids=selected_infrastructure_ids,
         generated_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
     )
