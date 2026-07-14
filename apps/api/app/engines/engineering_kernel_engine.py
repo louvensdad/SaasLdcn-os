@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.engines.quality_gate_engine import quality_gate_engine
-from app.schemas.engineering_kernel import EngineeringKernelStatus, EvidenceItem
+from app.repositories.generation_job_repository import GenerationJobRepository
+from app.schemas.engineering_kernel import EngineeringKernelStatus, EvidenceItem, KernelPhase
 from app.services.generated_project_service import GeneratedProjectService
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
 
@@ -20,12 +21,55 @@ _FILE_EVIDENCE = (
     ("project_manifest", "Project Manifest", "ldcn.project.json"),
 )
 
+# KernelPhase in-flight buckets: grouped straight from the real GenerationJobStatus
+# literal (schemas/generation_job.py) and the STEPS order generation_job_engine.py
+# walks -- not a new judgment, just naming what each step already means.
+_GENERATING_JOB_STATUSES = {
+    "QUEUED", "PREPARING_CONTEXT", "CONTRACTS_PLANNING", "CONTRACTS_GENERATING",
+    "BACKEND_PLANNING", "BACKEND_GENERATING", "FRONTEND_PLANNING", "FRONTEND_GENERATING",
+    "MOBILE_PLANNING", "MOBILE_GENERATING", "DATABASE_PLANNING", "DATABASE_GENERATING",
+    "SECURITY_PLANNING", "TESTS_GENERATING", "DOCUMENTATION_GENERATING", "PACKAGE_CREATING",
+}
+_ANALYZING_JOB_STATUSES = {
+    "CONTRACTS_VALIDATING", "BACKEND_VALIDATING", "FRONTEND_VALIDATING",
+    "MOBILE_VALIDATING", "DATABASE_VALIDATING", "SECURITY_VALIDATING", "BUILD_RUNNING",
+}
+# No literal REPAIRING status exists (Engineering Policy gap audit finding #7) --
+# these are the closest real analogue: the pipeline is stuck or mid a Build
+# Auto-Repair retry (see build_error_classifier.py / the terminal finalizer).
+_REPAIRING_JOB_STATUSES = {"PAUSED", "NEEDS_USER_ACTION", "STALLED"}
+_TERMINAL_JOB_STATUSES = {"READY", "FAILED"}
+
+_TERMINAL_STATE_TO_PHASE: dict[str, KernelPhase] = {
+    "VERIFIED": "CERTIFIED",
+    "BLOCKED": "BLOCKED",
+    "PARTIALLY_VERIFIED": "PARTIALLY_VERIFIED",
+    "NEEDS_HUMAN_REVIEW": "NEEDS_HUMAN_REVIEW",
+}
+
+
+def _in_flight_phase(job_status: str | None) -> KernelPhase | None:
+    """None means 'not in flight' (no linked job, or the job already reached a
+    terminal status) -- the caller should use the completeness-based terminal
+    phase instead."""
+    if job_status is None or job_status in _TERMINAL_JOB_STATUSES:
+        return None
+    if job_status in _GENERATING_JOB_STATUSES:
+        return "GENERATING"
+    if job_status in _ANALYZING_JOB_STATUSES:
+        return "ANALYZING"
+    if job_status == "TESTS_RUNNING":
+        return "TESTING"
+    if job_status in _REPAIRING_JOB_STATUSES:
+        return "REPAIRING"
+    return "GENERATING"
+
 
 def _meta_project(project_id: str) -> dict:
     return {"project_id": project_id, "generated_project_path": str(DEFAULT_OUTPUT_ROOT / project_id)}
 
 
-def compute_kernel_status(project_id: str) -> EngineeringKernelStatus:
+def compute_kernel_status(project_id: str, owner_user_id: str | None = None) -> EngineeringKernelStatus:
     writer = ProjectWriter()
     verdict = writer.read_verification(project_id)
     completeness = writer.read_functional_completeness(project_id)
@@ -51,6 +95,14 @@ def compute_kernel_status(project_id: str) -> EngineeringKernelStatus:
         state = "PARTIALLY_VERIFIED"
         reason = "Build não verificado formalmente e nenhum bloqueador crítico encontrado."
 
+    kernel_phase: KernelPhase = _TERMINAL_STATE_TO_PHASE[state]
+    if owner_user_id:
+        job = GenerationJobRepository().latest_for_generated_project(project_id, owner_user_id)
+        if job:
+            in_flight = _in_flight_phase(job.get("status"))
+            if in_flight is not None:
+                kernel_phase = in_flight
+
     override_reason = override.get("reason") if override else None
     human_review_reason = human_review.get("reason") if human_review else None
 
@@ -75,6 +127,7 @@ def compute_kernel_status(project_id: str) -> EngineeringKernelStatus:
     return EngineeringKernelStatus(
         project_id=project_id,
         state=state,
+        kernel_phase=kernel_phase,
         reason=reason,
         override_active=report.release_override,
         override_reason=override_reason,

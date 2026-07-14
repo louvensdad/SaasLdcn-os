@@ -18,6 +18,25 @@ from app.schemas.functional_completeness import CompletenessStatus
 # unavailable, never omitted.
 
 
+# Unified Kernel phase (Engineering Policy gap #7): the policy wants one 9-state
+# machine (DRAFT/APPROVED/GENERATING/ANALYZING/REPAIRING/TESTING/CERTIFIED/
+# PARTIALLY_VERIFIED/BLOCKED); the codebase actually has 4 unrelated vocabularies
+# (ProjectRoomStatus, StackApproval.status, GenerationJobStatus, CompletenessStatus).
+# This derives 7 of the 9 states here -- DRAFT/APPROVED are excluded on purpose:
+# compute_kernel_status() only ever runs against a project that already has a
+# materialized generated_project_id/directory, so it never sees a Project Room
+# before generation starts. Those two already live honestly on
+# ProjectRoomWorkflow.status; faking them here would mean guessing a Room to
+# attach to a bare generated-project id that might not even have one (e.g.
+# Modernize/Auto-Fix output). NEEDS_HUMAN_REVIEW is kept as a 5th terminal value
+# beyond the policy's list -- collapsing it into BLOCKED or CERTIFIED would hide
+# the same honest distinction CompletenessStatus already makes.
+KernelPhase = Literal[
+    "GENERATING", "ANALYZING", "TESTING", "REPAIRING",
+    "CERTIFIED", "PARTIALLY_VERIFIED", "BLOCKED", "NEEDS_HUMAN_REVIEW",
+]
+
+
 class EvidenceItem(ApiModel):
     id: str
     label: str
@@ -29,6 +48,7 @@ class EvidenceItem(ApiModel):
 class EngineeringKernelStatus(ApiModel):
     project_id: str
     state: CompletenessStatus
+    kernel_phase: KernelPhase
     reason: str
     override_active: bool = False
     override_reason: str | None = None

@@ -72,6 +72,23 @@ class GenerationJobRepository:
             row = session.scalar(select(GenerationJob).where(GenerationJob.project_id == project_id, self._visible_to(owner_user_id)).order_by(GenerationJob.updated_at.desc()).limit(1))
             return self._row(row)
 
+    def latest_for_generated_project(self, generated_project_id: str, owner_user_id: str) -> dict[str, Any] | None:
+        """Reverse lookup: which job produced this output-folder id. No column
+        indexes generatedProjectId (it's only set inside data_json once the job
+        actually writes output, generation_job_engine.py's BUILD_RUNNING step) --
+        this scans the owner's jobs the same way list()/count_active_for_owner
+        already do and filters in Python. Used by the Engineering Kernel to enrich
+        a bare generated_project_id with its originating job's in-flight status."""
+        with self._sessions() as session:
+            rows = session.scalars(
+                select(GenerationJob).where(self._visible_to(owner_user_id)).order_by(GenerationJob.updated_at.desc())
+            ).all()
+            for row in rows:
+                data = self._row(row)
+                if data and data.get("generatedProjectId") == generated_project_id:
+                    return data
+        return None
+
     def list(self, owner_user_id: str, *, archived: bool | None = None) -> list[dict[str, Any]]:
         with self._sessions() as session:
             stmt = select(GenerationJob).where(self._visible_to(owner_user_id))

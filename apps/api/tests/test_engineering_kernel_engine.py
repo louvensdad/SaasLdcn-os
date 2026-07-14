@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.engines import engineering_kernel_engine
 from app.engines.engineering_kernel_engine import compute_kernel_status
+from app.repositories.generation_job_repository import GenerationJobRepository
 from app.schemas.quality_gate import QualityGateReport
 from app.services.file_protocol import EmittedFile
 from app.services.project_writer import ProjectWriter
@@ -47,6 +48,7 @@ def test_bare_project_has_real_quality_gate_blockers_and_is_blocked(make_project
     project = make_project()
     status_ = compute_kernel_status(project["project_id"])
     assert status_.state == "BLOCKED"
+    assert status_.kernel_phase == "BLOCKED"
     assert status_.quality_gate_blocker_count > 0
     assert all(not item.available for item in status_.evidence if item.source == "marker")
 
@@ -66,6 +68,7 @@ def test_no_signals_and_no_blockers_is_partially_verified(make_project, monkeypa
     monkeypatch.setattr(engineering_kernel_engine.quality_gate_engine, "evaluate", lambda *a, **k: clean_report)
     status_ = compute_kernel_status(project["project_id"])
     assert status_.state == "PARTIALLY_VERIFIED"
+    assert status_.kernel_phase == "PARTIALLY_VERIFIED"
     assert all(not item.available for item in status_.evidence if item.source == "marker")
 
 
@@ -74,6 +77,7 @@ def test_verified_build_yields_verified_state(make_project):
     ProjectWriter().set_verification(project["project_id"], verified=True, score=95)
     status_ = compute_kernel_status(project["project_id"])
     assert status_.state == "VERIFIED"
+    assert status_.kernel_phase == "CERTIFIED"
     assert status_.build_verified is True
     assert _evidence(status_, "verification").available is True
 
@@ -102,6 +106,7 @@ def test_needs_human_review_without_acknowledgment_is_not_acknowledged(make_proj
     ProjectWriter().set_functional_completeness(project["project_id"], report={"status": "NEEDS_HUMAN_REVIEW", "issues": []})
     status_ = compute_kernel_status(project["project_id"])
     assert status_.state == "NEEDS_HUMAN_REVIEW"
+    assert status_.kernel_phase == "NEEDS_HUMAN_REVIEW"
     assert status_.human_review_acknowledged is False
     assert _evidence(status_, "human_review_acknowledgment").available is False
 
@@ -146,6 +151,83 @@ def test_project_manifest_is_absent_when_not_written(make_project):
     status_ = compute_kernel_status(project["project_id"])
     manifest_item = _evidence(status_, "project_manifest")
     assert manifest_item.available is False and manifest_item.path is None
+
+
+def _job_data(*, job_id: str, generated_project_id: str, status_: str) -> dict:
+    now = "2026-01-01T00:00:00+00:00"
+    return {
+        "id": job_id, "projectId": "room-kernel-phase", "generatedProjectId": generated_project_id,
+        "status": status_, "createdAt": now, "updatedAt": now, "startedAt": now,
+        "projectName": "Kernel Phase Test", "currentStage": status_,
+    }
+
+
+@pytest.mark.parametrize(
+    "job_status, expected_phase",
+    [
+        ("BACKEND_GENERATING", "GENERATING"),
+        ("BUILD_RUNNING", "ANALYZING"),
+        ("TESTS_RUNNING", "TESTING"),
+        ("STALLED", "REPAIRING"),
+    ],
+)
+def test_in_flight_job_status_maps_to_the_expected_kernel_phase(client: TestClient, job_status: str, expected_phase: str) -> None:
+    me = client.get("/api/auth/me")
+    owner_id = me.json()["user_id"]
+    result = ProjectWriter().write(
+        [EmittedFile(path="README.md", content="# test\n")], project_name="kernel-in-flight", owner=owner_id,
+    )
+    try:
+        GenerationJobRepository().create(
+            owner_user_id=owner_id,
+            data=_job_data(job_id=f"genjob_{job_status.lower()}", generated_project_id=result.project_id, status_=job_status),
+            spec={}, blueprint={},
+        )
+        status_ = compute_kernel_status(result.project_id, owner_user_id=owner_id)
+        assert status_.kernel_phase == expected_phase
+    finally:
+        shutil.rmtree(result.root_path, ignore_errors=True)
+
+
+def test_ready_job_with_verified_build_falls_through_to_certified(client: TestClient) -> None:
+    # The job that produced this output already reached a terminal status --
+    # kernel_phase should defer to the completeness-based terminal verdict, not
+    # get stuck reporting the job's last in-flight step.
+    me = client.get("/api/auth/me")
+    owner_id = me.json()["user_id"]
+    result = ProjectWriter().write(
+        [EmittedFile(path="README.md", content="# test\n")], project_name="kernel-ready-terminal", owner=owner_id,
+    )
+    try:
+        ProjectWriter().set_verification(result.project_id, verified=True, score=100)
+        GenerationJobRepository().create(
+            owner_user_id=owner_id,
+            data=_job_data(job_id="genjob_ready", generated_project_id=result.project_id, status_="READY"),
+            spec={}, blueprint={},
+        )
+        status_ = compute_kernel_status(result.project_id, owner_user_id=owner_id)
+        assert status_.kernel_phase == "CERTIFIED"
+    finally:
+        shutil.rmtree(result.root_path, ignore_errors=True)
+
+
+def test_route_returns_the_in_flight_kernel_phase(client: TestClient) -> None:
+    me = client.get("/api/auth/me")
+    owner_id = me.json()["user_id"]
+    result = ProjectWriter().write(
+        [EmittedFile(path="README.md", content="# test\n")], project_name="kernel-route-in-flight", owner=owner_id,
+    )
+    try:
+        GenerationJobRepository().create(
+            owner_user_id=owner_id,
+            data=_job_data(job_id="genjob_route", generated_project_id=result.project_id, status_="BUILD_RUNNING"),
+            spec={}, blueprint={},
+        )
+        response = client.get(f"/api/meta-factory/{result.project_id}/engineering-kernel")
+        assert response.status_code == 200, response.text
+        assert response.json()["kernel_phase"] == "ANALYZING"
+    finally:
+        shutil.rmtree(result.root_path, ignore_errors=True)
 
 
 def _register_second_user(client: TestClient) -> str:

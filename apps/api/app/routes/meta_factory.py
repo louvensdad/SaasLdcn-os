@@ -1214,7 +1214,7 @@ def _require_verified(project_id: str, *, force: bool, user_id: str | None = Non
         return
 
     try:
-        kernel = compute_kernel_status(project_id)
+        kernel = compute_kernel_status(project_id, owner_user_id=user_id)
     except ProjectWriteError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -1281,7 +1281,7 @@ def get_engineering_kernel_status(project_id: str, user: CurrentUser) -> Enginee
     instead of every caller re-deriving the same precedence independently."""
     _owned_meta_project(project_id, user)
     try:
-        return compute_kernel_status(project_id)
+        return compute_kernel_status(project_id, owner_user_id=user["user_id"])
     except ProjectWriteError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generated project was not found.") from exc
 
@@ -1297,7 +1297,7 @@ def acknowledge_human_review(project_id: str, payload: AcknowledgeHumanReviewReq
             detail=f'Confirmação inválida. Digite exatamente: "{CONSCIOUS_HUMAN_REVIEW_PHRASE}".',
         )
     try:
-        kernel = compute_kernel_status(project_id)
+        kernel = compute_kernel_status(project_id, owner_user_id=user["user_id"])
     except ProjectWriteError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generated project was not found.") from exc
     if kernel.functional_completeness_status != "NEEDS_HUMAN_REVIEW":
@@ -1307,7 +1307,7 @@ def acknowledge_human_review(project_id: str, payload: AcknowledgeHumanReviewReq
     except ProjectWriteError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     _audit(user["user_id"], "human_review_acknowledged")
-    return compute_kernel_status(project_id)
+    return compute_kernel_status(project_id, owner_user_id=user["user_id"])
 
 
 @router.get("/meta-factory/{project_id}/files", response_model=GeneratedProjectFilesResponse)
