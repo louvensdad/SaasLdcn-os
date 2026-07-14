@@ -48,6 +48,17 @@ DEFAULT_ANCHORS: dict[str, str] = {
     "expo": "~51.0.0",
 }
 
+# Technology Governance (Engineering Policy gap #5): a second, real anchor set
+# for the React 19 window the Compatibility Matrix above already fully models.
+# Values pulled straight from COMPATIBILITY_MATRIX[19]'s own suggested versions
+# for react-dom/react-native/expo -- no new version knowledge invented here.
+# "18" stays the DEFAULT_ANCHORS alias so react_major=None/"18" behaves
+# identically to before this existed.
+ANCHORS_BY_REACT_MAJOR: dict[str, dict[str, str]] = {
+    "18": DEFAULT_ANCHORS,
+    "19": {"react": "^19.0.0", "react_native": "0.79.2", "expo": "~53.0.0"},
+}
+
 _VERSION_RE = re.compile(r"(\d+)(?:\.(\d+))?")
 
 # npm ERESOLVE log shape (stable across npm 8-10):
@@ -270,18 +281,24 @@ class PeerConflict:
 
 class StackCompatibilityEngine:
     # ------------------------------------------------------------- stack lock
-    def default_lock(self, *, delivery_type: str | None) -> StackLock:
+    def default_lock(self, *, delivery_type: str | None, react_major: str | None = None) -> StackLock:
         """Fix the anchor versions BEFORE any code is generated. The caller
         persists the result as the job's stack.lock.json artifact so it lands in
         the project root ahead of every generation step; capture_lock() then
         finds it already present and loads it instead of deriving a fresh lock
         from whatever an agent happened to write (which is too late to prevent
-        drift — only to repair it)."""
+        drift — only to repair it).
+
+        `react_major` is the Stack Approval Gate's Technology Governance choice
+        ("18"/"19", see StackApproval.selected_frontend_version) -- None (no
+        explicit choice) or any unrecognized value falls back to DEFAULT_ANCHORS
+        (React 18), preserving every caller's behavior from before this existed."""
+        anchors = ANCHORS_BY_REACT_MAJOR.get(react_major or "", DEFAULT_ANCHORS)
         includes_mobile = delivery_type in {"mobile", "full_stack"}
         return StackLock(
-            react=DEFAULT_ANCHORS["react"],
-            react_native=DEFAULT_ANCHORS["react_native"] if includes_mobile else None,
-            expo=DEFAULT_ANCHORS["expo"] if includes_mobile else None,
+            react=anchors["react"],
+            react_native=anchors["react_native"] if includes_mobile else None,
+            expo=anchors["expo"] if includes_mobile else None,
             node=None,
             source_manifest="pre_generation_default",
             captured_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),

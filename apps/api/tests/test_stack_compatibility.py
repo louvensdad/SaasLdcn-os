@@ -8,7 +8,9 @@ from pathlib import Path
 
 from app.services.build_validation_service import BuildValidationService, _MetricsCollector
 from app.services.stack_compatibility import (
+    ANCHORS_BY_REACT_MAJOR,
     COMPATIBILITY_MATRIX,
+    DEFAULT_ANCHORS,
     StackCompatibilityEngine,
     stack_compatibility_engine,
 )
@@ -298,3 +300,37 @@ def test_matrix_windows_are_internally_coherent():
             assert suggested is not None
             assert rule.accepts(suggested), f"{react_major}/{rule.package}: {rule.suggested}"
     assert engine  # engine constructs without side effects
+
+
+# --- Technology Governance (Engineering Policy gap #5): React version choice -- #
+
+def test_default_lock_with_no_react_major_choice_is_react_18():
+    engine = StackCompatibilityEngine()
+    lock = engine.default_lock(delivery_type="web")
+    assert lock.react == DEFAULT_ANCHORS["react"]
+
+
+def test_default_lock_react_major_18_is_identical_to_no_choice():
+    engine = StackCompatibilityEngine()
+    lock = engine.default_lock(delivery_type="web", react_major="18")
+    assert lock.react == DEFAULT_ANCHORS["react"]
+
+
+def test_default_lock_react_major_19_uses_the_react_19_anchors():
+    engine = StackCompatibilityEngine()
+    lock = engine.default_lock(delivery_type="mobile", react_major="19")
+    assert lock.react == ANCHORS_BY_REACT_MAJOR["19"]["react"]
+    assert lock.react_native == ANCHORS_BY_REACT_MAJOR["19"]["react_native"]
+    assert lock.expo == ANCHORS_BY_REACT_MAJOR["19"]["expo"]
+    assert lock.react_major == 19
+    # The chosen anchors must themselves satisfy the React 19 Compatibility
+    # Matrix window they're supposed to represent -- not just be "a version".
+    rn_rule = COMPATIBILITY_MATRIX[19]["react-native"]
+    from app.services.stack_compatibility import _parse_version
+    assert rn_rule.accepts(_parse_version(ANCHORS_BY_REACT_MAJOR["19"]["react_native"]))
+
+
+def test_default_lock_rejects_unknown_react_major_by_falling_back_to_default():
+    engine = StackCompatibilityEngine()
+    lock = engine.default_lock(delivery_type="web", react_major="17")
+    assert lock.react == DEFAULT_ANCHORS["react"]

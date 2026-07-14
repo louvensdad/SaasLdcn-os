@@ -1334,6 +1334,28 @@ def test_preparing_context_fixes_stack_lock_with_mobile_anchors_for_mobile_job(i
     assert job["stackLock"]["expo"] == DEFAULT_ANCHORS["expo"]
 
 
+def test_approved_react_19_version_fixes_the_react_19_anchors(isolated_engine):
+    # Technology Governance (Engineering Policy gap #5): the Stack Approval
+    # Gate's selected_frontend_version reaches the Stack Lock the same way an
+    # approved language/framework name already does.
+    from app.services.stack_compatibility import ANCHORS_BY_REACT_MAJOR
+
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec(), blueprint={"decisions": [], "stack_approval": {"selected_frontend_version": "19"}})
+
+    assert job["stackLock"]["react"] == ANCHORS_BY_REACT_MAJOR["19"]["react"]
+    assert job["stackLock"]["react"] != DEFAULT_ANCHORS["react"]
+
+
+def test_no_approved_version_still_defaults_to_react_18(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec(), blueprint={"decisions": [], "stack_approval": {"selected_frontend_version": ""}})
+
+    assert job["stackLock"]["react"] == DEFAULT_ANCHORS["react"]
+
+
 def test_frontend_llm_context_includes_stack_lock_hint(isolated_engine, monkeypatch):
     engine, _, _ = isolated_engine
     job = _create(engine)

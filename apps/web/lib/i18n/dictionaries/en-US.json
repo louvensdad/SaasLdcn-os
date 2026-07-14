@@ -2581,6 +2581,8 @@
   "review.stack.approvedBy": "Approved by",
   "review.stack.reason": "Reason",
   "review.stack.alternatives": "Alternatives",
+  "review.stack.version.title": "Version",
+  "review.stack.recommended": "Recommended",
   "review.stack.notStated": "Not stated",
   "review.stack.approve": "Approve stack",
   "review.stack.reapprove": "Re-approve stack",

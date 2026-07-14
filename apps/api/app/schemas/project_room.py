@@ -335,3 +335,4 @@ class StackApprovalRequest(ApiModel):
     selected_auth: str | None = None
     selected_testing: str | None = None
     selected_deploy_target: str | None = None
+    selected_frontend_version: str | None = None

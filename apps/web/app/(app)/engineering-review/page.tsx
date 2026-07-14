@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -689,16 +689,30 @@ function StackApprovalGate({ proposal, roomId, busy, locked, onApprove }: {
   const { t } = useLocale();
   const [editing, setEditing] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [versionDraft, setVersionDraft] = useState<string | null>(null);
   const approved = proposal.status === 'APPROVED';
   const approval = proposal.approval ?? null;
 
-  function submit() {
+  useEffect(() => {
+    const frontendItem = proposal.items.find((item) => item.area === 'frontend');
+    const options = frontendItem?.version_options ?? [];
+    if (!options.length) return;
+    const fallback = approval?.selected_frontend_version || options.find((option) => option.recommended)?.value || null;
+    setVersionDraft((prev) => prev ?? fallback);
+  }, [proposal.items, approval?.selected_frontend_version]);
+
+  function buildOverrides(): StackApprovalRequest | undefined {
     const overrides: StackApprovalRequest = {};
     for (const [area, value] of Object.entries(drafts)) {
       const field = STACK_FIELD[area];
       if (field && value.trim()) overrides[field] = value.trim();
     }
-    onApprove(Object.keys(overrides).length ? overrides : undefined);
+    if (versionDraft) overrides.selected_frontend_version = versionDraft;
+    return Object.keys(overrides).length ? overrides : undefined;
+  }
+
+  function submit() {
+    onApprove(buildOverrides());
     setEditing(false);
   }
 
@@ -736,6 +750,30 @@ function StackApprovalGate({ proposal, roomId, busy, locked, onApprove }: {
                   {item.alternatives.map((alt) => <Badge key={alt} tone="neutral">{alt}</Badge>)}
                 </div>
               ) : null}
+              {(item.version_options ?? []).length ? (
+                <div className="mt-3 space-y-1.5">
+                  <span className="ds-caption text-[color:var(--muted-2)]">{t('review.stack.version.title')}</span>
+                  {item.version_options.map((option) => (
+                    <label
+                      key={option.value}
+                      className={cn(
+                        'flex items-center gap-2 rounded-[var(--radius-sm)] border border-[color:var(--border)] px-2.5 py-1.5 text-sm',
+                        locked && 'opacity-60',
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name={`stack-version-${item.area}`}
+                        disabled={locked}
+                        checked={versionDraft === option.value}
+                        onChange={() => setVersionDraft(option.value)}
+                      />
+                      <span className="font-medium text-[color:var(--text)]">{option.label}</span>
+                      {option.recommended ? <Badge tone="accent">{t('review.stack.recommended')}</Badge> : null}
+                    </label>
+                  ))}
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -750,7 +788,7 @@ function StackApprovalGate({ proposal, roomId, busy, locked, onApprove }: {
             </>
           ) : (
             <>
-              <Button variant="primary" loading={busy} onClick={() => onApprove()}><CheckCircle2 className="h-4 w-4" /> {approved ? t('review.stack.reapprove') : t('review.stack.approve')}</Button>
+              <Button variant="primary" loading={busy} onClick={() => onApprove(buildOverrides())}><CheckCircle2 className="h-4 w-4" /> {approved ? t('review.stack.reapprove') : t('review.stack.approve')}</Button>
               <Button variant="secondary" onClick={() => setEditing(true)}><Wrench className="h-4 w-4" /> {t('review.stack.alter')}</Button>
             </>
           )}

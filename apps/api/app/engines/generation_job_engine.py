@@ -532,7 +532,12 @@ class GenerationJobEngine:
             # a "generated" artifact so ProjectWriter carries it into the final
             # project root, where capture_lock()/validate_and_fix() (BUILD_RUNNING)
             # find it already present and enforce it rather than deriving a new one.
-            lock = stack_compatibility_engine.default_lock(delivery_type=spec.delivery_type)
+            # Technology Governance (Engineering Policy gap #5): the Stack
+            # Approval Gate's React version choice (if any) fixes the anchor
+            # here, before the first LLM call -- "" (unset) falls back to
+            # React 18, unchanged from before this existed.
+            react_major = (blueprint.get("stack_approval") or {}).get("selected_frontend_version") or None
+            lock = stack_compatibility_engine.default_lock(delivery_type=spec.delivery_type, react_major=react_major)
             job["stackLock"] = lock.as_dict()
             # kind="generated" (not a metadata-only kind like normalized_spec/domain_model
             # above) so _build() carries this file into the final project root via

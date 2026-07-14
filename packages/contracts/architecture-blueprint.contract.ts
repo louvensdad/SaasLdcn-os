@@ -52,6 +52,14 @@ export interface StackApproval {
   selected_auth: string;
   selected_testing: string;
   selected_deploy_target: string;
+  selected_frontend_version: string;
+}
+
+export interface StackVersionOption {
+  value: string;
+  label: string;
+  recommended: boolean;
+  reason: string;
 }
 
 export interface StackProposalItem {
@@ -60,6 +68,7 @@ export interface StackProposalItem {
   choice: string;
   reason: string;
   alternatives: string[];
+  version_options: StackVersionOption[];
 }
 
 export interface StackProposal {
@@ -76,6 +85,7 @@ export interface StackApprovalRequest {
   selected_auth?: string;
   selected_testing?: string;
   selected_deploy_target?: string;
+  selected_frontend_version?: string;
 }
 
 export interface ArchitectureBlueprint {

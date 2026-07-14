@@ -55,6 +55,32 @@ class ProjectRoomImportError(ValueError):
     pass
 
 
+def _is_react_ecosystem(choice: str) -> bool:
+    """React itself, or a framework built on it (Next.js is the deterministic
+    architect's own default frontend label, architect_engine.py:161) -- both
+    are governed by the SAME COMPATIBILITY_MATRIX react-major window."""
+    lowered = choice.lower()
+    return "react" in lowered or "next" in lowered
+
+
+def _react_version_options() -> list[dict[str, Any]]:
+    """Technology Governance (Engineering Policy gap #5): the only two versions
+    with a real Compatibility Matrix behind them (stack_compatibility.py's
+    COMPATIBILITY_MATRIX[18]/[19]) -- never fabricated for a framework with no
+    real matrix. React 18 stays recommended: it's the version every real
+    generation in this platform has gone through so far."""
+    return [
+        {
+            "value": "18", "label": "React 18", "recommended": True,
+            "reason": "Versao mais testada nesta plataforma ate agora.",
+        },
+        {
+            "value": "19", "label": "React 19", "recommended": False,
+            "reason": "Suportada pela Stack Compatibility Matrix; versao mais recente do ecossistema.",
+        },
+    ]
+
+
 class ProjectRoomService:
     def __init__(self, repository: ProjectRoomRepository | None = None) -> None:
         self.repository = repository or ProjectRoomRepository()
@@ -342,6 +368,7 @@ class ProjectRoomService:
             "selected_auth": selections.get("selected_auth") or proposal.get("auth", ""),
             "selected_testing": selections.get("selected_testing") or proposal.get("testing", ""),
             "selected_deploy_target": selections.get("selected_deploy_target") or proposal.get("deploy", ""),
+            "selected_frontend_version": selections.get("selected_frontend_version") or "",
         }
         updated_blueprint = {**blueprint, "stack_approval": approval}
         versions = list(room.get("blueprint_versions") or [])
@@ -420,6 +447,7 @@ class ProjectRoomService:
                 "choice": choice,
                 "reason": reason,
                 "alternatives": [str(alt) for alt in (decision.get("alternatives_considered") or [])],
+                "version_options": _react_version_options() if area == "frontend" and _is_react_ecosystem(choice) else [],
             })
         approval = blueprint.get("stack_approval") or None
         return {

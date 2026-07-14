@@ -55,6 +55,21 @@ class StackApproval(ApiModel):
     selected_auth: str = ""
     selected_testing: str = ""
     selected_deploy_target: str = ""
+    # Technology Governance (Engineering Policy gap #5): "" = no explicit choice,
+    # behaves exactly like before this existed (React 18, DEFAULT_ANCHORS).
+    selected_frontend_version: str = ""
+
+
+class StackVersionOption(ApiModel):
+    """One version choice for a StackProposalItem -- only populated where a real
+    compatibility matrix backs more than one version (today: React 18 vs 19,
+    see stack_compatibility.py's COMPATIBILITY_MATRIX). Never fabricated for an
+    area with no real matrix behind it."""
+
+    value: str
+    label: str
+    recommended: bool = False
+    reason: str = ""
 
 
 class StackProposalItem(ApiModel):
@@ -66,6 +81,7 @@ class StackProposalItem(ApiModel):
     choice: str
     reason: str = ""
     alternatives: list[str] = Field(default_factory=list)
+    version_options: list[StackVersionOption] = Field(default_factory=list)
 
 
 class StackProposal(ApiModel):

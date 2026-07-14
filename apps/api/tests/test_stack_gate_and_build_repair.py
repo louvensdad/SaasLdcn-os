@@ -333,6 +333,74 @@ def test_generation_uses_approved_stack(client: TestClient, monkeypatch):
         shutil.rmtree(checkpoints, ignore_errors=True)
 
 
+# ------- Technology Governance (Engineering Policy gap #5): React version ----
+
+def test_is_react_ecosystem_detects_react_and_next_but_not_other_frameworks():
+    from app.services.project_room_service import _is_react_ecosystem
+
+    assert _is_react_ecosystem("React") is True
+    assert _is_react_ecosystem("SPA/SSR moderna (Next.js) com design system e i18n") is True
+    assert _is_react_ecosystem("Vue.js") is False
+    assert _is_react_ecosystem("Angular") is False
+
+
+def test_stack_proposal_offers_react_version_options_when_the_decision_names_react():
+    # _stack_proposal() is a pure function of the room dict (no DB access) --
+    # unit-tested directly, same as compute_kernel_status/compute_delivery_decision
+    # elsewhere, rather than depending on which backend framework name the
+    # deterministic mock happens to pick for a given raw_intent.
+    from app.services.project_room_service import ProjectRoomService
+
+    service = ProjectRoomService()
+    room = {
+        "architecture_blueprint": {
+            "decisions": [
+                {"area": "frontend", "choice": "SPA/SSR moderna (Next.js) com design system", "justification": "", "alternatives_considered": []},
+            ],
+        },
+        "spec": {"suggested_stack": {}},
+    }
+    proposal = service._stack_proposal(room)
+    frontend_item = next(item for item in proposal["items"] if item["area"] == "frontend")
+    assert {opt["value"] for opt in frontend_item["version_options"]} == {"18", "19"}
+    recommended = next(opt for opt in frontend_item["version_options"] if opt["recommended"])
+    assert recommended["value"] == "18"
+
+
+def test_stack_proposal_has_no_version_options_for_a_non_react_frontend():
+    from app.services.project_room_service import ProjectRoomService
+
+    service = ProjectRoomService()
+    room = {
+        "architecture_blueprint": {
+            "decisions": [
+                {"area": "frontend", "choice": "Vue.js com Vite", "justification": "", "alternatives_considered": []},
+            ],
+        },
+        "spec": {"suggested_stack": {}},
+    }
+    proposal = service._stack_proposal(room)
+    frontend_item = next(item for item in proposal["items"] if item["area"] == "frontend")
+    assert frontend_item["version_options"] == []
+
+
+def test_user_can_approve_a_react_19_version_choice(client: TestClient):
+    room_id = _engineering_approved_room(client)
+    response = client.post(f"/api/project-rooms/{room_id}/stack/approve", json={
+        "selected_frontend_version": "19",
+    })
+    assert response.status_code == 200, response.text
+    approval = response.json()["architecture_blueprint"]["stack_approval"]
+    assert approval["selected_frontend_version"] == "19"
+
+
+def test_no_explicit_version_choice_persists_as_empty_string(client: TestClient):
+    room_id = _engineering_approved_room(client, approve_stack=True)
+    room = client.get(f"/api/project-rooms/{room_id}").json()
+    approval = room["architecture_blueprint"]["stack_approval"]
+    assert approval["selected_frontend_version"] == ""
+
+
 # ----------------- 10. build report records root cause and patch ---------
 
 def test_build_report_records_root_cause_and_patch(monkeypatch):
