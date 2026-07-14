@@ -126,3 +126,27 @@ def resolve_model(user_choice: str | None = None, agent_role: str | None = None)
     if agent_role and ROLE_MODEL_HINTS.get(agent_role) in MODEL_REGISTRY:
         return ROLE_MODEL_HINTS[agent_role]
     return DEFAULT_MODEL
+
+
+# Token Intelligence cost ladder (Engineering Policy gap #7): cheapest first,
+# escalate only on failure. Scoped ONLY to the build-failure repair loop
+# (verification_engine.py's iter_verification, round_no=0 is the first repair
+# attempt) -- that loop already re-validates every attempt with a REAL build,
+# so a bad cheap-model fix simply fails validation and the next round
+# escalates; the existing revalidation is the safety net. Deliberately NOT
+# applied to primary generation roles (backend/frontend/contracts) or to
+# llm_repair_engine.py's single-shot Quality Gate repair (no internal
+# revalidation-per-round loop to escalate against) -- changing those without a
+# revalidation safety net would be an unvalidated quality risk, not a proven
+# optimization.
+REPAIR_LADDER_FIRST_ATTEMPT_MODEL = "claude-haiku-4-5"
+
+
+def resolve_repair_round_model(user_choice: str | None, round_no: int) -> str | None:
+    """None means 'no override' -- resolve_model() falls through to
+    ROLE_MODEL_HINTS["repair"] (claude-opus-4-8) as it always has."""
+    if user_choice:
+        return user_choice
+    if round_no == 0:
+        return REPAIR_LADDER_FIRST_ATTEMPT_MODEL
+    return None

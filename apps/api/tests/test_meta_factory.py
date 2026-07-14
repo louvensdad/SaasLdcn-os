@@ -109,6 +109,20 @@ def test_resolve_model_precedence():
     assert resolve_model(user_choice="not-a-model") == "claude-opus-4-8"
 
 
+def test_resolve_repair_round_model_ladder():
+    from app.data.model_registry import resolve_repair_round_model
+
+    # Round 0 (first repair attempt): cheap model, no explicit user choice.
+    assert resolve_repair_round_model(None, 0) == "claude-haiku-4-5"
+    # Any later round: no override -- resolve_model() falls through to
+    # ROLE_MODEL_HINTS["repair"] (claude-opus-4-8) as it always has.
+    assert resolve_repair_round_model(None, 1) is None
+    assert resolve_repair_round_model(None, 2) is None
+    # An explicit user choice always wins, at every round.
+    assert resolve_repair_round_model("claude-sonnet-4-6", 0) == "claude-sonnet-4-6"
+    assert resolve_repair_round_model("claude-sonnet-4-6", 1) == "claude-sonnet-4-6"
+
+
 # --- stub adapter so we never touch the network or the SDK ----------------
 
 class _StubAdapter(LLMAdapter):

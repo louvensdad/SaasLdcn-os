@@ -106,6 +106,11 @@ class LlmRepairEngine:
                 context, "repair",
             ),
             user_choice=user_model_choice, agent_role="repair", api_key=api_key,
+            # Token Intelligence: the same BLOCKER batch re-requested with
+            # identical context (e.g. /repair/llm called again with nothing
+            # changed) is a genuine duplicate -- see router.py's docstring for
+            # why this is opt-in rather than the router's default.
+            allow_cache=True,
         )
         parsed = parse_agent_output(response.text, agent_role="repair")
 

@@ -50,3 +50,8 @@ class LLMResponse(BaseModel):
     stopped_by: str = ""  # end_turn | max_tokens | refusal | tool_use | ...
     usage: dict = Field(default_factory=dict)  # input/output/cache token counts
     served_by_fallback: bool = False
+    # Token Intelligence: this response came from the app-level LLMResponseCache
+    # (an IDENTICAL request already answered), not a new provider call. Distinct
+    # from usage's cache_read_input_tokens, which is Anthropic's provider-side
+    # prompt-PREFIX cache -- that still calls the API every time; this doesn't.
+    served_by_cache: bool = False

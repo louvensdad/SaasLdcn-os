@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from app.engines.agent_executor import submit_agent
 from app.engines.agent_prompts import system_prompt_for
+from app.data.model_registry import resolve_repair_round_model
 from app.engines.factory_pipeline import HEARTBEAT_EVERY_S, _agent_request, _language_for
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.llm.router import LLMRouter
@@ -133,6 +134,11 @@ def _run_repair(
         user_choice=user_model_choice,
         agent_role="repair",
         api_key=api_key,
+        # Token Intelligence: a repair round given the exact same context (e.g.
+        # a retried job re-running an already-failed round) is a genuine
+        # duplicate here -- unlike iter_single_agent's smart retry, nothing
+        # about this call site expects a different roll on identical input.
+        allow_cache=True,
     )
     return parse_agent_output(response.text, agent_role="repair")
 
@@ -172,10 +178,11 @@ def iter_verification(
         yield {"type": "repair_started", "round": round_no + 1, "issues": _summarize_issues(report)[:8]}
         context = _repair_context(spec, report, files_service, project)
         repair_holder: dict = {}
+        repair_model_choice = resolve_repair_round_model(user_model_choice, round_no)
         yield from _with_heartbeat(
             "repair",
             lambda: _run_repair(
-                router, context, user_model_choice, api_key,
+                router, context, repair_model_choice, api_key,
                 language=spec.suggested_stack.language, framework=spec.suggested_stack.framework,
             ),
             repair_holder,

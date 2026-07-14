@@ -19,6 +19,7 @@ from app.engines.llm.resilience import (
     CircuitBreaker,
     RetryPolicy,
 )
+from app.engines.llm.response_cache import llm_response_cache
 from app.schemas.llm import LLMRequest, LLMResponse
 
 
@@ -120,7 +121,16 @@ class LLMRouter:
         user_choice: str | None = None,
         agent_role: str | None = None,
         api_key: str | None = None,
+        allow_cache: bool = False,
     ) -> LLMResponse:
+        """`allow_cache` is opt-in and False everywhere by default: several
+        callers (factory_pipeline.iter_single_agent's smart retry on an empty/
+        malformed reply, most notably) deliberately resend an IDENTICAL
+        request expecting a genuinely fresh provider call -- non-deterministic
+        sampling is the whole point of the retry there, and a cache hit would
+        silently defeat it. Only set True at call sites where a duplicate
+        request really does mean "already answered, skip it" (e.g. the repair
+        loops in verification_engine.py / llm_repair_engine.py)."""
         routed_model = getattr(api_key, "model", None)
         model = resolve_model(user_choice=routed_model or user_choice, agent_role=agent_role)
         meta = MODEL_REGISTRY[model]
@@ -143,6 +153,14 @@ class LLMRouter:
         if settings.force_mock:
             return self._mock.complete(model, req)
 
+        # Token Intelligence: consult the app-level response cache before any
+        # provider call (opt-in, see docstring above).
+        cache_key = llm_response_cache.make_key(model, req) if allow_cache else None
+        if cache_key is not None:
+            cached = llm_response_cache.get(cache_key)
+            if cached is not None:
+                return cached.model_copy(update={"served_by_cache": True})
+
         adapter = self._adapters.get(provider)
         if adapter is None:
             if settings.mock_fallback_enabled:
@@ -152,11 +170,14 @@ class LLMRouter:
             )
 
         try:
-            return self._complete_resilient(adapter, provider, model, req, api_key=None)
+            response = self._complete_resilient(adapter, provider, model, req, api_key=None)
         except LLMError:
             if settings.mock_fallback_enabled:
                 return self._mock.complete(model, req)
             raise
+        if cache_key is not None:
+            llm_response_cache.set(cache_key, response)
+        return response
 
     def _complete_resilient(
         self,

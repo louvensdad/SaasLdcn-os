@@ -89,6 +89,41 @@ def test_verify_gives_up_after_max_rounds(project, monkeypatch):
     assert ProjectWriter().read_verification(project_id)["verified"] is False
 
 
+class _RecordingRepairRouter:
+    """Repair agent stub that records which model choice each round requested,
+    instead of asserting on the fix content (that's _RepairRouter's job)."""
+
+    def __init__(self) -> None:
+        self.user_choices: list[str | None] = []
+
+    def route(self, req, **kwargs):
+        self.user_choices.append(kwargs.get("user_choice"))
+        text = '<<<FILE path="tsconfig.json">>>\n{}\n<<<END>>>'
+        return LLMResponse(provider=Provider.anthropic, model="claude-opus-4-8", text=text)
+
+
+def test_repair_ladder_tries_a_cheap_model_first_and_escalates_on_retry(project, monkeypatch):
+    # Token Intelligence cost ladder: round 0 (first repair attempt) uses the
+    # cheap model; only a round that's still failing after that escalates.
+    proj, project_id = project
+    monkeypatch.setattr(veng.generation_validation_engine, "validate", lambda _p: _report(project_id, passed=False))
+    router = _RecordingRepairRouter()
+
+    list(veng.iter_verification(proj, _spec(), router=router, max_rounds=2))
+
+    assert router.user_choices == ["claude-haiku-4-5", None]
+
+
+def test_repair_ladder_never_overrides_an_explicit_user_model_choice(project, monkeypatch):
+    proj, project_id = project
+    monkeypatch.setattr(veng.generation_validation_engine, "validate", lambda _p: _report(project_id, passed=False))
+    router = _RecordingRepairRouter()
+
+    list(veng.iter_verification(proj, _spec(), router=router, max_rounds=2, user_model_choice="claude-sonnet-4-6"))
+
+    assert router.user_choices == ["claude-sonnet-4-6", "claude-sonnet-4-6"]
+
+
 def test_release_gate_blocks_unverified_allows_force_and_verified(project):
     _proj, project_id = project
 
