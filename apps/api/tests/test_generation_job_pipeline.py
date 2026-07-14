@@ -40,7 +40,7 @@ from app.schemas.generation_validation import (
 )
 from app.services.file_protocol import EmittedFile, ParsedAgentOutput, parse_agent_output
 from app.services.generated_project_service import DOWNLOAD_DIR
-from app.services.stack_compatibility import DEFAULT_ANCHORS, STACK_LOCK_FILE, stack_compatibility_engine
+from app.services.stack_compatibility import DEFAULT_ANCHORS, STACK_LOCK_FILE
 
 
 @pytest.fixture

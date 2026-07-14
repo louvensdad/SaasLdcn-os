@@ -376,7 +376,6 @@ class FunctionalCompletenessEngine:
         service_like = [p for p in module_roots if p.name.endswith("-service") or p.name in {"api-gateway", "gateway"}]
         has_aggregator = (root / "pom.xml").is_file() or (root / "settings.gradle").is_file() or (root / "settings.gradle.kts").is_file()
         return has_aggregator and len(service_like) >= 2
-        return issues
 
     def _duplicate_backend_tree_check(self, root: Path) -> list[CompletenessIssue]:
         manifests = list(root.rglob("pom.xml")) + list(root.rglob("build.gradle")) + list(root.rglob("build.gradle.kts"))

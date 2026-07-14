@@ -9,7 +9,7 @@ from app.engines.factory_pipeline import pipeline_order_for, run_factory_pipelin
 from app.engines.llm.base import LLMAdapter, LLMError
 from app.engines.llm.mock_adapter import MockAdapter
 from app.engines.llm.router import LLMRouter
-from app.engines.orchestrator_engine import compile_mega_prompt, run_orchestrator
+from app.engines.orchestrator_engine import compile_mega_prompt
 from app.schemas.llm import LLMRequest
 from app.schemas.orchestrator import ProjectSpec
 

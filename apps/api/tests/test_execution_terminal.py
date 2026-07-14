@@ -10,7 +10,6 @@ import pytest
 from app.services.execution_terminal_service import (
     ALLOWED_COMMANDS,
     ExecutionTerminalService,
-    execution_terminal_service,
 )
 
 _HAS_NPM = shutil.which("npm") is not None
