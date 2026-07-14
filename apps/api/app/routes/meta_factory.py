@@ -17,10 +17,12 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from app.core.config import get_settings
 from app.core.deps import CurrentUser
 from app.engines.auto_repair_engine import auto_repair_engine
+from app.engines.delivery_decision_engine import compute_delivery_decision
 from app.engines.engineering_kernel_engine import compute_kernel_status
 from app.engines.llm_repair_engine import llm_repair_engine
 from app.engines.quality_gate_engine import quality_gate_engine
 from app.services.runtime_api_audit_service import runtime_api_audit_service
+from app.schemas.delivery import DeliveryDecision, RecordDeliveryDecisionRequest
 from app.schemas.engineering_kernel import AcknowledgeHumanReviewRequest, EngineeringKernelStatus
 from app.repositories.user_repository import AuditLogRepository
 from app.repositories.tenant_repository import TenantAccessError, TenantRepository, WORKSPACE_WRITE_ROLES
@@ -1308,6 +1310,28 @@ def acknowledge_human_review(project_id: str, payload: AcknowledgeHumanReviewReq
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     _audit(user["user_id"], "human_review_acknowledged")
     return compute_kernel_status(project_id, owner_user_id=user["user_id"])
+
+
+@router.get("/meta-factory/{project_id}/delivery", response_model=DeliveryDecision)
+def get_delivery_decision(project_id: str, user: CurrentUser) -> DeliveryDecision:
+    """Delivery Decision Center: generation finishing and how the user wants the
+    output delivered are independent decisions -- this never gates ZIP/Git
+    export, it just recommends and records a preference."""
+    _owned_meta_project(project_id, user)
+    try:
+        return compute_delivery_decision(project_id, user["user_id"])
+    except ProjectWriteError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generated project was not found.") from exc
+
+
+@router.post("/meta-factory/{project_id}/delivery", response_model=DeliveryDecision)
+def record_delivery_decision(project_id: str, payload: RecordDeliveryDecisionRequest, user: CurrentUser) -> DeliveryDecision:
+    _owned_meta_project(project_id, user)
+    try:
+        ProjectWriter().set_delivery_profile(project_id, delivery_mode=payload.delivery_mode, by_user=user["user_id"])
+        return compute_delivery_decision(project_id, user["user_id"])
+    except ProjectWriteError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generated project was not found.") from exc
 
 
 @router.get("/meta-factory/{project_id}/files", response_model=GeneratedProjectFilesResponse)

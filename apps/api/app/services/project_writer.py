@@ -263,6 +263,41 @@ class ProjectWriter:
         override = meta.get("release_override")
         return override if isinstance(override, dict) else None
 
+    def set_delivery_profile(self, project_id: str, *, delivery_mode: str, by_user: str) -> None:
+        """Record the user's Delivery Decision Center choice (a preference, not a
+        permission gate -- ldcn_only never forecloses exporting later). Mirrors
+        set_release_override/set_human_review_acknowledgment."""
+        root = self._project_root(project_id)
+        marker = self._read_marker(root)
+        project_name = str(marker.get("project_name") or "meta-factory-project")
+        metadata = self._merge_metadata(
+            marker.get("metadata"),
+            {
+                "delivery_profile": {
+                    "delivery_mode": delivery_mode,
+                    "chosen_by": by_user,
+                    "chosen_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+                }
+            },
+        )
+        files = marker.get("files")
+        if not isinstance(files, list):
+            files = self._existing_file_paths(root)
+        self._write_marker(
+            root, project_id, project_name, metadata, [str(p) for p in files],
+            owner=self._marker_owner(marker), workspace_id=marker.get("workspace_id"),
+        )
+        self.artifact_store.save_project(project_id, root, workspace_id=marker.get("workspace_id"))
+
+    def read_delivery_profile(self, project_id: str) -> dict | None:
+        """Return the persisted Delivery Decision Center choice, or None if the
+        user has never recorded one. Mirrors read_release_override."""
+        root = self._project_root(project_id)
+        meta = self._read_marker(root).get("metadata")
+        meta = meta if isinstance(meta, dict) else {}
+        profile = meta.get("delivery_profile")
+        return profile if isinstance(profile, dict) else None
+
     def set_human_review_acknowledgment(self, project_id: str, *, by_user: str, reason: str) -> None:
         """Record a conscious NEEDS_HUMAN_REVIEW acknowledgment -- distinct from
         set_release_override: this is 'a human looked and it's fine', not 'liberar

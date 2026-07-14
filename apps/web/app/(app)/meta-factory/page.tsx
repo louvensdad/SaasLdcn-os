@@ -30,6 +30,7 @@ import { MODELS } from '@/lib/llm/models';
 import { LDCNCoreBadge } from '@/components/three/ldcn-core-badge';
 import { ApiTestPanel } from '@/components/generation/api-test-panel';
 import { CompletenessPanel } from '@/components/generation/completeness-panel';
+import { DeliveryDecisionCenter } from '@/components/generation/delivery-decision-center';
 import { ExportPanel } from '@/components/generation/export-panel';
 import { ValidationReportPanel } from '@/components/generation/validation-report-panel';
 import { ResilientPipeline } from '@/components/generation/resilient-pipeline';
@@ -1005,6 +1006,8 @@ function MetaFactoryInner() {
               </span>
             </div>
           )}
+
+          {projectId && <DeliveryDecisionCenter projectId={projectId} />}
 
           {projectId && (
             <div className="mt-6 flex flex-wrap items-center gap-3">

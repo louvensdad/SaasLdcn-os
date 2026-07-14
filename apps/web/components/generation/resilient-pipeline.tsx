@@ -11,6 +11,7 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
 import { WorkflowContextHeader } from '@/components/project/workflow-context-header';
+import { DeliveryDecisionCenter } from '@/components/generation/delivery-decision-center';
 import { ExecutionTerminal } from '@/components/generation/execution-terminal';
 import { ExportPanel } from '@/components/generation/export-panel';
 import { LiveExecutionConsole } from '@/components/generation/live-execution-console';
@@ -353,6 +354,7 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
             <Check className="h-5 w-5 text-[color:var(--success)]" /><div className="mr-auto"><h2 className="font-semibold">{t('pipeline.done.title')}</h2><p className="text-sm text-muted-foreground">{t('pipeline.done.hint')}</p></div>
             {job.generatedProjectId ? <Button variant="primary" onClick={() => void metaFactoryClient.download(job.generatedProjectId!)}><Download className="h-4 w-4" /> {t('pipeline.done.download')}</Button> : null}
           </section>
+          {job.generatedProjectId ? <DeliveryDecisionCenter projectId={job.generatedProjectId} /> : null}
           {job.generatedProjectId ? (
             <ExportPanel
               surface="meta-factory"

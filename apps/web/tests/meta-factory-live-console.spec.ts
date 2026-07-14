@@ -65,6 +65,19 @@ function jobFixture() {
   };
 }
 
+function deliveryFixture() {
+  return {
+    project_id: 'orders-app', kernel_phase: 'CERTIFIED', blocked: false, block_reason: '',
+    options: [
+      { mode: 'zip_only', label: '', recommended: true, reason: '' },
+      { mode: 'git_export', label: '', recommended: false, reason: '' },
+      { mode: 'zip_and_git', label: '', recommended: false, reason: '' },
+      { mode: 'ldcn_only', label: '', recommended: false, reason: '' },
+    ],
+    current_profile: null,
+  };
+}
+
 async function mockConsole(page: Page) {
   const auth = authFixture();
   await page.route('**/api/**', async (route) => {
@@ -73,6 +86,7 @@ async function mockConsole(page: Page) {
     if (url.includes('/api/auth/me')) return route.fulfill({ json: auth.user });
     if (url.includes(`/api/project-rooms/${ROOM_ID}`)) return route.fulfill({ json: roomFixture() });
     if (url.includes('/api/meta-factory/jobs/latest')) return route.fulfill({ json: jobFixture() });
+    if (url.includes('/api/meta-factory/orders-app/delivery')) return route.fulfill({ json: deliveryFixture() });
     return route.fulfill({ status: 200, json: { contractVersion: '1.0.0' } });
   });
 }

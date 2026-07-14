@@ -7,6 +7,7 @@ import {
 import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
 import type { GenerationExecutionEvent, GenerationJobSummary, ResilientGenerationJob } from '@contracts/generation-job.contract';
 import type { TerminalCommandRecord, TerminalHistoryResponse, TerminalStreamEvent } from '@contracts/execution-terminal.contract';
+import type { DeliveryDecision, DeliveryMode } from '@contracts/delivery.contract';
 
 export const TERMINAL_JOB_STATUSES = new Set(['READY', 'FAILED', 'PAUSED', 'NEEDS_USER_ACTION', 'STALLED']);
 
@@ -714,6 +715,15 @@ export const metaFactoryClient = {
     ),
   download: (projectId: string) =>
     downloadAuthenticated(`${API_BASE_URL}/api/meta-factory/${projectId}/download`, `${projectId}.zip`),
+  // --------------------------------------------- Delivery Decision Center
+  getDeliveryDecision: (projectId: string) =>
+    request<DeliveryDecision>(`/api/meta-factory/${projectId}/delivery`, undefined, 30_000),
+  recordDeliveryDecision: (projectId: string, deliveryMode: DeliveryMode) =>
+    request<DeliveryDecision>(
+      `/api/meta-factory/${projectId}/delivery`,
+      { method: 'POST', body: JSON.stringify({ delivery_mode: deliveryMode }) },
+      30_000,
+    ),
   // ------------------------------------------------ LDCN Execution Terminal
   terminalHistory: (projectId: string) =>
     request<TerminalHistoryResponse>(`/api/meta-factory/${projectId}/terminal/history`, undefined, 30_000),
