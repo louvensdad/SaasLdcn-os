@@ -104,6 +104,10 @@ via SecureStore/AsyncStorage e atualizar o estado de um AuthContext/AuthProvider
 apos autenticar -- nunca apenas navegar para a proxima tela sem guardar o token.
 Um app mobile com SOMENTE a tela de Login (sem telas dos recursos principais e
 sem navegacao autenticada) e considerado incompleto e bloqueia a entrega.
+Se o controller do backend expoe um endpoint DELETE para um recurso, a tela de
+listagem ou de detalhe desse recurso no mobile DEVE ter uma acao de exclusao
+(botao + confirmacao) que chama esse metodo DELETE real -- nunca deixar o
+recurso sem nenhum caminho de exclusao no app.
 </non_negotiable_rules>"""
 
 DEVOPS_RULES = """<non_negotiable_rules>

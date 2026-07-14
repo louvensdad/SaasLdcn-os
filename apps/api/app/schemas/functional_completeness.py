@@ -53,6 +53,7 @@ class FrontendResourceCoverage(ApiModel):
 class MobileResourceCoverage(ApiModel):
     listScreen: bool = False
     detailScreen: bool = False
+    deleteScreen: bool = False
     apiClient: bool = False
 
 

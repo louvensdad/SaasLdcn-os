@@ -313,6 +313,79 @@ def test_mobile_login_only_without_token_storage_never_verified(make_project):
     assert any(i.id == "mobile_login_only" for i in report.issues)
 
 
+def test_mobile_delete_button_calling_the_delete_method_is_detected_as_delete_coverage(make_project):
+    # Same reasoning as the frontend's deletePage: delete is almost never its
+    # own screen -- it's a button on the list/detail screen. This is the
+    # realistic case: no dedicated delete screen, just a confirm-and-call
+    # inline in the list screen.
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("README.md", "# App\n" * 10),
+        (
+            "apps/mobile/src/screens/ProdutoListScreen.tsx",
+            "export default function ProdutoListScreen() {\n"
+            "  async function onRemove(id: string) { await api.delete(`/produtos/${id}`); }\n"
+            "  return null;\n"
+            "}\n",
+        ),
+    ]
+    project = make_project(files, name="produto-mobile-inline-remove-button")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    produto = next(r for r in report.resources if r.resource.lower() == "produto")
+    assert produto.mobile is not None
+    assert produto.mobile.deleteScreen is True
+    assert produto.mobile.listScreen is True
+
+
+def test_mobile_dedicated_delete_screen_is_also_detected_as_delete_coverage(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("README.md", "# App\n" * 10),
+        ("apps/mobile/src/screens/ProdutoDeleteScreen.tsx", "export default function ConfirmDelete() { return null; }"),
+    ]
+    project = make_project(files, name="produto-mobile-confirm-remove-screen")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    produto = next(r for r in report.resources if r.resource.lower() == "produto")
+    assert produto.mobile is not None
+    assert produto.mobile.deleteScreen is True
+
+
+def test_mobile_resource_with_no_delete_signal_is_not_credited_with_delete_coverage(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("README.md", "# App\n" * 10),
+        ("apps/mobile/src/screens/ProdutoListScreen.tsx", "export default function ProdutoListScreen() { return null; }"),
+        ("apps/mobile/src/screens/ProdutoDetailScreen.tsx", "export default function ProdutoDetailScreen() { return null; }"),
+    ]
+    project = make_project(files, name="produto-mobile-no-removal-action")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    produto = next(r for r in report.resources if r.resource.lower() == "produto")
+    assert produto.mobile is not None
+    assert produto.mobile.deleteScreen is False
+    assert produto.mobile.listScreen is True and produto.mobile.detailScreen is True
+
+
 def test_mobile_login_with_token_storage_is_recognized(make_project):
     package = "com.acme.app"
     java_dir = "src/main/java/com/acme/app"

@@ -120,7 +120,8 @@ def _frontend_resource_score(fc: FrontendResourceCoverage) -> int:
 
 
 def _mobile_resource_score(mc: MobileResourceCoverage) -> int:
-    return round(sum([mc.listScreen, mc.detailScreen, mc.apiClient]) / 3 * 100)
+    fields = [mc.listScreen, mc.detailScreen, mc.deleteScreen, mc.apiClient]
+    return round(sum(fields) / len(fields) * 100)
 
 
 class FunctionalCompletenessEngine:
@@ -666,9 +667,18 @@ class FunctionalCompletenessEngine:
         for resource in resources:
             needle = resource.resource.lower()
             resource_screens = [p for p in screen_files if needle in p.as_posix().lower()]
+            # Same reasoning as the frontend's deletePage (functional_completeness_engine.py's
+            # _frontend_completeness): delete is almost never its own screen -- it's usually a
+            # button/confirm-dialog on the list or detail screen that calls the DELETE method.
+            # Checked both ways: a dedicated delete-named screen (rare) OR a DELETE call in the
+            # resource's own screen content (the realistic common case).
+            resource_screens_text = "\n".join(self._safe_read(p) for p in resource_screens)
+            has_delete_screen = any(re.search(r"delete", p.as_posix(), re.IGNORECASE) for p in resource_screens)
+            has_delete_call = bool(re.search(r"\.delete\(|method:\s*[\"']DELETE[\"']", resource_screens_text, re.IGNORECASE))
             resource.mobile = MobileResourceCoverage(
                 listScreen=bool(resource_screens),
                 detailScreen=any(re.search(r"(detail|\[id])", p.as_posix(), re.IGNORECASE) for p in resource_screens),
+                deleteScreen=has_delete_screen or has_delete_call,
                 apiClient=needle in api_text,
             )
 
