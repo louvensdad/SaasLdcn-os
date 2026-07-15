@@ -62,7 +62,7 @@ class GeneratedProjectService:
 
     def read_file(self, project: dict[str, Any], relative_path: str) -> dict[str, Any]:
         candidate = Path(str(relative_path))
-        if candidate.is_absolute() or ".." in candidate.parts or "\x00" in str(relative_path):
+        if candidate.is_absolute() or re.match(r"^[A-Za-z]:[\\\\/]", str(relative_path)) or ".." in candidate.parts or "\x00" in str(relative_path):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Generated file path traversal is not allowed.")
         root = self._project_root(project)
         target = self._resolve_inside(root, relative_path)
