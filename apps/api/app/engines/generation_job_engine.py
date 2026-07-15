@@ -18,6 +18,7 @@ from app.engines.context_pack_builder import build_agent_context, compress_to_bu
 from app.engines.factory_pipeline import _run_agent
 from app.engines.functional_completeness_engine import functional_completeness_engine
 from app.engines.functional_coverage_engine import functional_coverage_engine
+from app.engines.product_certification_engine import product_certification_engine
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.execution_plan_engine import build_execution_plan
 from app.engines.ground_truth_engine import ground_truth_engine
@@ -33,6 +34,7 @@ from app.engines.warning_policy import classify as classify_warnings
 from app.repositories.download_repository import DownloadRepository
 from app.repositories.generation_job_repository import GenerationJobRepository
 from app.repositories.redaction import redact_value
+from app.schemas.functional_coverage import FunctionalCoverageReport
 from app.schemas.orchestrator import ProjectSpec
 from app.services.file_protocol import EmittedFile
 from app.services.download_service import DownloadService
@@ -1066,6 +1068,9 @@ class GenerationJobEngine:
             # file, never break the Functional Completeness Gate's own verdict
             # above (same "a report bug must never crash a finished pipeline"
             # rule this whole function already follows).
+            coverage_report = FunctionalCoverageReport(
+                project_id=project_id, generated_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
+            )
             try:
                 coverage_report = functional_coverage_engine.evaluate(project_id, root, report.resources)
                 (root / "functional-coverage.json").write_text(
@@ -1073,6 +1078,20 @@ class GenerationJobEngine:
                 )
             except Exception as exc:  # noqa: BLE001
                 self._log(job, "READY", "warning", "Functional Coverage failed to evaluate.", str(exc))
+            # Product Certification (Product Certification Engine P1, second
+            # slice): consolidates the two reports above + a fresh QualityGateReport
+            # into one status. Independent try/except, same "never break the
+            # Functional Completeness Gate's own verdict" rule.
+            try:
+                cert_report = product_certification_engine.evaluate(
+                    {"project_id": project_id, "generated_project_path": result_path}, report, coverage_report,
+                )
+                (root / "product-certification.json").write_text(
+                    json.dumps(cert_report.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8",
+                )
+                job["productCertificationStatus"] = cert_report.status
+            except Exception as exc:  # noqa: BLE001
+                self._log(job, "READY", "warning", "Product Certification failed to evaluate.", str(exc))
             ProjectWriter().set_functional_completeness(project_id, report=report_data)
             job["completenessStatus"] = report.status
             job["completenessSummary"] = {
