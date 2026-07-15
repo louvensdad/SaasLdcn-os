@@ -1,0 +1,59 @@
+# Local dev orchestration for the LDCN OS platform itself (api + web) -- not a
+# generated project's own docker-compose.yml, and not a production deployment
+# (see apps/api/OPERATIONS.md for that: Postgres/Redis, alembic run as its own
+# step, no ALLOW_HOST_EXECUTION).
+#
+# The api service builds from Dockerfile.dev (Node + Playwright/Chromium, see
+# that file) and runs with EXECUTION_RUNTIME=host + ALLOW_HOST_EXECUTION=true
+# so the Runtime Functional Test endpoint
+# (POST /meta-factory/{project_id}/runtime-functional-test) can actually start
+# a generated backend+frontend and drive a real browser against it. This is
+# the same "unsafe local development escape hatch" execution_runtime.py itself
+# warns about -- never reuse this compose file for a shared or production
+# environment.
+services:
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8001:8000"
+    # Loads whatever the developer already has in apps/api/.env (Google/GitHub
+    # OAuth client id+secret, etc.) -- optional so `docker compose up` doesn't
+    # hard-fail for someone without one yet (social login then just fails
+    # gracefully, same as the app's own non-Docker behavior). The explicit
+    # `environment:` keys below still win over anything the same-named key in
+    # .env sets (sandbox defaults there must not silently turn host execution
+    # back off; LDCN_API_PUBLIC_URL must point at the port actually published
+    # below, not the code's bare-metal default of :8000).
+    env_file:
+      - path: ./apps/api/.env
+        required: false
+    environment:
+      LDCN_ENVIRONMENT: development
+      EXECUTION_RUNTIME: host
+      ALLOW_HOST_EXECUTION: "true"
+      LDCN_API_PUBLIC_URL: http://localhost:8001
+    volumes:
+      - ./generated-projects:/workspace/generated-projects
+      - ./apps/api/app/data:/workspace/apps/api/app/data
+    # alembic upgrade head first: the image ships migrations but never applies
+    # them itself (OPERATIONS.md treats that as its own deploy step, not baked
+    # into the image/CMD).
+    command: sh -c "alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy

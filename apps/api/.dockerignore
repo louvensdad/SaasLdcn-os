@@ -3,6 +3,12 @@
 __pycache__/
 .pytest_cache/
 tests/
-app/data/
+# app/data/ mixes real Python source modules (foundation.py, model_registry.py,
+# ...) with runtime-only artifacts (the sqlite db, execution-evidence,
+# prepared-downloads) -- excluding the whole directory silently broke every
+# Docker build's import of app.data.* (caught building Dockerfile.dev). Keep
+# the source, drop the runtime state.
+app/data/*
+!app/data/*.py
 *.db
 *.sqlite*
