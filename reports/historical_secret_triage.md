@@ -56,9 +56,9 @@ The manifest must be generated from the 53 exact paths in the redacted scanner r
 
 - External bare backup: `C:\tmp\ldcn-history-backup-20260715-085556.git`.
 - Browser-only rewrite removed 53 exact paths; application and test files were preserved.
-- Gitleaks on the rewritten clone: 0 findings across 66 commits.
-- Fresh clone of the published remote: 0 findings across 66 commits.
-- Published `feat/premium-foundation`: `72a68020c0f6a37b8c863e2227afa771f23fb655`.
+- Gitleaks on the rewritten clone: 0 findings across 67 commits.
+- Fresh clone of the published remote: 0 findings across 67 commits.
+- Published `feat/premium-foundation`: `15fc621e5f00042ed2605cf02d03ee55329e2816`.
 - Published `master`: `9d71ecbd99b612d7806e96d2740ee28f73c02b32`.
 - Published `pre-premium-baseline`: `9d71ecbd99b612d7806e96d2740ee28f73c02b32`.
 

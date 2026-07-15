@@ -50,7 +50,7 @@ This closure does not claim that controlled debt is eliminated. Existing locale 
 - Python SCA: no known vulnerabilities.
 - npm SCA: 0 high/critical; 2 moderate Next/PostCSS findings documented.
 - Final container SCA: 0 fixable high/critical findings across API, web, and sandbox images.
-- Full-history secret scan: 146 initial candidates remediated; fresh published-remote clone returned 0 findings across 66 commits.
+- Full-history secret scan: 146 initial candidates remediated; fresh published-remote clone returned 0 findings across 67 commits.
 - CI workflow parsed with jobs: backend, frontend, e2e-smoke, security-adversarial, infrastructure-contracts, containers and secret-scan.
 - Repository hygiene: zero tracked generated projects and zero tracked non-example `.env` files.
 - Process re-audit: process creation is confined to `ExecutionRuntime`; E2E launcher is development/test infrastructure.

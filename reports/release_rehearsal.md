@@ -66,7 +66,7 @@ Trivy 0.66.0 scanned the three final local images for fixable `HIGH` and `CRITIC
 
 The first web scan found `CVE-2026-33671` in `picomatch` and `CVE-2026-48815` in `sigstore`, both supplied by the global npm installation in the Node runtime base. The final web stage does not install dependencies, so npm, npx, and corepack were removed from that stage. A clean rebuild and rescan returned zero findings.
 
-Gitleaks 8.28.0 initially found 146 historical candidates. After operator-confirmed rotation, 53 exact browser-profile paths were removed from all published refs; six synthetic fixture findings are covered by the narrow `.gitleaks.toml` policy. A fresh clone of the published remote scanned 66 commits and returned zero findings. The redacted initial report remains outside the repository at `C:\tmp\ldcn-gitleaks\report.json`; the final report is at `C:\tmp\ldcn-gitleaks\remote-final.json`.
+Gitleaks 8.28.0 initially found 146 historical candidates. After operator-confirmed rotation, 53 exact browser-profile paths were removed from all published refs; six synthetic fixture findings are covered by the narrow `.gitleaks.toml` policy. A fresh clone of the published remote scanned 67 commits and returned zero findings. The redacted initial report remains outside the repository at `C:\tmp\ldcn-gitleaks\report.json`; the final report is at `C:\tmp\ldcn-gitleaks\remote-final.json`.
 
 No allowlist was added and Git history was not rewritten. Detailed classification and the controlled response order are recorded in `reports/historical_secret_triage.md`.
 ## Remaining external gates
