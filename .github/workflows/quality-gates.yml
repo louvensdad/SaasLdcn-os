@@ -21,7 +21,7 @@ jobs:
     env:
       LDCN_ENVIRONMENT: test
       LDCN_DATABASE_URL: sqlite:////tmp/ldcn-ci-test.db
-      LDCN_FORCE_MOCK: "1"
+      LDCN_FORCE_MOCK: "0"
       EXECUTION_RUNTIME: sandbox
       ALLOW_HOST_EXECUTION: "false"
     steps:
@@ -92,7 +92,7 @@ jobs:
     env:
       LDCN_ENVIRONMENT: test
       LDCN_DATABASE_URL: sqlite:////tmp/ldcn-security-test.db
-      LDCN_FORCE_MOCK: "1"
+      LDCN_FORCE_MOCK: "0"
       EXECUTION_RUNTIME: sandbox
       ALLOW_HOST_EXECUTION: "false"
     steps:
@@ -103,6 +103,7 @@ jobs:
           cache: pip
           cache-dependency-path: apps/api/requirements-dev.lock
       - run: pip install --require-hashes --requirement requirements-dev.lock
+      - run: python -m alembic upgrade head
       - run: >-
           python -m pytest -q
           tests/test_execution_runtime.py
