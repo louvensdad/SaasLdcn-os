@@ -84,6 +84,18 @@ class FunctionalCompletenessReport(ApiModel):
     backend_completeness: int = 0
     frontend_completeness: int | None = None
     mobile_completeness: int | None = None
+    # Engineering Policy gap #4: the remaining 6 of the policy's 10 categories.
+    # Security/Integrations are read-only, informational percentages derived
+    # from QualityGateEngine's own findings -- they never feed back into this
+    # report's own issues/status (that boundary stays exactly as documented at
+    # the top of functional_completeness_engine.py: this is a coverage gate,
+    # QualityGateEngine is the quality/security gate).
+    security_completeness: int | None = None
+    documentation_completeness: int | None = None
+    tests_completeness: int | None = None
+    api_coverage_completeness: int | None = None
+    build_completeness: int | None = None
+    integrations_completeness: int | None = None
     resources: list[ResourceCoverage] = Field(default_factory=list)
     ui_depth: UiDepthScore | None = None
     issues: list[CompletenessIssue] = Field(default_factory=list)

@@ -262,8 +262,14 @@ class GenerationJobEngine:
             job["packageReady"] = True
             job["finishedAt"] = self._now()
             job["error"] = None
-            self._evaluate_functional_completeness(job, owner_user_id, build_skipped=build_skipped)
+            # Manifest first: the Functional Completeness Gate's Integrations
+            # category (product-completion-report.json) calls the External
+            # Integration Auditor, which reads ldcn.project.json's
+            # selected_infrastructure_ids to know what the user actually opted
+            # into -- evaluating completeness before the manifest exists would
+            # make any declared provider SDK look "not opted in".
             self._write_project_manifest(job, spec, blueprint)
+            self._evaluate_functional_completeness(job, owner_user_id, build_skipped=build_skipped)
             for stage in logical_stages_for(steps):
                 if job["stageStatuses"].get(stage) != "skipped":
                     job["stageStatuses"][stage] = "success"

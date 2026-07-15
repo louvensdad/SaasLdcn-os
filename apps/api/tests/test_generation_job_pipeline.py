@@ -147,9 +147,11 @@ def test_generation_job_execution_plan_never_drifts_from_its_own_stage_statuses(
 
 def test_project_manifest_is_written_to_the_delivered_project(isolated_engine):
     # _write_project_manifest is only ever called from execute() right before READY,
-    # after the completeness gate -- exercised directly here (same pattern as
-    # test_skipped_build_persists_guide_and_does_not_raise calling _build directly)
-    # rather than mocking a full multi-step LLM pipeline just to reach that point.
+    # BEFORE the completeness gate (so its Integrations category can read
+    # selected_infrastructure_ids from the manifest this writes) -- exercised
+    # directly here (same pattern as test_skipped_build_persists_guide_and_does_not_raise
+    # calling _build directly) rather than mocking a full multi-step LLM pipeline
+    # just to reach that point.
     engine, repository, root = isolated_engine
     job = _create(engine)
     generated_root = root / "generated-manifest-test"
@@ -1383,6 +1385,34 @@ def test_frontend_llm_context_includes_stack_lock_hint(isolated_engine, monkeypa
     # Project Memory is read-before-write: every LLM step, not just frontend/mobile.
     assert "<project_memory>" in captured_contexts["backend"]
     assert "<project_memory>" in captured_contexts["frontend"]
+
+
+def test_project_manifest_is_written_before_functional_completeness_is_evaluated(isolated_engine, monkeypatch):
+    # product-completion-report.json's Integrations category calls the External
+    # Integration Auditor, which reads selected_infrastructure_ids from
+    # ldcn.project.json -- that manifest must already be on disk by the time
+    # completeness is evaluated, or every declared provider SDK looks
+    # "not opted in". Regression test for that pipeline ordering.
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    call_order: list[str] = []
+    monkeypatch.setattr(engine, "_write_project_manifest", lambda *a, **k: call_order.append("manifest"))
+    monkeypatch.setattr(engine, "_evaluate_functional_completeness", lambda *a, **k: call_order.append("completeness"))
+
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+        parsed = ParsedAgentOutput(raw_response="ok")
+        if role == "contracts":
+            parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))
+        else:
+            parsed.files.append(EmittedFile(f"src/{role}/main.ts", "export const x = 1;"))
+        return None, parsed
+
+    monkeypatch.setattr("app.engines.generation_job_engine._run_agent", _fake_agent)
+    monkeypatch.setattr(engine, "_build", lambda job, owner: None)
+    monkeypatch.setattr(engine, "_package", lambda job, owner: None)
+    engine.execute(job["id"], "user-1", api_key="secret", user_model_choice="m")
+
+    assert call_order == ["manifest", "completeness"]
 
 
 def test_preparing_context_fixes_project_memory_before_any_llm_step(isolated_engine):

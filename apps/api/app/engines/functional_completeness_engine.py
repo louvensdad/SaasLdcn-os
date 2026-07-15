@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import BASE_DIR
 from app.engines.documentation_engine import DocumentationEngine
+from app.engines.quality_gate_engine import quality_gate_engine
 from app.schemas.functional_completeness import (
     BackendResourceCoverage,
     CompletenessIssue,
@@ -124,6 +125,51 @@ def _mobile_resource_score(mc: MobileResourceCoverage) -> int:
     return round(sum(fields) / len(fields) * 100)
 
 
+def _category_completeness(issues: list, category: str) -> int:
+    """Shared formula for the two categories derived from QualityGateEngine's
+    own findings (Security, Integrations). BLOCKER weighted far heavier than
+    WARNING, matching the general severity precedence used throughout this
+    codebase. No issues in the category -> 100: a real, checked absence of
+    problems (QualityGateEngine ran), never a fabricated pass."""
+    blockers = sum(1 for i in issues if i.category == category and i.severity == "BLOCKER")
+    warnings = sum(1 for i in issues if i.category == category and i.severity == "WARNING")
+    return max(0, 100 - blockers * 30 - warnings * 10)
+
+
+_TEST_FILE_HINT_RE = re.compile(r"(test|spec)", re.IGNORECASE)
+
+
+def _tests_completeness(root: Path, resources: list[ResourceCoverage]) -> int | None:
+    """Presence-based, not a pass-rate -- no real test-execution/coverage
+    signal exists anywhere in this codebase to report instead (see the
+    Token Intelligence gap research). Honestly named/scoped: does each
+    resource have AT LEAST ONE file that looks like a test for it, the same
+    per-resource-needle-in-path convention _frontend_completeness/
+    _mobile_completeness already use."""
+    if not resources:
+        return None
+    test_files = [
+        p for p in root.rglob("*")
+        if p.is_file() and _TEST_FILE_HINT_RE.search(p.name) and "node_modules" not in p.parts
+    ]
+    test_paths = [p.as_posix().lower() for p in test_files]
+    covered = sum(1 for r in resources if any(r.resource.lower() in path for path in test_paths))
+    return round(covered / len(resources) * 100)
+
+
+def _api_coverage_completeness(resources: list[ResourceCoverage]) -> int | None:
+    """Real fraction of resources with SOME UI actually consuming their API --
+    reuses the frontend/mobile apiClient fields those detectors already
+    compute, rather than inventing a new endpoint-by-endpoint scan."""
+    if not resources:
+        return None
+    consumed = sum(
+        1 for r in resources
+        if (r.frontend is not None and r.frontend.apiClient) or (r.mobile is not None and r.mobile.apiClient)
+    )
+    return round(consumed / len(resources) * 100)
+
+
 class FunctionalCompletenessEngine:
     def __init__(self) -> None:
         self.workspace_root = BASE_DIR.parents[1].resolve()
@@ -172,12 +218,30 @@ class FunctionalCompletenessEngine:
             resources=resources, issues=issues, build_skipped=build_skipped,
         )
 
+        # Engineering Policy gap #4: the remaining 6 categories. Security/
+        # Integrations are read-only percentages derived from QualityGateEngine's
+        # OWN findings -- never merged into this engine's issues/status above,
+        # preserving the sibling-gate boundary this file's header documents.
+        quality_report = quality_gate_engine.evaluate(project, run_build=False)
+        security_completeness = _category_completeness(quality_report.issues, "security")
+        integrations_completeness = _category_completeness(quality_report.issues, "integration")
+        documentation_completeness = DocumentationEngine().analyze(project)["score"]
+        build_completeness = 0 if build_skipped else 100
+        api_coverage_completeness = _api_coverage_completeness(resources)
+        tests_completeness = _tests_completeness(root, resources)
+
         return FunctionalCompletenessReport(
             project_id=str(project.get("project_id") or ""),
             status=report_status,
             backend_completeness=backend_completeness,
             frontend_completeness=frontend_completeness,
             mobile_completeness=mobile_completeness,
+            security_completeness=security_completeness,
+            documentation_completeness=documentation_completeness,
+            tests_completeness=tests_completeness,
+            api_coverage_completeness=api_coverage_completeness,
+            build_completeness=build_completeness,
+            integrations_completeness=integrations_completeness,
             resources=resources,
             ui_depth=ui_depth,
             issues=issues,

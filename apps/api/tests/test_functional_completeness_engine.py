@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
 import pytest
 
+from app.engines.documentation_engine import DocumentationEngine
 from app.engines.functional_completeness_engine import FunctionalCompletenessEngine
 from app.engines.generation_job_engine import GenerationJobEngine
 from app.routes import meta_factory
@@ -771,3 +773,119 @@ def test_prisma_schema_with_a_migration_is_not_flagged(make_project):
     engine = FunctionalCompletenessEngine()
     report = engine.evaluate(project)
     assert not any(i.id == "prisma_migrations_missing" for i in report.issues)
+
+
+# ---------- Engineering Policy gap #4: the remaining 6 report categories ----------
+
+def test_security_completeness_is_100_for_a_clean_project(make_project):
+    files = _good_java_project_files()
+    project = make_project(files, name="security-clean")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.security_completeness == 100
+
+
+def test_security_completeness_drops_for_a_real_hardcoded_secret(make_project):
+    files = _good_java_project_files()
+    files.append((
+        "src/main/java/com/acme/app/Secrets.java",
+        "package com.acme.app;\npublic class Secrets {\n  String apiKey = \"sk_live_real_secret_value_12345\";\n}\n",
+    ))
+    project = make_project(files, name="security-secret-leak")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.security_completeness is not None and report.security_completeness < 100
+
+
+def test_integrations_completeness_is_100_when_no_provider_is_declared(make_project):
+    files = _good_java_project_files()
+    project = make_project(files, name="integrations-none-declared")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.integrations_completeness == 100
+
+
+def test_integrations_completeness_drops_for_an_unapproved_provider_sdk(make_project):
+    files = [(p, c) for p, c in _good_java_project_files() if p != "package.json"]
+    files.append(("package.json", json.dumps({"name": "frontend", "dependencies": {"stripe": "^14.0.0"}})))
+    project = make_project(files, name="integrations-not-opted-in")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.integrations_completeness is not None and report.integrations_completeness < 100
+
+
+def test_documentation_completeness_matches_documentation_engine_score(make_project):
+    files = _good_java_project_files()
+    project = make_project(files, name="docs-score-parity")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    expected = DocumentationEngine().analyze(project)["score"]
+    assert report.documentation_completeness == expected
+
+
+def test_build_completeness_reflects_the_build_skipped_flag(make_project):
+    files = _good_java_project_files()
+    project = make_project(files, name="build-completeness")
+    engine = FunctionalCompletenessEngine()
+    assert engine.evaluate(project, build_skipped=True).build_completeness == 0
+    assert engine.evaluate(project, build_skipped=False).build_completeness == 100
+
+
+def test_api_coverage_completeness_is_full_when_every_resource_has_a_ui_client(make_project):
+    files = _good_java_project_files()  # _full_frontend_pages() gives every resource an apiClient
+    project = make_project(files, name="api-coverage-full")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.api_coverage_completeness == 100
+
+
+def test_api_coverage_completeness_is_zero_when_no_ui_consumes_the_api(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("README.md", "# App\n" * 10),
+    ]
+    project = make_project(files, name="api-coverage-none")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.api_coverage_completeness == 0
+
+
+def test_tests_completeness_detects_a_resource_test_file(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        (f"{java_dir}/ProdutoControllerTest.java", "package com.acme.app;\npublic class ProdutoControllerTest {}\n"),
+        ("pom.xml", "<project></project>"),
+        ("README.md", "# App\n" * 10),
+    ]
+    project = make_project(files, name="produto-has-a-test-file")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.tests_completeness == 100
+
+
+def test_tests_completeness_is_zero_with_no_test_files(make_project):
+    package = "com.acme.app"
+    java_dir = "src/main/java/com/acme/app"
+    files = [
+        (f"{java_dir}/Application.java", _spring_app(package)),
+        (f"{java_dir}/ProdutoController.java", _controller(package, "Produto")),
+        (f"{java_dir}/ProdutoService.java", _service(package, "Produto")),
+        (f"{java_dir}/ProdutoRepository.java", _repository(package, "Produto")),
+        ("pom.xml", "<project></project>"),
+        ("README.md", "# App\n" * 10),
+    ]
+    project = make_project(files, name="produto-with-no-test-file")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert report.tests_completeness == 0
