@@ -17,6 +17,7 @@ from app.engines.agent_executor import submit_agent
 from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, module_roots_from_emitted, summarize_contract
 from app.engines.factory_pipeline import _run_agent
 from app.engines.functional_completeness_engine import functional_completeness_engine
+from app.engines.functional_coverage_engine import functional_coverage_engine
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.execution_plan_engine import build_execution_plan
 from app.engines.ground_truth_engine import ground_truth_engine
@@ -1060,6 +1061,18 @@ class GenerationJobEngine:
                 json.dumps(report.ui_depth.model_dump(mode="json") if report.ui_depth else {}, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            # Functional Coverage (Product Certification Engine P1, first slice):
+            # independent try/except -- a bug here must degrade to an absent
+            # file, never break the Functional Completeness Gate's own verdict
+            # above (same "a report bug must never crash a finished pipeline"
+            # rule this whole function already follows).
+            try:
+                coverage_report = functional_coverage_engine.evaluate(project_id, root, report.resources)
+                (root / "functional-coverage.json").write_text(
+                    json.dumps(coverage_report.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8",
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._log(job, "READY", "warning", "Functional Coverage failed to evaluate.", str(exc))
             ProjectWriter().set_functional_completeness(project_id, report=report_data)
             job["completenessStatus"] = report.status
             job["completenessSummary"] = {
