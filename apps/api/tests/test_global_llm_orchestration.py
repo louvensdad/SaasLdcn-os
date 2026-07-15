@@ -52,6 +52,18 @@ def test_configured_claude_is_the_safe_active_setting(client):
     assert KEY not in active.text
 
 
+def test_cache_stats_reflect_real_counters_not_fabricated_data(client):
+    from app.core.metrics import LLM_CACHE_EVENTS
+
+    before = client.get("/api/llm/cache-stats").json()
+    LLM_CACHE_EVENTS.labels(outcome="hit").inc()
+    after = client.get("/api/llm/cache-stats").json()
+
+    assert after["hits"] == before["hits"] + 1
+    # No tokens/cost/most-used-model fields -- none of that is tracked anywhere.
+    assert set(after.keys()) == {"hits", "misses", "stored", "evicted", "expired", "oversized", "entries", "bytes"}
+
+
 def test_no_provider_returns_explained_deterministic_state(client):
     client.delete("/api/user-ai-keys/session")
     body = client.get("/api/llm/settings/active").json()

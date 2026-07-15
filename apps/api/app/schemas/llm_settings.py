@@ -44,3 +44,19 @@ class LlmResolution(BaseModel):
     fallbackUsed: bool
     keyStatus: LlmSettingsStatus
     requestedCapability: str
+
+
+class LlmCacheStats(BaseModel):
+    """Real counters already tracked by the process-local LLM response cache
+    (app/engines/llm/response_cache.py via Prometheus Counter/Gauge) -- no
+    tokens/cost/most-used-model fields, since none of that is tracked
+    anywhere in this codebase."""
+
+    hits: int
+    misses: int
+    stored: int
+    evicted: int
+    expired: int
+    oversized: int
+    entries: int
+    bytes: int

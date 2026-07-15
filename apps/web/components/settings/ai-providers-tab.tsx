@@ -10,10 +10,12 @@ import { Input } from '@/components/ui/input';
 import { CardLoading } from '@/components/feedback/loading-system';
 import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
 import { RetentionSelect, formatRemaining } from '@/components/settings/retention-select';
+import { SettingsSection } from '@/components/settings/settings-section';
+import { SettingsMetricCard } from '@/components/settings/settings-metric-card';
 import { userKeysClient, type KeyProvider, type KeySessionStatus, type KeySessionStatusResponse } from '@/lib/api/user-keys';
 import { llmSettingsClient } from '@/lib/api/llm-settings';
 import { LLM_BUY_TOKENS_URL } from '@/lib/llm-provider-links';
-import type { ActiveLlmSettings, LlmProviderId } from '@contracts/llm-settings.contract';
+import type { ActiveLlmSettings, LlmCacheStats, LlmProviderId } from '@contracts/llm-settings.contract';
 import { useLocale } from '@/hooks/use-locale';
 
 type ProviderId = KeyProvider | 'ollama';
@@ -51,29 +53,59 @@ export function AiProvidersTab() {
     queryFn: llmSettingsClient.active,
     staleTime: 30_000,
   });
+  const cacheStatsQuery = useQuery<LlmCacheStats>({
+    queryKey: ['llm-settings', 'cache-stats'],
+    queryFn: llmSettingsClient.cacheStats,
+    staleTime: 30_000,
+  });
   const sessions = statusQuery.data?.sessions ?? [];
 
   return (
     <div className="space-y-6">
-      <header>
-        <h2 className="ds-section text-[color:var(--text)]">{t('settings.ai.title')}</h2>
-        <p className="mt-2 max-w-2xl ds-body ds-text-muted">{t('settings.ai.description')}</p>
-      </header>
+      <SettingsSection title={t('settings.ai.title')} description={t('settings.ai.description')}>
+        {statusQuery.isLoading ? (
+          <div className="grid gap-4 lg:grid-cols-2"><CardLoading /><CardLoading /></div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {PROVIDERS.map((provider) => (
+              <ProviderKeyCard
+                key={provider.id}
+                def={provider}
+                session={sessions.find((item) => item.provider === provider.id)}
+                isDefault={activeQuery.data?.provider === provider.id}
+              />
+            ))}
+          </div>
+        )}
+      </SettingsSection>
 
-      {statusQuery.isLoading ? (
-        <div className="grid gap-4 lg:grid-cols-2"><CardLoading /><CardLoading /></div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {PROVIDERS.map((provider) => (
-            <ProviderKeyCard
-              key={provider.id}
-              def={provider}
-              session={sessions.find((item) => item.provider === provider.id)}
-              isDefault={activeQuery.data?.provider === provider.id}
+      {activeQuery.data ? (
+        <SettingsSection title={t('settings.ai.policyTitle')} description={t('settings.ai.policyDescription')}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SettingsMetricCard
+              label={t('settings.ai.policyDefaultProvider')}
+              value={activeQuery.data.providerLabel ?? activeQuery.data.provider ?? t('common.unavailable')}
             />
-          ))}
-        </div>
-      )}
+            <SettingsMetricCard label={t('settings.ai.policyDefaultModel')} value={activeQuery.data.model ?? t('common.unavailable')} />
+            <SettingsMetricCard label={t('settings.ai.policyStatus')} value={t(`settings.ai.policyStatusValue.${activeQuery.data.status}`)} />
+            <SettingsMetricCard
+              label={t('settings.ai.policyLastValidated')}
+              value={activeQuery.data.lastValidatedAt ? new Date(activeQuery.data.lastValidatedAt).toLocaleString() : t('common.never')}
+            />
+          </div>
+        </SettingsSection>
+      ) : null}
+
+      {cacheStatsQuery.data ? (
+        <SettingsSection title={t('settings.ai.cacheTitle')} description={t('settings.ai.cacheDescription')}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SettingsMetricCard label={t('settings.ai.cacheHits')} value={String(cacheStatsQuery.data.hits)} />
+            <SettingsMetricCard label={t('settings.ai.cacheMisses')} value={String(cacheStatsQuery.data.misses)} />
+            <SettingsMetricCard label={t('settings.ai.cacheEntries')} value={String(cacheStatsQuery.data.entries)} />
+            <SettingsMetricCard label={t('settings.ai.cacheEvicted')} value={String(cacheStatsQuery.data.evicted)} />
+          </div>
+        </SettingsSection>
+      ) : null}
     </div>
   );
 }

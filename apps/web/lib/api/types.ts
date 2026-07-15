@@ -192,6 +192,7 @@ export interface HealthResponse {
   readonly status: 'ok' | 'degraded' | 'offline';
   readonly service: string;
   readonly version: string;
+  readonly checks?: Record<string, string>;
 }
 
 export type UserRole = UserRoleContract;

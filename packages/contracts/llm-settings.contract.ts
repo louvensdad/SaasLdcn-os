@@ -36,3 +36,17 @@ export interface LlmResolution {
   keyStatus: LlmSettingsStatus;
   requestedCapability: string;
 }
+
+// Real counters already tracked by the process-local LLM response cache
+// (app/engines/llm/response_cache.py via Prometheus Counter/Gauge) -- no
+// tokens/cost/most-used-model here, since none of that is tracked anywhere.
+export interface LlmCacheStats {
+  hits: number;
+  misses: number;
+  stored: number;
+  evicted: number;
+  expired: number;
+  oversized: number;
+  entries: number;
+  bytes: number;
+}

@@ -3,10 +3,30 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.deps import CurrentUser
-from app.schemas.llm_settings import ActiveLlmSettings, ConfirmLlmUseRequest, LlmResolution, SelectLlmProviderRequest
+from app.core.metrics import LLM_CACHE_BYTES, LLM_CACHE_ENTRIES, LLM_CACHE_EVENTS
+from app.schemas.llm_settings import ActiveLlmSettings, ConfirmLlmUseRequest, LlmCacheStats, LlmResolution, SelectLlmProviderRequest
 from app.services.llm_settings_service import llm_provider_resolver, llm_settings_service
 
 router = APIRouter(tags=["llm-settings"])
+
+
+def _counter(outcome: str) -> int:
+    return int(LLM_CACHE_EVENTS.labels(outcome=outcome)._value.get())  # noqa: SLF001 -- prometheus_client has no public single-sample getter
+
+
+@router.get("/llm/cache-stats", response_model=LlmCacheStats)
+def get_llm_cache_stats(user: CurrentUser) -> LlmCacheStats:
+    del user  # process-global cache, not user-scoped -- auth only gates visibility
+    return LlmCacheStats(
+        hits=_counter("hit"),
+        misses=_counter("miss"),
+        stored=_counter("stored"),
+        evicted=_counter("evicted"),
+        expired=_counter("expired"),
+        oversized=_counter("oversized"),
+        entries=int(LLM_CACHE_ENTRIES._value.get()),  # noqa: SLF001
+        bytes=int(LLM_CACHE_BYTES._value.get()),  # noqa: SLF001
+    )
 
 
 @router.get("/llm/settings/active", response_model=ActiveLlmSettings)
