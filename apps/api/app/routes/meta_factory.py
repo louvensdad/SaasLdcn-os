@@ -22,6 +22,7 @@ from app.engines.engineering_kernel_engine import compute_kernel_status
 from app.engines.llm_repair_engine import llm_repair_engine
 from app.engines.quality_gate_engine import quality_gate_engine
 from app.services.runtime_api_audit_service import runtime_api_audit_service
+from app.services.runtime_functional_test_service import runtime_functional_test_service
 from app.schemas.delivery import DeliveryDecision, RecordDeliveryDecisionRequest
 from app.schemas.engineering_kernel import AcknowledgeHumanReviewRequest, EngineeringKernelStatus
 from app.repositories.user_repository import AuditLogRepository
@@ -32,6 +33,8 @@ from app.services.project_room_service import ENGINEERING_APPROVED_STATUSES
 from app.schemas.auto_repair import ForceReleaseRequest, RepairResult, RevalidationResult
 from app.schemas.quality_gate import QualityGateReport
 from app.schemas.runtime_api_audit import RuntimeApiAuditReport
+from app.schemas.functional_coverage import FunctionalCoverageReport
+from app.schemas.runtime_functional_test import RuntimeFunctionalTestReport
 from app.engines.completeness_review_engine import CompletenessReviewEngine
 from app.engines.context_pack_builder import build_agent_context, summarize_contract
 from app.engines.factory_pipeline import PIPELINE_ORDER, iter_factory_pipeline, iter_single_agent, run_factory_pipeline
@@ -1172,6 +1175,40 @@ def runtime_audit_project(project_id: str, user: CurrentUser) -> RuntimeApiAudit
         _audit(user["user_id"], "runtime_audit_crash_detected")
     else:
         _audit(user["user_id"], "runtime_audit_completed")
+    return report
+
+
+@router.post("/meta-factory/{project_id}/runtime-functional-test", response_model=RuntimeFunctionalTestReport)
+def runtime_functional_test_project(project_id: str, user: CurrentUser) -> RuntimeFunctionalTestReport:
+    """Runtime Functional Test: start the generated backend + frontend for real
+    and drive a real headless browser through the unauthenticated flows,
+    capturing console/JS errors, failed requests, and screenshots. Third and
+    final slice of the Product Certification Engine -- uses the already-computed
+    functional-coverage.json (if present) as the map of routes to visit. Only
+    Python/FastAPI + Next.js/React is supported, and only when
+    HostExecutionRuntime is enabled (dev/local only); anything else is an honest
+    report.supported=False, never a false pass. Opt-in only, never part of the
+    automatic pipeline (real wall-clock minutes, a real if bounded chance to hang)."""
+    project = _owned_meta_project(project_id, user)
+    coverage: FunctionalCoverageReport | None = None
+    coverage_path = Path(project["generated_project_path"]) / "functional-coverage.json"
+    if coverage_path.is_file():
+        try:
+            coverage = FunctionalCoverageReport.model_validate_json(coverage_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            coverage = None
+    _audit(user["user_id"], "runtime_functional_test_started")
+    try:
+        report = runtime_functional_test_service.run(project, coverage)
+    except Exception as exc:  # noqa: BLE001
+        _audit(user["user_id"], "runtime_functional_test_failed")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not report.supported:
+        _audit(user["user_id"], "runtime_functional_test_failed")
+    elif report.crash_count > 0:
+        _audit(user["user_id"], "runtime_functional_test_crash_detected")
+    else:
+        _audit(user["user_id"], "runtime_functional_test_completed")
     return report
 
 

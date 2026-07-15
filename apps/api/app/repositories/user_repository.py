@@ -207,6 +207,8 @@ class AuditLogRepository:
         "auto_repair_failed", "auto_repair_completed", "revalidation_run",
         "llm_repair_started", "llm_repair_action_applied", "llm_repair_failed", "llm_repair_completed",
         "runtime_audit_started", "runtime_audit_completed", "runtime_audit_failed", "runtime_audit_crash_detected",
+        "runtime_functional_test_started", "runtime_functional_test_completed",
+        "runtime_functional_test_failed", "runtime_functional_test_crash_detected",
         "force_release_requested", "force_release_confirmed", "git_export_blocked",
         "modernize_project_uploaded", "modernize_git_imported", "llm_provider_selected",
         "llm_connection_tested", "codebase_analysis_started", "codebase_analysis_completed",

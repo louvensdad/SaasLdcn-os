@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Any, Callable, Sequence
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -710,6 +710,7 @@ class HostExecutionRuntime(ExecutionRuntime):
         self.evidence_root.mkdir(parents=True, exist_ok=True)
         self._sessions: dict[str, dict[str, object]] = {}
         self._processes: dict[str, subprocess.Popen[str]] = {}
+        self._background: dict[str, tuple[subprocess.Popen[str], Any, Path]] = {}
         self._lock = threading.RLock()
         self._policy = SandboxExecutionRuntime(self.settings)
 
@@ -832,6 +833,68 @@ class HostExecutionRuntime(ExecutionRuntime):
 
     def default_limits(self, timeout_seconds: int | None = None) -> RuntimeLimits:
         return self._policy.default_limits(timeout_seconds)
+
+    def start_background(
+        self, sandbox_id: str, command: Sequence[str], *, cwd: str, log_path: Path,
+        extra_env: dict[str, str] | None = None,
+    ) -> str:
+        """Start a long-running process (a dev server) that outlives a single
+        execute() call. execute() always blocks until the child exits -- there is
+        no equivalent for "start it and come back later" there, and there
+        shouldn't be one on SandboxExecutionRuntime either (its workspace lives
+        inside an isolated container the host can't listen against directly).
+        stdout/stderr go to a real log FILE, never a PIPE nobody drains --
+        a PIPE would fill its OS buffer on a chatty dev server and deadlock it."""
+        session = self._session(sandbox_id)
+        root = Path(session["root"])
+        resolved_cwd = (root / self._policy._safe_cwd(cwd)).resolve()  # noqa: SLF001 -- same-module reuse
+        if resolved_cwd != root and root not in resolved_cwd.parents:
+            raise ValueError("Working directory escaped the development workspace.")
+        env_names = {
+            "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "HOME", "USERPROFILE",
+            "TEMP", "TMP", "LANG", "LC_ALL",
+        }
+        env = {key: value for key, value in os.environ.items() if key.upper() in env_names}
+        env["CI"] = "1"
+        env.update(extra_env or {})
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_file = log_path.open("w", encoding="utf-8", errors="replace")
+        proc = subprocess.Popen(
+            list(command), cwd=resolved_cwd, env=env, text=True, encoding="utf-8", errors="replace",
+            shell=False, stdout=log_file, stderr=subprocess.STDOUT,
+        )
+        handle_id = f"bg_{uuid4().hex[:12]}"
+        with self._lock:
+            self._background[handle_id] = (proc, log_file, log_path)
+        return handle_id
+
+    def stop_background(self, handle_id: str) -> None:
+        with self._lock:
+            entry = self._background.pop(handle_id, None)
+        if entry is None:
+            return
+        proc, log_file, _ = entry
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+        finally:
+            log_file.close()
+
+    def tail_background(self, handle_id: str, *, max_chars: int = 4000) -> str:
+        with self._lock:
+            entry = self._background.get(handle_id)
+        if entry is None:
+            return ""
+        try:
+            text = entry[2].read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        return redact(text[-max_chars:])
 
     def _session(self, sandbox_id: str) -> dict[str, object]:
         with self._lock:
