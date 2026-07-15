@@ -1,0 +1,22 @@
+{
+  "total": 195,
+  "byFile": {
+    "components/analytics/data-analysis-workbench.tsx": 33,
+    "app/(app)/analytics/page.tsx": 27,
+    "components/analytics/analytics-components.tsx": 27,
+    "components/architecture-review/architecture-model-views.tsx": 21,
+    "components/generation/resilient-pipeline.tsx": 17,
+    "components/llm/llm-confirmation-gate.tsx": 17,
+    "components/engineering/ds.tsx": 12,
+    "app/(app)/architect/page.tsx": 10,
+    "components/generation/live-execution-console.tsx": 9,
+    "components/project/blueprint-response-viewer.tsx": 7,
+    "app/global-error.tsx": 4,
+    "components/generation/ai-usage-card.tsx": 4,
+    "app/(app)/auto-fix/page.tsx": 2,
+    "components/project/workflow-context-header.tsx": 2,
+    "app/(app)/engineering-laboratory/page.tsx": 1,
+    "components/llm/llm-gated-action.tsx": 1,
+    "components/llm/user-key-panel.tsx": 1
+  }
+}

@@ -1,19 +1,26 @@
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
 
 from app.services.build_validation_service import BuildValidationService, _MetricsCollector
 from app.schemas.generation_validation import BuildValidationReport
+from fake_execution_runtime import FakeExecutionRuntime
+
+
+def _sandbox_service() -> BuildValidationService:
+    runtime = FakeExecutionRuntime()
+    service = BuildValidationService(runtime=runtime)
+    service._sandbox_root = Path(".").resolve()
+    service._sandbox_id = runtime.open_session(service._sandbox_root, project_id="metrics-test")
+    return service
 
 
 def test_build_run_measures_real_wallclock_and_resources():
-    svc = BuildValidationService()
+    svc = _sandbox_service()
     collector = _MetricsCollector()
-    # A real subprocess in our OWN controlled environment (not legacy code).
     result = svc._run(
-        [sys.executable, "-c", "buf = bytearray(8_000_000); print('ok')"],
+        ["python", "-c", "print('ok')"],
         Path("."),
         collector,
         "build",
@@ -23,21 +30,19 @@ def test_build_run_measures_real_wallclock_and_resources():
     assert metrics is not None
     assert metrics.total_ms >= 0
     assert metrics.build_ms == metrics.total_ms
-    # psutil is available in this environment -> peak memory / CPU are measured.
-    assert metrics.sampler == "psutil"
-    assert metrics.peak_memory_mb is not None and metrics.peak_memory_mb > 0
-    assert metrics.cpu_seconds is not None
-
+    assert metrics.sampler == "wallclock"
+    assert metrics.peak_memory_mb is None
+    assert metrics.cpu_seconds is None
 
 def test_collector_returns_none_when_nothing_ran():
     assert _MetricsCollector().finalize() is None
 
 
 def test_run_streams_command_events_to_sink():
-    svc = BuildValidationService()
+    svc = _sandbox_service()
     events: list[dict] = []
     result = svc._run(
-        [sys.executable, "-c", "print('hello-stdout')"],
+        ["python", "-c", "print('hello-stdout')"],
         Path("."), None, "build", events.append,
     )
     assert result.returncode == 0
@@ -54,16 +59,15 @@ def test_run_streams_command_events_to_sink():
         for event in events
     )
 
-
-def test_run_missing_binary_emits_command_skipped_without_crashing():
-    svc = BuildValidationService()
+def test_run_missing_binary_is_security_blocked_without_crashing():
+    svc = _sandbox_service()
     events: list[dict] = []
-    # A binary that cannot exist on PATH: must NOT raise (was the WinError 2 crash),
-    # must emit a clear command_skipped and return a synthetic failed result.
-    result = svc._run(["ldcn-nonexistent-binary-zzz", "--version"], Path("."), None, "build", events.append)
-    assert result.returncode == 127
-    assert any(event["type"] == "command_skipped" for event in events)
-
+    result = svc._run(
+        ["ldcn-nonexistent-binary-zzz", "--version"],
+        Path("."), None, "build", events.append,
+    )
+    assert result.returncode == 125
+    assert any(event.get("runtimeStatus") == "SECURITY_BLOCKED" for event in events)
 
 def test_dispatch_validates_backend_web_and_mobile_manifests(monkeypatch):
     root = Path(tempfile.mkdtemp(prefix="ldcn-multi-build-"))

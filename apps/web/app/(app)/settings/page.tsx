@@ -377,7 +377,6 @@ function HealthCard({ score, checks, lastCheckedAt, offline, locale }: {
 
   let relChecked = '—';
   if (lastCheckedAt) {
-    // eslint-disable-next-line react-hooks/purity -- relative "checked N minutes ago" label must read the clock; drift across re-renders is the desired behavior
     const minutes = Math.round((lastCheckedAt - Date.now()) / 60000);
     try {
       relChecked = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(minutes, 'minute');

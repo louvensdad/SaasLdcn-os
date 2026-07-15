@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+import secrets
+
+from fastapi import APIRouter, Header, HTTPException, status
 from fastapi.responses import Response
 
 from app.core.config import get_settings
@@ -17,7 +19,13 @@ metrics_router = APIRouter(tags=["health"])
 
 
 @metrics_router.get("/metrics", include_in_schema=False)
-def get_metrics() -> Response:
+def get_metrics(authorization: str | None = Header(default=None)) -> Response:
+    settings = get_settings()
+    expected = settings.metrics_bearer_token
+    if settings.environment == "production":
+        supplied = authorization.removeprefix("Bearer ") if authorization else ""
+        if not expected or not secrets.compare_digest(supplied, expected):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Metrics authentication required.")
     body, content_type = render_latest()
     return Response(content=body, media_type=content_type)
 

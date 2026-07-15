@@ -4,6 +4,7 @@ import os
 import secrets
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
@@ -74,6 +75,30 @@ class Settings(BaseModel):
     # SQLAlchemy/Alembic use database_url as the source of truth.
     sqlite_path: Path = DATA_DIR / "ldcn_os.db"
     contracts_ready: bool = True
+    # --- LDCN Sandbox Execution Runtime (P0 isolation) ---
+    execution_runtime: str = Field(
+        default_factory=lambda: os.environ.get("EXECUTION_RUNTIME", "sandbox").strip().lower()
+    )
+    allow_host_execution: bool = Field(
+        default_factory=lambda: os.environ.get("ALLOW_HOST_EXECUTION", "false").strip().lower() in {"1", "true", "yes"}
+    )
+    sandbox_container_cli: str = Field(default_factory=lambda: os.environ.get("LDCN_SANDBOX_CONTAINER_CLI", "docker").strip())
+    sandbox_image: str = Field(default_factory=lambda: os.environ.get("LDCN_SANDBOX_IMAGE", "ldcn/sandbox-runtime:2026.07").strip())
+    sandbox_user: str = Field(default_factory=lambda: os.environ.get("LDCN_SANDBOX_USER", "65532:65532").strip())
+    sandbox_timeout_seconds: int = Field(default_factory=lambda: int(os.environ.get("LDCN_SANDBOX_TIMEOUT_SECONDS", "300")))
+    sandbox_memory_mb: int = Field(default_factory=lambda: int(os.environ.get("LDCN_SANDBOX_MEMORY_MB", "2048")))
+    sandbox_cpu_cores: float = Field(default_factory=lambda: float(os.environ.get("LDCN_SANDBOX_CPU_CORES", "1")))
+    sandbox_disk_mb: int = Field(default_factory=lambda: int(os.environ.get("LDCN_SANDBOX_DISK_MB", "1024")))
+    sandbox_pids: int = Field(default_factory=lambda: int(os.environ.get("LDCN_SANDBOX_PIDS", "128")))
+    sandbox_output_bytes: int = Field(default_factory=lambda: int(os.environ.get("LDCN_SANDBOX_OUTPUT_BYTES", str(2 * 1024 * 1024))))
+    sandbox_generated_file_bytes: int = Field(default_factory=lambda: int(os.environ.get("LDCN_SANDBOX_GENERATED_FILE_BYTES", str(256 * 1024 * 1024))))
+    sandbox_open_files: int = Field(default_factory=lambda: int(os.environ.get("LDCN_SANDBOX_OPEN_FILES", "1024")))
+    sandbox_egress_network: str = Field(default_factory=lambda: os.environ.get("LDCN_SANDBOX_EGRESS_NETWORK", "").strip())
+    sandbox_egress_proxy: str = Field(default_factory=lambda: os.environ.get("LDCN_SANDBOX_EGRESS_PROXY", "").strip())
+    sandbox_egress_proxy_container: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_SANDBOX_EGRESS_PROXY_CONTAINER", "ldcn-sandbox-egress-proxy").strip()
+    )
+    sandbox_evidence_root: Path = Field(default_factory=lambda: Path(os.environ.get("LDCN_SANDBOX_EVIDENCE_ROOT", DATA_DIR / "execution-evidence")))
 
     # --- Auth (Fase B) ---
     secret_key: str = Field(default_factory=_default_secret_key)
@@ -108,12 +133,22 @@ class Settings(BaseModel):
     frontend_base_url: str = Field(
         default_factory=lambda: os.environ.get("LDCN_FRONTEND_URL", "http://localhost:3000")
     )
-
+    api_public_base_url: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_API_PUBLIC_URL", "http://localhost:8000")
+    )
+    trusted_hosts: list[str] = Field(
+        default_factory=lambda: [
+            host.strip().lower() for host in os.environ.get(
+                "LDCN_TRUSTED_HOSTS", "localhost,127.0.0.1,testserver"
+            ).split(",") if host.strip()
+        ]
+    )
     # --- Security headers / rate limiting (Fase B) ---
     security_headers_enabled: bool = True
     hsts_enabled: bool = Field(default_factory=lambda: os.environ.get("LDCN_ENVIRONMENT", "local") == "production")
     rate_limit_enabled: bool = Field(default_factory=lambda: os.environ.get("LDCN_ENVIRONMENT", "local") == "production")
     redis_url: str = Field(default_factory=lambda: os.environ.get("LDCN_REDIS_URL", ""))
+    metrics_bearer_token: str = Field(default_factory=lambda: os.environ.get("LDCN_METRICS_BEARER_TOKEN", "").strip())
     # Generated projects are materialized locally for build tools, then snapshotted
     # to shared S3-compatible storage so another instance can restore them.
     artifact_storage_backend: str = Field(
@@ -204,8 +239,15 @@ class Settings(BaseModel):
     max_concurrent_generations_per_user: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_MAX_CONCURRENT_GENERATIONS", "3"))
     )
-
-    # --- User LLM key vault TTL ---
+    generation_job_lease_seconds: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_GENERATION_JOB_LEASE_SECONDS", "1800"))
+    )
+    generation_job_token_budget: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_GENERATION_JOB_TOKEN_BUDGET", "800000"))
+    )
+    generation_daily_token_budget: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_GENERATION_DAILY_TOKEN_BUDGET", "2000000"))
+    )    # --- User LLM key vault TTL ---
     # User-owned keys are session-scoped: they expire from the in-memory vault after
     # this many seconds (defence in depth on top of "RAM only, lost on restart").
     user_key_ttl_seconds: int = 3600
@@ -220,43 +262,92 @@ class Settings(BaseModel):
     modernize_user_llm_key: bool = True
     modernize_export: bool = True
 
-    # --- Modernize ingestion resource limits (Enterprise) ---
-    # The ingestion pipeline is NOT capped by file count: a monorepo with hundreds
-    # of thousands of files (node_modules/.git/build) is fully supported because
-    # those directories are ignored before anything is read. Limits are based on
-    # real resources only — the effective *analyzable* code size, a per-file cap,
-    # the compressed upload size, and a decompression-bomb ratio guard.
+    # --- Modernize ingestion resource limits ---
     modernize_max_analyzable_bytes: int = Field(
-        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ANALYZABLE_BYTES", str(2 * 1024 * 1024 * 1024)))
-    )  # 2 GB of effective code
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ANALYZABLE_BYTES", str(256 * 1024 * 1024)))
+    )
     modernize_max_file_bytes: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_FILE_BYTES", str(5 * 1024 * 1024)))
-    )  # 5 MB per file (skips minified bundles / generated blobs)
+    )
     modernize_max_upload_bytes: int = Field(
-        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_UPLOAD_BYTES", str(4 * 1024 * 1024 * 1024)))
-    )  # 4 GB compressed archive
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_UPLOAD_BYTES", str(256 * 1024 * 1024)))
+    )
+    modernize_max_archive_entries: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ARCHIVE_ENTRIES", "200000"))
+    )
+    modernize_max_archive_uncompressed_bytes: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ARCHIVE_UNCOMPRESSED_BYTES", str(1024 * 1024 * 1024)))
+    )
+    modernize_max_archive_depth: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ARCHIVE_DEPTH", "32"))
+    )
+    modernize_max_archive_name_bytes: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ARCHIVE_NAME_BYTES", "1024"))
+    )
+    modernize_archive_scan_timeout_seconds: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_ARCHIVE_SCAN_TIMEOUT_SECONDS", "15"))
+    )
     modernize_zip_bomb_ratio: int = Field(
-        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_ZIP_BOMB_RATIO", "1000"))
-    )  # reject the archive if total uncompressed / compressed exceeds this
-
+        default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_ZIP_BOMB_RATIO", "100"))
+    )
+    modernize_git_allowed_hosts: list[str] = Field(
+        default_factory=lambda: [
+            host.strip().lower() for host in os.environ.get(
+                "LDCN_MODERNIZE_GIT_ALLOWED_HOSTS", "github.com,gitlab.com,bitbucket.org"
+            ).split(",") if host.strip()
+        ]
+    )
 
 def _validate_production_settings(settings: Settings) -> None:
     """Reject configurations that would silently disable production guarantees."""
     if settings.artifact_storage_backend not in {"local", "s3"}:
         raise RuntimeError("LDCN_ARTIFACT_STORAGE must be 'local' or 's3'.")
+    if settings.execution_runtime not in {"sandbox", "host"}:
+        raise RuntimeError("EXECUTION_RUNTIME must be 'sandbox' or 'host'.")
+    if settings.execution_runtime == "host" and not settings.allow_host_execution:
+        raise RuntimeError("EXECUTION_RUNTIME=host requires ALLOW_HOST_EXECUTION=true.")
+    if settings.execution_runtime == "host" and settings.environment not in {"local", "development", "test"}:
+        raise RuntimeError("Host execution is forbidden outside local development.")
     if settings.environment != "production":
         return
+    if settings.execution_runtime != "sandbox" or settings.allow_host_execution:
+        raise RuntimeError("Production requires EXECUTION_RUNTIME=sandbox and ALLOW_HOST_EXECUTION=false.")
 
+    if len(settings.secret_key) < 32:
+        raise RuntimeError("Production LDCN_SECRET_KEY must contain at least 32 characters.")
+    if len(settings.token_encryption_key) < 32:
+        raise RuntimeError("Production requires a dedicated LDCN_TOKEN_ENC_KEY with at least 32 characters.")
+    if settings.token_encryption_key == settings.secret_key:
+        raise RuntimeError("JWT and token encryption keys must be distinct.")
+    for name, raw_url in (
+        ("LDCN_FRONTEND_URL", settings.frontend_base_url),
+        ("LDCN_API_PUBLIC_URL", settings.api_public_base_url),
+    ):
+        parsed = urlsplit(raw_url)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise RuntimeError(f"Production {name} must be an HTTPS origin without credentials.")
+    if any(urlsplit(origin).scheme != "https" for origin in settings.allowed_origins):
+        raise RuntimeError("Production CORS origins must use HTTPS.")
+    if not settings.trusted_hosts or "*" in settings.trusted_hosts:
+        raise RuntimeError("Production LDCN_TRUSTED_HOSTS must be an explicit non-wildcard list.")
     missing: list[str] = []
     if not settings.allowed_origins:
         missing.append("LDCN_ALLOWED_ORIGINS")
     if not settings.redis_url.strip():
         missing.append("LDCN_REDIS_URL")
+    if len(settings.metrics_bearer_token) < 32:
+        missing.append("LDCN_METRICS_BEARER_TOKEN (minimum 32 characters)")
     database_url = settings.database_url.lower()
     if not database_url.startswith(("postgresql://", "postgresql+")):
         missing.append("LDCN_DATABASE_URL (PostgreSQL required)")
     if settings.artifact_storage_backend != "s3":
         missing.append("LDCN_ARTIFACT_STORAGE=s3")
+    if not settings.sandbox_image:
+        missing.append("LDCN_SANDBOX_IMAGE")
+    if not settings.sandbox_egress_network:
+        missing.append("LDCN_SANDBOX_EGRESS_NETWORK")
+    if not settings.sandbox_egress_proxy:
+        missing.append("LDCN_SANDBOX_EGRESS_PROXY")
     if not settings.artifact_storage_bucket:
         missing.append("LDCN_ARTIFACT_BUCKET")
     if missing:

@@ -229,6 +229,16 @@ def test_prepare_generated_download_creates_safe_zip(client):
     assert Path(payload["download_url"]).as_posix().endswith(f"/api/generation/{project['project_id']}/download")
     assert root.name not in payload["download_url"]
 
+    catalog = client.get("/api/downloads")
+    assert catalog.status_code == 200
+    record = catalog.json()[0]
+    assert record["projectId"] == project["project_id"]
+    assert record["status"] == "prepared"
+    assert record["downloadUrl"] == payload["download_url"]
+    assert len(record["checksumSha256"]) == 64
+    assert record["sizeBytes"] == payload["zip_size_bytes"]
+    assert "artifactPath" not in record
+
 
 def test_generated_download_zip_excludes_secret_like_files(client):
     project, root = _generate_project(client)
@@ -274,6 +284,7 @@ def test_generated_download_returns_application_zip(client):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/zip")
     assert response.content.startswith(b"PK")
+    assert client.get(f"/api/downloads").json()[0]["status"] == "downloaded"
 
 
 def test_generated_large_file_preview_returns_limit_error(client):

@@ -103,7 +103,7 @@ class LlmSettingsService:
         selection = selection or self._implicit_selection(user_id)
         if selection is None:
             return ActiveLlmSettings(
-                reason="Nenhum LLM configurado. Configure um provider ou use o modo determinÃ­stico."
+                reason="Nenhum LLM configurado. Configure um provider ou use o modo determinístico."
             )
         definition = PROVIDERS[selection.provider]
         has_key = not definition.key_required or user_key_session.get(user_id, selection.provider) is not None
@@ -112,9 +112,9 @@ class LlmSettingsService:
             resolved_status = "expired"
         mode = "llm" if resolved_status == "ready" and has_key else "deterministic"
         reason = (
-            f"{definition.label} estÃ¡ configurado como LLM principal."
+            f"{definition.label} está configurado como LLM principal."
             if mode == "llm"
-            else f"NÃ£o foi possÃ­vel usar {definition.label}. A chave estÃ¡ ausente, invÃ¡lida ou expirada."
+            else f"Não foi possível usar {definition.label}. A chave está ausente, inválida ou expirada."
         )
         return ActiveLlmSettings(
             provider=selection.provider, providerLabel=definition.label, model=selection.model,
@@ -132,7 +132,7 @@ class LlmSettingsService:
         if deterministic:
             self._audit(user_id, "LLM_FALLBACK_DETERMINISTIC_USED")
             return LlmExecutionContext(LlmResolution(
-                mode="deterministic", reason="Modo determinÃ­stico escolhido explicitamente pelo usuÃ¡rio.",
+                mode="deterministic", reason="Modo determinístico escolhido explicitamente pelo usuário.",
                 fallbackUsed=True, keyStatus="not_configured",
                 requestedCapability=requested_capability,
             ), None)
@@ -144,7 +144,7 @@ class LlmSettingsService:
         if provider is None:
             return LlmExecutionContext(LlmResolution(
                 mode="deterministic",
-                reason="Nenhum LLM configurado; confirmaÃ§Ã£o de fallback determinÃ­stico Ã© necessÃ¡ria.",
+                reason="Nenhum LLM configurado; confirmação de fallback determinístico é necessária.",
                 fallbackUsed=True, keyStatus="not_configured",
                 requestedCapability=requested_capability,
             ), None)
@@ -177,7 +177,7 @@ class LlmSettingsService:
                 self._audit(user_id, "LLM_PROVIDER_FAILED")
                 return LlmExecutionContext(LlmResolution(
                     provider=provider, providerLabel=definition.label, model=model,
-                    mode="deterministic", reason=f"A chave de {definition.label} estÃ¡ ausente ou expirada.",
+                    mode="deterministic", reason=f"A chave de {definition.label} está ausente ou expirada.",
                     fallbackUsed=True, keyStatus="expired", requestedCapability=requested_capability,
                 ), None)
         with self._lock:

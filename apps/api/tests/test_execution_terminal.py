@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from fake_execution_runtime import FakeExecutionRuntime
+
 from app.services.execution_terminal_service import (
     ALLOWED_COMMANDS,
     ExecutionTerminalService,
@@ -32,6 +34,7 @@ def terminal():
         timeout_seconds=120,
         sessions_root=base / "sessions",
         workspace_root=workspace,
+        runtime=FakeExecutionRuntime(),
     )
     project = {"project_id": "project-1", "generated_project_path": str(project_root)}
     try:
@@ -110,7 +113,8 @@ def test_user_can_run_npm_install_manually(terminal):
     assert record.status == "completed"
     assert record.exit_code == 0
     assert record.executed_by == "user-1"
-    assert (root / "package-lock.json").is_file() or (root / "node_modules").exists()
+    assert record.runtime_status == "SUCCEEDED"
+    assert record.sandbox_id
 
 
 @pytest.mark.skipif(not _HAS_GIT, reason="git is unavailable")

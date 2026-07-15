@@ -40,9 +40,9 @@ cd ..\..
 
 The root `.\dev.cmd` command starts both applications. Press `Ctrl+C` to stop them together.
 
-- Backend URL: `http://127.0.0.1:8001`
+- Backend URL: `http://localhost:8001`
 - Frontend URL: `http://localhost:3000`
-- The frontend defaults to `http://127.0.0.1:8001` for API calls. Override with `NEXT_PUBLIC_API_URL` if needed.
+- The frontend defaults to `http://localhost:8001` for API calls. Override with `NEXT_PUBLIC_API_URL` if needed.
 
 ## Test
 
@@ -65,12 +65,11 @@ npm run build
 ## Current Limitations
 
 - Real model calls require provider SDKs + API keys (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`); without them, the deterministic Mock generator serves instead (signalled as `degraded`).
-- Authentication is JWT-based but not yet hardened for multi-instance production (in-memory rate limiter, ephemeral secret unless `LDCN_SECRET_KEY` is set).
-- Brownfield git ingestion requires a `git` binary on the server; only https/ssh remotes are accepted.
+- Production authentication requires explicit JWT/encryption secrets, PostgreSQL, Redis-backed distributed controls, trusted hosts, and HTTPS origins.
+- Brownfield Git ingestion runs in the sandbox, accepts HTTPS URLs only, and restricts hosts through `LDCN_MODERNIZE_GIT_ALLOWED_HOSTS`.
 - No PDF parsing, OCR, or contract analysis (inactive placeholder).
 
 ## Planned Features
 
-- User Key Boost for temporary user-owned AI keys.
 - PDF Contract Input for embedded-text contract understanding.
 - Future agent/service boundaries under `future`.

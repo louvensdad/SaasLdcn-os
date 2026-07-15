@@ -228,3 +228,15 @@ def test_login_rejects_oauth_only_account_without_500(client, oauth_settings, mo
     response = client.post("/api/auth/login", json={"email": email, "password": "anything-at-all"})
 
     assert response.status_code == 401
+
+
+def test_oauth_callback_url_uses_configured_public_origin_not_request_host(oauth_settings):
+    from app.routes.auth import _oauth_callback_url
+
+    previous = oauth_settings.api_public_base_url
+    oauth_settings.api_public_base_url = "https://api.example.com"
+    try:
+        callback = _oauth_callback_url(None, "google")  # request metadata is intentionally ignored
+    finally:
+        oauth_settings.api_public_base_url = previous
+    assert callback == "https://api.example.com/api/auth/oauth/google/callback"

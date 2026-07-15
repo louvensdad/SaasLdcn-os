@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -299,7 +299,7 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
         {summary.summary ? <p className="ds-body ds-text-muted">{summary.summary}</p> : null}
       </section>
 
-      {/* Engineering readiness â€” coverage based, honest */}
+      {/* Engineering readiness — coverage based, honest */}
       <Card className="glass noise space-y-4 p-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <h2 className="ds-subsection text-[color:var(--text)]">{t('review.readiness.title')}</h2>
@@ -385,7 +385,7 @@ function ReviewCenter({ room, setRoom }: { readonly room: ProjectRoom; readonly 
         )}
       </Card>
 
-      {/* Estimates â€” only real counts */}
+      {/* Estimates — only real counts */}
       {estimates.length ? (
         <Card className="glass space-y-4 p-6">
           <h2 className="ds-subsection text-[color:var(--text)]">{t('review.estimates.title')}</h2>

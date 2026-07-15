@@ -1,13 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
 import subprocess
-import sys
-import threading
-import time
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import unquote
@@ -25,6 +20,13 @@ from app.schemas.generation_validation import (
 )
 from app.services.build_error_classifier import ClassifiedBuildError, build_error_classifier, resolve_java_import
 from app.services.dependency_registry import dependency_registry
+from app.services.execution_runtime import (
+    ExecutionRequest,
+    ExecutionRuntime,
+    ExecutionStatus,
+    NetworkPolicy,
+    execution_runtime,
+)
 from app.services.dependency_research_service import dependency_research_service
 from app.services.stack_compatibility import stack_compatibility_engine
 from app.services.tailwind_theme_guard import tailwind_theme_guard
@@ -32,11 +34,6 @@ from app.services.tailwind_theme_guard import tailwind_theme_guard
 # Receives partial execution-event dicts (type/command/cwd/stream/stdout/...). The
 # caller (job engine) enriches them with id/jobId/timestamp/stage. None = no console.
 EventSink = Callable[[dict[str, Any]], None]
-
-try:  # Optional: enables peak-memory / CPU measurement of the build subprocess tree.
-    import psutil
-except ImportError:  # pragma: no cover - psutil is an optional dependency
-    psutil = None  # type: ignore[assignment]
 
 
 SECRET_LOG_RE = re.compile(
@@ -105,26 +102,50 @@ class _MetricsCollector:
 
 
 class BuildValidationService:
-    def __init__(self, timeout_seconds: int = 180) -> None:
+    def __init__(self, timeout_seconds: int = 180, runtime: ExecutionRuntime | None = None) -> None:
         self.timeout_seconds = timeout_seconds
         self.workspace_root = BASE_DIR.parents[1].resolve()
+        self.runtime = runtime or execution_runtime
+
+        self._sandbox_id = ""
+        self._sandbox_root: Path | None = None
 
     def validate(self, project: dict[str, Any], *, event_sink: EventSink | None = None) -> BuildValidationReport:
         root = self._project_root(project)
         if get_settings().force_mock:
             return self._skipped("Build validation skipped in mock mode.")
         collector = _MetricsCollector()
+        if not self._has_supported_manifest(root):
+            report = self._dispatch(root, collector, event_sink)
+            report.metrics = collector.finalize()
+            return report
+        self._sandbox_root = root
         try:
+            self._sandbox_id = self.runtime.open_session(
+                root,
+                project_id=str(project.get("project_id") or ""),
+                workspace_id=str(project.get("workspace_id") or project.get("workspaceId") or ""),
+                job_id=str(project.get("job_id") or project.get("jobId") or ""),
+            )
             report = self._dispatch(root, collector, event_sink)
         except subprocess.TimeoutExpired as exc:
             report = BuildValidationReport(
-                installed="failed",
-                built="skipped_after_failure",
-                ok=False,
+                installed="failed", built="skipped_after_failure", ok=False,
                 skipped_reason=f"Build validation timed out after {self.timeout_seconds}s.",
                 logs_tail=self._tail((exc.stdout or "") + "\n" + (exc.stderr or "")),
                 recovery_status="SKIPPED_AFTER_FAILURE",
             )
+        except (OSError, RuntimeError, ValueError) as exc:
+            report = BuildValidationReport(
+                installed="failed", built="skipped_after_failure", ok=False,
+                skipped_reason=f"SANDBOX_ERROR: {exc}", logs_tail=self._redact(str(exc)),
+                recovery_status="SKIPPED_AFTER_FAILURE",
+            )
+        finally:
+            if self._sandbox_id:
+                self.runtime.close_session(self._sandbox_id)
+            self._sandbox_id = ""
+            self._sandbox_root = None
         if not report.ok and report.recovery_status != "SKIPPED_AFTER_FAILURE":
             report.built = "skipped_after_failure"
             report.recovery_status = "SKIPPED_AFTER_FAILURE"
@@ -133,7 +154,22 @@ class BuildValidationService:
             report.manual_fix_guide = self._manual_fix_guide(root, [], [], None, report.logs_tail)
         report.metrics = collector.finalize()
         return report
-
+    @staticmethod
+    def _has_supported_manifest(root: Path) -> bool:
+        fixed = (
+            "requirements.txt", "package.json", "pom.xml", "build.gradle",
+            "build.gradle.kts", "go.mod", "composer.json", "Cargo.toml",
+        )
+        candidates = ("", "apps/api", "apps/web", "frontend", "backend", "apps/mobile")
+        for candidate in candidates:
+            target = (root / candidate).resolve()
+            if any((target / name).is_file() for name in fixed):
+                return True
+            if target.is_dir() and (
+                next(target.glob("*.sln"), None) or next(target.glob("*.csproj"), None)
+            ):
+                return True
+        return False
     def _dispatch(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
         targets: list[tuple[str, Path]] = []
         seen: set[tuple[str, Path]] = set()
@@ -239,24 +275,17 @@ class BuildValidationService:
         )
 
     def _python(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
-        if shutil.which(sys.executable) is None:
-            return self._skipped("Python executable is unavailable.")
         venv = root / ".ldcn-venv"
-        create = self._run([sys.executable, "-m", "venv", str(venv)], root, collector, "install", sink)
+        create = self._run(["python", "-m", "venv", ".ldcn-venv"], root, collector, "install", sink)
         if create.returncode != 0:
             return self._failed_install(create)
-        pip = venv / ("Scripts/pip.exe" if sys.platform.startswith("win") else "bin/pip")
-        install = self._run([str(pip), "install", "-r", "requirements.txt"], root, collector, "install", sink)
+        pip = ".ldcn-venv/bin/pip"
+        install = self._run([pip, "install", "-r", "requirements.txt"], root, collector, "install", sink)
         if install.returncode != 0:
             return self._failed_install(install)
         return BuildValidationReport(installed="passed", built="skipped", ok=True, logs_tail=self._tail(install.stdout + install.stderr))
 
     def _node(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
-        if not shutil.which("npm"):
-            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": "npm install",
-                              "cwd": str(root), "message": "npm nao esta disponivel no servidor; build pulado.", "exitCode": 127})
-            return self._skipped("npm is unavailable on the server.")
-
         commands: list[dict[str, Any]] = []
         repairs: list[dict[str, Any]] = []
         error_counts: dict[str, int] = {}
@@ -777,11 +806,6 @@ class BuildValidationService:
         Maven coordinate and added to the failing module's pom.xml, then the compile
         is retried. Unlike npm, Maven has no separate install phase - resolution and
         compilation happen in one `mvn compile`, so both stages pass or fail together."""
-        if not shutil.which("mvn"):
-            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": "mvn -q -DskipTests compile",
-                              "cwd": str(root), "message": "mvn nao esta disponivel no servidor; build pulado.", "exitCode": 127})
-            return self._skipped("mvn is unavailable on the server.")
-
         commands: list[dict[str, Any]] = []
         repairs: list[dict[str, Any]] = []
         error_counts: dict[str, int] = {}
@@ -946,7 +970,7 @@ class BuildValidationService:
         return lookup.latest_version
 
     def _gradle(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
-        wrapper = root / ("gradlew.bat" if sys.platform.startswith("win") else "gradlew")
+        wrapper = root / "gradlew"
         if wrapper.is_file():
             command = [str(wrapper), "build", "-x", "test"]
             return self._compile_ecosystem(root, collector, sink, tool=str(wrapper), command=command, tool_available=True)
@@ -964,10 +988,6 @@ class BuildValidationService:
         return self._compile_ecosystem(root, collector, sink, tool="dotnet", command=["dotnet", "build", "--nologo"])
 
     def _composer(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
-        if not shutil.which("composer"):
-            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": "composer install",
-                              "cwd": str(root), "message": "composer nao esta disponivel no servidor; build pulado.", "exitCode": 127})
-            return self._skipped("composer is unavailable on the server.")
         install = self._run(["composer", "install", "--no-interaction", "--no-progress"], root, collector, "install", sink)
         if install.returncode != 0:
             return self._failed_install(install)
@@ -986,11 +1006,6 @@ class BuildValidationService:
         """Shared compile-style runner (maven/gradle/go/cargo/dotnet): dependency
         resolution and compilation happen in one command, so install/built pass or
         fail together. Missing toolchain skips gracefully, never fails the stage."""
-        available = tool_available if tool_available is not None else bool(shutil.which(tool))
-        if not available:
-            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": subprocess.list2cmdline(command),
-                              "cwd": str(root), "message": f"{tool} nao esta disponivel no servidor; build pulado.", "exitCode": 127})
-            return self._skipped(f"{tool} is unavailable on the server.")
         result = self._run(command, root, collector, "build", sink)
         if result.returncode != 0:
             return BuildValidationReport(installed="failed", built="failed", ok=False, logs_tail=self._tail(result.stdout + result.stderr))
@@ -1006,134 +1021,77 @@ class BuildValidationService:
         records: list[dict[str, Any]] | None = None,
         record_phase: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        """Run a build subprocess, STREAMING its stdout/stderr line-by-line to the
-        live console while measuring real wall-clock duration (always) plus peak
-        memory / CPU of the process tree when psutil is available.
-
-        Resolves the executable via shutil.which so Windows launchers (npm.cmd /
-        mvn.cmd) run instead of raising WinError 2. A genuinely missing binary emits
-        a clear command_skipped event and returns a synthetic failed result rather
-        than crashing the pipeline thread."""
+        if not self._sandbox_id or self._sandbox_root is None:
+            raise RuntimeError("Build command attempted without an active sandbox.")
         display = subprocess.list2cmdline(command)
-        cwd = str(root)
-        exe = command[0]
-        resolved = exe if os.path.isabs(exe) else (shutil.which(exe) or exe)
-        full = [resolved, *command[1:]]
-
-        self._emit(sink, {"type": "command_started", "command": display, "cwd": cwd, "message": f"$ {display}"})
-        start = time.monotonic()
-        try:
-            popen = psutil.Popen if psutil is not None else subprocess.Popen
-            proc = popen(full, cwd=cwd, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
-        except FileNotFoundError:
-            message = f"Executavel '{exe}' nao encontrado no PATH do servidor."
-            self._emit(sink, {"type": "command_skipped", "level": "warning", "command": display,
-                              "cwd": cwd, "message": message, "exitCode": 127})
-            if records is not None:
-                records.append({"phase": record_phase or phase, "command": display, "cwd": cwd,
-                                "exit_code": 127, "duration_ms": 0, "stdout_tail": "", "stderr_tail": message,
-                                "stdout": "", "stderr": message})
-            return subprocess.CompletedProcess(command, 127, "", message)
-
-        out_lines: list[str] = []
-        err_lines: list[str] = []
-
-        def pump(pipe: Any, bucket: list[str], stream_name: str) -> None:
+        relative_cwd = root.resolve().relative_to(self._sandbox_root).as_posix() or "."
+        sandbox_command = list(command)
+        executable = Path(sandbox_command[0])
+        if executable.is_absolute():
             try:
-                for line in iter(pipe.readline, ""):
-                    text = line.rstrip("\n")
-                    bucket.append(text)
-                    self._emit(sink, {"type": "command_output", "stream": stream_name,
-                                      "level": "error" if stream_name == "stderr" else "info",
-                                      "message": self._redact(text)})
-            finally:
-                try:
-                    pipe.close()
-                except OSError:
-                    pass
-
-        pumps = [
-            threading.Thread(target=pump, args=(proc.stdout, out_lines, "stdout"), daemon=True),
-            threading.Thread(target=pump, args=(proc.stderr, err_lines, "stderr"), daemon=True),
-        ]
-        for thread in pumps:
-            thread.start()
-
-        peak_bytes = 0
-        cpu_seconds = 0.0
-        stop = threading.Event()
-        sampler = "wallclock"
-        sample_thread: threading.Thread | None = None
-        if psutil is not None:
-            sampler = "psutil"
-
-            def sample() -> None:
-                nonlocal peak_bytes, cpu_seconds
-                while not stop.is_set():
-                    try:
-                        procs = [proc, *proc.children(recursive=True)]
-                        rss = 0
-                        cpu = 0.0
-                        for p in procs:
-                            try:
-                                rss += p.memory_info().rss
-                                times = p.cpu_times()
-                                cpu += times.user + times.system
-                            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                continue
-                        peak_bytes = max(peak_bytes, rss)
-                        cpu_seconds = max(cpu_seconds, cpu)
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-                    stop.wait(0.1)
-
-            sample_thread = threading.Thread(target=sample, daemon=True)
-            sample_thread.start()
-
-        timed_out = False
-        try:
-            proc.wait(timeout=self.timeout_seconds)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            proc.kill()
-        finally:
-            stop.set()
-            for thread in pumps:
-                thread.join(timeout=2.0)
-            if sample_thread is not None:
-                sample_thread.join(timeout=1.0)
-
-        elapsed_ms = int((time.monotonic() - start) * 1000)
+                sandbox_command[0] = "./" + executable.resolve().relative_to(self._sandbox_root).as_posix()
+            except ValueError:
+                sandbox_command[0] = executable.name
+        network = self._network_policy(sandbox_command)
+        self._emit(sink, {
+            "type": "command_started", "command": display, "cwd": relative_cwd,
+            "sandboxId": self._sandbox_id, "message": f"$ {display}",
+        })
+        self.runtime.sync_workspace(self._sandbox_id)
+        result = self.runtime.execute(
+            self._sandbox_id,
+            ExecutionRequest(
+                command=tuple(sandbox_command), project_id="", cwd=relative_cwd,
+                network=network, limits=self.runtime.default_limits(self.timeout_seconds),
+                source=f"build:{phase}",
+            ),
+            on_line=lambda stream, line: self._emit(sink, {
+                "type": "command_output", "stream": stream,
+                "level": "error" if stream == "stderr" else "info", "message": line,
+                "sandboxId": self._sandbox_id,
+            }),
+        )
+        elapsed_ms = result.duration_ms
         if collector is not None:
-            collector.add(
-                phase, elapsed_ms,
-                peak_bytes / (1024 * 1024) if psutil is not None else None,
-                cpu_seconds if psutil is not None else None,
-                sampler,
-            )
-        stdout = "\n".join(out_lines)
-        stderr = "\n".join(err_lines)
-
+            collector.add(phase, elapsed_ms, None, None, "wallclock")
+        stdout = self._redact(result.stdout)
+        stderr = self._redact(result.stderr)
+        exit_code = result.exit_code if result.exit_code is not None else 125
         if records is not None:
-            records.append({"phase": record_phase or phase, "command": display, "cwd": cwd,
-                            "exit_code": None if timed_out else proc.returncode, "duration_ms": elapsed_ms,
-                            "stdout_tail": self._tail(stdout, 40), "stderr_tail": self._tail(stderr, 40),
-                            "stdout": self._redact(stdout), "stderr": self._redact(stderr)})
-
-        if timed_out:
-            self._emit(sink, {"type": "command_finished", "level": "error", "command": display, "cwd": cwd,
-                              "durationMs": elapsed_ms, "exitCode": None,
-                              "message": f"Comando excedeu {self.timeout_seconds}s e foi encerrado.",
-                              "stdout": self._tail(stdout), "stderr": self._tail(stderr)})
+            records.append({
+                "phase": record_phase or phase, "command": result.command, "cwd": relative_cwd,
+                "exit_code": result.exit_code, "duration_ms": elapsed_ms,
+                "stdout_tail": self._tail(stdout, 40), "stderr_tail": self._tail(stderr, 40),
+                "stdout": stdout, "stderr": stderr,
+            })
+        if result.status == ExecutionStatus.TIMED_OUT:
             raise subprocess.TimeoutExpired(command, self.timeout_seconds, output=stdout, stderr=stderr)
+        if result.status in {
+            ExecutionStatus.RESOURCE_LIMIT_EXCEEDED, ExecutionStatus.SECURITY_BLOCKED,
+            ExecutionStatus.CANCELLED, ExecutionStatus.SANDBOX_ERROR,
+        }:
+            stderr = (stderr + "\n" + result.failure_reason).strip()
+        self._emit(sink, {
+            "type": "command_finished", "level": "error" if exit_code != 0 else "info",
+            "command": result.command, "cwd": relative_cwd, "durationMs": elapsed_ms,
+            "exitCode": result.exit_code, "runtimeStatus": result.status.value,
+            "sandboxId": result.sandbox_id,
+            "message": result.failure_reason or f"Comando finalizado (exit {exit_code}) em {elapsed_ms} ms.",
+            "stdout": self._tail(stdout), "stderr": self._tail(stderr),
+        })
+        return subprocess.CompletedProcess(command, exit_code, stdout, stderr)
 
-        self._emit(sink, {"type": "command_finished",
-                          "level": "error" if proc.returncode != 0 else "info",
-                          "command": display, "cwd": cwd, "durationMs": elapsed_ms, "exitCode": proc.returncode,
-                          "message": f"Comando finalizado (exit {proc.returncode}) em {elapsed_ms} ms.",
-                          "stdout": self._tail(stdout), "stderr": self._tail(stderr)})
-        return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
-
+    @staticmethod
+    def _network_policy(command: list[str]) -> NetworkPolicy:
+        program = Path(command[0]).name.lower()
+        args = {arg.lower() for arg in command[1:]}
+        if program in {"pip", "pip3", "mvn", "mvnw", "gradle", "gradlew", "go", "cargo", "composer", "dotnet"}:
+            return NetworkPolicy.PACKAGE_REGISTRY
+        if program == "npm" and args.intersection({"install", "ci", "exec", "audit", "view", "outdated"}):
+            return NetworkPolicy.PACKAGE_REGISTRY
+        if program == "npx":
+            return NetworkPolicy.PACKAGE_REGISTRY
+        return NetworkPolicy.NONE
     @staticmethod
     def _emit(sink: EventSink | None, payload: dict[str, Any]) -> None:
         if sink is None:

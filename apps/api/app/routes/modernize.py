@@ -69,6 +69,7 @@ from app.services.codebase_ingest_service import (
     IngestResult,
     codebase_ingest_service,
 )
+from app.services.artifact_security import sanitize_untrusted_source
 from app.services.file_protocol import EmittedFile
 from app.services.generated_project_service import GeneratedProjectService
 from app.services.git_provider_service import git_provider_service
@@ -141,7 +142,7 @@ def _materialize(ingest_id: str, project_name: str) -> object:
             content = abs_path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        files.append(EmittedFile(path=rel, content=content))
+        files.append(EmittedFile(path=rel, content=sanitize_untrusted_source(content)))
     return ProjectWriter().write(files, project_name=project_name, metadata={"source": "modernize", "ingest_id": ingest_id})
 
 
@@ -304,7 +305,7 @@ def _deep_sse(event: dict) -> str:
 def modernize_deep_analyze_stream(payload: ModernizeDeepAnalyzeRequest) -> StreamingResponse:
     """Stream a deliberate, deep engineering analysis of the ingested codebase
     (inventory, stack, smells, security, dependencies, risk, modernization plan,
-    validation) BEFORE the modernization runs â€” so the analysis reads as real
+    validation) BEFORE the modernization runs — so the analysis reads as real
     engineering, not an instant result."""
     meta = _INGESTS.get(payload.ingest_id)
     if meta is None:
@@ -339,7 +340,7 @@ _ASK_SYSTEM_PROMPT = (
 
 
 def _deterministic_answer(question: str, inventory, diagnosis, plan, executive) -> tuple[str, list[str]]:
-    """Honest, grounded answer built only from the real analysis â€” no LLM, no invention."""
+    """Honest, grounded answer built only from the real analysis — no LLM, no invention."""
     q = question.lower()
     grounded: list[str] = []
     sec = list(diagnosis.security_findings)
@@ -561,7 +562,7 @@ def modernize_llm_test(payload: LlmConnectionTestRequest, user: CurrentUser) -> 
             user_choice=_default_model_for(provider),
             api_key=api_key,
         )
-    except Exception as exc:  # noqa: BLE001 Ã¢â‚¬â€ any provider/SDK/network failure means "not connected"
+    except Exception as exc:  # noqa: BLE001 — any provider/SDK/network failure means "not connected"
         _audit(user["user_id"], "llm_connection_tested")
         return LlmConnectionTestResult(ok=False, provider=provider, model=None, message=f"Falha na conexão: {exc}"[:300], degraded=False)
     _audit(user["user_id"], "llm_connection_tested")

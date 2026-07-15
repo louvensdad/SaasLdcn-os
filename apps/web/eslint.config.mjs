@@ -1,25 +1,19 @@
-import next from "eslint-config-next";
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { FlatCompat } from '@eslint/eslintrc';
 
-const eslintConfig = [
+const baseDirectory = path.dirname(fileURLToPath(import.meta.url));
+const compat = new FlatCompat({ baseDirectory });
+
+export default [
   {
     ignores: [
-      ".next/**",
-      ".next-responsive/**",
-      "node_modules/**",
-      "test-results/**",
-      "next-env.d.ts",
+      '.next/**',
+      '.next-responsive/**',
+      'node_modules/**',
+      'test-results/**',
+      'next-env.d.ts',
     ],
   },
-  ...next,
-  {
-    rules: {
-      // Staged rollout (same approach as the typography audit baseline): 36
-      // pre-existing occurrences across core pages (wizard, meta-factory,
-      // modernize, ...). Refactoring them wholesale risks regressions, so new
-      // code sees the warning while existing pages are migrated page-by-page.
-      "react-hooks/set-state-in-effect": "warn",
-    },
-  },
+  ...compat.extends('next/core-web-vitals', 'next/typescript'),
 ];
-
-export default eslintConfig;

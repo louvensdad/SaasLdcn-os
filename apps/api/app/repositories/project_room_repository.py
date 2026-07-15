@@ -76,7 +76,7 @@ class ProjectRoomRepository:
             "room_id": room_id,
             "owner_user_id": owner_user_id,
             "workspace_id": workspace_id,
-            "title": (title or "Nova CriaÃ§Ã£o").strip()[:200] or "Nova CriaÃ§Ã£o",
+            "title": (title or "Nova Criação").strip()[:200] or "Nova Criação",
             "status": "DRAFT",
             "delivery_type": delivery_type or "web",
             "preferred_language": preferred_language or "",

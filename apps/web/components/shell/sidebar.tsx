@@ -48,7 +48,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
             <CircuitBoard className="h-5 w-5 text-[color:var(--accent)]" strokeWidth={1.75} />
           </div>
           <div>
-            <p className="type-data text-[0.625rem] font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+            <p className="type-data text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
               {t('product.name')}
             </p>
             <p className="ds-subsection leading-tight text-[color:var(--text)]">

@@ -3,13 +3,21 @@ from __future__ import annotations
 import io
 import re
 import shutil
-import subprocess
+import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from app.core.config import BASE_DIR, get_settings
+from app.services.execution_runtime import (
+    ExecutionRequest,
+    ExecutionRuntime,
+    ExecutionStatus,
+    NetworkPolicy,
+    execution_runtime,
+)
 
 # Brownfield ingestion (Enterprise): accept an existing codebase as a .zip upload or
 # a git URL, extract ONLY the relevant code into a sandbox, and build a read-only
@@ -161,9 +169,11 @@ def _complexity_band(lines: int) -> str:
 
 
 class CodebaseIngestService:
-    def __init__(self, root: Path | None = None):
+    def __init__(self, root: Path | None = None, runtime: ExecutionRuntime | None = None):
         self._root = Path(root).resolve() if root else INGEST_ROOT
         self._roots: dict[str, Path] = {}
+        self.runtime = runtime or execution_runtime
+
 
     # --- limits (read live from settings so env overrides apply) ------------- #
 
@@ -233,6 +243,7 @@ class CodebaseIngestService:
             # No testzip(): it would decompress every member (incl. ignored trees),
             # defeating streaming on huge archives. Corrupt members raise on read.
             with zipfile.ZipFile(fileobj) as zf:
+                self._validate_archive_manifest(zf)
                 stats = self._extract_relevant(zf, dest, max_analyzable, max_file, bomb_ratio)
         except zipfile.BadZipFile as exc:
             shutil.rmtree(dest, ignore_errors=True)
@@ -246,6 +257,27 @@ class CodebaseIngestService:
         self._roots[ingest_id] = dest
         return IngestResult(ingest_id, "zip", dest, stats.ignored_count, stats)
 
+    @staticmethod
+    def _validate_archive_manifest(zf: zipfile.ZipFile) -> None:
+        settings = get_settings()
+        infos = zf.infolist()
+        if len(infos) > settings.modernize_max_archive_entries:
+            raise CodebaseIngestError("Archive contains too many entries.")
+        deadline = time.monotonic() + settings.modernize_archive_scan_timeout_seconds
+        declared_total = 0
+        for info in infos:
+            if time.monotonic() > deadline:
+                raise CodebaseIngestError("Archive manifest scan timed out.")
+            name = info.filename.replace("\\", "/")
+            if len(name.encode("utf-8", errors="replace")) > settings.modernize_max_archive_name_bytes:
+                raise CodebaseIngestError("Archive contains an overlong entry name.")
+            if len(Path(name).parts) > settings.modernize_max_archive_depth:
+                raise CodebaseIngestError("Archive entry exceeds the maximum path depth.")
+            if info.file_size < 0 or info.compress_size < 0:
+                raise CodebaseIngestError("Archive contains invalid size metadata.")
+            declared_total += info.file_size
+            if declared_total > settings.modernize_max_archive_uncompressed_bytes:
+                raise CodebaseIngestError("Archive declared size exceeds the uncompressed limit.")
     def _extract_relevant(
         self,
         zf: zipfile.ZipFile,
@@ -422,31 +454,49 @@ class CodebaseIngestService:
 
     def ingest_git(self, git_url: str) -> IngestResult:
         url = git_url.strip()
-        if not (url.startswith("https://") or url.startswith("git@")):
-            raise CodebaseIngestError("Only https:// or git@ remotes are allowed.")
-        if "file://" in url or url.startswith("/") or "\\" in url:
-            raise CodebaseIngestError("Local/file remotes are not allowed.")
+        try:
+            parsed = urlsplit(url)
+            host = (parsed.hostname or "").encode("idna").decode("ascii").lower().rstrip(".")
+        except (UnicodeError, ValueError) as exc:
+            raise CodebaseIngestError("Invalid Git remote URL.") from exc
+        allowed_hosts = set(get_settings().modernize_git_allowed_hosts)
+        if parsed.scheme != "https" or not host:
+            raise CodebaseIngestError("Only HTTPS Git remotes are supported by the sandbox egress policy.")
+        if parsed.username or parsed.password or parsed.port not in {None, 443}:
+            raise CodebaseIngestError("Git URL credentials and non-standard ports are not allowed.")
+        if host not in allowed_hosts:
+            raise CodebaseIngestError("Git remote host is not in the approved provider allowlist.")
+        if "\\" in url or parsed.query or parsed.fragment:
+            raise CodebaseIngestError("Git remote URL contains forbidden components.")
 
         ingest_id = f"ingest_{uuid4().hex[:12]}"
         dest = self._root / ingest_id
         dest.mkdir(parents=True, exist_ok=True)
+        sandbox_id = ""
         try:
-            subprocess.run(
-                ["git", "clone", "--depth", "1", "--", url, str(dest)],
-                check=True,
-                capture_output=True,
-                timeout=GIT_CLONE_TIMEOUT_SECONDS,
+            sandbox_id = self.runtime.open_session(dest, project_id=ingest_id)
+            result = self.runtime.execute(
+                sandbox_id,
+                ExecutionRequest(
+                    command=("git", "clone", "--depth", "1", "--", url, "."),
+                    project_id=ingest_id, network=NetworkPolicy.GIT,
+                    limits=self.runtime.default_limits(GIT_CLONE_TIMEOUT_SECONDS),
+                    source="modernize-git-ingest",
+                ),
             )
-        except FileNotFoundError as exc:
+            if result.status != ExecutionStatus.SUCCEEDED:
+                detail = (result.stderr or result.failure_reason or result.status.value)[:200]
+                raise CodebaseIngestError(f"git clone failed in sandbox: {detail}")
+            self.runtime.export_workspace(sandbox_id, dest)
+        except CodebaseIngestError:
             shutil.rmtree(dest, ignore_errors=True)
-            raise CodebaseIngestError("git is not installed on the server.") from exc
-        except subprocess.TimeoutExpired as exc:
+            raise
+        except (OSError, RuntimeError, ValueError) as exc:
             shutil.rmtree(dest, ignore_errors=True)
-            raise CodebaseIngestError("git clone timed out.") from exc
-        except subprocess.CalledProcessError as exc:
-            shutil.rmtree(dest, ignore_errors=True)
-            detail = (exc.stderr or b"").decode("utf-8", "ignore")[:200]
-            raise CodebaseIngestError(f"git clone failed: {detail}") from exc
+            raise CodebaseIngestError(f"SANDBOX_ERROR: {exc}") from exc
+        finally:
+            if sandbox_id:
+                self.runtime.close_session(sandbox_id)
 
         shutil.rmtree(dest / ".git", ignore_errors=True)
         self._roots[ingest_id] = dest
@@ -454,7 +504,6 @@ class CodebaseIngestService:
         stats.frameworks = self._detect_frameworks(dest)
         stats.complexity = _complexity_band(stats.lines_of_code)
         return IngestResult(ingest_id, "git", dest, stats.ignored_count, stats)
-
     def _stats_for_dir(self, root: Path) -> IngestStats:
         """Build the pre-analysis report for an already-materialized directory by
         applying the same Smart Ignore Engine + relevance + resource rules."""

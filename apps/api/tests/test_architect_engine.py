@@ -103,3 +103,21 @@ def test_llm_blueprint_recovered_from_markdown_fenced_json(monkeypatch):
     assert {"backend", "frontend"} <= areas
     assert bp.responseDiagnostics is not None
     assert bp.responseDiagnostics["extractor_used"] == "fenced_json"
+
+
+def test_flutter_is_rejected_by_the_public_project_spec_contract():
+    payload = _spec().model_dump(mode="json")
+    payload["delivery_type"] = "mobile"
+    payload["mobile_stack"] = "flutter"
+    with pytest.raises(ValueError, match="mobile_stack"):
+        ProjectSpec.model_validate(payload)
+
+
+def test_native_performance_signals_do_not_select_unsupported_flutter():
+    spec = _spec()
+    spec.delivery_type = "mobile"
+    spec.non_functional["performance"] = "camera nativa e processamento em background"
+    blueprint = build_blueprint(spec, project_id="room_expo_only")
+    mobile = next(item for item in blueprint.decisions if item.area == "mobile")
+    assert "Expo" in mobile.choice
+    assert "Flutter" not in mobile.choice

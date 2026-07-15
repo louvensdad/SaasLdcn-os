@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -223,7 +223,6 @@ function ModuleCard({ item, onOpen }: { readonly item: RoadmapItem; readonly onO
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/5 text-[color:var(--accent)]">
-            {/* eslint-disable-next-line react-hooks/static-components -- iconFor is a stable lookup into a module-level table, not a component created per render */}
             <Icon className="h-4 w-4" aria-hidden />
           </span>
           <div className="min-w-0">

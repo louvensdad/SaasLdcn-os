@@ -3,59 +3,43 @@ from __future__ import annotations
 import json
 import re
 import shlex
-import shutil
-import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from app.schemas.execution_terminal import TerminalCommandRecord
+from app.services.execution_runtime import (
+    ExecutionRequest,
+    ExecutionRuntime,
+    ExecutionStatus,
+    NetworkPolicy,
+    SandboxExecutionRuntime,
+    execution_runtime,
+)
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT
 
-# LDCN Execution Terminal: real, controlled command execution INSIDE a generated
-# project's workspace. It exists so a failed build never leaves the user without
-# a human intervention path — the AI auto-repair is bounded (2 attempts) and when
-# it gives up, this terminal is the escape hatch.
-#
-# Security model (honest scope — this is command control, not a container):
-# - the working directory is CONFINED to the generated project root (any cwd or
-#   node-script path that resolves outside it is rejected);
-# - only allowlisted programs/subcommands run (npm / git read-only / node script);
-# - no shell: the command is tokenized and executed with shell=False, and shell
-#   metacharacters (| & ; > < ` $ \n) are rejected outright;
-# - output is sanitized (secret redaction) before persisting/streaming;
-# - every execution lands in a durable per-project history (the audit trail).
-
-LineSink = Callable[[str, str], None]  # (stream, line)
-
-_SECRET_RE = re.compile(
-    r"(?i)(secret|token|password|api[_-]?key|private[_-]?key|credential)(\s*[=:]\s*)\S+"
-)
+LineSink = Any
 _SHELL_META_RE = re.compile(r"[|&;<>`$\r\n]")
 
-# Program -> allowed first argument (None entry = bare program allowed).
-# npm run <any-script> is allowed by design: project scripts are the whole point.
 ALLOWED_COMMANDS: dict[str, set[str | None]] = {
     "npm": {"install", "ci", "run", "test", "exec", "ls", "audit", "view", "outdated", "--version", "-v"},
     "git": {"status", "log", "diff", "branch", "show", "remote", "--version"},
-    "node": set(),  # validated separately: script path must resolve inside the project
+    "node": set(),
     "npx": {"tsc", "eslint", "vitest", "jest", "prettier", "next"},
 }
-
 ALLOWED_COMMANDS_DISPLAY = [
     "npm install", "npm run build", "npm run test", "npm run lint", "npm ci",
     "git status", "git log", "git diff", "node <script dentro do projeto>",
     "npx tsc|eslint|vitest|jest|prettier|next",
 ]
-
 HISTORY_LIMIT = 200
 SESSIONS_ROOT = DEFAULT_OUTPUT_ROOT.parent / "terminal-sessions"
 
 
 class TerminalCommandRejected(ValueError):
-    """Raised when a command violates the allowlist / confinement rules."""
+    pass
 
 
 class ExecutionTerminalService:
@@ -64,13 +48,15 @@ class ExecutionTerminalService:
         timeout_seconds: int = 300,
         sessions_root: Path | None = None,
         workspace_root: Path | None = None,
+        runtime: ExecutionRuntime | None = None,
     ) -> None:
         self.timeout_seconds = timeout_seconds
         self.sessions_root = (sessions_root or SESSIONS_ROOT).resolve()
-        # Terminal sessions are confined UNDER this root (generated projects only).
         self.workspace_root = (workspace_root or DEFAULT_OUTPUT_ROOT).resolve()
+        self.runtime = runtime or execution_runtime
+        self._active: dict[str, str] = {}
+        self._active_lock = threading.RLock()
 
-    # ----------------------------------------------------------------- public
     def execute(
         self,
         project: dict[str, Any],
@@ -81,9 +67,6 @@ class ExecutionTerminalService:
         source: str = "user",
         on_line: LineSink | None = None,
     ) -> TerminalCommandRecord:
-        """Validate + run one command inside the project workspace, streaming
-        sanitized lines through `on_line` and persisting the durable record.
-        A rejected command is ALSO recorded (audit trail of attempts)."""
         project_id = str(project["project_id"])
         started_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         record_id = f"term_{uuid4().hex[:12]}"
@@ -92,79 +75,70 @@ class ExecutionTerminalService:
             workdir = self._confined_cwd(root, cwd)
             argv = self._validated_argv(root, workdir, command)
         except TerminalCommandRejected as exc:
-            record = TerminalCommandRecord(
-                id=record_id, project_id=project_id, command=command, cwd=cwd or ".",
-                status="rejected", rejection_reason=str(exc), executed_by=executed_by,
-                started_at=started_at, source=source,  # type: ignore[arg-type]
-            )
-            self._persist(project_id, record)
-            return record
+            return self._record_rejection(record_id, project_id, command, cwd, str(exc), executed_by, started_at, source)
 
-        exe = shutil.which(argv[0]) or argv[0]
-        full = [exe, *argv[1:]]
-        start = time.monotonic()
-        out_lines: list[str] = []
-        err_lines: list[str] = []
-        timed_out = False
+        relative_cwd = workdir.relative_to(root).as_posix() or "."
+        sandbox_id = ""
         try:
-            proc = subprocess.Popen(
-                full, cwd=str(workdir), text=True, encoding="utf-8", errors="replace", shell=False,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1,
+            sandbox_id = self.runtime.open_session(
+                root,
+                project_id=project_id,
+                workspace_id=str(project.get("workspace_id") or project.get("workspaceId") or ""),
+                job_id=str(project.get("job_id") or project.get("jobId") or ""),
             )
-        except (FileNotFoundError, OSError) as exc:
-            record = TerminalCommandRecord(
-                id=record_id, project_id=project_id, command=command,
-                cwd=str(workdir.relative_to(root)) or ".",
-                status="rejected", rejection_reason=f"Executavel indisponivel no servidor: {exc}",
-                executed_by=executed_by, started_at=started_at, source=source,  # type: ignore[arg-type]
+            with self._active_lock:
+                self._active[project_id] = sandbox_id
+            network = self._network_policy(argv)
+            limits = self.runtime.default_limits(self.timeout_seconds) if isinstance(self.runtime, SandboxExecutionRuntime) else None
+            request_kwargs: dict[str, Any] = {}
+            if limits is not None:
+                request_kwargs["limits"] = limits
+            result = self.runtime.execute(
+                sandbox_id,
+                ExecutionRequest(
+                    command=tuple(argv), project_id=project_id,
+                    workspace_id=str(project.get("workspace_id") or project.get("workspaceId") or ""),
+                    job_id=str(project.get("job_id") or project.get("jobId") or ""),
+                    cwd=relative_cwd, network=network, source=f"terminal:{source}", **request_kwargs,
+                ),
+                on_line=on_line,
             )
-            self._persist(project_id, record)
-            return record
-
-        def pump(pipe: Any, bucket: list[str], stream: str) -> None:
-            try:
-                for line in iter(pipe.readline, ""):
-                    text = self._redact(line.rstrip("\n"))
-                    bucket.append(text)
-                    if on_line is not None:
-                        try:
-                            on_line(stream, text)
-                        except Exception:  # noqa: BLE001 — a broken sink must not kill the command
-                            pass
-            finally:
-                try:
-                    pipe.close()
-                except OSError:
-                    pass
-
-        pumps = [
-            threading.Thread(target=pump, args=(proc.stdout, out_lines, "stdout"), daemon=True),
-            threading.Thread(target=pump, args=(proc.stderr, err_lines, "stderr"), daemon=True),
-        ]
-        for thread in pumps:
-            thread.start()
-        try:
-            proc.wait(timeout=self.timeout_seconds)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            proc.kill()
+        except (OSError, RuntimeError, ValueError) as exc:
+            return self._record_rejection(
+                record_id, project_id, command, relative_cwd,
+                f"SANDBOX_ERROR: {exc}", executed_by, started_at, source,
+                runtime_status=ExecutionStatus.SANDBOX_ERROR.value,
+            )
         finally:
-            for thread in pumps:
-                thread.join(timeout=2.0)
+            if sandbox_id:
+                with self._active_lock:
+                    if self._active.get(project_id) == sandbox_id:
+                        self._active.pop(project_id, None)
+                self.runtime.close_session(sandbox_id)
 
+        legacy_status = "completed"
+        if result.status == ExecutionStatus.TIMED_OUT:
+            legacy_status = "timeout"
+        elif result.status in {
+            ExecutionStatus.SECURITY_BLOCKED, ExecutionStatus.SANDBOX_ERROR,
+            ExecutionStatus.RESOURCE_LIMIT_EXCEEDED, ExecutionStatus.CANCELLED,
+        }:
+            legacy_status = "rejected"
         record = TerminalCommandRecord(
-            id=record_id, project_id=project_id, command=command,
-            cwd=(workdir.relative_to(root).as_posix() or "."),
-            status="timeout" if timed_out else "completed",
-            exit_code=None if timed_out else proc.returncode,
-            duration_ms=int((time.monotonic() - start) * 1000),
-            stdout_tail=self._tail(out_lines),
-            stderr_tail=self._tail(err_lines),
-            executed_by=executed_by, started_at=started_at, source=source,  # type: ignore[arg-type]
+            id=record_id, project_id=project_id, command=result.command, cwd=relative_cwd,
+            status=legacy_status, runtime_status=result.status.value,
+            sandbox_id=result.sandbox_id, exit_code=result.exit_code,
+            duration_ms=result.duration_ms, stdout_tail=self._tail(result.stdout),
+            stderr_tail=self._tail(result.stderr), rejection_reason=result.failure_reason or None,
+            executed_by=executed_by, started_at=started_at, source=source,
         )
         self._persist(project_id, record)
         return record
 
+    def cancel(self, project_id: str) -> bool:
+        with self._active_lock:
+            sandbox_id = self._active.get(project_id)
+        return bool(sandbox_id and self.runtime.cancel(sandbox_id))
     def history(self, project_id: str) -> list[TerminalCommandRecord]:
         path = self._history_path(project_id)
         if not path.is_file():
@@ -175,7 +149,15 @@ class ExecutionTerminalService:
             return []
         return [TerminalCommandRecord.model_validate(item) for item in data if isinstance(item, dict)]
 
-    # --------------------------------------------------------------- security
+    def _record_rejection(self, record_id: str, project_id: str, command: str, cwd: str, reason: str, executed_by: str | None, started_at: str, source: str, *, runtime_status: str = ExecutionStatus.SECURITY_BLOCKED.value) -> TerminalCommandRecord:
+        record = TerminalCommandRecord(
+            id=record_id, project_id=project_id, command=command, cwd=cwd or ".",
+            status="rejected", runtime_status=runtime_status, rejection_reason=reason,
+            executed_by=executed_by, started_at=started_at, source=source,
+        )
+        self._persist(project_id, record)
+        return record
+
     def _project_root(self, project: dict[str, Any]) -> Path:
         raw = project.get("generated_project_path")
         if not raw:
@@ -183,8 +165,6 @@ class ExecutionTerminalService:
         root = Path(str(raw)).resolve()
         if not root.is_dir():
             raise TerminalCommandRejected("O workspace do projeto nao existe no servidor.")
-        # Isolation: only project directories UNDER the generated-projects root —
-        # never the root itself, never anything on the host outside it.
         if root == self.workspace_root or self.workspace_root not in root.parents:
             raise TerminalCommandRejected("O terminal so executa dentro do workspace de projetos gerados.")
         return root
@@ -199,9 +179,7 @@ class ExecutionTerminalService:
 
     def _validated_argv(self, root: Path, workdir: Path, command: str) -> list[str]:
         if _SHELL_META_RE.search(command):
-            raise TerminalCommandRejected(
-                "Operadores de shell (| & ; > < ` $) nao sao permitidos; execute um comando por vez."
-            )
+            raise TerminalCommandRejected("Operadores de shell (| & ; > < ` $) nao sao permitidos; execute um comando por vez.")
         try:
             argv = shlex.split(command, posix=True)
         except ValueError as exc:
@@ -211,56 +189,49 @@ class ExecutionTerminalService:
         program = argv[0].lower()
         allowed = ALLOWED_COMMANDS.get(program)
         if allowed is None:
-            raise TerminalCommandRejected(
-                f"'{program}' nao esta na allowlist do terminal. Permitidos: {', '.join(sorted(ALLOWED_COMMANDS))}."
-            )
+            raise TerminalCommandRejected(f"'{program}' nao esta na allowlist do terminal. Permitidos: {', '.join(sorted(ALLOWED_COMMANDS))}.")
         if program == "node":
             self._validate_node(root, workdir, argv)
         else:
-            first = (argv[1] if len(argv) > 1 else None)
+            first = argv[1] if len(argv) > 1 else None
             if first is not None and first.lower() not in allowed:
-                raise TerminalCommandRejected(
-                    f"Subcomando '{first}' de {program} nao permitido. Permitidos: {', '.join(sorted(str(a) for a in allowed))}."
-                )
+                raise TerminalCommandRejected(f"Subcomando '{first}' de {program} nao permitido.")
             if first is None and program != "git":
-                raise TerminalCommandRejected(f"Informe um subcomando para {program} (ex.: {program} install).")
+                raise TerminalCommandRejected(f"Informe um subcomando para {program}.")
         return argv
 
-    def _validate_node(self, root: Path, workdir: Path, argv: list[str]) -> None:
-        # node runs PROJECT scripts only: no eval flags, and the script path must
-        # resolve inside the project root.
-        forbidden = {"-e", "--eval", "-p", "--print", "--input-type"}
-        if any(arg in forbidden for arg in argv[1:]):
+    @staticmethod
+    def _validate_node(root: Path, workdir: Path, argv: list[str]) -> None:
+        if any(arg in {"-e", "--eval", "-p", "--print", "--input-type"} for arg in argv[1:]):
             raise TerminalCommandRejected("node -e/--eval nao e permitido; execute um script do projeto.")
         script = next((arg for arg in argv[1:] if not arg.startswith("-")), None)
         if script is None:
-            raise TerminalCommandRejected("Informe o script do projeto a executar (ex.: node scripts/seed.js).")
+            raise TerminalCommandRejected("Informe o script do projeto a executar.")
         target = (workdir / script).resolve()
         if root not in {target, *target.parents} or not target.is_file():
             raise TerminalCommandRejected(f"Script '{script}' nao existe dentro do projeto.")
 
-    # ------------------------------------------------------------ persistence
+    @staticmethod
+    def _network_policy(argv: list[str]) -> NetworkPolicy:
+        if argv[0].lower() in {"npx"}:
+            return NetworkPolicy.PACKAGE_REGISTRY
+        if argv[0].lower() == "npm" and len(argv) > 1 and argv[1].lower() in {"install", "ci", "exec", "audit", "view", "outdated"}:
+            return NetworkPolicy.PACKAGE_REGISTRY
+        return NetworkPolicy.NONE
+
     def _persist(self, project_id: str, record: TerminalCommandRecord) -> None:
         path = self._history_path(project_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         records = [item.model_dump(mode="json") for item in self.history(project_id)]
         records.append(record.model_dump(mode="json"))
-        path.write_text(
-            json.dumps(records[-HISTORY_LIMIT:], ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        path.write_text(json.dumps(records[-HISTORY_LIMIT:], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def _history_path(self, project_id: str) -> Path:
-        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", project_id)
-        return self.sessions_root / f"{safe}.json"
+        return self.sessions_root / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', project_id)}.json"
 
-    # ----------------------------------------------------------------- helpers
     @staticmethod
-    def _redact(line: str) -> str:
-        return _SECRET_RE.sub(r"\1\2[redacted]", line)
-
-    def _tail(self, lines: list[str], keep: int = 200) -> str:
-        return "\n".join(lines[-keep:])
+    def _tail(text: str, keep: int = 200) -> str:
+        return "\n".join(text.splitlines()[-keep:])
 
 
 execution_terminal_service = ExecutionTerminalService()

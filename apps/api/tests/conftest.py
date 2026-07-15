@@ -16,14 +16,19 @@ from app.core.config import get_settings
 from app.core.database import Base, database_url_for, get_engine
 import app.models  # noqa: F401
 from app.main import create_application
+from app.repositories.download_repository import DownloadRepository
 from app.repositories.user_repository import AuditLogRepository, UserRepository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
+from app.routes import downloads as downloads_route
+from app.routes import local_generation as local_generation_route
+from app.routes import meta_factory as meta_factory_route
 from app.routes import modernize as modernize_route
 from app.routes import project_rooms as project_rooms_route
 from app.routes import prompt_master as prompt_master_route
 from app.routes.auth import service as auth_route_service
 from app.routes.projects import service as project_route_service
+from app.services.download_service import DownloadService
 from app.services.project_service import ProjectService
 
 
@@ -65,6 +70,10 @@ def client() -> TestClient:
     # (Done before the app/lifespan starts so initialize() targets this DB.)
     project_rooms_route.service.repository = ProjectRoomRepository(database_path)
     modernize_route._jobs_repo = ModernizeJobRepository(database_path)
+    isolated_download_service = DownloadService(DownloadRepository(database_path))
+    downloads_route.service = isolated_download_service
+    local_generation_route.download_service = isolated_download_service
+    meta_factory_route._download_service = isolated_download_service
 
     # Point the auth system (used to protect every non-public route) at the
     # same isolated, per-test SQLite database.

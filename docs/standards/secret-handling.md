@@ -27,6 +27,6 @@ Sensitive runtime material must not cross into durable or user-visible artifacts
 
 Traces may include ids, status, timestamps, and `redacted_fields`. They must not include raw keys, token fragments, provider request bodies, full contract text, or generated file content.
 
-## V1 Foundation placeholders
+## Feature status
 
-User Key Boost, Git Export, and PDF Contract Input endpoints return `501 Not Implemented` until secure storage, scanning, and provider integration are deliberately implemented.
+User Key Boost and Git Export are active and must follow this standard. PDF Contract Input remains a `501 Not Implemented` placeholder.

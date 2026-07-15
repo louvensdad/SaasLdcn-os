@@ -75,7 +75,7 @@ export function DeliveryDecisionCenter({ projectId }: DeliveryDecisionCenterProp
               <span className="flex items-center gap-2 font-medium">
                 {t(`metaFactory.delivery.option.${option.mode}`)}
                 {option.recommended && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--accent)]/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-[color:var(--accent)]">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--accent)]/15 px-2 py-0.5 text-xs font-semibold uppercase text-[color:var(--accent)]">
                     <Sparkles className="h-3 w-3" />
                     {t('metaFactory.delivery.recommended')}
                   </span>

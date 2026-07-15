@@ -4,8 +4,6 @@ import json
 import os
 import re
 import shlex
-import subprocess
-import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,6 +24,12 @@ from app.schemas.engineering_lab import (
     EngineeringLabTerminalResponse,
 )
 from app.services.codebase_ingest_service import codebase_ingest_service
+from app.services.execution_runtime import (
+    ExecutionRequest,
+    ExecutionRuntime,
+    NetworkPolicy,
+    execution_runtime,
+)
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT
 
 _SAFE_PROJECT_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -69,46 +73,18 @@ _CLOUD_MARKERS = {
 _ALLOWED_COMMANDS = {
     "npm", "pnpm", "bun", "yarn", "node", "npx", "maven", "mvn", "gradle", "java",
     "python", "python3", "pip", "pip3", "go", "cargo", "dotnet", "php", "composer",
-    "ruby", "bundle", "rails", "docker", "kubectl", "git", "gh", "terraform",
-    "ansible", "powershell", "pwsh", "bash", "zsh", "fish", "sh", "cmd",
+    "ruby", "bundle", "rails", "git",
 }
-
-# Shell interpreters are allow-listed (the brief wants them), but their inline
-# command flags (bash -c "...", cmd /c "...", powershell -Command "...") turn the
-# allow-list into a no-op by executing arbitrary code. Reject those flags so a
-# shell can only run a script inside the sandboxed project dir.
-_SHELL_INTERPRETERS = {"bash", "sh", "zsh", "fish", "powershell", "pwsh", "cmd"}
-_SHELL_EXEC_FLAGS = {"-c", "-command", "-encodedcommand", "-e", "-ec", "/c", "/k"}
-
-# Language runtimes get the same treatment: their inline-eval flags (node -e,
-# python -c, php -r, ruby -e) are the identical bypass in another spelling.
-# Running project scripts/tools stays allowed; evaluating arbitrary inline code
-# from the request does not.
 _RUNTIME_INTERPRETERS = {"node", "python", "python3", "ruby", "php"}
 _RUNTIME_EVAL_FLAGS = {"-e", "-c", "-r", "-p", "--eval", "--print", "--run"}
-
-# Hard ceiling on a single command so a request can't pin a worker thread.
 _TERMINAL_TIMEOUT_MAX = 120
-
-# Minimal, secret-free environment for terminal subprocesses. The backend process
-# environment carries app secrets (LDCN_SECRET_KEY, LDCN_TOKEN_ENC_KEY, provider
-# API keys, DB credentials); an executed command must never be able to read them.
-_ENV_ALLOW = (
-    "PATH", "HOME", "LANG", "LC_ALL", "TZ", "PATHEXT", "ComSpec", "SystemRoot",
-    "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "USERPROFILE", "HOMEPATH", "HOMEDRIVE",
-    "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
-)
-
-
-def _safe_terminal_env() -> dict[str, str]:
-    env = {key: os.environ[key] for key in _ENV_ALLOW if key in os.environ}
-    env.setdefault("CI", "1")
-    return env
 
 
 class EngineeringLabEngine:
-    def __init__(self) -> None:
+    def __init__(self, runtime: ExecutionRuntime | None = None) -> None:
         self.workspace_root = DEFAULT_OUTPUT_ROOT.parents[1].resolve()
+        self.runtime = runtime or execution_runtime
+
 
     def overview(self, project_id: str) -> EngineeringLabOverview:
         root = self._project_root(project_id)
@@ -162,67 +138,58 @@ class EngineeringLabEngine:
 
     def run_terminal(self, project_id: str, command: str, timeout_seconds: int) -> EngineeringLabTerminalResponse:
         root = self._project_root(project_id)
-        started = time.perf_counter()
         timeout_seconds = max(1, min(_TERMINAL_TIMEOUT_MAX, int(timeout_seconds)))
         argv = self._command_argv(command)
-        executable = Path(argv[0]).name.lower()
-        if executable.endswith(".exe"):
-            executable = executable[:-4]
+        executable = Path(argv[0]).name.lower().removesuffix(".exe")
         if executable not in _ALLOWED_COMMANDS:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Command '{argv[0]}' is not allowed in Engineering Laboratory.")
-        if executable in _SHELL_INTERPRETERS and any(arg.lower() in _SHELL_EXEC_FLAGS for arg in argv[1:]):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inline shell execution (e.g. bash -c, cmd /c) is not allowed. Run a script or an allow-listed tool instead.",
-            )
         if executable in _RUNTIME_INTERPRETERS:
-            # Only the interpreter's own leading flags count: `python -c "..."` is
-            # inline eval, but `python -m pip install -r req.txt` passes -r to pip.
             for arg in argv[1:]:
                 if not arg.startswith("-"):
                     break
                 if arg.lower() in _RUNTIME_EVAL_FLAGS:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Inline code evaluation (e.g. node -e, python -c, php -r) is not allowed. Run a project script instead.",
-                    )
-
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inline code evaluation is not allowed. Run a project script instead.")
+        sandbox_id = ""
         try:
-            completed = subprocess.run(
-                argv,
-                cwd=root,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_seconds,
-                shell=False,
-                env=_safe_terminal_env(),
+            sandbox_id = self.runtime.open_session(root, project_id=project_id)
+            result = self.runtime.execute(
+                sandbox_id,
+                ExecutionRequest(
+                    command=tuple(argv), project_id=project_id,
+                    network=self._network_policy(argv),
+                    limits=self.runtime.default_limits(timeout_seconds),
+                    source="engineering-laboratory",
+                ),
             )
-            exit_code = completed.returncode
-            stdout = completed.stdout[-20_000:]
-            stderr = completed.stderr[-20_000:]
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Command '{argv[0]}' is not installed on the backend.") from exc
-        except subprocess.TimeoutExpired as exc:
-            exit_code = 124
-            stdout = (exc.stdout or "")[-20_000:] if isinstance(exc.stdout, str) else ""
-            stderr = ((exc.stderr or "")[-20_000:] if isinstance(exc.stderr, str) else "") + f"\nCommand timed out after {timeout_seconds}s."
-
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"SANDBOX_ERROR: {exc}") from exc
+        finally:
+            if sandbox_id:
+                self.runtime.close_session(sandbox_id)
         output: list[EngineeringLabTerminalChunk] = []
-        if stdout:
-            output.append(EngineeringLabTerminalChunk(kind="stdout", text=stdout))
+        if result.stdout:
+            output.append(EngineeringLabTerminalChunk(kind="stdout", text=result.stdout[-20_000:]))
+        stderr = (result.stderr + ("\n" + result.failure_reason if result.failure_reason else "")).strip()
         if stderr:
-            output.append(EngineeringLabTerminalChunk(kind="stderr", text=stderr))
+            output.append(EngineeringLabTerminalChunk(kind="stderr", text=stderr[-20_000:]))
         return EngineeringLabTerminalResponse(
-            project_id=project_id,
-            command=command,
-            cwd=str(root),
-            exit_code=exit_code,
-            duration_ms=max(1, int((time.perf_counter() - started) * 1000)),
-            output=output,
+            project_id=project_id, command=result.command, cwd=".",
+            exit_code=result.exit_code if result.exit_code is not None else 125,
+            duration_ms=result.duration_ms, output=output,
+            runtime_status=result.status.value, sandbox_id=result.sandbox_id,
         )
 
+    @staticmethod
+    def _network_policy(argv: list[str]) -> NetworkPolicy:
+        executable = Path(argv[0]).name.lower()
+        args = {arg.lower() for arg in argv[1:]}
+        if executable in {"pip", "pip3", "mvn", "gradle", "go", "cargo", "composer", "dotnet", "bundle"}:
+            return NetworkPolicy.PACKAGE_REGISTRY
+        if executable in {"npx", "pnpm", "yarn", "bun"}:
+            return NetworkPolicy.PACKAGE_REGISTRY
+        if executable == "npm" and args.intersection({"install", "ci", "exec", "audit", "view", "outdated"}):
+            return NetworkPolicy.PACKAGE_REGISTRY
+        return NetworkPolicy.NONE
     def _project_root(self, project_id: str) -> Path:
         if not _SAFE_PROJECT_ID.match(project_id):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid project id.")

@@ -1,43 +1,24 @@
 # User Key Boost
 
-## V1 Foundation stance
+## Status
 
-User Key Boost is planned but inactive. V1 Foundation exposes only placeholder endpoints that return `501 Not Implemented` with:
+User Key Boost is implemented and authenticated. It stores user-owned provider keys as encrypted, expiring sessions and never returns raw key material. Production uses the Redis-backed vault; the in-memory encrypted backend is for local development only.
 
-`Feature planned but not active in V1 Foundation.`
+## Endpoints
 
-No provider API is called, no key is validated, and no user key is persisted.
+- `GET /api/user-ai-keys/status`: masked active sessions and remaining TTL.
+- `POST /api/user-ai-keys/test`: validates a key without storing it.
+- `POST /api/user-ai-keys/session`: creates or replaces an encrypted provider session.
+- `DELETE /api/user-ai-keys/session`: deletes one provider session or all sessions.
 
-## Contract
+Supported providers are Anthropic, OpenAI, Google, OpenRouter, DeepSeek, and custom providers. Generation may use the active user session; deterministic and platform-key modes remain available according to runtime configuration.
 
-The canonical contract is `packages/contracts/user-key-boost.contract.ts`.
+## Security contract
 
-Supported future generation modes:
+- Raw keys are never returned, logged, added to traces, prompts, generated files, ZIPs, Git exports, SSE events, or error responses.
+- Provider errors are redacted before being returned.
+- Ciphertext has a server-enforced TTL and is isolated by user and provider.
+- Production requires Redis and a distinct `LDCN_TOKEN_ENC_KEY` of at least 32 characters.
+- Deleting a session removes its stored ciphertext.
 
-- `local_build_90`
-- `platform_boost_100`
-- `user_key_boost`
-
-Supported future statuses:
-
-- `no_key`
-- `temporary_key_active`
-- `platform_key_active`
-- `deleted`
-
-## Security rules
-
-- The API key must never be returned to the frontend.
-- The API key must never be logged.
-- The API key must never enter Prompt Master trace, Gatekeeper trace, generated files, ZIPs, or Git export.
-- Temporary key material must support expiration.
-- Users must be able to delete active key material.
-- `delete_after_generation` must be honored when generation support is later added.
-
-## Placeholder endpoints
-
-- `GET /api/user-ai-keys/status`
-- `POST /api/user-ai-keys/session`
-- `DELETE /api/user-ai-keys/session`
-
-All currently return `501`.
+The API schemas are authoritative for request and response fields; shared UI contracts live under `packages/contracts`.

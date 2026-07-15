@@ -51,7 +51,6 @@ export function SystemCard({ id, name, category, status, statusLabel }: SystemCa
         }}
         aria-hidden
       >
-        {/* eslint-disable-next-line react-hooks/static-components -- getSystemIcon is a stable lookup into a module-level icon table, not a component created per render */}
         <Icon className="h-4 w-4" strokeWidth={1.8} />
       </span>
 

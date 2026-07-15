@@ -53,10 +53,10 @@ class ProjectSpec(BaseModel):
     non_functional: dict[str, str] = Field(default_factory=dict)  # perf, security, scale, compliance
     suggested_stack: SuggestedStack = Field(default_factory=SuggestedStack)
     # Carried from the Project Room's delivery_type (decided before generation
-    # begins, not LLM-inferred). mobile_stack is undecided (None) until the
-    # Architect Engine confirms Expo vs. Flutter (Mobile Factory Phase 2).
+    # begins, not LLM-inferred). Expo/React Native is the only supported
+    # mobile runtime; Flutter is rejected at input validation.
     delivery_type: str = "web"
-    mobile_stack: Literal["react_native_expo", "flutter"] | None = None
+    mobile_stack: Literal["react_native_expo"] | None = None
     locale: str = "pt-BR"
     assumptions: list[Assumption] = Field(default_factory=list)
     open_questions: list[ClarifyingQuestion] = Field(default_factory=list)

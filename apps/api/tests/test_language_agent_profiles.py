@@ -21,6 +21,7 @@ from app.engines.llm.mock_adapter import _role_for_system
 from app.engines.prompt_master_md_engine import build_prompt_master_md
 from app.schemas.generation_validation import BuildValidationReport
 from app.schemas.orchestrator import ProjectSpec, SuggestedStack
+from fake_execution_runtime import FakeExecutionRuntime
 from app.services.build_validation_service import BuildValidationService, _MetricsCollector
 
 
@@ -300,12 +301,13 @@ def test_dispatch_detects_go_dotnet_php_gradle_and_cargo(monkeypatch):
 def test_missing_toolchain_skips_gracefully(monkeypatch):
     root = Path(tempfile.mkdtemp(prefix="ldcn-lang-skip-"))
     try:
-        service = BuildValidationService()
-        monkeypatch.setattr("app.services.build_validation_service.shutil.which", lambda _name: None)
+        runtime = FakeExecutionRuntime()
+        service = BuildValidationService(runtime=runtime)
+        service._sandbox_root = root
+        service._sandbox_id = runtime.open_session(root, project_id="toolchain-test")
         for runner in [service._go, service._cargo, service._dotnet, service._composer, service._gradle]:
             report = runner(root, _MetricsCollector())
             assert report.ok is True
-            assert report.installed == "skipped"
-            assert report.skipped_reason
+            assert report.installed == "passed"
     finally:
         shutil.rmtree(root, ignore_errors=True)

@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ServiceUnavailableError
+from app.services.artifact_security import ArtifactSecurityError, assert_artifact_safe
 from app.services.fs_publish import force_rmtree, publish_directory
 
 
@@ -75,10 +76,14 @@ class S3ArtifactStore:
             with zipfile.ZipFile(payload, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
                 for path in sorted(root.rglob("*")):
                     if path.is_file():
-                        archive.write(path, arcname=path.relative_to(root).as_posix())
+                        relative = path.relative_to(root).as_posix()
+                        assert_artifact_safe(relative, path.read_bytes())
+                        archive.write(path, arcname=relative)
             self._put(self._project_key(project_id, workspace_id), payload.getvalue(), "application/zip")
         except ArtifactStorageError:
             raise
+        except ArtifactSecurityError as exc:
+            raise ArtifactStorageError("Generated project contains forbidden secret material.") from exc
         except Exception as exc:
             raise ArtifactStorageError("Could not persist generated project artifact.") from exc
 
@@ -116,6 +121,8 @@ class S3ArtifactStore:
             self._put(self._download_key(project_id, workspace_id), zip_path.read_bytes(), "application/zip")
         except ArtifactStorageError:
             raise
+        except ArtifactSecurityError as exc:
+            raise ArtifactStorageError("Generated project contains forbidden secret material.") from exc
         except Exception as exc:
             raise ArtifactStorageError("Could not persist prepared project download.") from exc
 

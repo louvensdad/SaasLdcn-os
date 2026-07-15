@@ -46,10 +46,10 @@ export function Topbar({ title, subtitle, onOpenSearch }: TopbarProps) {
             <Menu className="h-4 w-4" />
           </Button>
           <div className="min-w-0">
-            <p className="type-data break-words text-[0.625rem] font-semibold uppercase tracking-[0.22em] text-[color:var(--accent)]">
+            <p className="type-data break-words text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--accent)]">
               {t('topbar.foundation')}
             </p>
-            <p className="font-[family-name:var(--font-display)] text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--text)] md:text-[1.75rem]">
+            <p className="font-[family-name:var(--font-display)] text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--text)] md:text-3xl">
               {title}
             </p>
             {subtitle ? (

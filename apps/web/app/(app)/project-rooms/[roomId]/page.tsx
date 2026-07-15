@@ -162,7 +162,7 @@ export default function ProjectRoomPage() {
 
   // The Architecture/Engineering Review is the explicit stage between an approved
   // blueprint and the Meta-Factory. From BLUEPRINT_READY we start the review
-  // (status Ã¢â€ â€™ ENGINEERING_REVIEW) and open the Review Center.
+  // (status â†’ ENGINEERING_REVIEW) and open the Review Center.
   async function handleOpenEngineeringReview() {
     setBusy(true);
     setError(null);
@@ -218,7 +218,7 @@ export default function ProjectRoomPage() {
         </div>
       </header>
 
-      {/* Premium step indicator: Descoberta Ã¢â€ â€™ Prompt Ã¢â€ â€™ Blueprint Ã¢â€ â€™ GeraÃƒÂ§ÃƒÂ£o */}
+      {/* Premium step indicator: Descoberta → Prompt → Blueprint → Geração */}
       <div className="mb-4"><WorkflowContextHeader room={room} stage="Project Room" /></div>
 
       <div className="mb-4 flex items-center gap-1.5 overflow-x-auto sm:gap-2">

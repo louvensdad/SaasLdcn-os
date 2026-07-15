@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -61,7 +61,7 @@ function MetaFactoryInner() {
   const syncProjectCaches = useProjectCacheSync();
   const searchParams = useSearchParams();
   // Unified journey: when arriving from a project room (or an import), the
-  // PromptMaster/spec is loaded automatically â€” no copy/paste.
+  // PromptMaster/spec is loaded automatically — no copy/paste.
   const sourceProjectId = searchParams.get('projectId');
 
   const [intent, setIntent] = useState('');
@@ -75,7 +75,7 @@ function MetaFactoryInner() {
   );
   const [roomTitle, setRoomTitle] = useState('');
   const [sourceRoom, setSourceRoom] = useState<ProjectRoom | null>(null);
-  // The approved Architect blueprint that drives this build (Architect â†’ Meta-Factory).
+  // The approved Architect blueprint that drives this build (Architect → Meta-Factory).
   const [blueprint, setBlueprint] = useState<unknown>(null);
 
   const [spec, setSpec] = useState<ProjectSpec | null>(null);
@@ -146,25 +146,25 @@ function MetaFactoryInner() {
         setSourceRoom(room);
         const promptApproved = ['PROMPT_APPROVED', 'BLUEPRINT_GENERATING', 'BLUEPRINT_READY', 'ENGINEERING_REVIEW', 'ENGINEERING_APPROVED', 'WAITING_META_FACTORY', 'META_FACTORY_RUNNING', 'GENERATING', 'VALIDATING', 'READY'].includes(room.status);
         if (!promptApproved || !room.spec || !room.prompt_master_md) {
-          // No approved PromptMaster â†’ cannot proceed at all.
+          // No approved PromptMaster → cannot proceed at all.
           setRoomLoad('blocked');
           return;
         }
         if (!room.architecture_blueprint) {
-          // Approved PromptMaster but no Blueprint yet â†’ must pass through Architect.
+          // Approved PromptMaster but no Blueprint yet → must pass through Architect.
           setRoomTitle(room.title);
           setRoomLoad('needs_blueprint');
           return;
         }
         const reviewApproved = ['WAITING_META_FACTORY', 'META_FACTORY_RUNNING', 'GENERATING', 'VALIDATING', 'READY'].includes(room.status);
         if (!reviewApproved) {
-          // Blueprint exists but the Architecture Review hasn't been approved yet â†’
+          // Blueprint exists but the Architecture Review hasn't been approved yet →
           // the Meta-Factory cannot start until engineering sign-off.
           setRoomTitle(room.title);
           setRoomLoad('needs_review');
           return;
         }
-        // Approved PromptMaster + approved Blueprint + approved Review â†’ build.
+        // Approved PromptMaster + approved Blueprint + approved Review → build.
         setSpec(room.spec as unknown as ProjectSpec);
         setBlueprint(room.architecture_blueprint);
         setQuestions([]);
@@ -242,7 +242,7 @@ function MetaFactoryInner() {
           }
         });
       } catch {
-        // A failed pre-flight must never block generation â€” proceed regardless.
+        // A failed pre-flight must never block generation — proceed regardless.
       } finally {
         setDeepThinking(null);
       }
@@ -318,7 +318,7 @@ function MetaFactoryInner() {
           failed = role;
           setError(t('metaFactory.stageFailed', {
             role: t(`metaFactory.role.${role}`),
-            error: stageErrors.slice(0, 3).join(' Â· '),
+            error: stageErrors.slice(0, 3).join(' · '),
           }));
           break;
         }
@@ -572,7 +572,7 @@ function MetaFactoryInner() {
         </div>
       ) : null}
 
-      {/* Step 1 â€” intent */}
+      {/* Step 1 — intent */}
       <section className="rounded-2xl border border-border/60 bg-card/60 p-6 shadow-sm">
         <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-xs font-bold text-[color:var(--accent)]">1</span>
@@ -644,7 +644,7 @@ function MetaFactoryInner() {
         </div>
       </section>
 
-      {/* Step 2 â€” spec + refine */}
+      {/* Step 2 — spec + refine */}
       {spec && (
         <section className="rounded-2xl border border-border/60 bg-card/60 p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
@@ -699,7 +699,7 @@ function MetaFactoryInner() {
               label={t('metaFactory.suggestedStack')}
               value={[spec.suggested_stack.language, spec.suggested_stack.framework, spec.suggested_stack.architecture]
                 .filter(Boolean)
-                .join(' Â· ')}
+                .join(' · ')}
             />
           </div>
 
@@ -739,7 +739,7 @@ function MetaFactoryInner() {
         </section>
       )}
 
-      {/* Deep Engineering â€” the system thinking through the project before generating */}
+      {/* Deep Engineering — the system thinking through the project before generating */}
       {(deepThinking || deepStages.length > 0) && (
         <section className="rounded-2xl border border-border/60 bg-card/60 p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -778,7 +778,7 @@ function MetaFactoryInner() {
                 <p className="mt-1 text-xs text-muted-foreground">{stage.summary}</p>
                 <ul className="mt-2 flex flex-col gap-1">
                   {stage.details.map((detail, i) => (
-                    <li key={i} className="text-xs leading-5 text-muted-foreground">Â· {detail}</li>
+                    <li key={i} className="text-xs leading-5 text-muted-foreground">· {detail}</li>
                   ))}
                 </ul>
               </li>
@@ -804,7 +804,7 @@ function MetaFactoryInner() {
         </section>
       )}
 
-      {/* Live progress â€” real-time pipeline (Pillar 3) */}
+      {/* Live progress — real-time pipeline (Pillar 3) */}
       {(busy === 'generate' || streamEvents.length > 0) && (
         <section className="rounded-2xl border border-border/60 bg-card/60 p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -824,7 +824,7 @@ function MetaFactoryInner() {
             )}
           </div>
 
-          {/* Overall progress bar â€” completed stages / total, with a live
+          {/* Overall progress bar — completed stages / total, with a live
               elapsed timer on the running stage so a long stage reads as
               "still working" rather than "stuck". */}
           <div className="mb-4">
@@ -834,7 +834,7 @@ function MetaFactoryInner() {
                 {t('metaFactory.stageCount', { done: completedCount, total: PIPELINE_ROLES.length })}
                 {runningRole && (
                   <>
-                    {' Â· '}
+                    {' · '}
                     {t('metaFactory.stageElapsed', {
                       role: t(`metaFactory.role.${runningRole}`),
                       seconds: runningElapsed,
@@ -951,7 +951,7 @@ function MetaFactoryInner() {
         </section>
       )}
 
-      {/* Step 3 â€” results */}
+      {/* Step 3 — results */}
       {runs.length > 0 && (
         <section className="rounded-2xl border border-border/60 bg-card/60 p-6 shadow-sm">
           <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1012,7 +1012,7 @@ function MetaFactoryInner() {
           {projectId && (
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <span className="text-sm text-muted-foreground">
-                {t('metaFactory.project')} <code className="rounded bg-background px-1.5 py-0.5 text-xs">{projectId}</code> Â· {t('metaFactory.fileCount', { count: files.length })}
+                {t('metaFactory.project')} <code className="rounded bg-background px-1.5 py-0.5 text-xs">{projectId}</code> · {t('metaFactory.fileCount', { count: files.length })}
               </span>
               {verifyStatus === 'running' ? (
                 <button
@@ -1112,7 +1112,7 @@ function SpecField({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-border/60 bg-background/40 p-3">
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="text-sm">{value || 'â€”'}</p>
+      <p className="text-sm">{value || '—'}</p>
     </div>
   );
 }
@@ -1122,7 +1122,7 @@ function SpecBadges({ label, items }: { label: string; items: string[] }) {
     <div className="rounded-xl border border-border/60 bg-background/40 p-3">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">â€”</p>
+        <p className="text-sm text-muted-foreground">—</p>
       ) : (
         <div className="flex flex-wrap gap-1.5">
           {items.map((item, i) => (

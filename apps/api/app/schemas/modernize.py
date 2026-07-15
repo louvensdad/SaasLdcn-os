@@ -75,7 +75,7 @@ class IngestStats(ApiModel):
     ever analyzed. Counts are derived from a single streaming pass."""
 
     files_found: int = 0  # every file entry in the archive/clone
-    ignored_count: int = 0  # auto-ignored (node_modules/.git/build/â€¦) + irrelevant + oversized
+    ignored_count: int = 0  # auto-ignored (node_modules/.git/build/…) + irrelevant + oversized
     analyzable_count: int = 0  # relevant code files actually indexed for the AI
     total_bytes: int = 0  # effective analyzable code size (uncompressed)
     lines_of_code: int = 0

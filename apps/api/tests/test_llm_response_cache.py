@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from app.engines.llm.base import LLMAdapter
@@ -116,3 +118,43 @@ def test_router_differentiates_requests_that_differ_only_in_content():
     router.route(LLMRequest(system="sys", user="content B"), user_choice="deepseek-chat", allow_cache=True)
 
     assert adapter.calls == 2
+
+
+def test_cache_expires_entries_and_tracks_bytes():
+    now = [10.0]
+    cache = LLMResponseCache(ttl_seconds=5, clock=lambda: now[0])
+    response = LLMResponse(provider=Provider.deepseek, model="m", text="payload")
+    cache.set("key", response)
+    assert cache.snapshot()["bytes"] > 0
+    now[0] = 16.0
+    assert cache.get("key") is None
+    assert cache.snapshot() == {"entries": 0, "bytes": 0}
+
+
+def test_cache_enforces_serialized_byte_budget_and_rejects_oversized_entry():
+    response = LLMResponse(provider=Provider.deepseek, model="m", text="x" * 200)
+    cache = LLMResponseCache(max_bytes=64)
+    assert cache.set("too-large", response) is False
+    assert cache.snapshot() == {"entries": 0, "bytes": 0}
+
+
+def test_cache_key_isolated_by_namespace_and_policy_version():
+    req = LLMRequest(system="sys", user="content")
+    assert LLMResponseCache.make_key("m", req, namespace="tenant-a") != LLMResponseCache.make_key("m", req, namespace="tenant-b")
+    assert LLMResponseCache.make_key("m", req, policy_version="v1") != LLMResponseCache.make_key("m", req, policy_version="v2")
+
+
+def test_cache_is_safe_under_concurrent_get_and_set():
+    cache = LLMResponseCache(max_entries=32, max_bytes=128_000)
+
+    def exercise(index: int) -> None:
+        key = f"key-{index % 16}"
+        cache.set(key, LLMResponse(provider=Provider.deepseek, model="m", text=str(index)))
+        cache.get(key)
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        list(pool.map(exercise, range(500)))
+
+    snapshot = cache.snapshot()
+    assert snapshot["entries"] <= 16
+    assert snapshot["bytes"] <= 128_000

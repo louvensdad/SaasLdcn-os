@@ -162,3 +162,24 @@ def test_restore_never_writes_outside_workspace(tmp_path: Path):
 
     assert exc_info.value.status_code == 400
     assert fake.get_calls == []
+
+
+def test_s3_snapshot_rejects_secret_file_bypass(tmp_path: Path):
+    fake = FakeS3()
+    source = tmp_path / "unsafe"
+    source.mkdir()
+    (source / ".ldcn-generation.json").write_text('{"project_id":"unsafe"}', encoding="utf-8")
+    (source / ".env").write_text("TOKEN=abcdefghijklmnopqrstuvwxyz", encoding="utf-8")
+
+    with pytest.raises(ArtifactStorageError, match="forbidden secret material"):
+        _store(fake).save_project("unsafe", source)
+    assert fake.put_calls == []
+
+def test_untrusted_source_sanitization_preserves_assignment_shape():
+    from app.services.artifact_security import artifact_block_reason, sanitize_untrusted_source
+
+    source = 'API_KEY = "AKIAIOSFODNN7EXAMPLE12"\nPASSWORD = "supersecret123456789"\n'
+    sanitized = sanitize_untrusted_source(source)
+    assert 'API_KEY = "change-me"' in sanitized
+    assert 'PASSWORD = "change-me"' in sanitized
+    assert artifact_block_reason("settings.py", sanitized) == ""

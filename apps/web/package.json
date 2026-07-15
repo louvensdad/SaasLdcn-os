@@ -5,14 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && node scripts/check-bundle-budget.mjs",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 39",
     "typecheck": "tsc --noEmit",
     "audit:i18n": "node scripts/audit-hardcoded-i18n.mjs",
     "audit:i18n:check": "node scripts/audit-hardcoded-i18n.mjs --check",
     "audit:typography": "node scripts/audit-typography.mjs",
+    "audit:typography:check": "node scripts/audit-typography.mjs --check",
+    "audit:locales:check": "node scripts/check-locale-parity.mjs",
+    "audit:hotspots:check": "node scripts/check-hotspot-budgets.mjs",
     "audit:typography:report": "node scripts/audit-typography.mjs --report",
+    "test:e2e": "playwright test",
     "test:responsive-visibility": "playwright test -c playwright.responsive-visibility.config.ts"
   },
   "dependencies": {
@@ -24,7 +28,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^11.0.0",
     "lucide-react": "^0.500.0",
-    "next": "^15.0.0",
+    "next": "15.5.18",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.6.0",
@@ -32,6 +36,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.0.0",
@@ -39,8 +44,8 @@
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.184.1",
     "autoprefixer": "^10.0.0",
-    "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.10",
+    "eslint": "9.39.5",
+    "eslint-config-next": "15.5.18",
     "postcss": "^8.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.0.0"

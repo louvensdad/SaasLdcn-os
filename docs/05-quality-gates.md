@@ -332,3 +332,19 @@ Reports must be written clearly enough for engineering, product, and governance 
 Quality gates are not ceremonial. They are the mechanism that keeps LDCN OS disciplined, enterprise-safe, and structurally coherent.
 
 If a change makes the system faster but less safe, less testable, less consistent, or less understandable, it does not pass.
+## 15. Executable CI profiles
+
+The repository enforces the following profiles in `.github/workflows/quality-gates.yml`:
+
+- backend: locked dependencies, Alembic drift check, 87% minimum coverage, and runtime dependency audit
+- frontend: lint warning budget, i18n/locale/typography gates, hotspot budgets, strict TypeScript, bundle budgets, and high-severity npm audit
+- security-adversarial: sandbox, terminal, artifact ingestion, secret redaction, and hostile ZIP/URL cases
+- infrastructure-contracts: ephemeral PostgreSQL, Redis, and MinIO round trips
+- e2e-smoke: delivery contract and Axe WCAG serious/critical scan
+- containers and secret-scan: reproducible images and repository secret detection
+
+`integration`, `contract`, `security`, `slow`, and `enterprise` pytest markers define explicit execution profiles. The default local suite excludes integration and long-running profiles.
+
+Current controlled baselines are regression ceilings, not quality targets: 39 ESLint warnings, 195 hardcoded i18n findings, and 318 missing keys in each non-reference locale. Any increase fails CI; reductions are accepted. `skipLibCheck` remains enabled because the current Three.js postprocessing declarations fail independently of application code. `allowJs` is disabled.
+
+Frontend production builds fail above 1,650,000 raw route chunk bytes or 4,600,000 total static chunk bytes. Backend coverage fails below 87% (measured baseline: 88%).

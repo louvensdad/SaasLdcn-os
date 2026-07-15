@@ -9,6 +9,7 @@ import pytest
 from app.services.file_protocol import EmittedFile
 from app.services.project_writer import ProjectWriter
 from app.services.runtime_api_audit_service import RuntimeApiAuditService
+from fake_execution_runtime import FakeExecutionRuntime
 
 _MAIN_PY = """from fastapi import FastAPI
 
@@ -78,22 +79,23 @@ def _fastapi_project(make_project) -> dict:
 def test_reports_unsupported_for_a_non_python_project(make_project):
     project = make_project([("package.json", '{"name":"x"}')], name="node-project")
 
-    report = RuntimeApiAuditService().audit(project)
+    report = RuntimeApiAuditService(runtime=FakeExecutionRuntime()).audit(project)
 
     assert report.supported is False
     assert report.language is None
     assert "Python" in report.reason
 
 
-def test_reports_missing_venv_without_starting_anything(make_project):
+def test_prepares_an_ephemeral_venv_inside_the_sandbox(make_project):
     project = _fastapi_project(make_project)
+    runtime = FakeExecutionRuntime()
 
-    report = RuntimeApiAuditService().audit(project)
+    report = RuntimeApiAuditService(runtime=runtime).audit(project)
 
     assert report.supported is True
     assert report.language == "python"
-    assert report.started is False
-    assert ".ldcn-venv" in report.reason
+    assert report.started is True
+    assert any(request.command[:4] == ("python", "-m", "venv", ".ldcn-venv") for request in runtime.requests)
 
 
 def test_get_only_endpoints_excludes_path_params_and_non_get(make_project):
@@ -108,12 +110,9 @@ def test_get_only_endpoints_excludes_path_params_and_non_get(make_project):
     assert not any(path == "/items/{id}" for _, path in endpoints)  # unresolved path param -- skipped
 
 
-def test_starts_a_real_server_and_detects_a_crashing_endpoint(make_project, monkeypatch):
+def test_runs_the_sandbox_harness_and_detects_a_crashing_endpoint(make_project):
     project = _fastapi_project(make_project)
-    service = RuntimeApiAuditService()
-    # This test environment IS a FastAPI app -- reuse its already-installed
-    # fastapi/uvicorn instead of pip-installing a fresh .ldcn-venv (slow, network).
-    monkeypatch.setattr(service, "_venv_python", lambda backend_root: Path(sys.executable))
+    service = RuntimeApiAuditService(runtime=FakeExecutionRuntime())
 
     report = service.audit(project)
 
@@ -123,7 +122,7 @@ def test_starts_a_real_server_and_detects_a_crashing_endpoint(make_project, monk
     by_path = {check.path: check for check in report.checks}
     assert by_path["/health"].ok is True
     assert by_path["/health"].status_code == 200
-    assert by_path["/boom"].ok is False  # unhandled exception -> 500, a real crash
+    assert by_path["/boom"].ok is False
     assert by_path["/boom"].status_code == 500
     assert report.crash_count == 1
-    assert report.endpoints_total == 2  # /items/{id} excluded, never counted or hit
+    assert report.endpoints_total == 2

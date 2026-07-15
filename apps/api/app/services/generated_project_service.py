@@ -116,8 +116,8 @@ class GeneratedProjectService:
                 relative_path = entry["relative_path"]
                 source = self._resolve_inside(root, relative_path)
                 archive.write(source, arcname=relative_path)
-        self.artifact_store.save_project(project["project_id"], root)
-        self.artifact_store.save_download(project["project_id"], zip_path)
+        self.artifact_store.save_project(project["project_id"], root, workspace_id=project.get("workspace_id"))
+        self.artifact_store.save_download(project["project_id"], zip_path, workspace_id=project.get("workspace_id"))
 
         return {
             "contractVersion": CONTRACT_VERSION,
@@ -146,7 +146,7 @@ class GeneratedProjectService:
         self._project_root(project)
         zip_path = self._zip_path(project["project_id"])
         if not zip_path.is_file():
-            self.artifact_store.restore_download(project["project_id"], zip_path)
+            self.artifact_store.restore_download(project["project_id"], zip_path, workspace_id=project.get("workspace_id"))
         if not zip_path.is_file():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prepare download before requesting the ZIP file.")
         return zip_path

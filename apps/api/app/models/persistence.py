@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Float, Index, Integer, PrimaryKeyConstraint, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, PrimaryKeyConstraint, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -105,6 +105,13 @@ class GenerationJob(Base):
     started_at: Mapped[str | None] = mapped_column(String)
     completed_at: Mapped[str | None] = mapped_column(String)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0", index=True)
+    attempt_id: Mapped[str | None] = mapped_column(String)
+    lease_owner: Mapped[str | None] = mapped_column(String)
+    lease_expires_at: Mapped[str | None] = mapped_column(String, index=True)
+    heartbeat_at: Mapped[str | None] = mapped_column(String)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    token_budget: Mapped[int] = mapped_column(Integer, nullable=False, default=800000, server_default="800000")
+    reserved_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     data_json: Mapped[str] = mapped_column(Text, nullable=False)
     spec_json: Mapped[str] = mapped_column(Text, nullable=False)
     blueprint_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -119,7 +126,7 @@ class BlueprintApproval(Base):
     approval_id: Mapped[str] = mapped_column(String, primary_key=True)
     project_id: Mapped[str] = mapped_column(String, nullable=False)
     blueprint_hash: Mapped[str] = mapped_column(String, nullable=False)
-    approved_by_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    approved_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     revoked_at: Mapped[str | None] = mapped_column(String)
@@ -144,3 +151,22 @@ class GitProviderRepositoryRecord(Base):
     repo_key: Mapped[str] = mapped_column(String, nullable=False)
     repository_json: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
+class DownloadRecord(Base):
+    __tablename__ = "download_records"
+    __table_args__ = (
+        Index("idx_download_records_owner_created", "owner_user_id", "created_at"),
+        Index("idx_download_records_project", "project_id", "created_at"),
+    )
+
+    download_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    artifact_id: Mapped[str] = mapped_column(String, nullable=False)
+    download_url: Mapped[str] = mapped_column(String, nullable=False)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    downloaded_at: Mapped[str | None] = mapped_column(String)

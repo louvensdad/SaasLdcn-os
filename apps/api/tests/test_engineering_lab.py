@@ -11,7 +11,17 @@ from fastapi.testclient import TestClient
 from app.engines.engineering_lab_engine import engineering_lab_engine
 from app.services.file_protocol import EmittedFile
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
+from fake_execution_runtime import FakeExecutionRuntime
 
+
+@pytest.fixture(autouse=True)
+def sandbox_runtime():
+    previous = engineering_lab_engine.runtime
+    engineering_lab_engine.runtime = FakeExecutionRuntime()
+    try:
+        yield
+    finally:
+        engineering_lab_engine.runtime = previous
 
 def _project_root(project_id: str) -> Path:
     root = DEFAULT_OUTPUT_ROOT / project_id

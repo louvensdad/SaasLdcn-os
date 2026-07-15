@@ -74,6 +74,7 @@ from app.schemas.generation_job import (
 from app.schemas.execution_terminal import TerminalExecuteRequest, TerminalHistoryResponse
 from app.services.api_collection_service import api_collection_service
 from app.services.execution_terminal_service import ALLOWED_COMMANDS_DISPLAY, execution_terminal_service
+from app.services.download_service import DownloadService
 from app.services.generated_project_service import GeneratedProjectService
 from app.services.git_provider_service import git_provider_service
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter, ProjectWriteError
@@ -83,6 +84,7 @@ router = APIRouter(tags=["meta-factory"])
 logger = logging.getLogger("ldcn.api.meta_factory")
 
 _generated_project_service = GeneratedProjectService()
+_download_service = DownloadService()
 _quality_engine = GeneratedProjectQualityEngine()
 _SAFE_PROJECT_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -117,7 +119,7 @@ def _audit(user_id: str, event_code: str) -> None:
     """Best-effort audit trail (never breaks the request if the log is unavailable)."""
     try:
         AuditLogRepository(get_settings().sqlite_path).record(user_id=user_id, event_code=event_code)
-    except Exception:  # noqa: BLE001 Ã¢â‚¬â€ audit must never block the user action
+    except Exception:  # noqa: BLE001 — audit must never block the user action
         pass
 
 
@@ -565,17 +567,13 @@ def _meta_project(project_id: str) -> dict:
 
 
 def _owned_meta_project(project_id: str, user: dict) -> dict:
-    """Resolve a generated project AND enforce ownership (diagnosis H3).
-
-    A project records its owner when it is created through the API. If a different
-    user requests it, we respond 404 (not 403) so we never confirm the existence of
-    another user's project. Projects with no recorded owner (legacy / direct writes)
-    are not id-restricted."""
+    """Resolve a generated project and hide it from non-owners."""
     project = _meta_project(project_id)
-    owner = ProjectWriter().read_owner(project_id)
+    writer = ProjectWriter()
+    owner = writer.read_owner(project_id)
     if owner is not None and owner != user["user_id"]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generated project was not found.")
-    return project
+    return {**project, "owner_user_id": user["user_id"], "workspace_id": writer.read_workspace(project_id)}
 
 
 def _force_release_authorized_project(project_id: str, user: dict) -> dict:
@@ -1047,26 +1045,37 @@ def execute_terminal_command(project_id: str, payload: TerminalExecuteRequest, u
     def event_source():
         worker = threading.Thread(target=run, daemon=True)
         worker.start()
-        while True:
-            try:
-                kind, value = frames.get(timeout=1.0)
-            except queue.Empty:
-                yield _sse({"type": "heartbeat"})
-                continue
-            if kind == "line":
-                yield _sse({"type": "line", **value})
-            elif kind == "done":
-                yield _sse({"type": "done", "record": value})
-                return
-            else:
-                yield _sse({"type": "error", "detail": str(value)})
-                return
-
+        try:
+            while True:
+                try:
+                    kind, value = frames.get(timeout=1.0)
+                except queue.Empty:
+                    yield _sse({"type": "heartbeat"})
+                    continue
+                if kind == "line":
+                    yield _sse({"type": "line", **value})
+                elif kind == "done":
+                    yield _sse({"type": "done", "record": value})
+                    return
+                else:
+                    yield _sse({"type": "error", "detail": str(value)})
+                    return
+        finally:
+            if worker.is_alive():
+                execution_terminal_service.cancel(project_id)
     return StreamingResponse(
         event_source(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
+
+@router.post("/meta-factory/{project_id}/terminal/cancel")
+def cancel_terminal_command(project_id: str, user: CurrentUser) -> dict[str, bool]:
+    _owned_meta_project(project_id, user)
+    cancelled = execution_terminal_service.cancel(project_id)
+    if cancelled:
+        _audit(user["user_id"], "terminal_command_cancelled")
+    return {"cancelled": cancelled}
 
 @router.get("/meta-factory/{project_id}/terminal/history", response_model=TerminalHistoryResponse)
 def terminal_history(project_id: str, user: CurrentUser) -> TerminalHistoryResponse:
@@ -1091,7 +1100,7 @@ def validate_quality(project_id: str, user: CurrentUser, build: bool = Query(Tru
 
 @router.get("/meta-factory/{project_id}/quality-report", response_model=QualityGateReport)
 def get_quality_report(project_id: str, user: CurrentUser) -> QualityGateReport:
-    """Fast deterministic Quality Gate (no build) Ã¢â‚¬â€ for rendering the report card."""
+    """Fast deterministic Quality Gate (no build) — for rendering the report card."""
     return quality_gate_engine.evaluate(_owned_meta_project(project_id, user), run_build=False)
 
 
@@ -1210,7 +1219,7 @@ def force_release_project(
 
 def _require_verified(project_id: str, *, force: bool, user_id: str | None = None) -> None:
     """Release gate: block download/export when the project has critical problems
-    (Quality Gate BLOCKERS) or has not passed the build verification Ã¢â‚¬â€ unless the
+    (Quality Gate BLOCKERS) or has not passed the build verification — unless the
     caller explicitly overrides ('mesmo assim') or a conscious force-release is on."""
     if force:
         return
@@ -1356,16 +1365,18 @@ def prepare_meta_factory_download(
 ) -> PreparedDownloadResponse:
     project = _owned_meta_project(project_id, user)
     _require_verified(project_id, force=force, user_id=user["user_id"])
-    return PreparedDownloadResponse.model_validate(
-        _generated_project_service.prepare_download(project)
+    result = _download_service.prepare_archive(
+        _generated_project_service, project,
+        download_url=f"/api/meta-factory/{project_id}/download",
     )
+    return PreparedDownloadResponse.model_validate(result)
 
 
 @router.get("/meta-factory/{project_id}/download")
 def download_meta_factory_project(project_id: str, user: CurrentUser) -> FileResponse:
-    zip_path = _generated_project_service.download_path(_owned_meta_project(project_id, user))
+    project = _owned_meta_project(project_id, user)
+    zip_path = _download_service.resolve_archive(_generated_project_service, project, user["user_id"])
     return FileResponse(zip_path, media_type="application/zip", filename=f"{project_id}.zip")
-
 
 @router.post("/meta-factory/{project_id}/export/{provider}", response_model=GeneratedProjectExportResponse)
 def export_meta_factory_project(

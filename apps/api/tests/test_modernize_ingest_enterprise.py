@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.services.codebase_ingest_service import (
     INGEST_ROOT,
     SMART_IGNORE_DIRS,
+    CodebaseIngestError,
     CodebaseIngestService,
     _language_for,
     is_ignored,
@@ -203,3 +204,42 @@ def test_ingest_report_surfaced_via_route(client):
     assert stats["analyzable_count"] == len(_REAL_APP)
     assert "Spring Boot" in stats["frameworks"]
     assert stats["lines_of_code"] > 0
+
+@pytest.mark.parametrize(
+    ("field", "value", "files", "message"),
+    [
+        ("modernize_max_archive_entries", 1, {"a.py": "x", "b.py": "x"}, "too many entries"),
+        ("modernize_max_archive_uncompressed_bytes", 1, {"a.py": "xx"}, "declared size"),
+        ("modernize_max_archive_depth", 2, {"a/b/c.py": "x"}, "path depth"),
+        ("modernize_max_archive_name_bytes", 8, {"overlong-name.py": "x"}, "overlong entry name"),
+    ],
+)
+def test_archive_manifest_security_limits(service, field, value, files, message):
+    settings = get_settings()
+    previous = getattr(settings, field)
+    setattr(settings, field, value)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    try:
+        with pytest.raises(CodebaseIngestError, match=message):
+            service.ingest_zip(buffer.getvalue())
+    finally:
+        setattr(settings, field, previous)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1/repository.git",
+        "https://169.254.169.254/latest/meta-data.git",
+        "https://user:secret@github.com/org/repository.git",
+        "https://github.com:8443/org/repository.git",
+        "https://github.com/org/repository.git?redirect=internal",
+        "ssh://github.com/org/repository.git",
+    ],
+)
+def test_git_ingest_rejects_unapproved_or_ambiguous_urls(service, url):
+    with pytest.raises(CodebaseIngestError):
+        service.ingest_git(url)

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
@@ -140,20 +140,10 @@ def _deterministic_blueprint(spec: ProjectSpec, project_id: str, *, generation_t
     rule_links = [r for r in spec.business_rules[:3]]
     payment_entities = [e for e in spec.entities if "pag" in e.lower() or "payment" in e.lower()]
 
-    # Mobile Factory (Phase 2): only decide a mobile area when the room's
-    # delivery_type actually calls for one -- a web/backend-only project must
-    # never carry a mobile BlueprintDecision. Stack choice is configurable per
-    # project (decision #1): if the user already picked one on the spec, honor
-    # it; otherwise default to Expo/React Native and only prefer Flutter when
-    # the domain's own non-functional signals point at real native-performance
-    # needs (never invented — same evidence-based pattern as has_payments above).
+    # Mobile generation is currently Expo/React Native only. Flutter remains an
+    # explicit future alternative and must never be inferred into an executable plan.
     wants_mobile = spec.delivery_type in {"mobile", "full_stack"}
-    native_perf_signals = [
-        k for k, v in nf.items()
-        if any(token in f"{k} {v}".lower() for token in ("nativ", "jogo", "game", "ar/", " ar ", "camera", "bluetooth", "background"))
-    ]
-    mobile_stack = spec.mobile_stack or ("flutter" if native_perf_signals else "react_native_expo")
-    mobile_stack_label = "Flutter" if mobile_stack == "flutter" else "React Native + Expo"
+    mobile_stack_label = "React Native + Expo"
 
     decisions = [
         BlueprintDecision(
@@ -173,17 +163,11 @@ def _deterministic_blueprint(spec: ProjectSpec, project_id: str, *, generation_t
             choice=f"App {mobile_stack_label} consumindo o mesmo contrato REST do backend",
             justification=(
                 f"delivery_type da sala inclui mobile; {users} precisam de acesso nativo. "
-                + (
-                    "Sinais de performance nativa no NFR justificam Flutter."
-                    if mobile_stack == "flutter"
-                    else "Expo acelera entrega cross-platform sem exigir dois times nativos."
-                )
+                "Expo acelera entrega cross-platform sem exigir dois times nativos."
             ),
-            alternatives_considered=["Flutter" if mobile_stack != "flutter" else "React Native + Expo", "WebView empacotado (nao nativo)"],
+            alternatives_considered=["Flutter (futuro, ainda nao suportado)", "WebView empacotado (nao nativo)"],
             tradeoffs=[
-                "Flutter da controle fino de performance/UI ao custo de um runtime proprio (Dart)."
-                if mobile_stack == "flutter"
-                else "Expo acelera o setup e updates OTA, com menos acesso a modulos nativos exoticos."
+                "Expo acelera o setup e updates OTA, com menos acesso a modulos nativos exoticos."
             ],
             impact="Garante paridade de regras de negocio entre a versao web e a mobile.",
             risks=["Divergencia de contrato entre frontend web e mobile se nao consumirem o mesmo openapi.yaml."],

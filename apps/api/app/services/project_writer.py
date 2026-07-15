@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from app.core.config import BASE_DIR
 from app.data.foundation import CONTRACT_VERSION
+from app.services.artifact_security import ArtifactSecurityError, assert_artifact_safe
 from app.services.artifact_storage import ArtifactStore, get_artifact_store
 from app.services.file_protocol import EmittedFile
 from app.services.fs_publish import force_rmtree, publish_directory
@@ -77,6 +78,10 @@ class ProjectWriter:
         try:
             written: list[str] = []
             for emitted in files:
+                try:
+                    assert_artifact_safe(emitted.path, emitted.content)
+                except ArtifactSecurityError as exc:
+                    raise ProjectWriteError(str(exc)) from exc
                 target = self._safe_target(staging, emitted.path)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(emitted.content, encoding="utf-8")
@@ -106,6 +111,10 @@ class ProjectWriter:
 
         written: list[str] = []
         for emitted in files:
+            try:
+                assert_artifact_safe(emitted.path, emitted.content)
+            except ArtifactSecurityError as exc:
+                raise ProjectWriteError(str(exc)) from exc
             target = self._safe_target(root, emitted.path)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(emitted.content, encoding="utf-8")

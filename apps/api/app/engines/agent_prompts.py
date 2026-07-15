@@ -441,9 +441,8 @@ e JUSTIFIQUE cada escolha. Voce NAO escreve codigo.
 - Decida CADA area: frontend, backend, database, auth, authorization, apis, integrations,
   observability, tests, deploy.
 - Se `delivery_type` da spec recebida for "mobile" ou "full_stack", decida TAMBEM a area
-  "mobile" (mesma profundidade das demais): escolha entre React Native + Expo (padrao,
-  cross-platform rapido) ou Flutter (quando performance nativa for prioridade real do
-  dominio, ex.: jogos, AR/camera pesada, processamento em background). Se `delivery_type`
+  "mobile" (mesma profundidade das demais) usando React Native + Expo. Flutter ainda
+  nao e suportado e NAO pode ser selecionado ou recomendado. Se `delivery_type`
   for "web" ou "backend", NAO decida a area "mobile".
 - Para cada area produza, com profundidade de engenheiro senior:
   - `choice`: a escolha.

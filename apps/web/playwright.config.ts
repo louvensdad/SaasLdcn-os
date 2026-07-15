@@ -1,4 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { defineConfig, devices } from '@playwright/test';
+
+const e2eRunId = `e2e-test-${randomUUID().replaceAll('-', '')}`;
 
 export default defineConfig({
   testDir: './tests',
@@ -14,17 +17,18 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'python -m uvicorn app.main:app --host 127.0.0.1 --port 8001',
-      cwd: '../api',
+      command: 'node scripts/start-e2e-api.mjs',
+      cwd: '.',
+      env: { LDCN_E2E_RUN_ID: e2eRunId },
       url: 'http://127.0.0.1:8001/api/health',
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 60_000,
     },
     {
       command: 'npm run dev -- --hostname 127.0.0.1 --port 3000',
       cwd: '.',
       url: 'http://127.0.0.1:3000',
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 120_000,
     },
   ],

@@ -1,45 +1,27 @@
 # Git Export
 
-## V1 Foundation stance
+## Status
 
-Git Export is planned but inactive. V1 Foundation does not integrate with GitHub, GitLab, OAuth, personal access tokens, repository creation, or git push.
+Git Export is implemented and authenticated. GitHub and GitLab credentials are owned by the current user, stored as encrypted expiring sessions, and are never included in export jobs or responses.
 
-Placeholder endpoint responses return `501 Not Implemented` with:
+## Endpoints
 
-`Feature planned but not active in V1 Foundation.`
+- `GET /api/integrations/git/{provider}`: connection status.
+- `POST /api/integrations/git/{provider}/connect`: store an encrypted GitHub or GitLab token.
+- `POST /api/integrations/git/{provider}/validate`: validate the active connection.
+- `DELETE /api/integrations/git/{provider}`: remove the connection.
+- `POST /api/repositories`: create and deliver a repository with the connected provider.
+- `POST /api/git/export/preview`: validate and preview an export.
+- `POST /api/git/export/github` and `/gitlab`: execute an export.
+- `GET /api/git/export/status/{export_id}`: owner-scoped status.
 
-## Contract
+## Security contract
 
-The canonical contract is `packages/contracts/git-export.contract.ts`.
+- Export only an owned project with a generated project path.
+- Run security validation before delivery.
+- Reject `.env`, secrets, credentials, private keys, and secret-like generated content.
+- Keep provider tokens out of contracts, traces, logs, artifacts, and responses.
+- Return repository URLs only after successful provider delivery.
+- Status lookup is scoped to the authenticated owner.
 
-Future request fields:
-
-- `provider`
-- `repo_name`
-- `visibility`
-- `branch`
-- `commit_message`
-- `project_id`
-
-Future statuses:
-
-- `pending`
-- `validating`
-- `exporting`
-- `success`
-- `failed`
-- `blocked`
-
-## Security rules
-
-- Export only projects that already have a generated project path.
-- Run Security Gate before export.
-- Never export `.env`, real secrets, provider tokens, private keys, credentials, or secret-like generated content.
-- Use credential references, not raw Git tokens, in export contracts and traces.
-- Return repo URL only after successful export.
-
-## Placeholder endpoint
-
-- `GET /api/git/export/status/{export_id}`
-
-The endpoint currently returns `501`.
+The API schemas under `apps/api/app/schemas` are the runtime source of truth; shared UI contracts live under `packages/contracts`.

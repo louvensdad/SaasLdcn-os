@@ -80,7 +80,7 @@ function Pipeline({ ready }: { readonly ready: boolean }) {
       {steps.map((step, index) => (
         <li key={step} className="flex min-h-14 items-center gap-3 bg-[color:var(--surface-2)] px-4 py-3">
           <span className={cn(
-            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-mono text-[0.625rem]',
+            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-mono text-xs',
             ready
               ? 'border-[color:var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,var(--surface-3))] text-[color:var(--accent)]'
               : index === 0

@@ -86,4 +86,4 @@ if (process.argv.includes('--json')) {
   for (const r of RULES) console.log(`  ${String(byRule[r.id] ?? 0).padStart(5)}  ${r.id}`);
 }
 
-process.exit(0);
+if (process.argv.includes('--check') && total > 0) process.exitCode = 1;

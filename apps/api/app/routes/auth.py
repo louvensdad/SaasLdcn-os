@@ -106,7 +106,7 @@ def logout(request: Request, user: CurrentUser, payload: RefreshRequest | None =
 
 def _oauth_callback_url(request: Request, provider: str) -> str:
     settings = get_settings()
-    return f"{str(request.base_url).rstrip('/')}{settings.api_prefix}/auth/oauth/{provider}/callback"
+    return f"{settings.api_public_base_url.rstrip('/')}{settings.api_prefix}/auth/oauth/{provider}/callback"
 
 
 @router.get("/oauth/{provider}/start")

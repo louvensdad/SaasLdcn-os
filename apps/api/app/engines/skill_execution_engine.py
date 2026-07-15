@@ -11,6 +11,8 @@ from app.engines.architectural_graph_engine import generate_graph_snapshot
 from app.engines.engineering_readiness_engine import calculate_engineering_readiness
 from app.engines.generation_handoff_engine import build_generation_handoff_package
 from app.engines.skill_registry_engine import SkillRegistryEngine
+from app.repositories.download_repository import DownloadRepository
+from app.services.download_service import DownloadService
 from app.services.generated_project_service import GeneratedProjectService
 from app.services.project_service import ProjectService
 
@@ -31,9 +33,13 @@ class SkillExecutionEngine:
         self,
         project_service: ProjectService | None = None,
         generated_project_service: GeneratedProjectService | None = None,
+        download_service: DownloadService | None = None,
     ) -> None:
         self.project_service = project_service or ProjectService()
         self.generated_project_service = generated_project_service or GeneratedProjectService()
+        project_repository = getattr(self.project_service, "project_repository", None)
+        database_url = getattr(project_repository, "database_url", None)
+        self.download_service = download_service or DownloadService(DownloadRepository(database_url))
         self.registry = SkillRegistryEngine()
 
     def execute(self, skill_id: str, project_id: str | None, context: dict[str, Any], user_id: str | None = None) -> dict[str, Any]:
@@ -138,7 +144,10 @@ class SkillExecutionEngine:
             }
         if skill_id == "prepare_download":
             assert project is not None
-            prepared = self.generated_project_service.prepare_download(project)
+            prepared = self.download_service.prepare_archive(
+                self.generated_project_service, project,
+                download_url=f"/api/generation/{project['project_id']}/download",
+            )
             return {"status": "completed", "summary": "Secure ZIP prepared deterministically.", "outputs": prepared}
         if skill_id == "generate_local_project":
             return {

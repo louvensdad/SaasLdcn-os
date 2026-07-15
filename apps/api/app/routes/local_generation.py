@@ -13,11 +13,13 @@ from app.schemas.local_generation import (
     LocalGenerationResult,
     PreparedDownloadResponse,
 )
+from app.services.download_service import DownloadService
 from app.services.generated_project_service import GeneratedProjectService
 
 router = APIRouter(tags=["local-generation"])
 engine = LocalGenerationEngine()
 generated_project_service = GeneratedProjectService()
+download_service = DownloadService()
 
 
 @router.post("/generation/local-run", response_model=LocalGenerationResult)
@@ -54,13 +56,17 @@ def get_generated_file_content(project_id: str, user: CurrentUser, path: str = Q
 @router.post("/generation/{project_id}/prepare-download", response_model=PreparedDownloadResponse)
 def prepare_generated_download(project_id: str, user: CurrentUser) -> PreparedDownloadResponse:
     project = project_service.get_project(project_id, user["user_id"])
-    return PreparedDownloadResponse.model_validate(generated_project_service.prepare_download(project))
+    project = {**project, "owner_user_id": user["user_id"]}
+    result = download_service.prepare_archive(
+        generated_project_service, project, download_url=f"/api/generation/{project_id}/download"
+    )
+    return PreparedDownloadResponse.model_validate(result)
 
 
 @router.get("/generation/{project_id}/download")
 def download_generated_project(project_id: str, user: CurrentUser) -> FileResponse:
     project = project_service.get_project(project_id, user["user_id"])
-    zip_path = generated_project_service.download_path(project)
+    zip_path = download_service.resolve_archive(generated_project_service, project, user["user_id"])
     return FileResponse(
         zip_path,
         media_type="application/zip",

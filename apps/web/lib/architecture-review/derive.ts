@@ -1,4 +1,4 @@
-﻿import type { ProjectRoom, ProjectRoomStatus } from '@contracts/project-room.contract';
+import type { ProjectRoom, ProjectRoomStatus } from '@contracts/project-room.contract';
 import type { ArchitectureBlueprint, BlueprintDecision } from '@contracts/architecture-blueprint.contract';
 
 // ---------------------------------------------------------------------------
@@ -7,7 +7,7 @@ import type { ArchitectureBlueprint, BlueprintDecision } from '@contracts/archit
 // CONTRACT: every value here is derived ONLY from real data already present on
 // the ProjectRoom (its spec) and its ArchitectureBlueprint. Nothing is invented.
 // When a value cannot be derived, it is returned as `null` and the UI renders
-// "InformaÃ§Ã£o ainda indisponÃ­vel" â€” never a fabricated number, score or risk.
+// "Informação ainda indisponível" — never a fabricated number, score or risk.
 // ---------------------------------------------------------------------------
 
 /** A value that is either real (T) or honestly unavailable (null). */
@@ -71,7 +71,7 @@ export function deriveArchitectureLabel(room: ProjectRoom): Maybe<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Engineering readiness â€” coverage-based, NOT invented quality scores.
+// Engineering readiness — coverage-based, NOT invented quality scores.
 // ---------------------------------------------------------------------------
 
 const ALL_AREAS = ['frontend', 'backend', 'database', 'auth', 'authorization', 'apis', 'integrations', 'observability', 'tests', 'deploy'] as const;
@@ -105,7 +105,7 @@ export function deriveReadiness(room: ProjectRoom): EngineeringReadiness {
 }
 
 // ---------------------------------------------------------------------------
-// Risk Center â€” derived from REAL uncertainties the orchestrator flagged:
+// Risk Center — derived from REAL uncertainties the orchestrator flagged:
 // open_questions (unresolved decisions) and assumptions (inferred values).
 // No invented probability/impact scores.
 // ---------------------------------------------------------------------------
@@ -144,7 +144,7 @@ export function deriveRisks(room: ProjectRoom): ReviewRisk[] {
 }
 
 // ---------------------------------------------------------------------------
-// Estimates â€” only counts that genuinely exist in the spec.
+// Estimates — only counts that genuinely exist in the spec.
 // ---------------------------------------------------------------------------
 
 export interface Estimate {
@@ -168,7 +168,7 @@ export function deriveEstimates(room: ProjectRoom): Estimate[] {
 }
 
 // ---------------------------------------------------------------------------
-// Diagram â€” nodes are the REAL decided areas, in a sensible request flow.
+// Diagram — nodes are the REAL decided areas, in a sensible request flow.
 // ---------------------------------------------------------------------------
 
 export interface DiagramNode {
@@ -185,7 +185,7 @@ export function deriveDiagram(blueprint: ArchitectureBlueprint | null): DiagramN
 }
 
 // ---------------------------------------------------------------------------
-// Journey timeline â€” derived from the real room status.
+// Journey timeline — derived from the real room status.
 // ---------------------------------------------------------------------------
 
 export type JourneyStepState = 'done' | 'current' | 'todo';
@@ -208,16 +208,16 @@ function journeyIndex(status: ProjectRoomStatus): number {
     case 'PROMPT_APPROVED':
     case 'BLUEPRINT_GENERATING':
     case 'BLUEPRINT_READY':
-      return 2; // PromptMaster approved / blueprint produced â†’ at the Architect step
+      return 2; // PromptMaster approved / blueprint produced → at the Architect step
     case 'ENGINEERING_REVIEW':
-      return 3; // under engineering review â†’ at the Architecture Review step
+      return 3; // under engineering review → at the Architecture Review step
     case 'ENGINEERING_APPROVED':
     case 'WAITING_META_FACTORY':
     case 'META_FACTORY_RUNNING':
     case 'GENERATING':
     case 'VALIDATING':
     case 'READY':
-      return 4; // review approved â†’ Meta-Factory
+      return 4; // review approved → Meta-Factory
     default:
       return 0;
   }

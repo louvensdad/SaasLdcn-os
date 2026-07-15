@@ -86,7 +86,7 @@ class LLMRouter:
 
     Graceful degrade (Prompt Mestre requirement #1): when the chosen provider is
     unavailable (no adapter / missing SDK / missing API key / missing capability),
-    the router falls back to the deterministic MockAdapter instead of failing â€” but
+    the router falls back to the deterministic MockAdapter instead of failing — but
     only when ``settings.mock_fallback_enabled``. The fallback is always signalled
     on the response (``served_by_fallback=True``), never disguised as a real run.
     """
@@ -122,6 +122,7 @@ class LLMRouter:
         agent_role: str | None = None,
         api_key: str | None = None,
         allow_cache: bool = False,
+        cache_namespace: str = "shared-platform",
     ) -> LLMResponse:
         """`allow_cache` is opt-in and False everywhere by default: several
         callers (factory_pipeline.iter_single_agent's smart retry on an empty/
@@ -155,7 +156,11 @@ class LLMRouter:
 
         # Token Intelligence: consult the app-level response cache before any
         # provider call (opt-in, see docstring above).
-        cache_key = llm_response_cache.make_key(model, req) if allow_cache else None
+        cache_key = (
+            llm_response_cache.make_key(model, req, namespace=cache_namespace)
+            if allow_cache
+            else None
+        )
         if cache_key is not None:
             cached = llm_response_cache.get(cache_key)
             if cached is not None:

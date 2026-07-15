@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.core.config import get_settings
 from app.engines.agent_executor import submit_agent
 from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, module_roots_from_emitted, summarize_contract
 from app.engines.factory_pipeline import _run_agent
@@ -19,6 +20,8 @@ from app.engines.functional_completeness_engine import functional_completeness_e
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.execution_plan_engine import build_execution_plan
 from app.engines.ground_truth_engine import ground_truth_engine
+from app.engines.generation_usage import usage_totals as _usage_totals
+from app.engines.generation_pipeline_policy import BACKEND_CHUNKS, MOBILE_CHUNKS, DELIVERY_TYPES_WITH_MOBILE, PipelineStep, STEPS, logical_stages_for, steps_for
 from app.engines.project_manifest_engine import build_project_manifest
 from app.engines.project_memory_engine import PROJECT_MEMORY_FILE, ProjectMemory, project_memory_engine
 from app.engines.work_estimation_engine import estimate_generation_effort
@@ -26,10 +29,12 @@ from app.services.execution_reality_guard import execution_reality_guard
 from app.engines.llm.router import LLMRouter
 from app.engines.orchestrator_engine import compile_mega_prompt
 from app.engines.warning_policy import classify as classify_warnings
+from app.repositories.download_repository import DownloadRepository
 from app.repositories.generation_job_repository import GenerationJobRepository
 from app.repositories.redaction import redact_value
 from app.schemas.orchestrator import ProjectSpec
 from app.services.file_protocol import EmittedFile
+from app.services.download_service import DownloadService
 from app.services.generated_project_service import GeneratedProjectService
 from app.services import import_graph_engine
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
@@ -41,7 +46,7 @@ from app.services.stack_compatibility import STACK_LOCK_FILE, StackLock, stack_c
 # The watchdog sits just above that worst case: a step that exceeds it is a genuine
 # hang (an adapter ignoring its own timeout, a never-resolving await, a wedged
 # socket) and is converted into a STALLED job instead of a forever-"running" one.
-STAGE_TIMEOUT_SECONDS = 1500  # 25 min ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bounds any single step; never infinite
+STAGE_TIMEOUT_SECONDS = 1500  # 25 min — bounds any single step; never infinite
 
 # Statuses that no longer occupy an agent worker: a job in one of these is done,
 # awaiting the user, or parked. Everything else (QUEUED + the *_RUNNING/*_GENERATING
@@ -63,92 +68,6 @@ JAVA_RESERVED_PACKAGE_SEGMENTS = frozenset({
 })
 
 
-def _usage_totals(parsed: Any, response: Any) -> tuple[int, int]:
-    """Sum every billable response, including format-retry attempts."""
-    usages = [item.get("tokens", {}) for item in getattr(parsed, "attempts", []) if item.get("tokens")]
-    if not usages and response is not None and getattr(response, "usage", None):
-        usages = [response.usage]
-
-    def token_value(usage: dict[str, Any], *keys: str) -> int:
-        for key in keys:
-            value = usage.get(key)
-            if value is not None:
-                try:
-                    return max(0, int(value))
-                except (TypeError, ValueError):
-                    return 0
-        return 0
-
-    return (
-        sum(token_value(usage, "input", "input_tokens", "prompt_tokens") for usage in usages),
-        sum(token_value(usage, "output", "output_tokens", "completion_tokens") for usage in usages),
-    )
-BACKEND_CHUNKS = [
-    "structure", "package_config", "domain_entities", "dtos", "controllers",
-    "services", "repositories", "auth", "validation", "error_handling",
-    "tests", "openapi_sync",
-]
-MOBILE_CHUNKS = [
-    "structure", "package_config", "screens", "navigation",
-    "state_management", "api_client", "native_modules", "tests",
-]
-
-
-@dataclass(frozen=True)
-class PipelineStep:
-    state: str
-    logical: str
-    action: str
-    role: str | None = None
-    chunk: str | None = None
-
-
-STEPS = [
-    PipelineStep("PREPARING_CONTEXT", "contracts", "prepare"),
-    PipelineStep("CONTRACTS_PLANNING", "contracts", "plan"),
-    PipelineStep("CONTRACTS_GENERATING", "contracts", "llm", "contracts"),
-    PipelineStep("CONTRACTS_VALIDATING", "contracts", "validate"),
-    PipelineStep("DATABASE_PLANNING", "database", "plan"),
-    PipelineStep("DATABASE_GENERATING", "database", "deterministic"),
-    PipelineStep("DATABASE_VALIDATING", "database", "validate"),
-    PipelineStep("BACKEND_PLANNING", "backend", "plan"),
-    *[PipelineStep("BACKEND_GENERATING", "backend", "llm", "backend", chunk) for chunk in BACKEND_CHUNKS],
-    PipelineStep("BACKEND_VALIDATING", "backend", "validate"),
-    PipelineStep("FRONTEND_PLANNING", "frontend", "plan"),
-    PipelineStep("FRONTEND_GENERATING", "frontend", "llm", "frontend"),
-    PipelineStep("FRONTEND_VALIDATING", "frontend", "validate"),
-    PipelineStep("SECURITY_PLANNING", "security", "plan"),
-    PipelineStep("SECURITY_VALIDATING", "security", "security"),
-    PipelineStep("TESTS_GENERATING", "tests", "llm", "qa"),
-    PipelineStep("TESTS_RUNNING", "tests", "validate"),
-    PipelineStep("DOCUMENTATION_GENERATING", "docs", "llm", "docs"),
-    PipelineStep("BUILD_RUNNING", "build", "build"),
-    PipelineStep("PACKAGE_CREATING", "package", "package"),
-]
-
-MOBILE_STEPS = [
-    PipelineStep("MOBILE_PLANNING", "mobile", "plan"),
-    *[PipelineStep("MOBILE_GENERATING", "mobile", "llm", "mobile", chunk) for chunk in MOBILE_CHUNKS],
-    PipelineStep("MOBILE_VALIDATING", "mobile", "validate"),
-]
-
-_DELIVERY_TYPES_WITH_MOBILE = frozenset({"mobile", "full_stack"})
-
-
-def steps_for(delivery_type: str | None) -> list[PipelineStep]:
-    """The per-job step list. STEPS (web-only) is the default and by far the
-    common case -- returned as-is, no copy. When the project's delivery_type
-    includes mobile, splice MOBILE_STEPS in right after FRONTEND_VALIDATING."""
-    if delivery_type not in _DELIVERY_TYPES_WITH_MOBILE:
-        return STEPS
-    insert_at = next(i for i, step in enumerate(STEPS) if step.state == "FRONTEND_VALIDATING") + 1
-    return [*STEPS[:insert_at], *MOBILE_STEPS, *STEPS[insert_at:]]
-
-
-def logical_stages_for(steps: list[PipelineStep]) -> list[str]:
-    return list(dict.fromkeys(step.logical for step in steps))
-
-
 class StageFailure(RuntimeError):
     def __init__(self, message: str, *, diagnostic: dict[str, Any]):
         super().__init__(message)
@@ -157,7 +76,7 @@ class StageFailure(RuntimeError):
 
 class StageStalled(RuntimeError):
     """A stage exceeded its timeout (provider/task never resolved). The job is
-    marked STALLED ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â recoverable ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â instead of being left forever in 'running'."""
+    marked STALLED — recoverable — instead of being left forever in 'running'."""
 
     def __init__(self, message: str, *, diagnostic: dict[str, Any]):
         super().__init__(message)
@@ -169,11 +88,14 @@ class JobPaused(RuntimeError):
 
 
 class GenerationJobEngine:
-    def __init__(self, repository: GenerationJobRepository | None = None, checkpoint_root: Path | None = None) -> None:
+    def __init__(self, repository: GenerationJobRepository | None = None, checkpoint_root: Path | None = None, download_service: DownloadService | None = None) -> None:
         self.repository = repository or GenerationJobRepository()
+        self.download_service = download_service or DownloadService(DownloadRepository(self.repository.database_url))
         self.checkpoint_root = (checkpoint_root or (DEFAULT_OUTPUT_ROOT.parent / "jobs")).resolve()
         self.checkpoint_root.mkdir(parents=True, exist_ok=True)
         self.stage_timeout_seconds: float = STAGE_TIMEOUT_SECONDS
+        self.lease_seconds = get_settings().generation_job_lease_seconds
+        self.worker_id = f"generation-worker-{uuid4().hex[:12]}"
         self._threads: dict[str, threading.Thread] = {}
         self._lock = threading.RLock()
         # Serializes live execution-event emission (stdout/stderr pump threads emit
@@ -187,7 +109,7 @@ class GenerationJobEngine:
         blueprint_version: int, provider: str | None, provider_label: str,
         model: str | None, mode: str = "normal",
     ) -> dict[str, Any]:
-        if spec.delivery_type in _DELIVERY_TYPES_WITH_MOBILE and self._mobile_stack(spec, blueprint) == "flutter":
+        if spec.delivery_type in DELIVERY_TYPES_WITH_MOBILE and self._mobile_stack(spec, blueprint) == "flutter":
             raise ValueError(
                 "Flutter generation is not available yet. Confirm React Native + Expo "
                 "or wait for Mobile Factory Phase 5."
@@ -228,22 +150,52 @@ class GenerationJobEngine:
             running = self._threads.get(job_id)
             if running and running.is_alive():
                 return job
-            thread = threading.Thread(target=self.execute, args=(job_id, owner_user_id), kwargs={"api_key": api_key, "user_model_choice": user_model_choice, "start_index": start_index, "mode": mode}, daemon=True)
+            attempt_id = self.repository.claim(
+                job_id, owner_user_id, self.worker_id, lease_seconds=self.lease_seconds
+            )
+            if attempt_id is None:
+                return self.repository.get(job_id, owner_user_id)
+            thread = threading.Thread(
+                target=self.execute,
+                args=(job_id, owner_user_id),
+                kwargs={
+                    "api_key": api_key,
+                    "user_model_choice": user_model_choice,
+                    "start_index": start_index,
+                    "mode": mode,
+                    "attempt_id": attempt_id,
+                },
+                daemon=False,
+            )
             self._threads[job_id] = thread
             thread.start()
         return job
 
-    def execute(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None, start_index: int = 0, mode: str = "normal") -> None:
+    def execute(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None, start_index: int = 0, mode: str = "normal", attempt_id: str | None = None) -> None:
+        attempt_id = attempt_id or self.repository.claim(
+            job_id, owner_user_id, self.worker_id, lease_seconds=self.lease_seconds
+        )
+        if attempt_id is None:
+            return
         inputs = self.repository.inputs(job_id, owner_user_id)
         job = self.repository.get(job_id, owner_user_id)
         if inputs is None or job is None:
+            self.repository.release_lease(job_id, self.worker_id, attempt_id)
             return
-        spec_data, blueprint = inputs
-        spec = ProjectSpec.model_validate(spec_data)
-        mega = compile_mega_prompt(spec, blueprint)
-        steps = steps_for(spec.delivery_type)
+        try:
+            spec_data, blueprint = inputs
+            spec = ProjectSpec.model_validate(spec_data)
+            mega = compile_mega_prompt(spec, blueprint)
+            steps = steps_for(spec.delivery_type)
+        except Exception:
+            self.repository.release_lease(job_id, self.worker_id, attempt_id)
+            raise
         try:
             for index in range(start_index, len(steps)):
+                if not self.repository.heartbeat(
+                    job_id, self.worker_id, attempt_id, lease_seconds=self.lease_seconds
+                ):
+                    raise RuntimeError("Generation job lease was lost to another worker.")
                 current = self.repository.get(job_id, owner_user_id)
                 if current is None or current["status"] == "PAUSED":
                     return
@@ -351,10 +303,21 @@ class GenerationJobEngine:
             self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=f"Falha inesperada da pipeline: {exc}")
             self._record_known_problem(job, owner_user_id, steps, f"Falha inesperada da pipeline: {exc}")
             self._finalize_pipeline(job, owner_user_id, outcome="FAILED", message=f"Falha inesperada da pipeline: {exc}")
+        finally:
+            self.repository.release_lease(job_id, self.worker_id, attempt_id)
 
+    def reconcile_startup(self) -> dict[str, int]:
+        stalled = self.repository.reconcile_expired(TERMINAL_STATUSES)
+        resumed = 0
+        for job_id, owner_user_id in self.repository.queued_without_lease():
+            if self.start(
+                job_id, owner_user_id, api_key=None, user_model_choice=None
+            ) is not None:
+                resumed += 1
+        return {"stalled": stalled, "resumed": resumed}
     def _finalize_pipeline(self, job: dict[str, Any], owner: str, *, outcome: str, message: str) -> None:
-        """State Transition Finalizer: EVERY pipeline run ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â success, degraded
-        continuation (build skipped), user-action block, stall or crash ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ends
+        """State Transition Finalizer: EVERY pipeline run — success, degraded
+        continuation (build skipped), user-action block, stall or crash — ends
         here. It stamps finishedAt and emits the mandatory PIPELINE_COMPLETE
         execution event, so the frontend always receives a terminal signal and
         can never be left waiting for a BUILD_SUCCESS that will not come.
@@ -435,7 +398,7 @@ class GenerationJobEngine:
         job["error"] = None
         self._log(job, job["currentStage"], "info", "Continuando a partir do ultimo checkpoint.")
         self._save(job, owner_user_id)
-        # Resume in the SAME mode the job was created with ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â a job started in
+        # Resume in the SAME mode the job was created with — a job started in
         # "deterministic" mode (no LLM provider required) must not silently
         # switch to real LLM calls (or demand a provider it never needed) just
         # because it stalled/paused and is being resumed.
@@ -599,7 +562,7 @@ class GenerationJobEngine:
         # Ground Truth State Engine: the REAL system state is mandatory in every
         # LLM context (appended AFTER compression so it always survives). The
         # model can never guess whether the build passed, a repo exists or the
-        # pipeline finished ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â it is told, and in failure state it is put in
+        # pipeline finished — it is told, and in failure state it is put in
         # DIAGNOSTIC ONLY mode.
         ground_truth = ground_truth_engine.from_job(job)
         context += "\n\n" + ground_truth_engine.prompt_block(ground_truth)
@@ -627,7 +590,7 @@ class GenerationJobEngine:
         token_estimate = estimate_tokens(context)
         checkpoint = self._checkpoint(job, step, payload_bytes, token_estimate)
         # Persist the running checkpoint BEFORE the (potentially hanging) LLM call so
-        # a stall/crash recovery ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â which reloads from the repository ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â still sees it.
+        # a stall/crash recovery — which reloads from the repository — still sees it.
         self._save(job, owner)
         if mode == "deterministic":
             self._deterministic_stage_fallback(job, owner, step)
@@ -640,11 +603,6 @@ class GenerationJobEngine:
             job, owner, step, role, context, model, api_key,
             language=spec.suggested_stack.language, framework=spec.suggested_stack.framework,
         )
-        input_tokens, output_tokens = _usage_totals(parsed, response)
-        if input_tokens or output_tokens:
-            totals = self.repository.add_usage(job["id"], owner, input_tokens, output_tokens)
-            if totals is not None:
-                job["inputTokensTotal"], job["outputTokensTotal"] = totals
         self._assert_not_paused(job, owner)
         response, parsed = self._enforce_reality(job, owner, step, role, context, ground_truth, response, parsed, model, api_key, spec)
         self._emit(job, owner, "agent_finished", stage=step.state, message=f"Agente '{role}' respondeu: {len(parsed.files)} arquivo(s).")
@@ -706,16 +664,11 @@ class GenerationJobEngine:
                 job, owner, step, role, retry_context, model, api_key,
                 language=spec.suggested_stack.language, framework=spec.suggested_stack.framework,
             )
-            input_tokens, output_tokens = _usage_totals(retry_parsed, retry_response)
-            if input_tokens or output_tokens:
-                totals = self.repository.add_usage(job["id"], owner, input_tokens, output_tokens)
-                if totals is not None:
-                    job["inputTokensTotal"], job["outputTokensTotal"] = totals
             if retry_parsed.files:
                 response, parsed = retry_response, retry_parsed
         except (StageStalled, JobPaused):
             raise
-        except Exception:  # noqa: BLE001 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â regeneration is best-effort; sanitization below is the guarantee
+        except Exception:  # noqa: BLE001 — regeneration is best-effort; sanitization below is the guarantee
             pass
 
         # Whatever still contradicts reality is forcibly sanitized (never shown).
@@ -747,15 +700,33 @@ class GenerationJobEngine:
         return within the stage ceiling the wait is abandoned (future cancelled,
         worker bounded by the adapter's own request timeout) and the stage is
         converted into a recoverable STALLED state. This is the single guarantee
-        that BACKEND_GENERATING ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â or any LLM stage ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â can never sit in 'running'
+        that BACKEND_GENERATING — or any LLM stage — can never sit in 'running'
         forever waiting on a provider/task that never resolves."""
+        reserved_tokens = estimate_tokens(context) + 48_000
+        if not self.repository.reserve_tokens(
+            job["id"], owner, reserved_tokens,
+            daily_limit=get_settings().generation_daily_token_budget,
+        ):
+            raise StageFailure(
+                "Orcamento de tokens insuficiente para iniciar a etapa.",
+                diagnostic=self._diagnostic(
+                    job, step.state, role, "Token budget exhausted before provider invocation.",
+                    token_estimate=reserved_tokens, kind="token_budget_exceeded",
+                    reason="Per-job or daily owner token budget would be exceeded.",
+                ),
+            )
         timeout_seconds = float(self.stage_timeout_seconds)
         deadline = time.monotonic() + timeout_seconds
-        future = submit_agent(_run_agent, LLMRouter(), role, context, model, api_key, language, framework)
+        try:
+            future = submit_agent(_run_agent, LLMRouter(), role, context, model, api_key, language, framework)
+        except Exception:
+            self.repository.settle_reserved_usage(job["id"], owner, reserved_tokens)
+            raise
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 future.cancel()
+                self.repository.settle_reserved_usage(job["id"], owner, reserved_tokens)
                 raise StageStalled(
                     f"Etapa {step.state} excedeu o tempo limite de {int(timeout_seconds)}s sem resposta do provider.",
                     diagnostic=self._diagnostic(
@@ -768,12 +739,27 @@ class GenerationJobEngine:
                     ),
                 )
             try:
-                return future.result(timeout=min(0.5, remaining))
+                response, parsed = future.result(timeout=min(0.5, remaining))
+                input_tokens, output_tokens = _usage_totals(parsed, response)
+                totals = self.repository.settle_reserved_usage(
+                    job["id"], owner, reserved_tokens, input_tokens, output_tokens
+                )
+                from app.core.metrics import GENERATION_TOKENS
+
+                GENERATION_TOKENS.labels(direction="input").inc(input_tokens)
+                GENERATION_TOKENS.labels(direction="output").inc(output_tokens)
+                if totals is not None:
+                    job["inputTokensTotal"], job["outputTokensTotal"] = totals
+                return response, parsed
             except cf.TimeoutError:
                 current = self.repository.get(job["id"], owner)
                 if current and current.get("status") == "PAUSED":
                     future.cancel()
+                    self.repository.settle_reserved_usage(job["id"], owner, reserved_tokens)
                     raise JobPaused()
+            except Exception:
+                self.repository.settle_reserved_usage(job["id"], owner, reserved_tokens)
+                raise
 
     def _validate_stage(self, job: dict[str, Any], owner: str, step: PipelineStep) -> None:
         names = [item["name"].lower() for item in job["artifacts"] if item["valid"]]
@@ -816,7 +802,7 @@ class GenerationJobEngine:
             self._check_stack_conflicts(job, owner, step)
             self._check_import_graph(job, owner, step)
         # Warning policy gate: classify everything this stage produced. Only
-        # blocking_warning / error / critical stop the pipeline ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â documentation,
+        # blocking_warning / error / critical stop the pipeline — documentation,
         # coverage, TODO, traceability, territory-drift and synthesized-manifest
         # warnings are advisory and MUST NOT block (the "valid + 116 warnings"
         # backend stall). A blocking set becomes NEEDS_USER_ACTION (recoverable),
@@ -885,7 +871,7 @@ class GenerationJobEngine:
 
     def _persist_dependency_graph(self, job: dict[str, Any], owner: str, step: PipelineStep, blueprint: dict[str, Any]) -> None:
         """Carry the architecture-level Dependency Graph Engine snapshot (nodes,
-        edges, propagation rules, impact/readiness/risk profiles ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â already
+        edges, propagation rules, impact/readiness/risk profiles — already
         computed pre-generation from the room's approved stack/capabilities by
         `dependency_graph_engine.generate_dependency_snapshot`, see
         `blueprint_engine.py`) into the generation job itself. Previously this
@@ -940,7 +926,7 @@ class GenerationJobEngine:
         Keyed by "{logical_stage}/{name}", not the bare artifact name: a chunked
         stage (e.g. BACKEND_CHUNKS) legitimately re-emits the same "package.json"
         several times as it accumulates dependencies, and those must collapse to
-        one entry (the latest content) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â but backend and frontend each emit their
+        one entry (the latest content) — but backend and frontend each emit their
         own "package.json" at a DIFFERENT path with the SAME bare name, and keying
         by bare name alone let the later stage's manifest silently clobber the
         earlier one's entry in this dict (findable on disk the whole time, just
@@ -971,7 +957,7 @@ class GenerationJobEngine:
         """Import Graph Engine v1 (TS/JS only): parses the imports of every
         generated source file emitted so far and cross-checks them against the
         manifests emitted in the same job. Report-only by design (user
-        decision) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â a regex parser can false-positive on syntax it doesn't
+        decision) — a regex parser can false-positive on syntax it doesn't
         recognize, and BUILD_RUNNING's real typecheck/bundler remains the
         authoritative gate. Value-add over the compiler: undeclared external
         packages and cross-stack leakage (e.g. apps/web importing straight from
@@ -1007,7 +993,7 @@ class GenerationJobEngine:
         Compatibility Matrix, and reconciles the same dependency declared with
         different versions across manifests (monorepo drift). Auto-fixes are
         applied in place (artifact content + file on disk); a manifest that
-        cannot even be parsed is a hard block ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â everything else this engine
+        cannot even be parsed is a hard block — everything else this engine
         can diagnose has a deterministic fix, so it repairs rather than stops
         the pipeline (see stack_compatibility.py)."""
         manifests, parse_errors = self._collect_manifest_artifacts(job)
@@ -1214,7 +1200,7 @@ class GenerationJobEngine:
                 # apps/frontend, ...): naive last-write-wins here silently
                 # dropped the earlier stage's entire dependency list from the
                 # published project (confirmed against a real end-to-end
-                # generation ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â the backend's NestJS/TypeORM deps never made it
+                # generation — the backend's NestJS/TypeORM deps never made it
                 # into the final package.json at all). Merge instead of overwrite.
                 content = self._merge_package_json(previous, content)
             elif previous is not None and lower_name.endswith("tsconfig.json"):
@@ -1340,7 +1326,7 @@ class GenerationJobEngine:
         """Union dependencies/scripts from an earlier stage's package.json into
         the later stage's, instead of the later one silently replacing it. Falls
         back to `current` unchanged if either side doesn't parse as a JSON
-        object ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â publishing whatever the pipeline actually produced is safer
+        object — publishing whatever the pipeline actually produced is safer
         than raising mid-build over a merge nicety."""
         try:
             before = json.loads(previous)
@@ -1363,7 +1349,7 @@ class GenerationJobEngine:
     @staticmethod
     def _merge_tsconfig_json(previous: str, current: str) -> str:
         """Union compilerOptions from an earlier stage's tsconfig.json into the
-        later stage's, instead of the later one silently replacing it ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â same
+        later stage's, instead of the later one silently replacing it — same
         collision and fix shape as _merge_package_json. Any key only the
         earlier stage set (e.g. a NestJS backend's "experimentalDecorators")
         survives untouched; the later stage's value wins on an exact key
@@ -1389,7 +1375,16 @@ class GenerationJobEngine:
         degraded = job.get("buildStatus") == "SKIPPED_AFTER_FAILURE"
         if (not job.get("valid") and not degraded) or not job.get("generatedProjectId"):
             raise StageFailure("Package bloqueado: build ainda nao esta valido.", diagnostic=self._diagnostic(job, "PACKAGE_CREATING", "package", "Build obrigatorio nao aprovado."))
-        package = GeneratedProjectService().prepare_download({"project_id": job["generatedProjectId"], "generated_project_path": str(DEFAULT_OUTPUT_ROOT / job["generatedProjectId"])})
+        project = {
+            "project_id": job["generatedProjectId"],
+            "generated_project_path": str(DEFAULT_OUTPUT_ROOT / job["generatedProjectId"]),
+            "owner_user_id": owner,
+            "workspace_id": job.get("workspaceId"),
+        }
+        package = self.download_service.prepare_archive(
+            GeneratedProjectService(), project,
+            download_url=f"/api/meta-factory/{job['generatedProjectId']}/download",
+        )
         ProjectWriter().append(
             job["generatedProjectId"],
             [],
@@ -1511,7 +1506,7 @@ class GenerationJobEngine:
         snapshot = self._context_snapshot(job, stage, steps)
         recommended = (
             "Esta etapa excedeu o tempo limite. Reexecute o Backend, continue com warnings, "
-            "troque o provider ou use o fallback determinÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­stico desta etapa."
+            "troque o provider ou use o fallback determinístico desta etapa."
             if kind == "stall"
             else "Reexecute somente esta etapa em modo particionado; se persistir, troque o provider ou use o fallback especifico."
         )
@@ -1548,7 +1543,7 @@ class GenerationJobEngine:
         last_log = None
         if logs:
             entry = logs[-1]
-            last_log = entry["message"] + (f" ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â {entry['detail']}" if entry.get("detail") else "")
+            last_log = entry["message"] + (f" — {entry['detail']}" if entry.get("detail") else "")
         last_success = next(
             (item["stage"] for item in reversed(job.get("checkpoints", [])) if item["status"] == "success"),
             None,

@@ -133,7 +133,11 @@ def test_production_requires_explicit_cors_and_secret(monkeypatch):
 def test_production_rejects_missing_distributed_infrastructure():
     settings = Settings(
         environment="production",
-        secret_key="test-secret",
+        secret_key="jwt-secret-that-is-at-least-32-characters-long",
+        token_encryption_key="encryption-key-distinct-and-at-least-32-chars",
+        frontend_base_url="https://app.example.com",
+        api_public_base_url="https://api.example.com",
+        trusted_hosts=["api.example.com"],
         allowed_origins=[],
         redis_url="",
         database_url="sqlite:///local.db",
@@ -159,12 +163,17 @@ def test_production_rejects_missing_distributed_infrastructure():
 def test_production_accepts_explicit_enterprise_infrastructure():
     settings = Settings(
         environment="production",
-        secret_key="test-secret",
+        secret_key="jwt-secret-that-is-at-least-32-characters-long",
+        token_encryption_key="encryption-key-distinct-and-at-least-32-chars",
+        frontend_base_url="https://app.example.com",
+        api_public_base_url="https://api.example.com",
+        trusted_hosts=["api.example.com"],
         allowed_origins=["https://app.example.com"],
         redis_url="redis://redis:6379/0",
         database_url="postgresql+psycopg2://ldcn:secret@db/ldcn",
         artifact_storage_backend="s3",
         artifact_storage_bucket="ldcn-production",
+        metrics_bearer_token="metrics-token-that-is-at-least-32-characters-long",
     )
 
     _validate_production_settings(settings)
@@ -192,3 +201,64 @@ def test_rate_limit_returns_structured_429(client):
     assert first.status_code == 401
     assert second.status_code == 429
     assert second.json()["error"]["code"] == "rate_limited"
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"secret_key": "short"}, "LDCN_SECRET_KEY"),
+        ({"token_encryption_key": "short"}, "LDCN_TOKEN_ENC_KEY"),
+        ({"frontend_base_url": "http://app.example.com"}, "LDCN_FRONTEND_URL"),
+        ({"api_public_base_url": "http://api.example.com"}, "LDCN_API_PUBLIC_URL"),
+        ({"trusted_hosts": ["*"]}, "LDCN_TRUSTED_HOSTS"),
+    ],
+)
+def test_production_security_contract_rejects_unsafe_values(overrides, message):
+    values = {
+        "environment": "production",
+        "secret_key": "jwt-secret-that-is-at-least-32-characters-long",
+        "token_encryption_key": "encryption-key-distinct-and-at-least-32-chars",
+        "frontend_base_url": "https://app.example.com",
+        "api_public_base_url": "https://api.example.com",
+        "trusted_hosts": ["api.example.com"],
+        "allowed_origins": ["https://app.example.com"],
+        "redis_url": "redis://redis:6379/0",
+        "database_url": "postgresql://ldcn:secret@db/ldcn",
+        "artifact_storage_backend": "s3",
+        "artifact_storage_bucket": "ldcn-production",
+        "sandbox_egress_network": "ldcn-sandbox-egress",
+        "sandbox_egress_proxy": "http://egress-proxy:3128",
+        "metrics_bearer_token": "metrics-token-that-is-at-least-32-characters-long",
+        "metrics_bearer_token": "metrics-token-that-is-at-least-32-characters-long",
+    }
+    values.update(overrides)
+    with pytest.raises(RuntimeError, match=message):
+        _validate_production_settings(Settings(**values))
+
+
+def test_untrusted_host_header_is_rejected(client):
+    response = client.get("/api/health", headers={"host": "attacker.example"})
+    assert response.status_code == 400
+
+def test_production_metrics_require_dedicated_bearer_token(client):
+    settings = get_settings()
+    previous_environment = settings.environment
+    previous_token = settings.metrics_bearer_token
+    settings.environment = "production"
+    settings.metrics_bearer_token = "metrics-token-that-is-at-least-32-characters-long"
+    try:
+        missing = client.get("/api/metrics")
+        wrong = client.get("/api/metrics", headers={"authorization": "Bearer wrong"})
+        allowed = client.get(
+            "/api/metrics",
+            headers={"authorization": f"Bearer {settings.metrics_bearer_token}"},
+        )
+    finally:
+        settings.environment = previous_environment
+        settings.metrics_bearer_token = previous_token
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert allowed.status_code == 200
+    assert "http_requests_total" in allowed.text
+    assert "generation_tokens_total" in allowed.text
+    assert "sandbox_executions_total" in allowed.text

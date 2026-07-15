@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 from typing import Any
 
 from collections.abc import Sequence
@@ -58,6 +60,7 @@ class GenerationJobRepository:
                 updated_at=data["updatedAt"],
                 input_tokens_total=0,
                 output_tokens_total=0,
+                token_budget=get_settings().generation_job_token_budget,
                 **normalized,
             ))
         return data
@@ -121,6 +124,104 @@ class GenerationJobRepository:
             )
             return int(count or 0)
 
+    def claim(
+        self, job_id: str, owner_user_id: str, worker_id: str, *, lease_seconds: int
+    ) -> str | None:
+        """Atomically acquire an execution lease. Only one instance can win."""
+        now = datetime.now(UTC).replace(microsecond=0)
+        now_text = now.isoformat()
+        expires = (now + timedelta(seconds=max(30, lease_seconds))).isoformat()
+        attempt_id = f"attempt_{uuid4().hex[:16]}"
+        with self._sessions.begin() as session:
+            result = session.execute(
+                update(GenerationJob)
+                .where(
+                    GenerationJob.id == job_id,
+                    GenerationJob.owner_user_id == owner_user_id,
+                    or_(
+                        GenerationJob.lease_expires_at.is_(None),
+                        GenerationJob.lease_expires_at < now_text,
+                        GenerationJob.lease_owner == worker_id,
+                    ),
+                )
+                .values(
+                    attempt_id=attempt_id,
+                    lease_owner=worker_id,
+                    lease_expires_at=expires,
+                    heartbeat_at=now_text,
+                    attempt_count=GenerationJob.attempt_count + 1,
+                )
+            )
+            return attempt_id if result.rowcount else None
+
+    def heartbeat(self, job_id: str, worker_id: str, attempt_id: str, *, lease_seconds: int) -> bool:
+        now = datetime.now(UTC).replace(microsecond=0)
+        with self._sessions.begin() as session:
+            result = session.execute(
+                update(GenerationJob)
+                .where(
+                    GenerationJob.id == job_id,
+                    GenerationJob.lease_owner == worker_id,
+                    GenerationJob.attempt_id == attempt_id,
+                )
+                .values(
+                    heartbeat_at=now.isoformat(),
+                    lease_expires_at=(now + timedelta(seconds=max(30, lease_seconds))).isoformat(),
+                )
+            )
+            return bool(result.rowcount)
+
+    def release_lease(self, job_id: str, worker_id: str, attempt_id: str) -> bool:
+        with self._sessions.begin() as session:
+            result = session.execute(
+                update(GenerationJob)
+                .where(
+                    GenerationJob.id == job_id,
+                    GenerationJob.lease_owner == worker_id,
+                    GenerationJob.attempt_id == attempt_id,
+                )
+                .values(lease_owner=None, lease_expires_at=None, heartbeat_at=None)
+            )
+            return bool(result.rowcount)
+
+    def reconcile_expired(self, terminal_statuses: Sequence[str]) -> int:
+        """Convert abandoned in-flight attempts to recoverable STALLED jobs."""
+        now = datetime.now(UTC).replace(microsecond=0).isoformat()
+        diagnostic = self._dump({
+            "kind": "worker_lease_expired",
+            "message": "Generation worker lease expired; execution can be resumed safely.",
+            "recommended_action": "Resume the stalled stage after reviewing its last checkpoint.",
+        })
+        with self._sessions.begin() as session:
+            result = session.execute(
+                update(GenerationJob)
+                .where(
+                    GenerationJob.status.notin_(list(terminal_statuses)),
+                    GenerationJob.lease_expires_at.is_not(None),
+                    GenerationJob.lease_expires_at < now,
+                )
+                .values(
+                    status="STALLED",
+                    error=diagnostic,
+                    completed_at=now,
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    heartbeat_at=None,
+                )
+            )
+            return int(result.rowcount or 0)
+
+    def queued_without_lease(self) -> list[tuple[str, str]]:
+        with self._sessions() as session:
+            return [
+                (str(row[0]), str(row[1]))
+                for row in session.execute(
+                    select(GenerationJob.id, GenerationJob.owner_user_id).where(
+                        GenerationJob.status == "QUEUED",
+                        GenerationJob.lease_owner.is_(None),
+                    )
+                ).all()
+            ]
     def delete(self, job_id: str, owner_user_id: str) -> bool:
         with self._sessions.begin() as session:
             result = session.execute(delete(GenerationJob).where(GenerationJob.id == job_id, self._writable_by(owner_user_id)))
@@ -138,6 +239,65 @@ class GenerationJobRepository:
                 return None
         return self.get(job_id, owner_user_id)
 
+    def reserve_tokens(
+        self, job_id: str, owner_user_id: str, requested_tokens: int, *, daily_limit: int
+    ) -> bool:
+        requested = max(1, int(requested_tokens))
+        day_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        with self._sessions.begin() as session:
+            session.execute(
+                select(GenerationJob.id)
+                .where(GenerationJob.owner_user_id == owner_user_id)
+                .with_for_update()
+            ).all()
+            daily = session.execute(
+                select(
+                    func.coalesce(func.sum(GenerationJob.input_tokens_total), 0),
+                    func.coalesce(func.sum(GenerationJob.output_tokens_total), 0),
+                    func.coalesce(func.sum(GenerationJob.reserved_tokens), 0),
+                ).where(
+                    GenerationJob.owner_user_id == owner_user_id,
+                    GenerationJob.created_at >= day_start,
+                )
+            ).one()
+            if sum(int(value or 0) for value in daily) + requested > max(1, int(daily_limit)):
+                return False
+            result = session.execute(
+                update(GenerationJob)
+                .where(
+                    GenerationJob.id == job_id,
+                    GenerationJob.owner_user_id == owner_user_id,
+                    GenerationJob.input_tokens_total + GenerationJob.output_tokens_total
+                    + GenerationJob.reserved_tokens + requested <= GenerationJob.token_budget,
+                )
+                .values(reserved_tokens=GenerationJob.reserved_tokens + requested)
+            )
+            return bool(result.rowcount)
+
+    def settle_reserved_usage(
+        self, job_id: str, owner_user_id: str, reserved_tokens: int,
+        input_tokens: int = 0, output_tokens: int = 0,
+    ) -> tuple[int, int] | None:
+        reserved = max(0, int(reserved_tokens))
+        input_tokens = max(0, int(input_tokens or 0))
+        output_tokens = max(0, int(output_tokens or 0))
+        with self._sessions.begin() as session:
+            result = session.execute(
+                update(GenerationJob)
+                .where(GenerationJob.id == job_id, GenerationJob.owner_user_id == owner_user_id)
+                .values(
+                    reserved_tokens=func.max(GenerationJob.reserved_tokens - reserved, 0),
+                    input_tokens_total=GenerationJob.input_tokens_total + input_tokens,
+                    output_tokens_total=GenerationJob.output_tokens_total + output_tokens,
+                )
+            )
+            if not result.rowcount:
+                return None
+            totals = session.execute(
+                select(GenerationJob.input_tokens_total, GenerationJob.output_tokens_total)
+                .where(GenerationJob.id == job_id)
+            ).one()
+            return int(totals[0]), int(totals[1])
     def add_usage(self, job_id: str, owner_user_id: str, input_tokens: int = 0, output_tokens: int = 0) -> tuple[int, int] | None:
         """Atomically accumulate provider usage and return the persisted totals."""
         input_tokens = max(0, int(input_tokens or 0))
@@ -219,6 +379,12 @@ class GenerationJobRepository:
         data["startedAt"] = row.started_at or data.get("startedAt")
         data["finishedAt"] = row.completed_at
         data["archived"] = bool(row.archived)
+        data["attemptId"] = row.attempt_id
+        data["attemptCount"] = int(row.attempt_count or 0)
+        data["leaseExpiresAt"] = row.lease_expires_at
+        data["heartbeatAt"] = row.heartbeat_at
+        data["tokenBudget"] = int(row.token_budget or 0)
+        data["reservedTokens"] = int(row.reserved_tokens or 0)
         if row.error:
             data["error"] = json.loads(row.error)
         if row.result_path:

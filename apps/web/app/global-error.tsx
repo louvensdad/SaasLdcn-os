@@ -21,10 +21,10 @@ export default function GlobalError({
       <body style={{ margin: 0, background: '#0b0b0f', color: '#f4f4f5', fontFamily: 'system-ui, sans-serif' }}>
         <div style={{ display: 'grid', minHeight: '100vh', placeItems: 'center', padding: '24px' }}>
           <div style={{ maxWidth: 420, textAlign: 'center' }}>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: 8 }}>
+            <h1 style={{ fontWeight: 600, marginBottom: 8 }}>
               Algo deu errado / Something went wrong
             </h1>
-            <p style={{ fontSize: '0.875rem', color: '#a1a1aa', marginBottom: 20 }}>
+            <p style={{ color: '#a1a1aa', marginBottom: 20 }}>
               Não foi possível carregar a aplicação. Tente novamente ou recarregue a página.
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -34,7 +34,6 @@ export default function GlobalError({
                 style={{
                   borderRadius: 999,
                   padding: '8px 16px',
-                  fontSize: '0.875rem',
                   fontWeight: 600,
                   background: '#a78bfa',
                   color: '#0b0b0f',
@@ -50,7 +49,6 @@ export default function GlobalError({
                 style={{
                   borderRadius: 999,
                   padding: '8px 16px',
-                  fontSize: '0.875rem',
                   fontWeight: 600,
                   background: 'transparent',
                   color: '#f4f4f5',

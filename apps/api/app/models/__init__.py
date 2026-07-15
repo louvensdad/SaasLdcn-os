@@ -1,4 +1,5 @@
 from app.models.persistence import (
+    DownloadRecord,
     GenerationJob,
     GitProviderConnection,
     GitProviderRepositoryRecord,
@@ -11,6 +12,7 @@ from app.models.tenant import Organization, OrganizationMembership, Workspace, W
 
 __all__ = [
     "AuditLog",
+    "DownloadRecord",
     "GenerationJob",
     "GitProviderConnection",
     "GitProviderRepositoryRecord",

@@ -57,5 +57,5 @@ npm run build
 - Backend offline in the frontend: confirm the API is running on `http://localhost:8001` or set `NEXT_PUBLIC_API_URL`.
 - Port already in use: run Uvicorn or Next.js on another port and update the frontend API URL if the backend port changes.
 - Pytest cache warnings on Windows: cache write warnings do not affect test results if tests pass.
-- Placeholder endpoints return `501`: this is expected for User Key Boost, Git Export, and PDF Contract Input in V1 Foundation.
+- PDF Contract Input remains a `501` placeholder. User Key Boost and Git Export are active authenticated features.
 - Generated project path errors: local generation requires output paths inside the LDCN OS workspace and will not overwrite existing directories.

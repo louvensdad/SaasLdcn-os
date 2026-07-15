@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import get_settings
 from app.core.cors import configure_cors
@@ -60,6 +61,12 @@ async def lifespan(_: FastAPI):
     projects.service.initialize()
     # Never log the database URL: production URLs commonly embed credentials.
     logger.info("Database ready")
+    if get_settings().environment == "production":
+        recovery = meta_factory.generation_job_engine.reconcile_startup()
+        logger.info(
+            "Generation job recovery complete: stalled=%s resumed=%s",
+            recovery["stalled"], recovery["resumed"],
+        )
     yield
 
 
@@ -79,6 +86,7 @@ def create_application() -> FastAPI:
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
     )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
     configure_cors(app)
     configure_exception_handlers(app)
     app.add_middleware(SecurityHeadersMiddleware)
@@ -97,10 +105,8 @@ def create_application() -> FastAPI:
     app.include_router(health.router, prefix=settings.api_prefix)
     app.include_router(auth.router, prefix=settings.api_prefix)
     app.include_router(localization.router, prefix=settings.api_prefix)
-    # /metrics is unauthenticated (a Prometheus scraper carries no bearer token),
-    # so -- like /docs -- it is only exposed in local/staging, never production.
-    if settings.environment in ("local", "staging"):
-        app.include_router(health.metrics_router, prefix=settings.api_prefix)
+    # Metrics are available in production behind a dedicated bearer token.
+    app.include_router(health.metrics_router, prefix=settings.api_prefix)
 
     # Everything else requires a valid access token.
     protected = [Depends(get_current_user)]

@@ -24,6 +24,12 @@ class TerminalCommandRecord(ApiModel):
     command: str
     cwd: str
     status: Literal["completed", "rejected", "timeout"]
+    runtime_status: Literal[
+        "QUEUED", "PREPARING_SANDBOX", "RUNNING", "SUCCEEDED", "FAILED",
+        "TIMED_OUT", "RESOURCE_LIMIT_EXCEEDED", "SECURITY_BLOCKED",
+        "CANCELLED", "SANDBOX_ERROR",
+    ] | None = None
+    sandbox_id: str | None = None
     exit_code: int | None = None
     duration_ms: int = 0
     stdout_tail: str = ""

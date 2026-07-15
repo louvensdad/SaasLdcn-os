@@ -80,12 +80,28 @@ for (const finding of findings) {
   byFile.set(finding.file, items);
 }
 
-console.log(`Hardcoded i18n audit: ${findings.length} finding(s) in ${byFile.size} file(s).`);
-for (const [file, items] of [...byFile.entries()].sort((left, right) => right[1].length - left[1].length)) {
-  console.log(`${String(items.length).padStart(4)}  ${file}`);
-  if (process.argv.includes('--verbose')) {
-    for (const item of items) console.log(`      ${item.line}: ${item.text}`);
+const byFileCounts = Object.fromEntries([...byFile.entries()].map(([file, items]) => [file, items.length]));
+const payload = { total: findings.length, byFile: byFileCounts, findings };
+
+if (process.argv.includes('--json')) {
+  console.log(JSON.stringify(payload, null, 2));
+} else {
+  console.log(`Hardcoded i18n audit: ${findings.length} finding(s) in ${byFile.size} file(s).`);
+  for (const [file, items] of [...byFile.entries()].sort((left, right) => right[1].length - left[1].length)) {
+    console.log(`${String(items.length).padStart(4)}  ${file}`);
+    if (process.argv.includes('--verbose')) {
+      for (const item of items) console.log(`      ${item.line}: ${item.text}`);
+    }
   }
 }
 
-if (process.argv.includes('--check') && findings.length > 0) process.exitCode = 1;
+if (process.argv.includes('--check')) {
+  const baseline = JSON.parse(fs.readFileSync('reports/i18n-baseline.json', 'utf8'));
+  const regressions = Object.entries(byFileCounts)
+    .filter(([file, count]) => count > (baseline.byFile[file] ?? 0))
+    .map(([file, count]) => `${file}: ${count} > ${baseline.byFile[file] ?? 0}`);
+  if (findings.length > baseline.total || regressions.length > 0) {
+    console.error(`i18n baseline exceeded: ${regressions.join(', ') || `${findings.length} > ${baseline.total}`}`);
+    process.exitCode = 1;
+  }
+}

@@ -89,3 +89,5 @@ class EngineeringLabTerminalResponse(ApiModel):
     duration_ms: int
     output: list[EngineeringLabTerminalChunk] = Field(default_factory=list)
     allowed_command: bool = True
+    runtime_status: str | None = None
+    sandbox_id: str | None = None

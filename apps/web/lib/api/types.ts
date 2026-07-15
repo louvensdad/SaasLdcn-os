@@ -325,8 +325,15 @@ export type DocumentationSaveResponse = DocumentationSaveResponseContract;
 export interface DownloadRecord {
   readonly downloadId: string;
   readonly projectId: string;
-  readonly status: string;
-  readonly artifactPath?: string | null;
+  readonly workspaceId?: string | null;
+  readonly status: 'prepared' | 'downloaded' | 'expired';
+  readonly artifactId: string;
+  readonly checksumSha256: string;
+  readonly sizeBytes: number;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly downloadedAt?: string | null;
+  readonly downloadUrl: string;
 }
 
 export interface ValidateSelectionPayload {

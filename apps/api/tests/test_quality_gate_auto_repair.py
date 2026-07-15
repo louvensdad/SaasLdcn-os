@@ -181,16 +181,9 @@ def test_repair_creates_expo_app_json_readme_and_gitignore(make_project) -> None
     }
 
 
-def test_repair_removes_real_env_file(make_project) -> None:
-    project = _make_min_backend(make_project, extra=[(".env", "JWT_SECRET=supersecretvalue1234567890\n")])
-    root = Path(project["generated_project_path"])
-    assert (root / ".env").is_file()
-
-    report = QualityGateEngine().evaluate(project, run_build=False)
-    assert any(i.id.startswith("real_env_file") and i.auto_fixable for i in report.issues)
-
-    AutoRepairEngine().repair(project, report)
-    assert not (root / ".env").is_file()
+def test_project_writer_blocks_real_env_before_repair(make_project) -> None:
+    with pytest.raises(ProjectWriteError, match="real environment files are forbidden"):
+        _make_min_backend(make_project, extra=[(".env", "JWT_SECRET=supersecretvalue1234567890\n")])
 
 
 def test_repair_refuses_path_traversal(make_project) -> None:
@@ -233,7 +226,7 @@ def test_build_failure_maps_to_blocker(make_project, monkeypatch) -> None:
     assert report.built is True
 
 
-def test_export_gate_blocks_on_blockers_and_allows_after_force_release(make_project) -> None:
+def test_export_gate_blocks_on_blockers_and_allows_after_force_release(client, make_project) -> None:
     project = _make_min_backend(make_project)
     project_id = project["project_id"]
 

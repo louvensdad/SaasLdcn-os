@@ -149,6 +149,24 @@ def test_writer_append_rejects_unknown_or_unsafe_project_id(out_root):
     with pytest.raises(ProjectWriteError):
         writer.append("../escape", [EmittedFile(path="a.txt", content="x")])
 
+@pytest.mark.parametrize(
+    ("path", "content"),
+    [
+        (".env", "DATABASE_URL=postgresql://real-user:real-password@db/prod"),
+        ("keys/id_rsa", "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret"),
+        ("config.py", "api_key = 'sk-proj-abcdefghijklmnopqrstuvwxyz'"),
+    ],
+)
+def test_writer_blocks_real_secret_artifacts(out_root, path, content):
+    with pytest.raises(ProjectWriteError, match="blocked"):
+        ProjectWriter(output_root=out_root).write([EmittedFile(path=path, content=content)])
+
+
+def test_writer_allows_env_example_with_placeholders(out_root):
+    result = ProjectWriter(output_root=out_root).write(
+        [EmittedFile(path=".env.example", content="API_KEY=change-me\nDATABASE_URL=example")]
+    )
+    assert ".env.example" in result.written
 
 # --- completeness review --------------------------------------------------
 
