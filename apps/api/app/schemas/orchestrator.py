@@ -57,6 +57,10 @@ class ProjectSpec(BaseModel):
     # mobile runtime; Flutter is rejected at input validation.
     delivery_type: str = "web"
     mobile_stack: Literal["react_native_expo"] | None = None
+    # Carried from the Project Room's execution_profile (a room-level USER
+    # decision made at creation time, not something the LLM picks). Falls back
+    # to "professional" via resolve_execution_profile() when absent.
+    execution_profile: str = "professional"
     locale: str = "pt-BR"
     assumptions: list[Assumption] = Field(default_factory=list)
     open_questions: list[ClarifyingQuestion] = Field(default_factory=list)

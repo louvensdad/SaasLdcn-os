@@ -120,9 +120,43 @@ ROLE_MODEL_HINTS: dict[str, str] = {
 }
 
 
-def resolve_model(user_choice: str | None = None, agent_role: str | None = None) -> str:
+# Execution Profiles (Economy/Professional/Enterprise) model strategy: an
+# explicit per-role override, consulted AFTER an explicit user_choice (which
+# always wins -- BYOK/explicit picks are never second-guessed) but BEFORE the
+# generic ROLE_MODEL_HINTS default. "balanced" is intentionally absent: it IS
+# today's existing ROLE_MODEL_HINTS, unchanged, so a job with no profile (or
+# Professional) behaves exactly as it always has.
+PROFILE_MODEL_OVERRIDES: dict[str, dict[str, str]] = {
+    "economy": {
+        "orchestrator": "claude-haiku-4-5",
+        "contracts": "claude-sonnet-4-6",
+        "backend": "claude-sonnet-4-6",
+        "frontend": "claude-sonnet-4-6",
+        "qa": "claude-haiku-4-5",
+        "devops": "claude-haiku-4-5",
+        "docs": "claude-haiku-4-5",
+        "reviewer": "claude-haiku-4-5",
+        "repair": "claude-sonnet-4-6",
+    },
+    "premium": {
+        "orchestrator": "claude-opus-4-8",
+        "contracts": "claude-opus-4-8",
+        "backend": "claude-opus-4-8",
+        "frontend": "claude-opus-4-8",
+        "reviewer": "claude-opus-4-8",
+        "repair": "claude-opus-4-8",
+    },
+}
+
+
+def resolve_model(
+    user_choice: str | None = None, agent_role: str | None = None, model_strategy: str | None = None,
+) -> str:
     if user_choice and user_choice in MODEL_REGISTRY:
         return user_choice
+    overrides = PROFILE_MODEL_OVERRIDES.get(model_strategy or "")
+    if overrides and agent_role and overrides.get(agent_role) in MODEL_REGISTRY:
+        return overrides[agent_role]
     if agent_role and ROLE_MODEL_HINTS.get(agent_role) in MODEL_REGISTRY:
         return ROLE_MODEL_HINTS[agent_role]
     return DEFAULT_MODEL

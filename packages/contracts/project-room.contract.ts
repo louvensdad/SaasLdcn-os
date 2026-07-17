@@ -4,6 +4,7 @@
 
 import type { ArchitectureBlueprint, StackProposal } from './architecture-blueprint.contract';
 import type { ArchitectureModel } from './architecture-model.contract';
+import type { ExecutionProfileId } from './execution-profile.contract';
 
 export type ProjectRoomStatus =
   | 'DRAFT'
@@ -244,6 +245,7 @@ export interface ProjectRoom {
   status: ProjectRoomStatus;
   delivery_type: DeliveryType;
   preferred_language?: PreferredLanguage;
+  execution_profile?: ExecutionProfileId;
   raw_intent: string;
   locale: string;
   confidence: number;
@@ -277,6 +279,7 @@ export interface ProjectRoomSummary {
   status: ProjectRoomStatus;
   delivery_type: DeliveryType;
   preferred_language?: PreferredLanguage;
+  execution_profile?: ExecutionProfileId;
   locale: string;
   degraded: boolean;
   has_prompt_master: boolean;
@@ -291,6 +294,7 @@ export interface CreateProjectRoomRequest {
   workspace_id?: string | null;
   delivery_type?: DeliveryType;
   preferred_language?: PreferredLanguage;
+  execution_profile?: ExecutionProfileId;
   user_model_choice?: string | null;
   use_user_key?: boolean;
 }

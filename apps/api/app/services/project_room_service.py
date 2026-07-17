@@ -13,6 +13,7 @@ from app.engines.architect_engine import build_blueprint
 from app.engines.architecture_model_engine import build_architecture_model
 from app.engines.engineering_review_engine import build_engineering_review
 from app.engines.orchestrator_engine import run_orchestrator
+from app.registry.execution_profiles_registry import resolve_execution_profile
 from app.engines.prompt_master_md_engine import author_prompt_master_md
 from app.repositories.project_room_repository import ProjectRoomRepository
 from app.schemas.architecture_blueprint import relevant_areas
@@ -94,8 +95,8 @@ class ProjectRoomService:
         room = self.repository.get_for_owner(room_id, owner_user_id)
         return self._decorate(room) if room else None
 
-    def create_room(self, *, owner_user_id: str, title: str, raw_intent: str = "", locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None, workspace_id: str | None = None, delivery_type: str = "web", preferred_language: str = "") -> dict[str, Any]:
-        room = self.repository.create(owner_user_id=owner_user_id, title=title, locale=locale, raw_intent=raw_intent, workspace_id=workspace_id, delivery_type=delivery_type, preferred_language=preferred_language)
+    def create_room(self, *, owner_user_id: str, title: str, raw_intent: str = "", locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None, workspace_id: str | None = None, delivery_type: str = "web", preferred_language: str = "", execution_profile: str = "professional") -> dict[str, Any]:
+        room = self.repository.create(owner_user_id=owner_user_id, title=title, locale=locale, raw_intent=raw_intent, workspace_id=workspace_id, delivery_type=delivery_type, preferred_language=preferred_language, execution_profile=execution_profile)
         self._log(room["room_id"], owner_user_id, "POST", "/api/project-rooms", 201, "success", "Project Room criado")
         if raw_intent.strip():
             return self._orchestrator_turn(room["room_id"], owner_user_id, raw_intent, api_key=api_key, user_model_choice=user_model_choice, status="UNDER_REVIEW")
@@ -149,8 +150,12 @@ class ProjectRoomService:
         self.repository.update_status(room_id, owner_user_id, "BLUEPRINT_GENERATING")
         self._log(room_id, owner_user_id, "POST", f"/api/project-rooms/{room_id}/blueprint", None, "running", "Provider detectado", detail=user_model_choice or getattr(api_key, "model", None) or "Modo Offline")
         self._log(room_id, owner_user_id, "POST", f"/api/project-rooms/{room_id}/blueprint", None, "running", "PromptMaster enviado ao Architect")
+        profile = resolve_execution_profile(spec.execution_profile)
         try:
-            blueprint = build_blueprint(spec, project_id=room_id, api_key=api_key, user_model_choice=user_model_choice)
+            blueprint = build_blueprint(
+                spec, project_id=room_id, api_key=api_key, user_model_choice=user_model_choice,
+                use_llm=profile.enable_architecture_review, model_strategy=profile.model_strategy,
+            )
         except Exception as exc:
             previous_status = "BLUEPRINT_READY" if room.get("architecture_blueprint") else "PROMPT_APPROVED"
             self.repository.update_status(room_id, owner_user_id, previous_status)
@@ -640,6 +645,10 @@ class ProjectRoomService:
         # something the orchestrator infers from free text -- always carry the
         # room's value into the compiled spec, overriding the schema default.
         spec_dict["delivery_type"] = room.get("delivery_type", "web")
+        # execution_profile, like delivery_type, is a room-level USER decision
+        # made at creation time -- the LLM never picks it, so it is always
+        # carried into the compiled spec, overriding the schema default.
+        spec_dict["execution_profile"] = room.get("execution_profile", "professional")
         self.repository.append_message(room_id, owner_user_id, {"role": "user", "content": content})
         self.repository.set_spec(room_id, owner_user_id, spec_dict, confidence=result.spec.confidence, degraded=result.degraded, status=status)
         self.repository.append_message(room_id, owner_user_id, self._assistant_message(self._summary(result.spec, result.degraded), degraded=result.degraded))

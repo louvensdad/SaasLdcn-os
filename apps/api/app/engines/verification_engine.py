@@ -13,6 +13,7 @@ from app.data.model_registry import resolve_repair_round_model
 from app.engines.factory_pipeline import HEARTBEAT_EVERY_S, _agent_request, _language_for
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.llm.router import LLMRouter
+from app.registry.execution_profiles_registry import resolve_execution_profile
 from app.schemas.orchestrator import ProjectSpec
 from app.services.file_protocol import parse_agent_output
 from app.services.generated_project_service import GeneratedProjectService
@@ -127,18 +128,22 @@ def _repair_context(spec: ProjectSpec, report, files_service: GeneratedProjectSe
 
 def _run_repair(
     router: LLMRouter, context: str, user_model_choice: str | None, api_key: str | None,
-    language: str | None = None, framework: str | None = None,
+    language: str | None = None, framework: str | None = None, allow_cache: bool = True,
+    model_strategy: str | None = None,
 ):
     response = router.route(
         _agent_request(system_prompt_for("repair", language, framework), context, "repair"),
         user_choice=user_model_choice,
         agent_role="repair",
         api_key=api_key,
+        model_strategy=model_strategy,
         # Token Intelligence: a repair round given the exact same context (e.g.
         # a retried job re-running an already-failed round) is a genuine
         # duplicate here -- unlike iter_single_agent's smart retry, nothing
         # about this call site expects a different roll on identical input.
-        allow_cache=True,
+        # Gated by the execution profile's enable_cost_optimization (Enterprise
+        # disables it -- see execution_profiles_registry.py).
+        allow_cache=allow_cache,
     )
     return parse_agent_output(response.text, agent_role="repair")
 
@@ -160,6 +165,7 @@ def iter_verification(
     router = router or LLMRouter()
     project_id = str(project["project_id"])
     files_service = GeneratedProjectService()
+    profile = resolve_execution_profile(spec.execution_profile)
     yield {"type": "verify_started", "project_id": project_id}
 
     report = None
@@ -184,6 +190,7 @@ def iter_verification(
             lambda: _run_repair(
                 router, context, repair_model_choice, api_key,
                 language=spec.suggested_stack.language, framework=spec.suggested_stack.framework,
+                allow_cache=profile.enable_cost_optimization, model_strategy=profile.model_strategy,
             ),
             repair_holder,
         )

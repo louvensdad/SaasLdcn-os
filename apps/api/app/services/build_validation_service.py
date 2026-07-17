@@ -110,13 +110,16 @@ class BuildValidationService:
         self._sandbox_id = ""
         self._sandbox_root: Path | None = None
 
-    def validate(self, project: dict[str, Any], *, event_sink: EventSink | None = None) -> BuildValidationReport:
+    def validate(
+        self, project: dict[str, Any], *, event_sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         root = self._project_root(project)
         if get_settings().force_mock:
             return self._skipped("Build validation skipped in mock mode.")
         collector = _MetricsCollector()
         if not self._has_supported_manifest(root):
-            report = self._dispatch(root, collector, event_sink)
+            report = self._dispatch(root, collector, event_sink, max_attempts)
             report.metrics = collector.finalize()
             return report
         self._sandbox_root = root
@@ -127,7 +130,7 @@ class BuildValidationService:
                 workspace_id=str(project.get("workspace_id") or project.get("workspaceId") or ""),
                 job_id=str(project.get("job_id") or project.get("jobId") or ""),
             )
-            report = self._dispatch(root, collector, event_sink)
+            report = self._dispatch(root, collector, event_sink, max_attempts)
         except subprocess.TimeoutExpired as exc:
             report = BuildValidationReport(
                 installed="failed", built="skipped_after_failure", ok=False,
@@ -170,7 +173,10 @@ class BuildValidationService:
             ):
                 return True
         return False
-    def _dispatch(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+    def _dispatch(
+        self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         targets: list[tuple[str, Path]] = []
         seen: set[tuple[str, Path]] = set()
         backend_candidates = ["", "apps/api", "backend"]
@@ -210,7 +216,7 @@ class BuildValidationService:
             }
             reports: list[tuple[str, Path, BuildValidationReport]] = []
             for ecosystem, target in targets:
-                reports.append((ecosystem, target, runners[ecosystem](target, collector, sink)))
+                reports.append((ecosystem, target, runners[ecosystem](target, collector, sink, max_attempts)))
             return self._combine_reports(root, reports)
         return BuildValidationReport(
             installed="skipped",
@@ -274,7 +280,10 @@ class BuildValidationService:
             manual_fix_guide=manual_fix_guide,
         )
 
-    def _python(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+    def _python(
+        self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         venv = root / ".ldcn-venv"
         create = self._run(["python", "-m", "venv", ".ldcn-venv"], root, collector, "install", sink)
         if create.returncode != 0:
@@ -285,7 +294,10 @@ class BuildValidationService:
             return self._failed_install(install)
         return BuildValidationReport(installed="passed", built="skipped", ok=True, logs_tail=self._tail(install.stdout + install.stderr))
 
-    def _node(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+    def _node(
+        self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         commands: list[dict[str, Any]] = []
         repairs: list[dict[str, Any]] = []
         error_counts: dict[str, int] = {}
@@ -341,7 +353,7 @@ class BuildValidationService:
         classified: ClassifiedBuildError | None = None
         preflight, classified = self._install_phase(
             root, collector, sink, commands, repairs, error_counts,
-            command=["npm", "install", "--dry-run"], record_phase="preflight",
+            command=["npm", "install", "--dry-run"], record_phase="preflight", max_attempts=max_attempts,
         )
         if preflight.returncode != 0:
             report = self._failed_install(preflight)
@@ -350,7 +362,7 @@ class BuildValidationService:
         # ------------------------------------------------------ install + repair
         install, classified = self._install_phase(
             root, collector, sink, commands, repairs, error_counts,
-            command=["npm", "install"], record_phase="install",
+            command=["npm", "install"], record_phase="install", max_attempts=max_attempts,
         )
         if install.returncode != 0:
             report = self._failed_install(install)
@@ -361,7 +373,7 @@ class BuildValidationService:
         build_status = "skipped"
         build_result: subprocess.CompletedProcess[str] | None = None
         build_attempts = 0
-        while build_attempts < MAX_ATTEMPTS_PER_PHASE:
+        while build_attempts < max_attempts:
             build_cmd = self._node_build_command(root)
             if build_cmd is None:
                 break
@@ -378,7 +390,7 @@ class BuildValidationService:
                 break
             signature = f"{classified.code}:{classified.package or '-'}"
             error_counts[signature] = error_counts.get(signature, 0) + 1
-            if error_counts[signature] > MAX_REPAIRS_PER_ERROR:
+            if error_counts[signature] > max_attempts - 1:
                 break
             strategy = "standard" if build_attempts == 1 else "simplified"
             self._emit(sink, {"type": "repair_started", "level": "warning",
@@ -437,17 +449,18 @@ class BuildValidationService:
         *,
         command: list[str],
         record_phase: str,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
     ) -> tuple[subprocess.CompletedProcess[str], ClassifiedBuildError | None]:
         """Run one install-style command (preflight --dry-run or the real
         install) under the bounded auto-repair loop: classify the failure,
         enrich ERESOLVE with the Stack Compatibility diagnosis, apply the safe
-        patch and re-run — max MAX_REPAIRS_PER_ERROR per distinct error and
-        MAX_ATTEMPTS_PER_PHASE commands per phase."""
+        patch and re-run — max `max_attempts - 1` per distinct error and
+        `max_attempts` commands per phase."""
         result = self._run(command, root, collector, "install", sink, records=commands, record_phase=record_phase)
         attempts = 1
         classified: ClassifiedBuildError | None = None
         current = list(command)
-        while result.returncode != 0 and attempts < MAX_ATTEMPTS_PER_PHASE:
+        while result.returncode != 0 and attempts < max_attempts:
             logs = result.stdout + result.stderr
             classified = build_error_classifier.classify(logs)
             if classified is None:
@@ -471,7 +484,7 @@ class BuildValidationService:
                     )
             signature = f"{classified.code}:{classified.package or '-'}"
             error_counts[signature] = error_counts.get(signature, 0) + 1
-            if error_counts[signature] > MAX_REPAIRS_PER_ERROR:
+            if error_counts[signature] > max_attempts - 1:
                 break
             strategy = "standard" if attempts == 1 else "simplified"
             self._emit(sink, {"type": "repair_started", "level": "warning",
@@ -800,7 +813,10 @@ class BuildValidationService:
             })
         return removed
 
-    def _maven(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+    def _maven(
+        self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         """Compile with the same bounded auto-repair policy as the npm build loop:
         a missing pom.xml dependency ('package X does not exist') is resolved to a
         Maven coordinate and added to the failing module's pom.xml, then the compile
@@ -814,14 +830,14 @@ class BuildValidationService:
         result = self._run(command, root, collector, "build", sink, records=commands, record_phase="build")
         attempts = 1
         classified: ClassifiedBuildError | None = None
-        while result.returncode != 0 and attempts < MAX_ATTEMPTS_PER_PHASE:
+        while result.returncode != 0 and attempts < max_attempts:
             logs = result.stdout + result.stderr
             classified = build_error_classifier.classify(logs)
             if classified is None:
                 break
             signature = f"{classified.code}:{classified.package or '-'}"
             error_counts[signature] = error_counts.get(signature, 0) + 1
-            if error_counts[signature] > MAX_REPAIRS_PER_ERROR:
+            if error_counts[signature] > max_attempts - 1:
                 break
             strategy = "standard" if attempts == 1 else "simplified"
             self._emit(sink, {"type": "repair_started", "level": "warning",
@@ -969,25 +985,40 @@ class BuildValidationService:
             return None
         return lookup.latest_version
 
-    def _gradle(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+    def _gradle(
+        self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         wrapper = root / "gradlew"
         if wrapper.is_file():
             command = [str(wrapper), "build", "-x", "test"]
             return self._compile_ecosystem(root, collector, sink, tool=str(wrapper), command=command, tool_available=True)
         return self._compile_ecosystem(root, collector, sink, tool="gradle", command=["gradle", "build", "-x", "test"])
 
-    def _go(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+    def _go(
+        self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         # `go build` resolves modules on demand, so install and build pass together.
         return self._compile_ecosystem(root, collector, sink, tool="go", command=["go", "build", "./..."])
 
-    def _cargo(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+    def _cargo(
+        self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         return self._compile_ecosystem(root, collector, sink, tool="cargo", command=["cargo", "build"])
 
-    def _dotnet(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+    def _dotnet(
+        self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         # `dotnet build` restores packages by default (install + build in one pass).
         return self._compile_ecosystem(root, collector, sink, tool="dotnet", command=["dotnet", "build", "--nologo"])
 
-    def _composer(self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None) -> BuildValidationReport:
+    def _composer(
+        self, root: Path, collector: _MetricsCollector, sink: EventSink | None = None,
+        max_attempts: int = MAX_ATTEMPTS_PER_PHASE,
+    ) -> BuildValidationReport:
         install = self._run(["composer", "install", "--no-interaction", "--no-progress"], root, collector, "install", sink)
         if install.returncode != 0:
             return self._failed_install(install)

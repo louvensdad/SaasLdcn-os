@@ -6,6 +6,7 @@ from typing import Any
 from app.engines.agent_prompts import system_prompt_for
 from app.engines.factory_pipeline import _agent_request
 from app.engines.llm.router import LLMRouter
+from app.registry.execution_profiles_registry import resolve_execution_profile
 from app.schemas.auto_repair import RepairAction, RepairResult
 from app.schemas.orchestrator import ProjectSpec
 from app.schemas.quality_gate import QualityGateReport, QualityIssue
@@ -100,6 +101,7 @@ class LlmRepairEngine:
         router: LLMRouter, user_model_choice: str | None, api_key: str | None,
     ) -> list[RepairAction]:
         context = self._context_for(project, spec, issues)
+        profile = resolve_execution_profile(spec.execution_profile)
         response = router.route(
             _agent_request(
                 system_prompt_for("repair", spec.suggested_stack.language, spec.suggested_stack.framework),
@@ -109,8 +111,11 @@ class LlmRepairEngine:
             # Token Intelligence: the same BLOCKER batch re-requested with
             # identical context (e.g. /repair/llm called again with nothing
             # changed) is a genuine duplicate -- see router.py's docstring for
-            # why this is opt-in rather than the router's default.
-            allow_cache=True,
+            # why this is opt-in rather than the router's default. Gated by the
+            # execution profile's enable_cost_optimization (Enterprise disables
+            # it -- see execution_profiles_registry.py).
+            allow_cache=profile.enable_cost_optimization,
+            model_strategy=profile.model_strategy,
         )
         parsed = parse_agent_output(response.text, agent_role="repair")
 

@@ -53,6 +53,9 @@ class ProjectRoom(Base):
     # "" = auto (orchestrator/LLM decides); otherwise a language profile id the
     # user explicitly chose at room creation — enforced onto every compiled spec.
     preferred_language: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    # Economy / Professional / Enterprise -- a room-level USER decision made at
+    # creation time, never inferred by the LLM. See execution_profiles_registry.py.
+    execution_profile: Mapped[str] = mapped_column(String, nullable=False, default="professional", server_default="professional")
     raw_intent: Mapped[str] = mapped_column(Text, nullable=False, default="")
     locale: Mapped[str] = mapped_column(String, nullable=False, default="pt-BR")
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

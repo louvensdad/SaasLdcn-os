@@ -19,12 +19,16 @@ class GenerationValidationEngine:
         project: dict[str, Any],
         *,
         event_sink: Callable[[dict[str, Any]], None] | None = None,
+        max_build_attempts: int | None = None,
     ) -> GenerationValidationReport:
         quality = self.quality_engine.quality_check(project)
         dependency_audit = dependency_research_service.audit_manifest(
             self.files_service.export_files(project)
         )
-        build = build_validation_service.validate(project, event_sink=event_sink)
+        build_kwargs: dict[str, Any] = {"event_sink": event_sink}
+        if max_build_attempts is not None:
+            build_kwargs["max_attempts"] = max_build_attempts
+        build = build_validation_service.validate(project, **build_kwargs)
 
         score = int(quality.get("score", 0))
         if dependency_audit.status == "failed":

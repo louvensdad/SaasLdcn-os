@@ -224,7 +224,7 @@ def test_llm_step_injects_ground_truth_and_sanitizes_hallucination(isolated_engi
 
     contexts: list[str] = []
 
-    def fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+    def fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
         contexts.append(context)
         return (
             SimpleNamespace(text=_HALLUCINATED_CONTINUITY, usage=None),
@@ -264,7 +264,7 @@ def test_llm_step_passes_clean_output_untouched(isolated_engine, monkeypatch):
     clean = "# Diagnostico\n\nO build falhou por conflito de dependencias; corrija o package.json.\n"
     calls: list[str] = []
 
-    def fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+    def fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
         calls.append(context)
         return (
             SimpleNamespace(text=clean, usage=None),

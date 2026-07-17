@@ -126,6 +126,7 @@ def create_project_room(payload: CreateRoomRequest, user: CurrentUser) -> Projec
             workspace_id=workspace["workspace_id"],
             delivery_type=payload.delivery_type,
             preferred_language=payload.preferred_language,
+            execution_profile=payload.execution_profile,
         )
     except LLMError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc

@@ -7,6 +7,7 @@ from pydantic import Field
 from app.schemas.architecture_blueprint import ArchitectureBlueprint, StackProposal
 from app.schemas.architecture_model import ArchitectureModel
 from app.schemas.common import ApiModel
+from app.schemas.execution_profile import ExecutionProfileId
 from app.schemas.orchestrator import ClarifyingQuestion, ProjectSpec
 
 
@@ -230,6 +231,7 @@ class ProjectRoom(ApiModel):
     status: ProjectRoomStatus
     delivery_type: DeliveryType = "web"
     preferred_language: PreferredLanguage = ""
+    execution_profile: ExecutionProfileId = "professional"
     raw_intent: str = ""
     locale: str = "pt-BR"
     confidence: float = 0.0
@@ -264,6 +266,7 @@ class ProjectRoomSummary(ApiModel):
     status: ProjectRoomStatus
     delivery_type: DeliveryType = "web"
     preferred_language: PreferredLanguage = ""
+    execution_profile: ExecutionProfileId = "professional"
     locale: str = "pt-BR"
     degraded: bool = False
     has_prompt_master: bool = False
@@ -278,6 +281,7 @@ class CreateRoomRequest(ApiModel):
     workspace_id: str | None = None
     delivery_type: DeliveryType = "web"
     preferred_language: PreferredLanguage = ""
+    execution_profile: ExecutionProfileId = "professional"
     user_model_choice: str | None = None
     use_user_key: bool = False
 

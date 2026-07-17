@@ -25,7 +25,9 @@ from app.engines.execution_plan_engine import build_execution_plan
 from app.engines.ground_truth_engine import ground_truth_engine
 from app.engines.generation_usage import usage_totals as _usage_totals
 from app.engines.generation_pipeline_policy import BACKEND_CHUNKS, MOBILE_CHUNKS, DELIVERY_TYPES_WITH_MOBILE, PipelineStep, STEPS, logical_stages_for, steps_for
+from app.engines.performance_review_engine import performance_review_engine
 from app.engines.project_manifest_engine import build_project_manifest
+from app.engines.quality_gate_engine import QualityGateEngine
 from app.engines.project_memory_engine import PROJECT_MEMORY_FILE, ProjectMemory, project_memory_engine
 from app.engines.work_estimation_engine import estimate_generation_effort
 from app.services.activity_feed_service import activity_feed_service
@@ -35,9 +37,13 @@ from app.engines.orchestrator_engine import compile_mega_prompt
 from app.engines.warning_policy import classify as classify_warnings
 from app.repositories.download_repository import DownloadRepository
 from app.repositories.generation_job_repository import GenerationJobRepository
+from app.registry.execution_profiles_registry import resolve_execution_profile
 from app.repositories.redaction import redact_value
+from app.schemas.execution_profile import ExecutionProfile
 from app.schemas.functional_coverage import FunctionalCoverageReport
+from app.schemas.generation_validation import BuildRuntimeMetrics
 from app.schemas.orchestrator import ProjectSpec
+from app.services.runtime_functional_test_service import runtime_functional_test_service
 from app.services.file_protocol import EmittedFile
 from app.services.download_service import DownloadService
 from app.services.generated_project_service import GeneratedProjectService
@@ -131,8 +137,10 @@ class GenerationJobEngine:
         stages = logical_stages_for(steps)
         work_estimate = estimate_generation_effort(spec, blueprint, project_name=project_name)
         execution_plan = build_execution_plan(spec.delivery_type, stages)
+        profile = resolve_execution_profile(spec.execution_profile)
         data = {
             "id": job_id, "projectId": project_id, "generatedProjectId": None,
+            "executionProfile": profile.model_dump(mode="json"),
             "workspaceId": workspace_id, "status": "QUEUED", "currentStage": "QUEUED",
             "provider": provider, "providerLabel": provider_label, "model": model, "mode": mode,
             "blueprintVersion": blueprint_version, "startedAt": now, "finishedAt": None,
@@ -501,6 +509,15 @@ class GenerationJobEngine:
         / billing (audit B4/AI2)."""
         return self.repository.usage_summary_for_owner(owner_user_id, since)
 
+    @staticmethod
+    def _profile(job: dict[str, Any]) -> ExecutionProfile:
+        """Single dispatch point (audit: Engineering Execution Profiles): every
+        stage reads the job's already-resolved profile from here instead of
+        re-deriving it, and a job persisted before this field existed falls
+        back to Professional (today's actual default behavior)."""
+        stored = job.get("executionProfile")
+        return ExecutionProfile.model_validate(stored) if isinstance(stored, dict) else resolve_execution_profile(None)
+
     def _execute_step(self, job: dict[str, Any], owner: str, step: PipelineStep, spec: ProjectSpec, blueprint: dict[str, Any], mega: str, api_key: str | None, model: str | None, mode: str) -> None:
         if step.action == "prepare":
             self._write_json_artifact(job, owner, step, "product-spec.normalized.json", spec.model_dump(mode="json"), "normalized_spec")
@@ -532,7 +549,8 @@ class GenerationJobEngine:
             memory = project_memory_engine.build_initial(spec, blueprint)
             job["projectMemory"] = memory.as_dict()
             self._write_json_artifact(job, owner, step, PROJECT_MEMORY_FILE, job["projectMemory"], "generated")
-            self._persist_dependency_graph(job, owner, step, blueprint)
+            if self._profile(job).enable_dependency_graph:
+                self._persist_dependency_graph(job, owner, step, blueprint)
         elif step.action == "plan":
             chunks = BACKEND_CHUNKS if step.logical == "backend" else MOBILE_CHUNKS if step.logical == "mobile" else []
             payload = {"stage": step.logical, "inputs": self._context_requirements(step.logical), "chunks": chunks, "strategy": mode}
@@ -729,7 +747,10 @@ class GenerationJobEngine:
         timeout_seconds = float(self.stage_timeout_seconds)
         deadline = time.monotonic() + timeout_seconds
         try:
-            future = submit_agent(_run_agent, LLMRouter(), role, context, model, api_key, language, framework)
+            future = submit_agent(
+                _run_agent, LLMRouter(), role, context, model, api_key, language, framework,
+                self._profile(job).model_strategy,
+            )
         except Exception:
             self.repository.settle_reserved_usage(job["id"], owner, reserved_tokens)
             raise
@@ -811,7 +832,8 @@ class GenerationJobEngine:
             # including the LLM-heavy backend/frontend/mobile/tests/docs steps,
             # had already finished).
             self._check_stack_conflicts(job, owner, step)
-            self._check_import_graph(job, owner, step)
+            if self._profile(job).enable_import_graph:
+                self._check_import_graph(job, owner, step)
         # Warning policy gate: classify everything this stage produced. Only
         # blocking_warning / error / critical stop the pipeline — documentation,
         # coverage, TODO, traceability, territory-drift and synthesized-manifest
@@ -1111,6 +1133,55 @@ class GenerationJobEngine:
                 )
             except Exception as exc:  # noqa: BLE001
                 self._log(job, "READY", "warning", "Product Certification failed to evaluate.", str(exc))
+            # Security Review (enable_security_review, Professional=basico/
+            # Enterprise=completo): reuses QualityGateEngine, which already turns
+            # raw quality/security signals into a professional report. `run_build`
+            # is its existing shallow/deep toggle (see quality_gate_engine.py) --
+            # premium (Enterprise) re-runs the full build+quality validation,
+            # balanced (Professional) reuses the quality-only pass. The baseline
+            # deterministic secret-scan step every profile always gets is separate
+            # and unconditional -- this is the additional layer on top of it.
+            profile = self._profile(job)
+            if profile.enable_security_review:
+                try:
+                    security_report = QualityGateEngine().evaluate(
+                        {"project_id": project_id, "generated_project_path": result_path},
+                        run_build=profile.model_strategy == "premium",
+                    )
+                    (root / "security-review.json").write_text(
+                        json.dumps(security_report.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8",
+                    )
+                    job["securityReviewStatus"] = "PASSED" if security_report.passed else "BLOCKED"
+                except Exception as exc:  # noqa: BLE001
+                    self._log(job, "READY", "warning", "Security Review failed to evaluate.", str(exc))
+            # Performance Review (Enterprise-only, enable_performance_review): real
+            # build metrics already captured by the Build Guarantee loop, WARNING-
+            # only. Same independent try/except discipline as the reports above.
+            if profile.enable_performance_review:
+                try:
+                    metrics_data = job.get("buildMetrics")
+                    metrics = BuildRuntimeMetrics.model_validate(metrics_data) if metrics_data else None
+                    perf_report = performance_review_engine.evaluate(project_id, result_path, metrics)
+                    (root / "performance-review.json").write_text(
+                        json.dumps(perf_report.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8",
+                    )
+                    job["performanceReviewStatus"] = perf_report.status
+                except Exception as exc:  # noqa: BLE001
+                    self._log(job, "READY", "warning", "Performance Review failed to evaluate.", str(exc))
+            # Runtime Functional Test (Enterprise-only, enable_runtime_validation):
+            # reuses its own host/dev execution gate as the permission check --
+            # unavailable environments simply skip, never fail the job.
+            if profile.enable_runtime_validation:
+                try:
+                    runtime_report = runtime_functional_test_service.run(
+                        {"project_id": project_id, "generated_project_path": result_path}, coverage_report,
+                    )
+                    (root / "runtime-functional-test.json").write_text(
+                        json.dumps(runtime_report.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8",
+                    )
+                    job["runtimeValidationStatus"] = getattr(runtime_report, "status", None)
+                except Exception as exc:  # noqa: BLE001
+                    self._log(job, "READY", "warning", "Runtime Functional Test skipped/failed to evaluate.", str(exc))
             ProjectWriter().set_functional_completeness(project_id, report=report_data)
             job["completenessStatus"] = report.status
             job["completenessSummary"] = {
@@ -1272,12 +1343,15 @@ class GenerationJobEngine:
         job["resultPath"] = str(result.root_path)
         job["buildStatus"] = "RUNNING"
         self._save(job, owner)
+        profile = self._profile(job)
         report = generation_validation_engine.validate(
             {"project_id": result.project_id, "generated_project_path": result.root_path},
             event_sink=self._build_sink(job, owner),
+            max_build_attempts=profile.max_repair_cycles + 1,
         )
         report_data = report.model_dump(mode="json")
         self._write_json_artifact(job, owner, PipelineStep("BUILD_RUNNING", "build", "build"), "build.report.json", report_data, "validation")
+        job["buildMetrics"] = report_data.get("metrics")
         failed_commands = [command for command in report.build.commands if command.exit_code not in {0, None}]
         job["buildAttempts"] = len(failed_commands)
         if report.build.recovery_status == "SKIPPED_AFTER_FAILURE":

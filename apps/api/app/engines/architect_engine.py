@@ -19,11 +19,17 @@ def build_blueprint(
     project_id: str,
     api_key: str | None = None,
     user_model_choice: str | None = None,
+    use_llm: bool = True,
+    model_strategy: str | None = None,
 ) -> ArchitectureBlueprint:
+    """`use_llm=False` (Economy's enable_architecture_review=False) skips the
+    premium LLM reasoning pass entirely and goes straight to the deterministic
+    preview below -- an explicit, user-chosen profile behavior, not the silent
+    provider-failure fallback this function otherwise guards against."""
     from app.services.ai_availability import ai_available
 
     started = time.perf_counter()
-    if api_key or ai_available():
+    if use_llm and (api_key or ai_available()):
         try:
             import json
 
@@ -52,6 +58,7 @@ def build_blueprint(
                 ),
                 user_choice=user_model_choice,
                 api_key=api_key,
+                model_strategy=model_strategy,
             )
             if not response.served_by_fallback:
                 latency_ms = _elapsed_ms(started)

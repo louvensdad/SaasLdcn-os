@@ -29,6 +29,7 @@ from app.routes import (
     downloads,
     engineering_lab,
     engineering_readiness,
+    execution_profiles,
     generation_handoff,
     generated_project_quality,
     git_export,
@@ -120,6 +121,7 @@ def create_application() -> FastAPI:
     # Everything else requires a valid access token.
     protected = [Depends(get_current_user)]
     app.include_router(stacks.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(execution_profiles.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(registry.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(language_domains.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(framework_specialists.router, prefix=settings.api_prefix, dependencies=protected)

@@ -785,7 +785,7 @@ def test_pipeline_advances_through_backend_to_frontend_and_completes(isolated_en
     engine, repository, _ = isolated_engine
     job = _create(engine)
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
             parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))
@@ -823,7 +823,7 @@ def test_mobile_delivery_type_pipeline_advances_through_mobile_stage_and_complet
     job = _create_mobile(engine)
     assert "mobile" in job["stageStatuses"]  # stageStatuses already reflects the mobile-inclusive step list
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
             parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))
@@ -891,7 +891,7 @@ def test_mobile_job_reaches_ready_and_packages_real_mobile_zip(isolated_engine, 
     engine, repository, _ = isolated_engine
     job = _create_mobile(engine)
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
             parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: Orders\n  version: 1.0.0\npaths: {}\n"))
@@ -1365,7 +1365,7 @@ def test_frontend_llm_context_includes_stack_lock_hint(isolated_engine, monkeypa
 
     captured_contexts: dict[str, str] = {}
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
         captured_contexts[role] = context
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
@@ -1399,7 +1399,7 @@ def test_project_manifest_is_written_before_functional_completeness_is_evaluated
     monkeypatch.setattr(engine, "_write_project_manifest", lambda *a, **k: call_order.append("manifest"))
     monkeypatch.setattr(engine, "_evaluate_functional_completeness", lambda *a, **k: call_order.append("completeness"))
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
             parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))
@@ -1572,3 +1572,124 @@ def test_import_graph_gate_reports_undeclared_external_without_blocking(isolated
     conflicts_artifact = next(a for a in job["artifacts"] if a["name"] == "frontend.import-conflicts.json")
     conflicts = json.loads(Path(conflicts_artifact["path"]).read_text(encoding="utf-8"))
     assert any(c["specifier"] == "axios" for c in conflicts)
+
+
+# --- Execution Profiles (Economy/Professional/Enterprise) -------------------
+
+
+def test_create_job_resolves_and_stores_the_execution_profile(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)  # _spec() sets no execution_profile -> defaults to professional
+
+    assert job["executionProfile"]["id"] == "professional"
+    assert job["executionProfile"]["max_repair_cycles"] == 2
+
+
+def test_create_job_with_economy_profile_resolves_economy_flags(isolated_engine):
+    engine, _, _ = isolated_engine
+    spec = _spec()
+    spec.execution_profile = "economy"
+    job = engine.create_job(
+        owner_user_id="user-1", project_id="room-1", workspace_id="enterprise",
+        project_name="Orders", spec=spec, blueprint={"decisions": []},
+        blueprint_version=4, provider="anthropic", provider_label="Claude",
+        model="claude-sonnet-4",
+    )
+
+    assert job["executionProfile"]["id"] == "economy"
+    assert job["executionProfile"]["max_repair_cycles"] == 1
+    assert job["executionProfile"]["enable_dependency_graph"] is False
+    assert job["executionProfile"]["enable_import_graph"] is False
+
+
+def test_prepare_step_skips_dependency_graph_for_economy_profile(isolated_engine):
+    engine, _, _ = isolated_engine
+    spec = _spec()
+    spec.execution_profile = "economy"
+    job = engine.create_job(
+        owner_user_id="user-1", project_id="room-1", workspace_id="enterprise",
+        project_name="Orders", spec=spec, blueprint={"decisions": []},
+        blueprint_version=4, provider="anthropic", provider_label="Claude",
+        model="claude-sonnet-4",
+    )
+    blueprint = {"decisions": [], "dependency_graph_snapshot": {"graph_id": "g1", "nodes": [], "edges": []}}
+
+    _prepare(engine, job, spec, blueprint)
+
+    assert not any(a["name"] == "dependency-graph.json" for a in job["artifacts"])
+
+
+def test_prepare_step_persists_dependency_graph_for_professional_profile(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)  # professional (default)
+    blueprint = {"decisions": [], "dependency_graph_snapshot": {"graph_id": "g1", "nodes": [], "edges": []}}
+
+    _prepare(engine, job, _spec(), blueprint)
+
+    assert any(a["name"] == "dependency-graph.json" for a in job["artifacts"])
+
+
+def test_validate_stage_skips_import_graph_for_economy_profile(isolated_engine):
+    engine, _, _ = isolated_engine
+    spec = _spec()
+    spec.execution_profile = "economy"
+    job = engine.create_job(
+        owner_user_id="user-1", project_id="room-1", workspace_id="enterprise",
+        project_name="Orders", spec=spec, blueprint={"decisions": []},
+        blueprint_version=4, provider="anthropic", provider_label="Claude",
+        model="claude-sonnet-4",
+    )
+    _prepare(engine, job, spec)
+    _seed_frontend_manifest(engine, job, {"react": DEFAULT_ANCHORS["react"]})
+    _seed_frontend_source(engine, job, "apps/web/src/index.ts", "import axios from 'axios';\nexport const x = 1;")
+
+    engine._validate_stage(job, "user-1", _FRONTEND_VALIDATE)
+
+    assert not any(a["name"] == "frontend.import-graph.json" for a in job["artifacts"])
+
+
+def test_build_threads_max_repair_cycles_from_the_profile(isolated_engine, monkeypatch):
+    engine, repository, root = isolated_engine
+    spec = _spec()
+    spec.execution_profile = "economy"
+    job = engine.create_job(
+        owner_user_id="user-1", project_id="room-1", workspace_id="enterprise",
+        project_name="Orders", spec=spec, blueprint={"decisions": []},
+        blueprint_version=4, provider="anthropic", provider_label="Claude",
+        model="claude-sonnet-4",
+    )
+    source = root / "source.ts"
+    source.write_text("export const ok = true;", encoding="utf-8")
+    job["artifacts"].append({
+        "id": "art_source", "stage": "frontend", "name": "src/source.ts",
+        "kind": "generated", "path": str(source), "size_bytes": source.stat().st_size,
+        "checksum": "x", "valid": True, "warnings": [], "created_at": engine._now(),
+    })
+    generated_root = root / "generated"
+    generated_root.mkdir()
+    writer = SimpleNamespace(
+        write=lambda *args, **kwargs: SimpleNamespace(project_id="generated-1", root_path=generated_root),
+        set_verification=lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr("app.engines.generation_job_engine.ProjectWriter", lambda: writer)
+
+    captured_kwargs: dict = {}
+
+    def _fake_validate(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return GenerationValidationReport(
+            project_id="generated-1", score=100, passed=True, quality={"checks": []},
+            dependency_audit=DependencyAuditReport(status="passed"),
+            build=BuildValidationReport(installed="passed", built="passed", ok=True),
+        )
+
+    monkeypatch.setattr("app.engines.generation_job_engine.generation_validation_engine.validate", _fake_validate)
+
+    engine._build(job, "user-1")
+
+    # economy.max_repair_cycles == 1 -> 1 (initial) + 1 (repair) = 2 total attempts
+    assert captured_kwargs["max_build_attempts"] == 2
+    # _build() mutates the in-memory job dict directly; persisting the final
+    # PASSED status to the repository is the caller's (execute()'s) job, not
+    # _build()'s -- so assert on `job`, not a repository re-fetch.
+    assert job["buildStatus"] == "PASSED"

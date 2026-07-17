@@ -124,6 +124,7 @@ class LLMRouter:
         api_key: str | None = None,
         allow_cache: bool = False,
         cache_namespace: str = "shared-platform",
+        model_strategy: str | None = None,
     ) -> LLMResponse:
         """`allow_cache` is opt-in and False everywhere by default: several
         callers (factory_pipeline.iter_single_agent's smart retry on an empty/
@@ -135,7 +136,7 @@ class LLMRouter:
         loops in verification_engine.py / llm_repair_engine.py)."""
         started = time.perf_counter()
         routed_model = getattr(api_key, "model", None)
-        model = resolve_model(user_choice=routed_model or user_choice, agent_role=agent_role)
+        model = resolve_model(user_choice=routed_model or user_choice, agent_role=agent_role, model_strategy=model_strategy)
         meta = MODEL_REGISTRY[model]
         provider = meta["provider"]
         settings = get_settings()
