@@ -1,0 +1,25 @@
+# Production edge for the LDCN OS platform. Fronts the api+web containers;
+# only this service publishes 80/443 to the host (see docker-compose.prod.yml).
+#
+# PUBLIC_HOST defaults to the VPS's bare IP (no domain yet) -- `tls internal`
+# makes Caddy mint its own local CA and issue a self-signed cert for it, which
+# satisfies app/core/config.py's production HTTPS-URL validation without
+# needing a real domain (Let's Encrypt cannot issue for a bare IP). Browsers
+# will show an untrusted-certificate warning until a real domain replaces
+# PUBLIC_HOST and `tls internal` becomes `tls you@example.com` below -- no
+# other change needed at that point.
+{$PUBLIC_HOST} {
+	tls internal
+
+	# Every backend route lives under /api -- send it to the API container;
+	# everything else (the Next.js app) goes to the frontend container.
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+
+	encode gzip
+}

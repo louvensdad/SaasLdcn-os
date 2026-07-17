@@ -47,6 +47,7 @@ reports/plan-md/run-*.ps1
 .env
 .env.*
 !.env.example
+!.env.prod.example
 
 # OS
 .DS_Store
@@ -54,6 +55,9 @@ Thumbs.db
 
 # Generated project output (deterministic + meta-factory output areas)
 generated-projects/
+
+# Production backups (scripts/backup-prod.sh)
+backups/
 
 # Generated OpenAPI spec artifact (build output of scripts/generate_openapi.py)
 apps/api/openapi.json

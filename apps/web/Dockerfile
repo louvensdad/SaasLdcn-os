@@ -7,6 +7,13 @@ FROM dependencies AS build
 COPY apps/web ./
 COPY packages /workspace/packages
 ENV NEXT_TELEMETRY_DISABLED=1
+# NEXT_PUBLIC_* vars are inlined at build time, not read at runtime -- pass the
+# real public API origin as a build arg in production (see
+# docker-compose.prod.yml). Unset (the default) falls through to
+# lib/api/endpoints.ts's own http://localhost:8001 fallback, so this is a
+# no-op for any existing build of this image.
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime

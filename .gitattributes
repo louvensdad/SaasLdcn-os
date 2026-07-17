@@ -4,3 +4,4 @@
 *.tsx text eol=lf working-tree-encoding=UTF-8
 *.md text eol=lf working-tree-encoding=UTF-8
 *.json text eol=lf working-tree-encoding=UTF-8
+*.sh text eol=lf working-tree-encoding=UTF-8
