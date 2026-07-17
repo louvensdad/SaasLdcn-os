@@ -11,6 +11,8 @@ import { ModalSystem } from '@/components/overlays/modal-system';
 import { Sidebar } from '@/components/shell/sidebar';
 import { Topbar } from '@/components/shell/topbar';
 import { cn } from '@/lib/cn';
+import { useApplyInterfacePreferences } from '@/hooks/use-apply-interface-preferences';
+import { useSyncPreferencesToBackend } from '@/hooks/use-sync-preferences-to-backend';
 import { useLocale } from '@/hooks/use-locale';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
 import { useShellStore } from '@/stores/use-shell-store';
@@ -98,6 +100,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const router = useRouter();
   const { t } = useLocale();
   const shouldReduceMotion = useReducedMotion();
+  useApplyInterfacePreferences();
   const copyKeys = resolveShellCopy(pathname);
   const copy = { title: t(copyKeys.titleKey), subtitle: t(copyKeys.subtitleKey) };
   const runtimeObservingLabel = t('shell.runtimeObserving');
@@ -113,6 +116,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const initializeAuth = useAuthStore((state) => state.initialize);
   const retryAuth = useAuthStore((state) => state.retry);
   const [authTimedOut, setAuthTimedOut] = useState(false);
+  useSyncPreferencesToBackend(authStatus === 'authenticated');
 
   useEffect(() => {
     void initializeAuth();

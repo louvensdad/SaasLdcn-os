@@ -1,17 +1,28 @@
 import type {
+  AccountDeactivationResponse as AccountDeactivationResponseContract,
   AccountDeletionResponse as AccountDeletionResponseContract,
+  ActivityExportResponse as ActivityExportResponseContract,
   AuthResponse as AuthResponseContract,
+  AvatarResponse as AvatarResponseContract,
+  AvatarUpdateRequest as AvatarUpdateRequestContract,
   ConsentRequest as ConsentRequestContract,
   DataExportResponse as DataExportResponseContract,
   PasswordChangeRequest as PasswordChangeRequestContract,
   RefreshRequest as RefreshRequestContract,
+  SessionResponse as SessionResponseContract,
   TokenResponse as TokenResponseContract,
+  TwoFactorCodeRequest as TwoFactorCodeRequestContract,
+  TwoFactorEnrollResponse as TwoFactorEnrollResponseContract,
   UserLoginRequest as UserLoginRequestContract,
   UserPublic as UserPublicContract,
   UserRegisterRequest as UserRegisterRequestContract,
   UserRole as UserRoleContract,
   UserUpdateRequest as UserUpdateRequestContract,
 } from '@contracts/auth.contract';
+import type {
+  Workspace as WorkspaceContract,
+  WorkspaceMember as WorkspaceMemberContract,
+} from '@contracts/tenant.contract';
 import type { ArchitectureContract } from '@contracts/architecture.contract';
 import type { ArchitectureLevelContract } from '@contracts/architecture-level.contract';
 import type { ArchetypeContract } from '@contracts/archetype.contract';
@@ -207,6 +218,15 @@ export type PasswordChangeRequest = PasswordChangeRequestContract;
 export type ConsentRequest = ConsentRequestContract;
 export type DataExportResponse = DataExportResponseContract;
 export type AccountDeletionResponse = AccountDeletionResponseContract;
+export type SessionResponse = SessionResponseContract;
+export type TwoFactorEnrollResponse = TwoFactorEnrollResponseContract;
+export type TwoFactorCodeRequest = TwoFactorCodeRequestContract;
+export type ActivityExportResponse = ActivityExportResponseContract;
+export type AvatarResponse = AvatarResponseContract;
+export type AvatarUpdateRequest = AvatarUpdateRequestContract;
+export type AccountDeactivationResponse = AccountDeactivationResponseContract;
+export type Workspace = WorkspaceContract;
+export type WorkspaceMember = WorkspaceMemberContract;
 
 export type Stack = StackContract;
 export type SkillCatalogResponse = SkillCatalogResponseContract;

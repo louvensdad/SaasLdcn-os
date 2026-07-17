@@ -30,6 +30,9 @@ class GitProviderConnection(ApiModel):
     permission: str
     last_sync: str | None = None
     expires_at: str | None = None
+    # Masked hint of the stored token (e.g. "ghp_…a1b2") for the tokens list;
+    # never the full value. None for connections stored before masking existed.
+    masked: str | None = None
 
 
 class RepositoryCreateRequest(ApiModel):
@@ -50,3 +53,39 @@ class RepositoryDelivery(ApiModel):
     status: Literal["created", "ready"]
     repo_url: str
     provider_id: str
+
+class RepositorySummary(ApiModel):
+    contractVersion: str
+    provider: Literal["github", "gitlab"]
+    provider_id: str
+    namespace: str
+    repo_name: str
+    visibility: Literal["private", "public"]
+    branch: str | None = None
+    repo_url: str
+    last_sync: str | None = None
+
+
+class RepositoryListResponse(ApiModel):
+    items: list[RepositorySummary]
+    page: int
+    per_page: int
+    has_more: bool
+class RepositoryInitialCommitRequest(ApiModel):
+    provider: Literal["github", "gitlab"]
+    namespace: str = Field(min_length=1)
+    repo_name: str = Field(min_length=1)
+    branch: str = Field(default="main", min_length=1)
+    commit_message: str = Field(default="Initial commit", min_length=1, max_length=200)
+    files: list[dict[str, str]] = Field(min_length=1, max_length=500)
+
+
+class RepositoryCommitResponse(ApiModel):
+    contractVersion: str
+    provider: Literal["github", "gitlab"]
+    namespace: str
+    repo_name: str
+    branch: str
+    commit_sha: str
+    commit_url: str | None = None
+    committed_at: str | None = None

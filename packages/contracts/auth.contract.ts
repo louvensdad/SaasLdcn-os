@@ -28,6 +28,7 @@ export interface UserPublic {
   readonly is_active: boolean;
   readonly consent_accepted_at: string | null;
   readonly consent_policy_version: string | null;
+  readonly is_2fa_enabled: boolean;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -69,4 +70,42 @@ export interface DataExportResponse {
 export interface AccountDeletionResponse {
   readonly message: string;
   readonly deleted_at: string;
+}
+
+export interface SessionResponse {
+  readonly session_id: string;
+  readonly ip_address: string | null;
+  readonly device_label: string | null;
+  readonly created_at: string;
+  readonly last_seen_at: string;
+  readonly is_current: boolean;
+}
+
+export interface TwoFactorEnrollResponse {
+  readonly secret: string;
+  readonly otpauth_uri: string;
+}
+
+export interface TwoFactorCodeRequest {
+  readonly code: string;
+}
+
+export interface ActivityExportResponse {
+  readonly contractVersion: string;
+  readonly exported_at: string;
+  readonly user_id: string;
+  readonly activity: readonly Record<string, unknown>[];
+}
+
+export interface AvatarResponse {
+  readonly avatar_url: string | null;
+}
+
+export interface AvatarUpdateRequest {
+  readonly avatar_url: string | null;
+}
+
+export interface AccountDeactivationResponse {
+  readonly message: string;
+  readonly deactivated_at: string;
 }

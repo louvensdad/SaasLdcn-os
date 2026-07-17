@@ -17,9 +17,13 @@ from app.core.database import Base, database_url_for, get_engine
 import app.models  # noqa: F401
 from app.main import create_application
 from app.repositories.download_repository import DownloadRepository
+from app.repositories.llm_active_selection_repository import LlmActiveSelectionRepository
+from app.repositories.platform_runtime_config_repository import PlatformRuntimeConfigRepository
+from app.repositories.user_preferences_repository import UserPreferencesRepository
 from app.repositories.user_repository import AuditLogRepository, UserRepository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
+from app.repositories.git_provider_repository import GitProviderRepository
 from app.routes import downloads as downloads_route
 from app.routes import local_generation as local_generation_route
 from app.routes import meta_factory as meta_factory_route
@@ -29,7 +33,11 @@ from app.routes import prompt_master as prompt_master_route
 from app.routes.auth import service as auth_route_service
 from app.routes.projects import service as project_route_service
 from app.services.download_service import DownloadService
+from app.services.git_provider_service import git_provider_service
+from app.services.llm_settings_service import llm_settings_service
+from app.services.platform_runtime_config_service import platform_runtime_config_service
 from app.services.project_service import ProjectService
+from app.services.user_preferences_service import user_preferences_service
 
 
 @pytest.fixture
@@ -81,6 +89,19 @@ def client() -> TestClient:
     auth_route_service.user_repository = isolated_user_repository
     auth_route_service.audit_repository = AuditLogRepository(database_path)
     auth_deps.configure_user_repository(isolated_user_repository)
+
+    # These are module-level singletons constructed at import time (before this
+    # fixture repoints get_settings().database_url), so their repositories must
+    # be explicitly repointed at the isolated per-test database too -- otherwise
+    # every test would read/write the same shared default DB file. Mutating the
+    # attribute in place (rather than rebinding a route module's imported name)
+    # ensures every module that imported the singleton by reference -- e.g.
+    # git_export_engine's `from ... import git_provider_service` -- sees the
+    # swap too, not just whichever module conftest happens to reassign.
+    llm_settings_service.repository = LlmActiveSelectionRepository(database_path)
+    user_preferences_service.repository = UserPreferencesRepository(database_path)
+    platform_runtime_config_service.repository = PlatformRuntimeConfigRepository(database_path)
+    git_provider_service._storage = GitProviderRepository(database_path)
 
     app = create_application()
     with TestClient(app) as test_client:

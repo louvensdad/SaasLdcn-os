@@ -20,13 +20,17 @@ PDF contract analysis remains an inactive placeholder.
   - `app/engines/llm`: multi-provider LLM router + adapters + deterministic mock fallback
   - meta-factory: orchestrator → mega-prompt → API-first agent pipeline (`/meta-factory/*`, incl. SSE `generate/stream`)
   - modernize: brownfield ingestion (ZIP/Git) → diagnosis → migration plan → refactor (`/modernize/*`)
+  - account security: session listing/revocation, TOTP 2FA, consent revoke, activity export (`/auth/*`)
+  - presence + telemetry: engineering presence and runtime metrics engines feeding the shell's live status surfaces
 - `apps/web`: Next.js shell, pages, API client, UI components, frontend tests
   - `/meta-factory` (greenfield, real-time progress) and `/modernize` (brownfield) surfaces
+  - `/settings`: unified premium settings shell (Conta, IA, Git, Interface, Runtime, Avançado) on shared components
 - `packages/contracts`: shared TypeScript contracts used by the frontend and documentation
 - `templates`: local static/site/app templates used by local generation V0
 - `generated-projects`: active, archived, and temp generated output areas
 - `future`: reserved future service/engine boundaries
 - `reports`: validation, governance, and architecture reports
+- `docs/design-system`: visual reference material used to keep the shell pixel-faithful to design
 
 ## Run Locally
 
@@ -68,6 +72,7 @@ npm run build
 - Production authentication requires explicit JWT/encryption secrets, PostgreSQL, Redis-backed distributed controls, trusted hosts, and HTTPS origins.
 - Brownfield Git ingestion runs in the sandbox, accepts HTTPS URLs only, and restricts hosts through `LDCN_MODERNIZE_GIT_ALLOWED_HOSTS`.
 - No PDF parsing, OCR, or contract analysis (inactive placeholder).
+- Account security covers session/device listing, revocation, and TOTP 2FA; backup codes, new-login email alerts, account deactivation, and workspace invites are not yet implemented.
 
 ## Planned Features
 

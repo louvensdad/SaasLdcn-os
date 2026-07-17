@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, FileText, FolderGit2, ShieldAlert, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, FileText, FolderGit2, Network, ShieldAlert, Sparkles } from 'lucide-react';
+import Link from 'next/link';
 
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -65,7 +66,7 @@ export default function DocumentationPage() {
   const saveMutation = useDocumentationSave(activeProjectId);
   const preview = useGeneratedFileContent(activeProjectId, generated ? null : selectedDocPath);
 
-  const docs = library.data?.docs ?? [];
+  const docs = useMemo(() => library.data?.docs ?? [], [library.data?.docs]);
   const filteredDocs = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return docs;
@@ -74,6 +75,20 @@ export default function DocumentationPage() {
 
   const selectedDoc = docs.find((doc) => doc.path === selectedDocPath) ?? null;
   const selectedGen = generated?.find((doc) => doc.id === selectedGenId) ?? null;
+  const knowledgeMap = [
+    ['documentation.map.blueprint', 'documentation.map.blueprintValue', 'documentation.map.blueprintDetail'],
+    ['documentation.map.promptMaster', 'documentation.map.promptMasterValue', 'documentation.map.promptMasterDetail'],
+    ['documentation.map.gatekeeper', 'documentation.map.gatekeeperValue', 'documentation.map.gatekeeperDetail'],
+    ['documentation.map.registry', 'documentation.map.registryValue', 'documentation.map.registryDetail'],
+  ] as const;
+
+  const lifecycle = [
+    ['documentation.lifecycle.blueprint', 'documentation.lifecycle.blueprintDetail'],
+    ['documentation.lifecycle.promptMaster', 'documentation.lifecycle.promptMasterDetail'],
+    ['documentation.lifecycle.gatekeeper', 'documentation.lifecycle.gatekeeperDetail'],
+    ['documentation.lifecycle.registry', 'documentation.lifecycle.registryDetail'],
+    ['documentation.lifecycle.readiness', 'documentation.lifecycle.readinessDetail'],
+  ] as const;
 
   function switchProject(projectId: string) {
     setSelectedProjectId(projectId);
@@ -112,6 +127,63 @@ export default function DocumentationPage() {
     <div className="space-y-8">
       <SectionHeader title={t('documentation.title')} description={t('documentation.description')} />
 
+
+      <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[linear-gradient(120deg,color-mix(in_srgb,var(--accent)_12%,var(--surface-1)),var(--surface-1)_48%,color-mix(in_srgb,var(--info)_7%,var(--surface-1)))] p-5 sm:p-6">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-2xl space-y-3">
+            <Badge tone="accent">{t('documentation.map.title')}</Badge>
+            <p className="text-sm leading-6 text-[color:var(--muted)]">{t('documentation.map.description')}</p>
+            <div className="flex flex-wrap gap-2 pt-1 text-xs text-[color:var(--muted)]">
+              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">Blueprint</span>
+              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">Prompt Master</span>
+              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">Gatekeeper</span>
+              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">Registry</span>
+            </div>
+          </div>
+          <Network className="hidden h-24 w-24 shrink-0 text-[color:var(--accent)] opacity-70 xl:block" aria-hidden />
+        </div>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {knowledgeMap.map(([title, value, detail]) => (
+            <article key={title} className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-black/10 p-4">
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t(title)}</p>
+              <p className="mt-1 text-xs font-medium uppercase tracking-[0.14em] text-[color:var(--accent)]">{t(value)}</p>
+              <p className="mt-3 text-xs leading-5 text-[color:var(--muted)]">{t(detail)}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
+        <Card className="space-y-4 p-5">
+          <div>
+            <Badge>{t('documentation.lifecycle.title')}</Badge>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('documentation.description')}</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {lifecycle.map(([title, detail], index) => (
+              <div key={title} className="flex gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] p-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-xs font-semibold text-[color:var(--accent)]">{index + 1}</span>
+                <div>
+                  <p className="text-sm font-medium text-[color:var(--text)]">{t(title)}</p>
+                  <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">{t(detail)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card className="flex flex-col justify-between gap-5 p-5">
+          <div className="space-y-3">
+            <Badge tone={documentedProjects.length > 0 ? 'success' : 'warning'}>{t('documentation.projects')}</Badge>
+            <p className="text-sm leading-6 text-[color:var(--muted)]">
+              {documentedProjects.length > 0 ? t('documentation.selectProject') : t('documentation.noProjects')}
+            </p>
+          </div>
+          <Link href="/projects" className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[color:var(--border)] px-4 py-2 text-sm font-medium text-[color:var(--text)] hover:bg-[color:var(--control-hover)]">
+            {t('projects.title')}
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+        </Card>
+      </section>
       <div className="grid gap-4 xl:grid-cols-[0.8fr_1.3fr_0.9fr]">
         {/* LEFT — projects + documents (or generated drafts) */}
         <Card className="space-y-5 p-5">

@@ -1,19 +1,20 @@
 'use client';
 
-import { Activity, Code2, GitBranch, Palette, Sparkles, User } from 'lucide-react';
+import { Activity, Check, Code2, GitBranch, Palette, Sparkles, User } from 'lucide-react';
 
 import { Tabs, type TabItem } from '@/components/ui/tabs';
-import { SectionHeader } from '@/components/shell/section-header';
+import { SettingsOverview } from '@/components/settings/settings-overview';
 import { AccountTab } from '@/components/settings/account-tab';
 import { AiProvidersTab } from '@/components/settings/ai-providers-tab';
 import { GitTab } from '@/components/settings/git-tab';
 import { InterfaceTab } from '@/components/settings/interface-tab';
 import { RuntimeTab } from '@/components/settings/runtime-tab';
 import { AdvancedTab } from '@/components/settings/advanced-tab';
-import { SettingsSaveBar } from '@/components/settings/settings-save-bar';
 import { useSettingsDraftField } from '@/hooks/use-settings-draft-field';
+import { useTopbarConfig } from '@/hooks/use-topbar-config';
 import { useLocale } from '@/hooks/use-locale';
 import { useShellStore } from '@/stores/use-shell-store';
+import { ActivityFeed } from '@/components/settings/activity-feed';
 
 export default function SettingsPage() {
   const { t } = useLocale();
@@ -23,6 +24,19 @@ export default function SettingsPage() {
   // panels, so a draft living inside the tab itself would reset every time
   // the user switches away and back before saving.
   const densityDraft = useSettingsDraftField('interface.density', density, setDensity);
+
+  useTopbarConfig({
+    breadcrumb: [t('product.name'), t('sidebar.foundation'), t('settings.title')].map((part) => part.toUpperCase()),
+    title: t('settings.title'),
+    subtitle: t('settings.description'),
+    primaryAction: {
+      label: t('settings.saveBar.save'),
+      icon: Check,
+      onClick: densityDraft.save,
+      loading: false,
+    },
+    secondaryText: t('settings.saveBar.autoSavedNote'),
+  });
 
   const items: TabItem[] = [
     { id: 'account', label: t('settings.tabs.account'), icon: User, content: <AccountTab /> },
@@ -39,10 +53,10 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 pb-24">
-      <SectionHeader title={t('settings.title')} description={t('settings.description')} />
-      <Tabs items={items} defaultTab="account" />
-      <SettingsSaveBar onSaveAll={densityDraft.save} onDiscardAll={densityDraft.discard} />
+    <div className="space-y-6 pb-12">
+      <SettingsOverview />
+      <ActivityFeed />
+      <Tabs items={items} defaultTab="account" queryParam="tab" />
     </div>
   );
 }

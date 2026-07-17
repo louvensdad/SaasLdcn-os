@@ -1,6 +1,10 @@
 import { apiEndpoints } from '@/lib/api/endpoints';
 import type {
+  AccountDeactivationResponse,
   AccountDeletionResponse,
+  ActivityExportResponse,
+  AvatarResponse,
+  AvatarUpdateRequest,
   Architecture,
   Archetype,
   ApiErrorPayload,
@@ -9,10 +13,15 @@ import type {
   DataExportResponse,
   PasswordChangeRequest,
   RefreshRequest,
+  SessionResponse,
+  TwoFactorCodeRequest,
+  TwoFactorEnrollResponse,
   UserLoginRequest,
   UserPublic,
   UserRegisterRequest,
   UserUpdateRequest,
+  Workspace,
+  WorkspaceMember,
   BusinessModule,
   BlueprintPreviewPayload,
   Capability,
@@ -107,6 +116,7 @@ import type {
   VisualizationSnapshot,
   ValidateSelectionPayload,
 } from '@/lib/api/types';
+import type { PlatformRuntimeConfig, UpdatePlatformRuntimeConfigRequest } from '@contracts/runtime-metrics.contract';
 
 export class ApiClientError extends Error {
   readonly status: number;
@@ -368,8 +378,29 @@ export const apiClient = {
     apiRequest<void>(apiEndpoints.auth.changePassword, { method: 'POST', body: JSON.stringify(body) }),
   recordConsent: (body: ConsentRequest) =>
     apiRequest<UserPublic>(apiEndpoints.auth.consent, { method: 'POST', body: JSON.stringify(body) }),
+  revokeConsent: () =>
+    apiRequest<UserPublic>(apiEndpoints.auth.consentRevoke, { method: 'POST' }),
   exportMyData: () => apiRequest<DataExportResponse>(apiEndpoints.auth.exportData),
+  exportMyActivity: () => apiRequest<ActivityExportResponse>(apiEndpoints.auth.activityExport),
+  getAvatar: () => apiRequest<AvatarResponse>(apiEndpoints.auth.avatar),
+  updateAvatar: (body: AvatarUpdateRequest) =>
+    apiRequest<AvatarResponse>(apiEndpoints.auth.avatar, { method: 'PUT', body: JSON.stringify(body) }),
   deleteAccount: () => apiRequest<AccountDeletionResponse>(apiEndpoints.auth.me, { method: 'DELETE' }),
+  deactivateAccount: () => apiRequest<AccountDeactivationResponse>(apiEndpoints.auth.deactivate, { method: 'POST' }),
+  logoutAllDevices: () => apiRequest<void>(apiEndpoints.auth.logoutAll, { method: 'POST' }),
+  listSessions: () => apiRequest<SessionResponse[]>(apiEndpoints.auth.sessions),
+  revokeSession: (sessionId: string) =>
+    apiRequest<void>(apiEndpoints.auth.session(sessionId), { method: 'DELETE' }),
+  revokeOtherSessions: () => apiRequest<void>(apiEndpoints.auth.sessions, { method: 'DELETE' }),
+  enrollTwoFactor: () =>
+    apiRequest<TwoFactorEnrollResponse>(apiEndpoints.auth.twoFactorEnroll, { method: 'POST' }),
+  verifyTwoFactor: (body: TwoFactorCodeRequest) =>
+    apiRequest<UserPublic>(apiEndpoints.auth.twoFactorVerify, { method: 'POST', body: JSON.stringify(body) }),
+  disableTwoFactor: (body: TwoFactorCodeRequest) =>
+    apiRequest<UserPublic>(apiEndpoints.auth.twoFactorDisable, { method: 'POST', body: JSON.stringify(body) }),
+  getDefaultWorkspace: () => apiRequest<Workspace>(apiEndpoints.workspaces.default),
+  listWorkspaceMembers: (workspaceId: string) =>
+    apiRequest<WorkspaceMember[]>(apiEndpoints.workspaces.members(workspaceId)),
   getLocales: () => apiRequest<LocaleDefinition[]>(apiEndpoints.localization.locales),
   getLocalizationDictionary: (locale: string) => apiRequest<TranslationDictionary>(apiEndpoints.localization.dictionary(locale)),
   previewLocalization: (body: LocalizationPreviewRequest) =>
@@ -651,4 +682,10 @@ export const apiClient = {
       method: 'DELETE',
     }),
   getDownloads: () => apiRequest<DownloadRecord[]>(apiEndpoints.downloads),
+  getRuntimeConfig: () => apiRequest<PlatformRuntimeConfig>(apiEndpoints.runtimeConfig),
+  updateRuntimeConfig: (body: UpdatePlatformRuntimeConfigRequest) =>
+    apiRequest<PlatformRuntimeConfig>(apiEndpoints.runtimeConfig, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
 };

@@ -1,0 +1,3 @@
+# Workspace isolation
+
+`GET /api/system/presence` and `GET /api/system/presence/decisions` resolve an explicit workspace through `TenantRepository.require_workspace`, otherwise use the authenticated user's personal workspace. Queries constrain both ActivityEvent and GenerationJob by user and workspace. New tests prove that workspace B events are not visible in workspace A and metadata secrets are not returned.

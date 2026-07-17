@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { CircuitBoard, PanelLeftClose, Shield } from 'lucide-react';
+import { CircuitBoard, LogOut, PanelLeftClose, Settings as SettingsIcon, Shield } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import { cn } from '@/lib/cn';
 import { NAVIGATION_ITEMS } from '@/lib/navigation';
 import { useLocale } from '@/hooks/use-locale';
 import { useShellStore } from '@/stores/use-shell-store';
+import { useAuthStore } from '@/stores/use-auth-store';
 
 interface SidebarProps {
   readonly compact?: boolean;
@@ -19,9 +20,14 @@ interface SidebarProps {
 
 export function Sidebar({ compact = false }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { t } = useLocale();
   const sidebarOpen = useShellStore((state) => state.sidebarOpen);
   const setSidebarOpen = useShellStore((state) => state.setSidebarOpen);
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
+  const name = user?.full_name?.trim() || user?.email || '—';
+  const initials = name.replace(/[^a-zA-Z ]/g, '').split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || 'U';
 
   return (
     <motion.aside
@@ -30,8 +36,14 @@ export function Sidebar({ compact = false }: SidebarProps) {
         opacity: compact && !sidebarOpen ? 0.98 : 1,
       }}
       transition={{ type: 'spring', stiffness: 170, damping: 22 }}
+      // LDCN OS product identity -- always navy, in both Light and Dark
+      // content themes (--sidebar-* tokens are non-themed, see globals.css).
+      style={{
+        background: 'linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-bg-2) 100%)',
+        borderColor: 'var(--sidebar-border)',
+      }}
       className={cn(
-        'surface-secondary fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-hidden border-y-0 border-l-0 border-r border-[color:var(--border)] p-3 will-change-transform',
+        'fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-hidden border-y-0 border-l-0 border-r p-3 will-change-transform',
         compact
           ? sidebarOpen
             ? 'translate-x-0'
@@ -42,16 +54,19 @@ export function Sidebar({ compact = false }: SidebarProps) {
     >
       <span className="instrument-rail" aria-hidden />
 
-      <div className="relative flex items-center justify-between gap-3 border-b border-[color:var(--border)] px-2 pb-4 pt-1">
+      <div className="relative flex items-center justify-between gap-3 border-b px-2 pb-4 pt-1" style={{ borderColor: 'var(--sidebar-border)' }}>
         <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] border border-[color:var(--border-strong)] bg-[color:var(--surface-3)]">
-            <CircuitBoard className="h-5 w-5 text-[color:var(--accent)]" strokeWidth={1.75} />
+          <div
+            className="relative flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] border"
+            style={{ borderColor: 'var(--sidebar-border)', background: 'rgba(255,255,255,0.04)' }}
+          >
+            <CircuitBoard className="h-5 w-5" strokeWidth={1.75} style={{ color: 'var(--sidebar-accent)' }} />
           </div>
           <div>
-            <p className="type-data text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+            <p className="type-data text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--sidebar-text-muted)' }}>
               {t('product.name')}
             </p>
-            <p className="ds-subsection leading-tight text-[color:var(--text)]">
+            <p className="ds-subsection leading-tight" style={{ color: 'var(--sidebar-text)' }}>
               {t('sidebar.foundation')}
             </p>
           </div>
@@ -62,6 +77,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
             type="button"
             variant="ghost"
             className="h-11 w-11 rounded-[var(--radius-md)] p-0 xl:hidden"
+            style={{ color: 'var(--sidebar-text)' }}
             onClick={() => setSidebarOpen(false)}
             aria-label={t('sidebar.close')}
           >
@@ -70,11 +86,14 @@ export function Sidebar({ compact = false }: SidebarProps) {
         ) : null}
       </div>
 
-      <Badge className="mx-2 mb-3 mt-4 w-fit rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--accent)_40%,var(--border))] bg-transparent font-mono text-[color:var(--accent)]">
+      <Badge
+        className="mx-2 mb-3 mt-4 w-fit rounded-[var(--radius-sm)] border bg-transparent font-mono"
+        style={{ borderColor: 'color-mix(in srgb, var(--sidebar-accent) 45%, transparent)', color: 'var(--sidebar-accent)' }}
+      >
         {t('sidebar.badge')}
       </Badge>
 
-      <Separator className="mb-3 opacity-60" />
+      <Separator className="mb-3 bg-[color:var(--sidebar-border)]" />
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-1 pr-2" aria-label={t('sidebar.foundation')}>
         {NAVIGATION_ITEMS.map((item) => {
@@ -86,36 +105,43 @@ export function Sidebar({ compact = false }: SidebarProps) {
               key={item.href}
               href={item.href}
               aria-current={active ? 'page' : undefined}
-              className={cn(
-                'group micro-interaction relative flex min-h-12 items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border px-2.5 py-2 focus-ring',
+              className="group micro-interaction relative flex min-h-12 items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border px-2.5 py-2 focus-ring"
+              style={
                 active
-                  ? 'border-[color-mix(in_srgb,var(--accent)_48%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_10%,var(--surface-2))]'
-                  : 'border-transparent bg-transparent hover:border-[color:var(--border)] hover:bg-[color:var(--control-hover)]',
-              )}
+                  ? { borderColor: 'color-mix(in srgb, var(--sidebar-accent) 55%, transparent)', background: 'var(--sidebar-hover)' }
+                  : { borderColor: 'transparent', background: 'transparent' }
+              }
+              onMouseEnter={(event) => {
+                if (!active) event.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+              }}
+              onMouseLeave={(event) => {
+                if (!active) event.currentTarget.style.background = 'transparent';
+              }}
             >
               {active ? (
                 <motion.span
                   layoutId="sidebar-active-indicator"
-                  className="absolute inset-y-2 left-0 w-0.5 bg-[color:var(--accent)]"
+                  className="absolute inset-y-2 left-0 w-0.5"
+                  style={{ background: 'var(--sidebar-accent)' }}
                   transition={{ type: 'spring', stiffness: 260, damping: 30 }}
                 />
               ) : null}
               <span
-                className={cn(
-                  'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border transition duration-200',
+                className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border transition duration-200"
+                style={
                   active
-                    ? 'border-[color-mix(in_srgb,var(--accent)_55%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_14%,var(--surface-3))] text-[color:var(--accent)]'
-                    : 'border-[color:var(--border)] bg-[color:var(--surface-3)] text-[color:var(--muted)] group-hover:text-[color:var(--text)]',
-                )}
+                    ? { borderColor: 'color-mix(in srgb, var(--sidebar-accent) 60%, transparent)', background: 'rgba(124,58,237,0.16)', color: 'var(--sidebar-accent)' }
+                    : { borderColor: 'var(--sidebar-border)', background: 'rgba(255,255,255,0.03)', color: 'var(--sidebar-text-muted)' }
+                }
               >
                 <Icon className="h-4 w-4" strokeWidth={1.75} />
               </span>
               <span className="relative min-w-0 flex-1">
-                <span className="block text-sm font-semibold leading-5 text-[color:var(--text)]">
+                <span className="block text-sm font-semibold leading-5" style={{ color: 'var(--sidebar-text)' }}>
                   {t(item.labelKey)}
                 </span>
                 {active ? (
-                  <span className="mt-0.5 block text-xs leading-4 text-[color:var(--muted)]">
+                  <span className="mt-0.5 block text-xs leading-4" style={{ color: 'var(--sidebar-text-muted)' }}>
                     {t(item.descriptionKey)}
                   </span>
                 ) : null}
@@ -125,14 +151,48 @@ export function Sidebar({ compact = false }: SidebarProps) {
         })}
       </nav>
 
-      <div className="surface-tertiary mx-1 mt-3 rounded-[var(--radius-md)] p-3">
-        <div className="ds-caption mb-2 flex items-center gap-2 text-[color:var(--muted)]">
+      <div className="mx-1 mt-3 rounded-[var(--radius-md)] border p-3" style={{ borderColor: 'var(--sidebar-border)', background: 'rgba(255,255,255,0.03)' }}>
+        <div className="ds-caption mb-2 flex items-center gap-2" style={{ color: 'var(--sidebar-text-muted)' }}>
           <Shield className="h-4 w-4" />
           {t('sidebar.rules')}
         </div>
-        <p className="text-sm leading-6 text-[color:var(--text)]/85">
+        <p className="text-sm leading-6" style={{ color: 'var(--sidebar-text)', opacity: 0.85 }}>
           {t('sidebar.rulesDescription')}
         </p>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2 rounded-[var(--radius-md)] border p-2" style={{ borderColor: 'var(--sidebar-border)' }}>
+        <span
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-bold"
+          style={{ background: 'var(--accent-gradient)', color: 'var(--control-selected-text)' }}
+          aria-hidden
+        >
+          {initials}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold leading-5" style={{ color: 'var(--sidebar-text)' }}>{name}</p>
+          <p className="truncate text-xs leading-4" style={{ color: 'var(--sidebar-text-muted)' }}>{user?.email ?? ''}</p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-9 w-9 shrink-0 rounded-[var(--radius-sm)] p-0"
+          style={{ color: 'var(--sidebar-text-muted)' }}
+          onClick={() => router.push('/settings')}
+          aria-label={t('common.settings')}
+        >
+          <SettingsIcon className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-9 w-9 shrink-0 rounded-[var(--radius-sm)] p-0"
+          style={{ color: 'var(--sidebar-text-muted)' }}
+          onClick={() => void logout()}
+          aria-label={t('settings.privacy.logout')}
+        >
+          <LogOut className="h-4 w-4" />
+        </Button>
       </div>
     </motion.aside>
   );

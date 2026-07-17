@@ -109,7 +109,11 @@ def test_switching_default_updates_global_resolution(client):
         "architecture_analysis",
     ],
 )
-def test_every_capability_resolves_the_same_active_provider(capability: str):
+def test_every_capability_resolves_the_same_active_provider(capability: str, client):
+    # `client` is unused directly but its fixture points get_settings().database_url
+    # at an isolated, table-initialized per-test SQLite DB -- LlmSettingsService()
+    # below persists the active selection there, not into the shared dev DB.
+    del client
     user_key_session.set("resolver-user", "anthropic", KEY)
     service = LlmSettingsService()
     service.configured("resolver-user", "anthropic")
@@ -124,7 +128,8 @@ def test_every_capability_resolves_the_same_active_provider(capability: str):
     assert context.api_key == KEY
 
 
-def test_expired_key_is_explicit_and_never_silently_ready():
+def test_expired_key_is_explicit_and_never_silently_ready(client):
+    del client  # see comment in test_every_capability_resolves_the_same_active_provider
     service = LlmSettingsService()
     service.configured("resolver-user", "anthropic")
     context = service.resolve(
@@ -150,9 +155,10 @@ def test_deterministic_choice_is_audited(client):
     assert "LLM_FALLBACK_DETERMINISTIC_USED" in event_codes
 
 
-def test_valid_provider_never_falls_back_silently():
+def test_valid_provider_never_falls_back_silently(client):
     """Rule: no module may resolve to deterministic while a valid global
     provider exists, unless the user explicitly asked for it."""
+    del client  # see comment in test_every_capability_resolves_the_same_active_provider
     user_key_session.set("resolver-user", "anthropic", KEY)
     service = LlmSettingsService()
     service.configured("resolver-user", "anthropic")
@@ -165,9 +171,10 @@ def test_valid_provider_never_falls_back_silently():
     assert context.resolution.fallbackUsed is False
 
 
-def test_mismatched_model_falls_back_to_configured_provider():
+def test_mismatched_model_falls_back_to_configured_provider(client):
     """If a model picker passes a model from a provider with no key, the flow
     must still auto-use the configured (keyed) provider, not go deterministic."""
+    del client  # see comment in test_every_capability_resolves_the_same_active_provider
     user_key_session.set("resolver-user", "anthropic", KEY)
     service = LlmSettingsService()
     service.configured("resolver-user", "anthropic")

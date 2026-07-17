@@ -14,6 +14,9 @@ export interface GitProviderConnection extends ContractMetadata {
   readonly last_sync?: TimestampISO | string | null;
   /** When the user chose a retention window, the token self-destructs at this instant. */
   readonly expires_at?: TimestampISO | string | null;
+  /** Masked hint of the stored token (e.g. "ghp_…a1b2") for the tokens list;
+   * never the full value. */
+  readonly masked?: string | null;
 }
 
 export interface RepositoryCreateRequest {

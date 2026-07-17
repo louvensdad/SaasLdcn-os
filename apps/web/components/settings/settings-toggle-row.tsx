@@ -24,7 +24,7 @@ export function SettingsToggleRow({ label, description, checked, onChange, disab
         aria-checked={checked}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className="focus-ring inline-flex h-7 w-12 shrink-0 items-center rounded-full border border-[color:var(--border)] p-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+        className="focus-ring inline-flex min-h-11 min-w-[44px] h-11 w-12 shrink-0 items-center rounded-full border border-[color:var(--border)] p-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
         style={checked ? { background: 'color-mix(in srgb, var(--accent) 35%, transparent)' } : undefined}
       >
         <span

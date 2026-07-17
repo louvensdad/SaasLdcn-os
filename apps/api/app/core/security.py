@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+
 from uuid import uuid4
 
 import jwt
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from fastapi import Request
 from passlib.context import CryptContext
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 
 TokenType = Literal["access", "refresh"]
 
@@ -138,3 +141,62 @@ def decode_token(token: str, *, expected_type: TokenType) -> dict[str, Any]:
     if not payload.get("sub") or not payload.get("jti"):
         raise TokenError("invalid_token", "Token is missing required claims.")
     return payload
+
+
+def client_ip(request: Request, settings: Settings) -> str:
+    """Best-effort caller IP: trusts `X-Forwarded-For` only when the deployment
+    says to (behind a known reverse proxy), otherwise falls back to the raw
+    socket peer. Shared by the rate limiter and session tracking so both agree
+    on what "the caller's IP" means."""
+    if settings.trust_proxy_headers:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first
+    return request.client.host if request.client else "unknown"
+
+
+def mask_ip(ip: str) -> str:
+    """Partially obscure an IP for display (e.g. `189.84.***.27`). Real value
+    is still stored server-side; this only affects what a settings UI shows."""
+    parts = ip.split(".")
+    if len(parts) == 4 and all(part.isdigit() for part in parts):
+        return f"{parts[0]}.{parts[1]}.***.{parts[3]}"
+    if len(ip) <= 4:
+        return "***"
+    return f"{ip[:2]}***{ip[-2:]}"
+
+
+_OS_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"Windows", "Windows"),
+    (r"Mac OS X", "macOS"),
+    (r"Android", "Android"),
+    (r"iPhone|iPad|iOS", "iOS"),
+    (r"Linux", "Linux"),
+)
+_BROWSER_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"Edg/(\d+)", "Edge"),
+    (r"OPR/(\d+)", "Opera"),
+    (r"Chrome/(\d+)", "Chrome"),
+    (r"Firefox/(\d+)", "Firefox"),
+    (r"Version/(\d+).*Safari", "Safari"),
+)
+
+
+def describe_device(user_agent: str | None) -> str | None:
+    """Coarse, dependency-free "OS · Browser N" label parsed from a User-Agent
+    header (e.g. "macOS · Chrome 126"). Returns None when nothing recognizable
+    is found rather than guessing."""
+    if not user_agent:
+        return None
+    os_name = next((name for pattern, name in _OS_PATTERNS if re.search(pattern, user_agent)), None)
+    browser_match = next(
+        ((name, match) for pattern, name in _BROWSER_PATTERNS if (match := re.search(pattern, user_agent))),
+        None,
+    )
+    if browser_match is None:
+        return os_name
+    browser_name, match = browser_match
+    version = match.group(1)
+    label = f"{browser_name} {version}"
+    return f"{os_name} · {label}" if os_name else label

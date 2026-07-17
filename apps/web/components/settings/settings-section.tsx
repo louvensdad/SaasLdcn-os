@@ -43,7 +43,10 @@ export function SettingsSection({ title, description, action, children, classNam
   }
 
   return (
-    <Card surface={surface} className={cn('space-y-5 p-6', className)}>
+    <Card
+      surface={surface}
+      className={cn('space-y-5 rounded-[1.5rem] p-6 shadow-[0_12px_40px_rgba(44,31,82,0.08),0_2px_8px_rgba(44,31,82,0.04)]', className)}
+    >
       {header}
       {children}
     </Card>

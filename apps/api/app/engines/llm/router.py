@@ -20,6 +20,7 @@ from app.engines.llm.resilience import (
     RetryPolicy,
 )
 from app.engines.llm.response_cache import llm_response_cache
+from app.repositories.llm_usage_repository import record_usage_safely
 from app.schemas.llm import LLMRequest, LLMResponse
 
 
@@ -132,6 +133,7 @@ class LLMRouter:
         silently defeat it. Only set True at call sites where a duplicate
         request really does mean "already answered, skip it" (e.g. the repair
         loops in verification_engine.py / llm_repair_engine.py)."""
+        started = time.perf_counter()
         routed_model = getattr(api_key, "model", None)
         model = resolve_model(user_choice=routed_model or user_choice, agent_role=agent_role)
         meta = MODEL_REGISTRY[model]
@@ -149,10 +151,10 @@ class LLMRouter:
             adapter = self._adapters.get(provider)
             if adapter is None:
                 raise LLMError(f"No adapter registered for provider '{provider}' (model {model}).")
-            return self._complete_resilient(adapter, provider, model, req, api_key=api_key)
+            return self._recorded(self._complete_resilient(adapter, provider, model, req, api_key=api_key), started)
 
         if settings.force_mock:
-            return self._mock.complete(model, req)
+            return self._recorded(self._mock.complete(model, req), started)
 
         # Token Intelligence: consult the app-level response cache before any
         # provider call (opt-in, see docstring above).
@@ -164,12 +166,12 @@ class LLMRouter:
         if cache_key is not None:
             cached = llm_response_cache.get(cache_key)
             if cached is not None:
-                return cached.model_copy(update={"served_by_cache": True})
+                return self._recorded(cached.model_copy(update={"served_by_cache": True}), started)
 
         adapter = self._adapters.get(provider)
         if adapter is None:
             if settings.mock_fallback_enabled:
-                return self._mock.complete(model, req)
+                return self._recorded(self._mock.complete(model, req), started)
             raise LLMError(
                 f"No adapter registered for provider '{provider}' (model {model})."
             )
@@ -178,10 +180,24 @@ class LLMRouter:
             response = self._complete_resilient(adapter, provider, model, req, api_key=None)
         except LLMError:
             if settings.mock_fallback_enabled:
-                return self._mock.complete(model, req)
+                return self._recorded(self._mock.complete(model, req), started)
             raise
         if cache_key is not None:
             llm_response_cache.set(cache_key, response)
+        return self._recorded(response, started)
+
+    @staticmethod
+    def _recorded(response: LLMResponse, started: float) -> LLMResponse:
+        """Real usage telemetry on every response leaving the router (tokens as
+        reported by the provider, wall-clock latency). Fault-isolated inside
+        record_usage_safely -- can never break or fail a generation call."""
+        record_usage_safely(
+            provider=str(getattr(response.provider, "value", response.provider)),
+            model=response.model,
+            usage=response.usage or {},
+            served_by_cache=response.served_by_cache,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+        )
         return response
 
     def _complete_resilient(

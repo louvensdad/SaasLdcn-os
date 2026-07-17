@@ -3,17 +3,24 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser
+from app.core.security import TokenError, client_ip, decode_token, describe_device
 from app.schemas.auth import (
     AccountDeletionResponse,
+    ActivityExportResponse,
     AuthResponse,
+    AvatarResponse,
+    AvatarUpdateRequest,
     ConsentRequest,
     DataExportResponse,
     PasswordChangeRequest,
     RefreshRequest,
+    SessionResponse,
+    TwoFactorCodeRequest,
+    TwoFactorEnrollResponse,
     UserLoginRequest,
     UserPublic,
     UserRegisterRequest,
@@ -62,14 +69,24 @@ def _auth_response_with_cookie(
     return payload
 
 
+def _request_context(request: Request) -> tuple[str, str | None]:
+    return client_ip(request, get_settings()), describe_device(request.headers.get("user-agent"))
+
+
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: UserRegisterRequest, response: Response) -> AuthResponse:
-    return _auth_response_with_cookie(service.register(payload), response)
+def register(payload: UserRegisterRequest, request: Request, response: Response) -> AuthResponse:
+    ip_address, device_label = _request_context(request)
+    return _auth_response_with_cookie(
+        service.register(payload, ip_address=ip_address, device_label=device_label), response
+    )
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(payload: UserLoginRequest, response: Response) -> AuthResponse:
-    return _auth_response_with_cookie(service.login(payload), response)
+def login(payload: UserLoginRequest, request: Request, response: Response) -> AuthResponse:
+    ip_address, device_label = _request_context(request)
+    return _auth_response_with_cookie(
+        service.login(payload, ip_address=ip_address, device_label=device_label), response
+    )
 
 
 @router.post("/refresh", response_model=AuthResponse)
@@ -87,7 +104,10 @@ def refresh_tokens(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token is required.",
         )
-    return _auth_response_with_cookie(service.refresh(refresh_token), response)
+    ip_address, device_label = _request_context(request)
+    return _auth_response_with_cookie(
+        service.refresh(refresh_token, ip_address=ip_address, device_label=device_label), response
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -160,9 +180,14 @@ def oauth_callback(
     if not code or not state or not cookie_state or state != cookie_state:
         return _fail("invalid_state")
 
+    ip_address, device_label = _request_context(request)
     try:
         payload, refresh_token = service.oauth_callback(
-            provider, code=code, redirect_uri=_oauth_callback_url(request, provider)
+            provider,
+            code=code,
+            redirect_uri=_oauth_callback_url(request, provider),
+            ip_address=ip_address,
+            device_label=device_label,
         )
     except OAuthNotConfiguredError:
         return _fail("not_configured")
@@ -205,3 +230,86 @@ def export_my_data(user: CurrentUser) -> DataExportResponse:
 @router.delete("/me", response_model=AccountDeletionResponse)
 def delete_my_account(user: CurrentUser) -> AccountDeletionResponse:
     return AccountDeletionResponse.model_validate(service.delete_account(user["user_id"]))
+
+
+def _current_refresh_jti(request: Request) -> str | None:
+    """Best-effort: identifies which session belongs to *this* browser, so the
+    sessions list can flag it. A missing/invalid cookie just means nothing is
+    flagged current -- never an error, since it's read-only context."""
+    token = request.cookies.get(get_settings().refresh_cookie_name)
+    if not token:
+        return None
+    try:
+        return decode_token(token, expected_type="refresh")["jti"]
+    except TokenError:
+        return None
+
+
+@router.get("/me/sessions", response_model=list[SessionResponse])
+def list_my_sessions(request: Request, user: CurrentUser) -> list[SessionResponse]:
+    return service.list_sessions(user, current_jti=_current_refresh_jti(request))
+
+
+@router.delete("/me/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_my_session(session_id: str, user: CurrentUser) -> Response:
+    service.revoke_session(user["user_id"], session_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/me/sessions", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_my_other_sessions(request: Request, user: CurrentUser) -> Response:
+    service.revoke_other_sessions(user["user_id"], current_jti=_current_refresh_jti(request))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/me/2fa/enroll", response_model=TwoFactorEnrollResponse)
+def enroll_2fa(user: CurrentUser) -> TwoFactorEnrollResponse:
+    return service.enroll_2fa(user)
+
+
+@router.post("/me/2fa/verify", response_model=UserPublic)
+def verify_2fa(payload: TwoFactorCodeRequest, user: CurrentUser) -> UserPublic:
+    return service.verify_2fa(user, payload.code)
+
+
+@router.post("/me/2fa/disable", response_model=UserPublic)
+def disable_2fa(payload: TwoFactorCodeRequest, user: CurrentUser) -> UserPublic:
+    return service.disable_2fa(user, payload.code)
+
+
+@router.post("/me/consent/revoke", response_model=UserPublic)
+def revoke_my_consent(user: CurrentUser) -> UserPublic:
+    return service.revoke_consent(user["user_id"])
+
+
+@router.get("/me/activity-export", response_model=ActivityExportResponse)
+def export_my_activity(user: CurrentUser) -> ActivityExportResponse:
+    return service.export_activity(user)
+
+
+@router.get("/me/avatar", response_model=AvatarResponse)
+def get_my_avatar(user: CurrentUser) -> AvatarResponse:
+    return AvatarResponse(avatar_url=service.get_avatar(user["user_id"]))
+
+
+@router.put("/me/avatar", response_model=AvatarResponse)
+def set_my_avatar(payload: AvatarUpdateRequest, user: CurrentUser) -> AvatarResponse:
+    return AvatarResponse(avatar_url=service.set_avatar(user["user_id"], payload.avatar_url))
+
+
+@router.post("/me/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+def logout_all_devices(user: CurrentUser) -> Response:
+    service.logout_everywhere(user["user_id"])
+    user_key_session.clear(user["user_id"])
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_refresh_cookie(response)
+    return response
+
+
+@router.post("/me/deactivate", status_code=status.HTTP_200_OK)
+def deactivate_my_account(user: CurrentUser) -> Response:
+    result = service.deactivate_account(user["user_id"])
+    user_key_session.clear(user["user_id"])
+    response = JSONResponse(content=result, status_code=status.HTTP_200_OK)
+    _clear_refresh_cookie(response)
+    return response

@@ -4,6 +4,7 @@ import { AlertTriangle, Trash2, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { useLocale } from '@/hooks/use-locale';
 
 interface Props {
@@ -72,7 +73,7 @@ export function DeleteResourceButton({ title, description, triggerLabel, ariaLab
         <div className="flex items-start gap-4">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"><AlertTriangle className="h-5 w-5 text-[color:var(--danger)]" /></span>
           <div className="min-w-0 flex-1"><h2 id={`delete-title-${id}`} className="text-lg font-semibold text-[color:var(--text)]">{title}</h2><p id={`delete-description-${id}`} className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{description}</p></div>
-          <Button type="button" variant="ghost" className="h-9 w-9 rounded-full p-0" onClick={close} disabled={pending} aria-label={t('common.delete.close')}><X className="h-4 w-4" /></Button>
+          <IconButton type="button" variant="ghost" size="sm" onClick={close} disabled={pending} aria-label={t('common.delete.close')}><X className="h-4 w-4" /></IconButton>
         </div>
         {error ? <p role="alert" className="mt-4 text-sm text-[color:var(--danger)]">{error}</p> : null}
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><Button ref={cancelRef} type="button" variant="secondary" onClick={close} disabled={pending}>{t('common.delete.cancel')}</Button><Button type="button" variant="danger" loading={pending} onClick={() => void confirmDelete()}><Trash2 className="h-4 w-4" />{pending ? t('common.delete.deleting') : t('common.delete.confirm')}</Button></div>

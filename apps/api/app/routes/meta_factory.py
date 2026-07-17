@@ -29,6 +29,7 @@ from app.repositories.user_repository import AuditLogRepository
 from app.repositories.tenant_repository import TenantAccessError, TenantRepository, WORKSPACE_WRITE_ROLES
 from app.repositories.blueprint_approval_repository import BlueprintApprovalRepository, hash_blueprint
 from app.routes.project_rooms import service as project_room_service
+from app.services.activity_feed_service import activity_feed_service
 from app.services.project_room_service import ENGINEERING_APPROVED_STATUSES
 from app.schemas.auto_repair import ForceReleaseRequest, RepairResult, RevalidationResult
 from app.schemas.quality_gate import QualityGateReport
@@ -1098,6 +1099,12 @@ def validate_quality(project_id: str, user: CurrentUser, build: bool = Query(Tru
     _audit(user["user_id"], "quality_gate_run")
     if report.blocker_count > 0:
         _audit(user["user_id"], "quality_gate_failed")
+    activity_feed_service.record(
+        user_id=user["user_id"], category="quality_gate", action="validate",
+        status="success" if report.passed else "failed",
+        metadata={"score": report.score, "blocker_count": report.blocker_count, "warning_count": report.warning_count},
+        project_id=project_id, source="quality_gate_engine",
+    )
     return report
 
 

@@ -4,7 +4,7 @@ import type { LocaleCode, LocalePreference } from '@contracts/locale.contract';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-interface LocaleState extends LocalePreference {
+export interface LocaleState extends LocalePreference {
   hasHydrated: boolean;
   setInterfaceLocale: (locale: LocaleCode) => void;
   setGeneratedProjectLocale: (locale: LocaleCode) => void;
@@ -12,6 +12,7 @@ interface LocaleState extends LocalePreference {
   setCodeCommentsLocale: (locale: LocaleCode) => void;
   setFallbackLocale: (locale: LocaleCode) => void;
   setHasHydrated: (hasHydrated: boolean) => void;
+  importAll: (snapshot: Partial<LocalePreference>) => void;
 }
 
 export const useLocaleStore = create<LocaleState>()(
@@ -28,7 +29,8 @@ export const useLocaleStore = create<LocaleState>()(
       setDocumentationLocale: (documentationLocale) => set({ documentationLocale }),
       setCodeCommentsLocale: (codeCommentsLocale) => set({ codeCommentsLocale }),
       setFallbackLocale: (fallbackLocale) => set({ fallbackLocale }),
-      setHasHydrated: (hasHydrated) => set({ hasHydrated })
+      setHasHydrated: (hasHydrated) => set({ hasHydrated }),
+      importAll: (snapshot) => set(snapshot)
     }),
     {
       name: 'ldcn-locale-preferences',

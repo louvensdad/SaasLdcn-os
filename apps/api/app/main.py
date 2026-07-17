@@ -12,8 +12,10 @@ from app.core.exceptions import configure_exception_handlers
 from app.core.logging import RequestIdMiddleware, RequestLoggingMiddleware, logger
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.services.platform_runtime_config_service import platform_runtime_config_service
 from app.routes import (
     agent_foundation,
+    activity_feed,
     ai_status,
     analytics,
     architectural_graph,
@@ -48,11 +50,14 @@ from app.routes import (
     roadmap,
     stacks,
     skills,
+    runtime,
+    system_presence,
     system_status,
     system_design_visualization,
     templates,
     tenants,
     user_ai_keys,
+    user_preferences,
 )
 
 
@@ -61,6 +66,10 @@ async def lifespan(_: FastAPI):
     projects.service.initialize()
     # Never log the database URL: production URLs commonly embed credentials.
     logger.info("Database ready")
+    # Re-apply any admin-set worker-limit / job-lease / audit-retention override
+    # BEFORE anything else can read them (agent pool is otherwise lazily sized
+    # from the env-var default on first use).
+    platform_runtime_config_service.hydrate_from_db()
     if get_settings().environment == "production":
         recovery = meta_factory.generation_job_engine.reconcile_startup()
         logger.info(
@@ -120,6 +129,8 @@ def create_application() -> FastAPI:
     app.include_router(skills.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(agent_foundation.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(system_status.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(system_presence.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(runtime.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(roadmap.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(projects.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(downloads.router, prefix=settings.api_prefix, dependencies=protected)
@@ -136,6 +147,7 @@ def create_application() -> FastAPI:
     app.include_router(prompt_master.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(gatekeeper.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(user_ai_keys.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(user_preferences.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(llm_settings.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(git_export.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(git_providers.router, prefix=settings.api_prefix, dependencies=protected)
@@ -144,6 +156,7 @@ def create_application() -> FastAPI:
     app.include_router(modernize.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(project_rooms.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(ai_status.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(activity_feed.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(analytics.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(documentation.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(deep_engineering.router, prefix=settings.api_prefix, dependencies=protected)

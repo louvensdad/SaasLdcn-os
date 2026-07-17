@@ -17,6 +17,9 @@ bcrypt>=3.1.0,<4.1
 # Encryption at rest for stored provider credentials (Gap C).
 cryptography>=42.0.0
 
+# TOTP two-factor authentication (settings Conta tab).
+pyotp>=2.9.0
+
 # Multi-LLM router (apps/api/app/engines/llm). All provider SDKs are imported
 # lazily inside their adapters, so the app and test suite import cleanly without
 # them. Install only the providers you actually route to, and set the matching

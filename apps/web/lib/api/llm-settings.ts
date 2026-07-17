@@ -1,6 +1,6 @@
 import { API_BASE_URL } from '@/lib/api/endpoints';
 import { getAccessToken, refreshAccessToken } from '@/lib/api/client';
-import type { ActiveLlmSettings, LlmCacheStats, LlmProviderId, LlmResolution } from '@contracts/llm-settings.contract';
+import type { ActiveLlmSettings, LlmCacheStats, LlmModelUsage, LlmProviderId, LlmResolution, LlmUsageStats } from '@contracts/llm-settings.contract';
 
 async function send<T>(path: string, init: RequestInit, allowRefresh = true): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -37,4 +37,6 @@ export const llmSettingsClient = {
       body: JSON.stringify({ requestedCapability, mode, optionalOverrideProvider }),
     }),
   cacheStats: () => send<LlmCacheStats>('/api/llm/cache-stats', { method: 'GET' }),
+  usageStats: () => send<LlmUsageStats>('/api/llm/usage/stats', { method: 'GET' }),
+  usageByModel: () => send<LlmModelUsage[]>('/api/llm/usage/by-model', { method: 'GET' }),
 };

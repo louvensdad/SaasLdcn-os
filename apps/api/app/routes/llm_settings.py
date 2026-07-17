@@ -4,7 +4,16 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.core.deps import CurrentUser
 from app.core.metrics import LLM_CACHE_BYTES, LLM_CACHE_ENTRIES, LLM_CACHE_EVENTS
-from app.schemas.llm_settings import ActiveLlmSettings, ConfirmLlmUseRequest, LlmCacheStats, LlmResolution, SelectLlmProviderRequest
+from app.repositories.llm_usage_repository import LlmUsageRepository
+from app.schemas.llm_settings import (
+    ActiveLlmSettings,
+    ConfirmLlmUseRequest,
+    LlmCacheStats,
+    LlmModelUsage,
+    LlmResolution,
+    LlmUsageStats,
+    SelectLlmProviderRequest,
+)
 from app.services.llm_settings_service import llm_provider_resolver, llm_settings_service
 
 router = APIRouter(tags=["llm-settings"])
@@ -27,6 +36,18 @@ def get_llm_cache_stats(user: CurrentUser) -> LlmCacheStats:
         entries=int(LLM_CACHE_ENTRIES._value.get()),  # noqa: SLF001
         bytes=int(LLM_CACHE_BYTES._value.get()),  # noqa: SLF001
     )
+
+
+@router.get("/llm/usage/stats", response_model=LlmUsageStats)
+def get_llm_usage_stats(user: CurrentUser) -> LlmUsageStats:
+    del user  # process-global telemetry, not user-scoped -- auth only gates visibility
+    return LlmUsageStats.model_validate(LlmUsageRepository().stats(window_hours=24))
+
+
+@router.get("/llm/usage/by-model", response_model=list[LlmModelUsage])
+def get_llm_usage_by_model(user: CurrentUser) -> list[LlmModelUsage]:
+    del user  # process-global telemetry, not user-scoped -- auth only gates visibility
+    return [LlmModelUsage.model_validate(row) for row in LlmUsageRepository().stats_by_model(window_hours=24)]
 
 
 @router.get("/llm/settings/active", response_model=ActiveLlmSettings)

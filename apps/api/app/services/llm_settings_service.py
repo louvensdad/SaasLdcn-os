@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 
 from app.core.config import get_settings
+from app.repositories.llm_active_selection_repository import LlmActiveSelectionRepository
 from app.repositories.user_repository import AuditLogRepository
+from app.data.model_registry import MODEL_REGISTRY
 from app.schemas.llm_settings import ActiveLlmSettings, LlmResolution
 from app.services.llm_provider_registry import PROVIDERS, normalize_provider_id, provider_for_model
 from app.services.user_key_session_service import user_key_session
@@ -18,6 +19,19 @@ class _Selection:
     last_validated_at: datetime | None = None
     last_used_at: datetime | None = None
     validation_status: str = "ready"
+
+    @classmethod
+    def from_row(cls, row: dict) -> "_Selection":
+        return cls(
+            provider=row["provider"], model=row["model"],
+            last_validated_at=_parse(row.get("last_validated_at")),
+            last_used_at=_parse(row.get("last_used_at")),
+            validation_status=row.get("validation_status") or "ready",
+        )
+
+
+def _parse(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
 
 
 @dataclass(frozen=True)
@@ -38,11 +52,13 @@ class LlmRoutingKey(str):
 
 
 class LlmSettingsService:
-    """Source of truth for active LLM metadata; secrets remain in the TTL vault."""
+    """Source of truth for active LLM metadata; secrets remain in the TTL
+    vault. The selection itself is DB-backed (LlmActiveSelectionRepository)
+    so it survives a backend restart -- it used to live only in an in-memory
+    dict, which silently reset to 'nothing configured' on every deploy."""
 
-    def __init__(self) -> None:
-        self._selections: dict[str, _Selection] = {}
-        self._lock = threading.RLock()
+    def __init__(self, repository: LlmActiveSelectionRepository | None = None) -> None:
+        self.repository = repository or LlmActiveSelectionRepository()
 
     def _audit(self, user_id: str, event_code: str) -> None:
         try:
@@ -53,10 +69,7 @@ class LlmSettingsService:
     def configured(self, user_id: str, provider: str, *, model: str | None = None) -> None:
         canonical = normalize_provider_id(provider)
         definition = PROVIDERS[canonical]
-        with self._lock:
-            self._selections.setdefault(
-                user_id, _Selection(canonical, model or definition.default_model)
-            )
+        self.repository.set_if_absent(user_id, provider=canonical, model=model or definition.default_model)
         self._audit(user_id, "LLM_PROVIDER_CONFIGURED")
 
     def select(self, user_id: str, provider: str, *, model: str | None = None) -> ActiveLlmSettings:
@@ -65,41 +78,31 @@ class LlmSettingsService:
         selected_model = model or definition.default_model
         if provider_for_model(selected_model) != canonical:
             raise ValueError(f"Model '{selected_model}' does not belong to provider '{canonical}'.")
-        with self._lock:
-            self._selections[user_id] = _Selection(canonical, selected_model)
+        self.repository.select(user_id, provider=canonical, model=selected_model)
         self._audit(user_id, "LLM_PROVIDER_SELECTED")
         return self.active(user_id)
 
     def validated(self, user_id: str, provider: str, *, ok: bool) -> None:
         canonical = normalize_provider_id(provider)
-        with self._lock:
-            selection = self._selections.get(user_id)
-            if selection and selection.provider == canonical:
-                selection.validation_status = "ready" if ok else "invalid"
-                selection.last_validated_at = datetime.now(UTC)
+        self.repository.mark_validated(user_id, canonical, ok=ok)
         self._audit(user_id, "LLM_PROVIDER_TESTED" if ok else "LLM_PROVIDER_FAILED")
 
     def removed(self, user_id: str, provider: str | None) -> None:
-        with self._lock:
-            selection = self._selections.get(user_id)
-            if provider is None or (
-                selection is not None and selection.provider == normalize_provider_id(provider)
-            ):
-                self._selections.pop(user_id, None)
+        canonical = normalize_provider_id(provider) if provider is not None else None
+        self.repository.remove(user_id, canonical)
 
     def _implicit_selection(self, user_id: str) -> _Selection | None:
         sessions = user_key_session.status(user_id)
         if not sessions:
             return None
         canonical = normalize_provider_id(sessions[0][0])
-        selection = _Selection(canonical, PROVIDERS[canonical].default_model)
-        with self._lock:
-            self._selections.setdefault(user_id, selection)
-            return self._selections[user_id]
+        self.repository.set_if_absent(user_id, provider=canonical, model=PROVIDERS[canonical].default_model)
+        row = self.repository.get(user_id)
+        return _Selection.from_row(row) if row else None
 
     def active(self, user_id: str) -> ActiveLlmSettings:
-        with self._lock:
-            selection = self._selections.get(user_id)
+        row = self.repository.get(user_id)
+        selection = _Selection.from_row(row) if row else None
         selection = selection or self._implicit_selection(user_id)
         if selection is None:
             return ActiveLlmSettings(
@@ -116,11 +119,12 @@ class LlmSettingsService:
             if mode == "llm"
             else f"Não foi possível usar {definition.label}. A chave está ausente, inválida ou expirada."
         )
+        context_tokens = MODEL_REGISTRY.get(selection.model or "", {}).get("ctx")
         return ActiveLlmSettings(
             provider=selection.provider, providerLabel=definition.label, model=selection.model,
             hasKey=has_key, status=resolved_status,  # type: ignore[arg-type]
             lastValidatedAt=selection.last_validated_at, lastUsedAt=selection.last_used_at,
-            mode=mode, reason=reason,
+            mode=mode, reason=reason, contextTokens=context_tokens,
         )
 
     def resolve(
@@ -180,10 +184,9 @@ class LlmSettingsService:
                     mode="deterministic", reason=f"A chave de {definition.label} está ausente ou expirada.",
                     fallbackUsed=True, keyStatus="expired", requestedCapability=requested_capability,
                 ), None)
-        with self._lock:
-            selection = self._selections.get(user_id)
-            if selection and selection.provider == provider:
-                selection.last_used_at = datetime.now(UTC)
+        row = self.repository.get(user_id)
+        if row and row["provider"] == provider:
+            self.repository.mark_used(user_id, provider)
         self._audit(user_id, "LLM_PROVIDER_CONFIRMED")
         return LlmExecutionContext(LlmResolution(
             provider=provider, providerLabel=definition.label, model=model, mode="llm",

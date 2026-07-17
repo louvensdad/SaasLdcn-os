@@ -221,6 +221,11 @@ class SandboxExecutionRuntime(ExecutionRuntime):
             raise
         with self._lock:
             self._sessions[sandbox_id] = _Session(sandbox_id, container, snapshot, source, project_id, workspace_id, job_id)
+        try:
+            from app.services.presence_event_service import owner_for_job, sandbox_lifecycle
+            sandbox_lifecycle(user_id=owner_for_job(job_id), workspace_id=workspace_id, project_id=project_id, action="sandbox_prepared", correlation_id=sandbox_id)
+        except Exception:
+            pass
         return sandbox_id
 
     def execute(self, sandbox_id: str, request: ExecutionRequest, *, on_line: LineSink | None = None) -> ExecutionResult:
@@ -228,6 +233,11 @@ class SandboxExecutionRuntime(ExecutionRuntime):
         execution_id = f"exec_{uuid4().hex[:16]}"
         started_at = _now()
         started = time.monotonic()
+        try:
+            from app.services.presence_event_service import owner_for_job, sandbox_lifecycle
+            sandbox_lifecycle(user_id=owner_for_job(request.job_id), workspace_id=request.workspace_id, project_id=request.project_id, action="execution_started", correlation_id=execution_id, severity="INFO")
+        except Exception:
+            pass
         display = sanitized_command(request.command)
         blocked = self._validate_request(request)
         if blocked:
@@ -451,6 +461,11 @@ class SandboxExecutionRuntime(ExecutionRuntime):
                 result.failure_reason = redact(str(exc))
                 result.exit_code = result.exit_code if result.exit_code not in {0, None} else 125
         self._persist(session, request, result)
+        try:
+            from app.services.presence_event_service import owner_for_job, sandbox_result
+            sandbox_result(user_id=owner_for_job(session.job_id), workspace_id=session.workspace_id, project_id=session.project_id, execution_id=result.execution_id, status=result.status.value, reason=result.failure_reason)
+        except Exception:
+            pass
         return result
 
     def _persist(self, session: _Session, request: ExecutionRequest, result: ExecutionResult) -> None:

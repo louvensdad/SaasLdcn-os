@@ -141,7 +141,7 @@ def test_connect_with_ttl_sets_expiry_and_expired_token_is_purged(service, monke
 
     # Simulate the retention window elapsing: the stored token must vanish
     # server-side, without requiring any user action.
-    service._connections[("user-1", "github")]["profile"]["expires_at"] = "2020-01-01T00:00:00+00:00"
+    service._connections[("ws_personal_user-1", "user-1", "github")]["profile"]["expires_at"] = "2020-01-01T00:00:00+00:00"
     assert service.status("user-1", "github")["status"] == "disconnected"
     # The purge also removed the persisted ciphertext, so a fresh instance
     # backed by the same storage sees no connection either.

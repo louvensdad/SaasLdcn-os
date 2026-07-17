@@ -4,7 +4,7 @@ import concurrent.futures as cf
 import threading
 from typing import Any, Callable
 
-from app.core.config import get_settings
+from app.core import runtime_overrides
 
 # Process-wide, BOUNDED thread pool for blocking LLM-agent calls.
 #
@@ -20,18 +20,12 @@ from app.core.config import get_settings
 # adapter's own per-request timeout returns — but the pool size caps how many such
 # abandoned tasks can exist at once, which is exactly the bound we want.
 
-_DEFAULT_WORKERS = 8
-
 _lock = threading.Lock()
 _pool: cf.ThreadPoolExecutor | None = None
 
 
 def _worker_limit() -> int:
-    try:
-        limit = int(getattr(get_settings(), "agent_worker_limit", _DEFAULT_WORKERS))
-    except (TypeError, ValueError):
-        limit = _DEFAULT_WORKERS
-    return max(1, limit)
+    return runtime_overrides.get_worker_limit()
 
 
 def get_agent_executor() -> cf.ThreadPoolExecutor:
@@ -53,6 +47,23 @@ def submit_agent(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> cf.Future
     return get_agent_executor().submit(fn, *args, **kwargs)
 
 
+def resize_pool(new_limit: int) -> int:
+    """Live-resize the shared pool (clamped to
+    runtime_overrides.WORKER_LIMIT_MIN/MAX). In-flight tasks are left to
+    finish on the old pool (`cancel_futures=False`, `wait=False`) -- only
+    queued-but-not-started tasks are dropped, which is the same acceptable
+    loss as any other worker-count change on a live process. The next
+    `get_agent_executor()` call lazily recreates the pool at the new size.
+    Returns the clamped value that actually took effect."""
+    clamped = runtime_overrides.set_worker_limit(new_limit)
+    global _pool
+    with _lock:
+        if _pool is not None:
+            _pool.shutdown(wait=False, cancel_futures=False)
+            _pool = None
+    return clamped
+
+
 def _reset_for_tests() -> None:
     """Drop the shared pool so a test can re-create it with a fresh worker limit."""
     global _pool
@@ -60,3 +71,4 @@ def _reset_for_tests() -> None:
         if _pool is not None:
             _pool.shutdown(wait=False, cancel_futures=True)
             _pool = None
+    runtime_overrides._reset_for_tests()

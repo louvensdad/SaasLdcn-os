@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.core import runtime_overrides
 from app.core.config import get_settings
 from app.engines.agent_executor import submit_agent
 from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, module_roots_from_emitted, summarize_contract
@@ -27,6 +28,7 @@ from app.engines.generation_pipeline_policy import BACKEND_CHUNKS, MOBILE_CHUNKS
 from app.engines.project_manifest_engine import build_project_manifest
 from app.engines.project_memory_engine import PROJECT_MEMORY_FILE, ProjectMemory, project_memory_engine
 from app.engines.work_estimation_engine import estimate_generation_effort
+from app.services.activity_feed_service import activity_feed_service
 from app.services.execution_reality_guard import execution_reality_guard
 from app.engines.llm.router import LLMRouter
 from app.engines.orchestrator_engine import compile_mega_prompt
@@ -97,7 +99,6 @@ class GenerationJobEngine:
         self.checkpoint_root = (checkpoint_root or (DEFAULT_OUTPUT_ROOT.parent / "jobs")).resolve()
         self.checkpoint_root.mkdir(parents=True, exist_ok=True)
         self.stage_timeout_seconds: float = STAGE_TIMEOUT_SECONDS
-        self.lease_seconds = get_settings().generation_job_lease_seconds
         self.worker_id = f"generation-worker-{uuid4().hex[:12]}"
         self._threads: dict[str, threading.Thread] = {}
         self._lock = threading.RLock()
@@ -105,6 +106,13 @@ class GenerationJobEngine:
         # concurrently during a build) and throttles high-frequency output saves.
         self._event_lock = threading.Lock()
         self._last_event_save: dict[str, float] = {}
+
+    @property
+    def lease_seconds(self) -> int:
+        """Read live on every access (not cached at construction) so an
+        admin's PUT /runtime/config change takes effect immediately for this
+        already-running singleton, not just for a future restart."""
+        return runtime_overrides.get_generation_job_lease_seconds()
 
     def create_job(
         self, *, owner_user_id: str, project_id: str, workspace_id: str | None,
@@ -1090,6 +1098,17 @@ class GenerationJobEngine:
                     json.dumps(cert_report.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8",
                 )
                 job["productCertificationStatus"] = cert_report.status
+                activity_feed_service.record(
+                    user_id=owner, category="certification", action="product_certification",
+                    status=(
+                        "success" if cert_report.status == "CERTIFIED"
+                        else "failed" if cert_report.status in ("BLOCKED", "FAILED_CERTIFICATION")
+                        else "warning"
+                    ),
+                    metadata={"status": cert_report.status},
+                    workspace_id=job.get("workspaceId"), project_id=project_id,
+                    source="product_certification_engine",
+                )
             except Exception as exc:  # noqa: BLE001
                 self._log(job, "READY", "warning", "Product Certification failed to evaluate.", str(exc))
             ProjectWriter().set_functional_completeness(project_id, report=report_data)
@@ -1468,6 +1487,13 @@ class GenerationJobEngine:
         message = f"Checkpoint salvo como skipped: {step.state}." if build_was_skipped else f"Checkpoint salvo: {step.state}."
         self._log(job, step.state, level, message)
         self._emit(job, owner, "stage_finished", stage=step.state, level=level, message=message)
+        activity_feed_service.record(
+            user_id=owner, category="generation", action=step.logical,
+            status="warning" if build_was_skipped else "success",
+            metadata={"stage": step.state, "chunk": step.chunk},
+            workspace_id=job.get("workspaceId"), project_id=job.get("projectId"),
+            source="generation_pipeline",
+        )
         self._save(job, owner)
 
     def _checkpoint(self, job: dict[str, Any], step: PipelineStep, payload_bytes: int, token_estimate: int) -> dict[str, Any]:

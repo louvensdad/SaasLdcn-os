@@ -1,39 +1,45 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { Moon, Sun } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import { THEMES } from '@/lib/themes';
 import { useShellStore } from '@/stores/use-shell-store';
 
+const OPTIONS = [
+  { id: 'light', Icon: Sun, label: 'Light' },
+  { id: 'dark', Icon: Moon, label: 'Dark' },
+] as const;
+
+// Two icon toggles (sun / moon) matching the reference header, instead of a
+// text "Dark | Light" segmented pill. The active theme's icon is filled in the
+// accent colour; the other is a muted, clickable ghost.
 export function ThemeSwitcher() {
   const themeId = useShellStore((state) => state.themeId);
   const setThemeId = useShellStore((state) => state.setThemeId);
 
   return (
-    <div className="glass-panel grid w-full max-w-full grid-cols-2 gap-1 rounded-[var(--radius-xl)] p-1 xl:flex xl:w-auto xl:rounded-full">
-      {THEMES.map((theme) => {
-        const active = theme.id === themeId;
-
+    <div className="flex items-center gap-1">
+      {OPTIONS.map(({ id, Icon, label }) => {
+        const active = id === themeId;
         return (
-          <Button
-            key={theme.id}
+          <button
+            key={id}
             type="button"
-            variant={active ? 'primary' : 'ghost'}
+            role="switch"
+            aria-checked={active}
+            aria-label={label}
+            title={label}
+            onClick={() => setThemeId(id)}
             className={cn(
-              'h-9 min-w-0 rounded-[var(--radius-xl)] px-3 text-xs font-semibold xl:flex-none xl:rounded-full',
-              active && 'shadow-none',
+              'focus-ring grid h-9 w-9 place-items-center rounded-full transition-colors',
+              active
+                ? 'text-[color:var(--accent)]'
+                : 'text-[color:var(--muted)] hover:bg-[color:var(--control-hover)] hover:text-[color:var(--text)]',
             )}
-            onClick={() => setThemeId(theme.id)}
+            style={active ? { background: 'color-mix(in srgb, var(--accent) 14%, transparent)' } : undefined}
           >
-            <motion.span
-              animate={{ opacity: active ? 1 : 0.75 }}
-              transition={{ duration: 0.2 }}
-            >
-              <span className="block truncate">{theme.name}</span>
-            </motion.span>
-          </Button>
+            <Icon className="h-[1.15rem] w-[1.15rem]" />
+          </button>
         );
       })}
     </div>

@@ -6,6 +6,7 @@ from typing import Literal
 from urllib.parse import urlencode
 
 import httpx
+import pyotp
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
@@ -14,21 +15,29 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    decrypt_secret,
+    encrypt_secret,
     hash_password,
+    mask_ip,
     verify_password,
 )
 from app.repositories.user_repository import AuditLogRepository, UserRepository
 from app.repositories.tenant_repository import TenantRepository
 from app.schemas.auth import (
+    ActivityExportResponse,
     AuthResponse,
     ConsentRequest,
     PasswordChangeRequest,
+    SessionResponse,
     TokenResponse,
+    TwoFactorEnrollResponse,
     UserLoginRequest,
     UserPublic,
     UserRegisterRequest,
     UserUpdateRequest,
 )
+
+_TOTP_ISSUER = "LDCN OS"
 
 OAuthProvider = Literal["google", "github"]
 
@@ -91,7 +100,9 @@ class AuthService:
     # ------------------------------------------------------------------
     # Registration / login / tokens
     # ------------------------------------------------------------------
-    def register(self, payload: UserRegisterRequest) -> tuple[AuthResponse, str]:
+    def register(
+        self, payload: UserRegisterRequest, *, ip_address: str | None = None, device_label: str | None = None
+    ) -> tuple[AuthResponse, str]:
         if not payload.privacy_policy_accepted:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -124,9 +135,11 @@ class AuthService:
         )
         self.audit_repository.record(user_id=user["user_id"], event_code="user_registered")
         self.audit_repository.record(user_id=user["user_id"], event_code="user_consent_recorded")
-        return self._issue_tokens(user)
+        return self._issue_tokens(user, ip_address=ip_address, device_label=device_label)
 
-    def login(self, payload: UserLoginRequest) -> tuple[AuthResponse, str]:
+    def login(
+        self, payload: UserLoginRequest, *, ip_address: str | None = None, device_label: str | None = None
+    ) -> tuple[AuthResponse, str]:
         user = self.user_repository.get_by_email(payload.email)
         # OAuth-only accounts have hashed_password=None: reject rather than pass
         # None into verify_password, which expects a string hash.
@@ -145,9 +158,11 @@ class AuthService:
                 detail="Invalid email or password.",
             )
         self.audit_repository.record(user_id=user["user_id"], event_code="user_login")
-        return self._issue_tokens(user)
+        return self._issue_tokens(user, ip_address=ip_address, device_label=device_label)
 
-    def refresh(self, refresh_token: str) -> tuple[AuthResponse, str]:
+    def refresh(
+        self, refresh_token: str, *, ip_address: str | None = None, device_label: str | None = None
+    ) -> tuple[AuthResponse, str]:
         try:
             payload = decode_token(refresh_token, expected_type="refresh")
         except TokenError as exc:
@@ -164,13 +179,16 @@ class AuthService:
         # Rotate the refresh token: revoke the one just used and issue a fresh pair.
         self.user_repository.revoke_refresh_token(payload["jti"])
         self.audit_repository.record(user_id=user["user_id"], event_code="token_refreshed")
-        return self._issue_tokens(user)
+        return self._issue_tokens(
+            user, ip_address=ip_address, device_label=device_label, rotate_from_jti=payload["jti"]
+        )
 
     def logout(self, user_id: str, refresh_token: str | None) -> None:
         if refresh_token:
             try:
                 payload = decode_token(refresh_token, expected_type="refresh")
                 self.user_repository.revoke_refresh_token(payload["jti"])
+                self.user_repository.revoke_session_by_jti(payload["jti"])
             except TokenError:
                 pass
         self.audit_repository.record(user_id=user_id, event_code="user_logout")
@@ -199,7 +217,15 @@ class AuthService:
             params["prompt"] = "select_account"
         return f"{spec['authorize_url']}?{urlencode(params)}", state
 
-    def oauth_callback(self, provider: OAuthProvider, *, code: str, redirect_uri: str) -> tuple[AuthResponse, str]:
+    def oauth_callback(
+        self,
+        provider: OAuthProvider,
+        *,
+        code: str,
+        redirect_uri: str,
+        ip_address: str | None = None,
+        device_label: str | None = None,
+    ) -> tuple[AuthResponse, str]:
         """Exchange an authorization code for the caller's identity and issue our
         own session tokens, linking to an existing account by email or creating
         a new OAuth-only account (per the user's decision: auto-link by email,
@@ -262,7 +288,7 @@ class AuthService:
             raise OAuthError("This account is not available for sign-in.")
 
         self.audit_repository.record(user_id=user["user_id"], event_code="user_login")
-        return self._issue_tokens(user)
+        return self._issue_tokens(user, ip_address=ip_address, device_label=device_label)
 
     @staticmethod
     def _google_identity(client: httpx.Client, access_token: str) -> tuple[str | None, str | None, bool, str]:
@@ -320,6 +346,7 @@ class AuthService:
         self.user_repository.set_password(user_id, hash_password(payload.new_password))
         # Changing the password invalidates every existing session.
         self.user_repository.revoke_all_refresh_tokens(user_id)
+        self.user_repository.revoke_all_sessions(user_id)
         self.audit_repository.record(user_id=user_id, event_code="user_password_changed")
 
     # ------------------------------------------------------------------
@@ -367,8 +394,48 @@ class AuthService:
             "deleted_at": _now_iso(),
         }
 
+    def deactivate_account(self, user_id: str) -> dict:
+        """Reversible-in-spirit: flips is_active off (which blocks login and every
+        authenticated route) and revokes all sessions/tokens. Distinct from
+        delete_account, which anonymizes irreversibly."""
+        deactivated = self.user_repository.deactivate(user_id)
+        if not deactivated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        self.audit_repository.record(user_id=user_id, event_code="user_account_deactivated")
+        return {"message": "Account deactivated.", "deactivated_at": _now_iso()}
+
+    def logout_everywhere(self, user_id: str) -> None:
+        """Danger-zone "sign out of all devices": revoke every refresh token and
+        session for the user, not just the one that made the request."""
+        self.user_repository.revoke_all_refresh_tokens(user_id)
+        self.user_repository.revoke_all_sessions(user_id)
+        self.audit_repository.record(user_id=user_id, event_code="user_logout")
+
     # ------------------------------------------------------------------
-    def _issue_tokens(self, user: dict) -> tuple[AuthResponse, str]:
+    # Profile avatar
+    # ------------------------------------------------------------------
+    def get_avatar(self, user_id: str) -> str | None:
+        return self.user_repository.get_avatar(user_id)
+
+    def set_avatar(self, user_id: str, avatar_url: str | None) -> str | None:
+        updated = self.user_repository.set_avatar(user_id, avatar_url)
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        self.audit_repository.record(
+            user_id=user_id,
+            event_code="user_avatar_updated" if avatar_url else "user_avatar_removed",
+        )
+        return avatar_url
+
+    # ------------------------------------------------------------------
+    def _issue_tokens(
+        self,
+        user: dict,
+        *,
+        ip_address: str | None = None,
+        device_label: str | None = None,
+        rotate_from_jti: str | None = None,
+    ) -> tuple[AuthResponse, str]:
         settings = get_settings()
         access_token, _ = create_access_token(user["user_id"], user["role"])
         refresh_token, jti, expires_at = create_refresh_token(user["user_id"], user["role"])
@@ -377,9 +444,106 @@ class AuthService:
             user_id=user["user_id"],
             expires_at=expires_at.isoformat(),
         )
+        rotated = None
+        if rotate_from_jti:
+            rotated = self.user_repository.rotate_session(
+                old_jti=rotate_from_jti, new_jti=jti, ip_address=ip_address, device_label=device_label
+            )
+        if rotated is None:
+            self.user_repository.create_session(
+                user_id=user["user_id"], refresh_token_jti=jti, ip_address=ip_address, device_label=device_label
+            )
         tokens = TokenResponse(
             access_token=access_token,
             expires_in=settings.access_token_expire_minutes * 60,
         )
         response = AuthResponse(user=UserPublic.model_validate(user), tokens=tokens)
         return response, refresh_token
+
+    # ------------------------------------------------------------------
+    # Login sessions
+    # ------------------------------------------------------------------
+    def list_sessions(self, user: dict, *, current_jti: str | None) -> list[SessionResponse]:
+        sessions = self.user_repository.list_sessions(user["user_id"])
+        return [
+            SessionResponse(
+                session_id=item["session_id"],
+                ip_address=mask_ip(item["ip_address"]) if item["ip_address"] else None,
+                device_label=item["device_label"],
+                created_at=item["created_at"],
+                last_seen_at=item["last_seen_at"],
+                is_current=bool(current_jti) and item["refresh_token_jti"] == current_jti,
+            )
+            for item in sessions
+        ]
+
+    def revoke_session(self, user_id: str, session_id: str) -> None:
+        jti = self.user_repository.revoke_session(session_id, user_id)
+        if jti is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+        self.user_repository.revoke_refresh_token(jti)
+        self.audit_repository.record(user_id=user_id, event_code="user_session_revoked")
+
+    def revoke_other_sessions(self, user_id: str, *, current_jti: str | None) -> None:
+        revoked_jtis = self.user_repository.revoke_other_sessions(user_id, current_jti)
+        for jti in revoked_jtis:
+            self.user_repository.revoke_refresh_token(jti)
+        self.audit_repository.record(user_id=user_id, event_code="user_sessions_revoked_all")
+
+    # ------------------------------------------------------------------
+    # Two-factor authentication (TOTP)
+    # ------------------------------------------------------------------
+    def enroll_2fa(self, user: dict) -> TwoFactorEnrollResponse:
+        if user["is_2fa_enabled"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Two-factor authentication is already enabled. Disable it before re-enrolling.",
+            )
+        secret = pyotp.random_base32()
+        self.user_repository.set_pending_totp_secret(user["user_id"], encrypt_secret(secret))
+        otpauth_uri = pyotp.totp.TOTP(secret).provisioning_uri(name=user["email"], issuer_name=_TOTP_ISSUER)
+        return TwoFactorEnrollResponse(secret=secret, otpauth_uri=otpauth_uri)
+
+    def verify_2fa(self, user: dict, code: str) -> UserPublic:
+        encrypted = self.user_repository.get_totp_secret_encrypted(user["user_id"])
+        if not encrypted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Start enrollment first via POST /auth/me/2fa/enroll.",
+            )
+        if not pyotp.TOTP(decrypt_secret(encrypted)).verify(code, valid_window=1):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code.")
+        self.user_repository.enable_2fa(user["user_id"])
+        self.audit_repository.record(user_id=user["user_id"], event_code="user_2fa_enabled")
+        updated = self.user_repository.get_by_id(user["user_id"])
+        return UserPublic.model_validate(updated)
+
+    def disable_2fa(self, user: dict, code: str) -> UserPublic:
+        if not user["is_2fa_enabled"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Two-factor authentication is not enabled.")
+        encrypted = self.user_repository.get_totp_secret_encrypted(user["user_id"])
+        if not encrypted or not pyotp.TOTP(decrypt_secret(encrypted)).verify(code, valid_window=1):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code.")
+        self.user_repository.disable_2fa(user["user_id"])
+        self.audit_repository.record(user_id=user["user_id"], event_code="user_2fa_disabled")
+        updated = self.user_repository.get_by_id(user["user_id"])
+        return UserPublic.model_validate(updated)
+
+    # ------------------------------------------------------------------
+    # Consent revocation + activity export
+    # ------------------------------------------------------------------
+    def revoke_consent(self, user_id: str) -> UserPublic:
+        updated = self.user_repository.revoke_consent(user_id)
+        if updated is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        self.audit_repository.record(user_id=user_id, event_code="user_consent_revoked")
+        return UserPublic.model_validate(updated)
+
+    def export_activity(self, user: dict) -> ActivityExportResponse:
+        self.audit_repository.record(user_id=user["user_id"], event_code="user_activity_exported")
+        return ActivityExportResponse(
+            contractVersion="1.0.0",
+            exported_at=_now_iso(),
+            user_id=user["user_id"],
+            activity=list(self.audit_repository.list_for_user(user["user_id"])),
+        )

@@ -45,7 +45,7 @@ class ProjectRoom(Base):
     __table_args__ = (Index("idx_project_rooms_owner", "owner_user_id"),)
 
     room_id: Mapped[str] = mapped_column(String, primary_key=True)
-    owner_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     workspace_id: Mapped[str | None] = mapped_column(String)
     title: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, index=True)
@@ -77,7 +77,7 @@ class ModernizeJob(Base):
     __table_args__ = (Index("idx_modernize_jobs_owner", "owner_user_id"),)
 
     project_id: Mapped[str] = mapped_column(String, primary_key=True)
-    owner_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     workspace_id: Mapped[str | None] = mapped_column(String, index=True)
     data_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -92,7 +92,7 @@ class GenerationJob(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    owner_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     workspace_id: Mapped[str | None] = mapped_column(String, index=True)
     project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="QUEUED", server_default="QUEUED", index=True)
@@ -134,9 +134,10 @@ class BlueprintApproval(Base):
 
 class GitProviderConnection(Base):
     __tablename__ = "git_provider_connections"
-    __table_args__ = (PrimaryKeyConstraint("user_id", "provider"),)
+    __table_args__ = (PrimaryKeyConstraint("workspace_id", "user_id", "provider"),)
 
-    user_id: Mapped[str] = mapped_column(String, nullable=False)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.workspace_id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     provider: Mapped[str] = mapped_column(String, nullable=False)
     encrypted_token: Mapped[str] = mapped_column(Text, nullable=False)
     profile_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -145,9 +146,10 @@ class GitProviderConnection(Base):
 
 class GitProviderRepositoryRecord(Base):
     __tablename__ = "git_provider_repositories"
-    __table_args__ = (PrimaryKeyConstraint("user_id", "repo_key"),)
+    __table_args__ = (PrimaryKeyConstraint("workspace_id", "user_id", "repo_key"),)
 
-    user_id: Mapped[str] = mapped_column(String, nullable=False)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.workspace_id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     repo_key: Mapped[str] = mapped_column(String, nullable=False)
     repository_json: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -160,7 +162,7 @@ class DownloadRecord(Base):
 
     download_id: Mapped[str] = mapped_column(String, primary_key=True)
     project_id: Mapped[str] = mapped_column(String, nullable=False)
-    owner_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     workspace_id: Mapped[str | None] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, nullable=False, index=True)
     artifact_id: Mapped[str] = mapped_column(String, nullable=False)

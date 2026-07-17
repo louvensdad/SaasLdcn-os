@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-interface AdvancedSettingsState {
+export interface AdvancedSettingsState {
   readonly devMode: boolean;
   setDevMode: (devMode: boolean) => void;
+  importAll: (snapshot: Partial<Pick<AdvancedSettingsState, 'devMode'>>) => void;
 }
 
 /** Just devMode today -- kept separate from useShellStore (theme/density,
@@ -14,6 +15,7 @@ export const useAdvancedSettingsStore = create<AdvancedSettingsState>()(
     (set) => ({
       devMode: false,
       setDevMode: (devMode) => set({ devMode }),
+      importAll: (snapshot) => set(snapshot),
     }),
     { name: 'ldcn-advanced-settings-v1' },
   ),

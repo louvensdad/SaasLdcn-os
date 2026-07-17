@@ -1,0 +1,25 @@
+{
+  "version": "4.0.0",
+  "generatedAt": "2026-07-16T00:00:00Z",
+  "environment": "repository-validation",
+  "notes": [
+    "Git workspace isolation is implemented and covered by local persistence tests; external provider mutation remains staging-only.",
+    "Staging Git certification requires LDCN_STAGING_* secrets and is intentionally not claimed locally.",
+    "Runtime components without deployment collectors remain UNKNOWN; the frontend does not synthesize metrics."
+  ],
+  "controls": [
+    {"tab":"account","control":"profileAndSessions","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":true,"status":"CERTIFIED"},
+    {"tab":"ai","control":"providerConnection","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":true,"status":"CERTIFIED"},
+    {"tab":"git","control":"connectValidateDisconnect","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":true,"status":"CERTIFIED"},
+    {"tab":"git","control":"listRepositories","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":false,"status":"BLOCKED_STAGING"},
+    {"tab":"git","control":"createRepositoryAndVisibility","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":false,"status":"BLOCKED_STAGING"},
+    {"tab":"git","control":"initialCommitPushAndLastCommit","frontend":false,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":false,"status":"PARTIAL"},
+    {"tab":"interface","control":"themeAccentDensityAndPreview","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":true,"status":"CERTIFIED"},
+    {"tab":"runtime","control":"runtimeConfig","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":true,"status":"CERTIFIED"},
+    {"tab":"runtime","control":"telemetrySnapshot","frontend":true,"backend":true,"persistence":false,"authorization":true,"workspaceIsolation":true,"auditEvent":false,"e2e":true,"status":"PARTIAL"},
+    {"tab":"runtime","control":"telemetrySSEResilientConsumer","frontend":true,"backend":true,"persistence":false,"authorization":true,"workspaceIsolation":true,"auditEvent":false,"e2e":false,"status":"PARTIAL"},
+    {"tab":"advanced","control":"featureFlagsAndDeveloperMode","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":false,"e2e":true,"status":"PARTIAL"},
+    {"tab":"settings","control":"activityFeedWorkspaceScopedFiltersSearchPagination","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":false,"status":"PARTIAL"},
+    {"tab":"settings","control":"activityFeedDetailAndExport","frontend":true,"backend":true,"persistence":true,"authorization":true,"workspaceIsolation":true,"auditEvent":true,"e2e":false,"status":"PARTIAL"}
+  ]
+}

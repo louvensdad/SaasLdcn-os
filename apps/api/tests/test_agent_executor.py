@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 
+from app.core import runtime_overrides
 from app.engines import agent_executor
 from app.engines.agent_executor import _reset_for_tests, get_agent_executor, submit_agent
 
@@ -19,7 +20,7 @@ def test_agent_executor_respects_configured_worker_limit(monkeypatch):
     class _S:
         agent_worker_limit = 3
 
-    monkeypatch.setattr(agent_executor, "get_settings", lambda: _S())
+    monkeypatch.setattr(runtime_overrides, "get_settings", lambda: _S())
     _reset_for_tests()
     try:
         assert get_agent_executor()._max_workers == 3
@@ -31,7 +32,7 @@ def test_worker_limit_floor_is_one(monkeypatch):
     class _S:
         agent_worker_limit = 0
 
-    monkeypatch.setattr(agent_executor, "get_settings", lambda: _S())
+    monkeypatch.setattr(runtime_overrides, "get_settings", lambda: _S())
     _reset_for_tests()
     try:
         assert get_agent_executor()._max_workers == 1
@@ -53,7 +54,7 @@ def test_pool_caps_global_concurrency(monkeypatch):
     class _S:
         agent_worker_limit = 2
 
-    monkeypatch.setattr(agent_executor, "get_settings", lambda: _S())
+    monkeypatch.setattr(runtime_overrides, "get_settings", lambda: _S())
     _reset_for_tests()
     release = threading.Event()
     lock = threading.Lock()

@@ -66,6 +66,7 @@ class UserPublic(ApiModel):
     is_active: bool
     consent_accepted_at: str | None = None
     consent_policy_version: str | None = None
+    is_2fa_enabled: bool = False
     created_at: str
     updated_at: str
 
@@ -117,3 +118,56 @@ class DataExportResponse(ApiModel):
 class AccountDeletionResponse(ApiModel):
     message: str
     deleted_at: str
+
+
+class SessionResponse(ApiModel):
+    session_id: str
+    ip_address: str | None = None
+    device_label: str | None = None
+    created_at: str
+    last_seen_at: str
+    is_current: bool
+
+
+class TwoFactorEnrollResponse(ApiModel):
+    secret: str
+    otpauth_uri: str
+
+
+class TwoFactorCodeRequest(ApiModel):
+    code: str = Field(min_length=6, max_length=8)
+
+
+class ActivityExportResponse(ApiModel):
+    contractVersion: str
+    exported_at: str
+    user_id: str
+    activity: list[dict]
+
+
+# A resized (client-side) avatar as a data URL. Capped hard server-side; only
+# common raster image types are accepted. `None` clears the avatar.
+_AVATAR_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\s]+$")
+_MAX_AVATAR_CHARS = 400_000  # ~300 KB of base64
+
+
+class AvatarUpdateRequest(ApiModel):
+    avatar_url: str | None = None
+
+    @field_validator("avatar_url")
+    @classmethod
+    def _validate_avatar(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        if len(value) > _MAX_AVATAR_CHARS:
+            raise ValueError("Avatar image is too large.")
+        if not _AVATAR_DATA_URL_PATTERN.match(value):
+            raise ValueError("Avatar must be a base64-encoded PNG, JPEG, WEBP or GIF data URL.")
+        return value
+
+
+class AvatarResponse(ApiModel):
+    avatar_url: str | None = None

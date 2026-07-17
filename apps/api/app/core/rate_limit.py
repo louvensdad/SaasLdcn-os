@@ -15,7 +15,7 @@ from starlette.types import ASGIApp
 
 from app.core.config import Settings, get_settings
 from app.core.logging import logger
-from app.core.security import TokenError, decode_token
+from app.core.security import TokenError, client_ip, decode_token
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,9 +223,4 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _client_ip(request: Request, settings: Settings) -> str:
-        if settings.trust_proxy_headers:
-            forwarded = request.headers.get("x-forwarded-for", "")
-            first = forwarded.split(",")[0].strip()
-            if first:
-                return first
-        return request.client.host if request.client else "unknown"
+        return client_ip(request, settings)

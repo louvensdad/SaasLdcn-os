@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 
 import { PlatformOverview } from '@/components/platform/platform-overview';
+import { SilentIntelligencePanel } from '@/components/ldcn/silent-intelligence-panel';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
 import { useLocale } from '@/hooks/use-locale';
 
@@ -33,6 +34,7 @@ export default function PlatformPage() {
   return (
     <div className="py-4">
       <PlatformOverview />
+      <SilentIntelligencePanel />
     </div>
   );
 }

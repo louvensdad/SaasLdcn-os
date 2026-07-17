@@ -38,6 +38,9 @@ test('rejected GitHub token remains a recoverable inline error', async ({ page }
   });
 
   await page.goto(webUrl('/settings'));
+  // Git provider config now lives behind the Git tab's per-provider "Configure" dialog.
+  await page.getByRole('tab', { name: /Git/ }).click();
+  await page.getByRole('button', { name: /Configure|Configurar/ }).first().click();
   await page.getByLabel('GitHub access token').fill('invalid-token');
   await page.getByRole('button', { name: 'Connect GitHub' }).click();
 
