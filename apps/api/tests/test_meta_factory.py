@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import pytest
 
 from app.data.agent_territories import path_in_territory, territory_violations
 from app.data.model_registry import resolve_model
 from app.engines.factory_pipeline import run_factory_pipeline
-from app.engines.llm.base import LLMAdapter
+from app.engines.llm.base import LLMAdapter, LLMError
 from app.engines.llm.google_adapter import GoogleAdapter
 from app.engines.llm.openai_adapter import OpenAIAdapter
 from app.engines.llm.router import LLMRouter
@@ -170,6 +171,11 @@ def test_orchestrator_ready_when_confident():
     assert result.spec.business_rules == ["horario unico"]
     assert result.open_questions == []
 
+
+def test_orchestrator_invalid_provider_payload_is_typed_error():
+    router = _router({"Orchestrator": '{"confidence": "invalid"}'})
+    with pytest.raises(LLMError, match="especificacao de projeto invalida"):
+        run_orchestrator("app de barbearia", router=router)
 
 def test_compile_mega_prompt_includes_business_rules():
     router = _router({"Orchestrator": SPEC_JSON})

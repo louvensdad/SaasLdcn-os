@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from app.data.language_agent_profiles import DEFAULT_STACK_BY_LANGUAGE, resolve_language_id
 from app.engines.agent_prompts import ORCHESTRATOR_SYSTEM_PROMPT
+from app.engines.llm.base import LLMError
 from app.engines.llm.router import LLMRouter
 from app.schemas.llm import LLMRequest, ReasoningLevel
 from app.schemas.orchestrator import OrchestratorResult, ProjectSpec
@@ -82,7 +83,13 @@ def _validate_spec(parsed: dict, raw_intent: str) -> ProjectSpec:
         # most (assumptions / open_questions) and validate the core spec.
         payload["assumptions"] = []
         payload["open_questions"] = []
-        return ProjectSpec.model_validate(payload)
+        try:
+            return ProjectSpec.model_validate(payload)
+        except ValidationError as exc:
+            raise LLMError(
+                "O provider de IA retornou uma especificacao de projeto invalida. "
+                "Tente novamente ou troque o modelo configurado."
+            ) from exc
 
 
 def _wrap_untrusted(text: str, tag: str) -> str:
@@ -176,7 +183,7 @@ def run_orchestrator(
     )
 
     if response.parsed is None:
-        raise ValueError("Orchestrator did not return a parseable ProjectSpec.")
+        raise LLMError("O provider de IA nao retornou uma especificacao de projeto legivel.")
 
     spec = _validate_spec(response.parsed, raw_intent)
     spec.raw_intent = spec.raw_intent or raw_intent
