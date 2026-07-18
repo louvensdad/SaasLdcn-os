@@ -78,6 +78,18 @@ jobs:
       - run: pip install --require-hashes --requirement apps/api/requirements-dev.lock
       - run: npm ci
         working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+      - name: Start web app
+        working-directory: apps/web
+        run: |
+          npm run start > /tmp/ldcn-web.log 2>&1 &
+          for i in {1..30}; do
+            curl --fail --silent http://127.0.0.1:3000/login > /dev/null && exit 0
+            sleep 2
+          done
+          cat /tmp/ldcn-web.log
+          exit 1
       - run: npx playwright install --with-deps chromium
         working-directory: apps/web
       - run: npx playwright test tests/project-room-delivery-type.spec.ts tests/accessibility-smoke.spec.ts
