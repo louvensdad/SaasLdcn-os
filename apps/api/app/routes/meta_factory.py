@@ -1,5 +1,6 @@
 from __future__ import annotations
-
+from app.routes.meta_factory_stream_helpers import _event_start_index, _slim_event, _sse
+from app.routes.meta_factory_project_helpers import generated_file_paths
 import asyncio
 import json
 import logging
@@ -10,10 +11,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-
 from app.core.config import get_settings
 from app.core.deps import CurrentUser
 from app.engines.auto_repair_engine import auto_repair_engine
@@ -82,7 +81,6 @@ from app.services.download_service import DownloadService
 from app.services.generated_project_service import GeneratedProjectService
 from app.services.git_provider_service import git_provider_service
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter, ProjectWriteError
-
 router = APIRouter(tags=["meta-factory"])
 
 logger = logging.getLogger("ldcn.api.meta_factory")
@@ -679,52 +677,10 @@ def generate(payload: GenerateRequest, user: CurrentUser) -> GenerateResponse:
         response.validation_report = generation_validation_engine.validate(_meta_project(write_result.project_id))
 
     return response
-
-
-def _sse(event: dict, *, event_id: str | None = None) -> str:
-    prefix = f"id: {event_id}\n" if event_id else ""
-    return f"{prefix}data: {json.dumps(event, ensure_ascii=False)}\n\n"
-
-
-def _event_start_index(events: list[dict], last_event_id: str | None) -> int:
-    """Resume after the last acknowledged persisted execution event.
-
-    If the cursor has fallen outside the retained 2,000-event window, replay the
-    retained window from its beginning; the frontend deduplicates by event id.
-    """
-    if not last_event_id:
-        return 0
-    return next(
-        (index + 1 for index, event in enumerate(events) if event.get("id") == last_event_id),
-        0,
-    )
-
-
-def _slim_event(event: dict) -> dict:
-    """Cap the streamed stdout/stderr tails on an execution event so a single SSE
-    frame never carries a huge payload (the per-command full tails stay bounded)."""
-    cap = 4000
-    slim = dict(event)
-    for field in ("stdout", "stderr", "message"):
-        value = slim.get(field)
-        if isinstance(value, str) and len(value) > cap:
-            slim[field] = value[-cap:]
-    return slim
-
-
-def _generated_file_paths(project_id: str) -> list[str]:
-    listing = _generated_project_service.list_files(_meta_project(project_id))
-    return [
-        str(item["relative_path"])
-        for item in listing.get("files", [])
-        if item.get("relative_path") not in {".ldcn-generation.json", _STAGE_INPUTS_FILE}
-    ]
-
-
 def _read_contract_text(project_id: str) -> str:
     candidates = [
         path
-        for path in _generated_file_paths(project_id)
+        for path in generated_file_paths(project_id, _generated_project_service, _meta_project, {_STAGE_INPUTS_FILE})
         if path.lower() in {"openapi.yaml", "openapi.yml", "openapi.json"}
         or path.lower().endswith("/openapi.yaml")
         or path.lower().endswith("/openapi.yml")
@@ -803,7 +759,7 @@ def _stage_context(payload: StageGenerateRequest) -> str:
         contract_summary = summarize_contract(f'<<<FILE path="openapi.yaml">>>\n{raw}\n<<<END>>>')
     emitted: tuple[str, ...] = ()
     if payload.role in {"qa", "devops", "docs"} and payload.project_id:
-        emitted = tuple(_generated_file_paths(payload.project_id))
+        emitted = tuple(generated_file_paths(payload.project_id, _generated_project_service, _meta_project, {_STAGE_INPUTS_FILE}))
 
     # Per-agent Context Pack within the role budget — never a giant single request.
     context, _diag = build_agent_context(
