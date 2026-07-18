@@ -136,12 +136,21 @@ class Settings(BaseModel):
     api_public_base_url: str = Field(
         default_factory=lambda: os.environ.get("LDCN_API_PUBLIC_URL", "http://localhost:8000")
     )
+    # Always keeps 127.0.0.1 trusted regardless of LDCN_TRUSTED_HOSTS: the
+    # container's own Docker healthcheck (see Dockerfile.prod /
+    # docker-compose.prod.yml) hits http://127.0.0.1:8000/api/health, whose
+    # Host header is "127.0.0.1" -- not the public hostname operators put in
+    # LDCN_TRUSTED_HOSTS. Safe in this topology because the api container
+    # never publishes its port to the host or Internet (only Caddy does,
+    # which forwards the real external Host header unchanged).
     trusted_hosts: list[str] = Field(
-        default_factory=lambda: [
-            host.strip().lower() for host in os.environ.get(
-                "LDCN_TRUSTED_HOSTS", "localhost,127.0.0.1,testserver"
-            ).split(",") if host.strip()
-        ]
+        default_factory=lambda: list(dict.fromkeys(
+            [
+                host.strip().lower() for host in os.environ.get(
+                    "LDCN_TRUSTED_HOSTS", "localhost,127.0.0.1,testserver"
+                ).split(",") if host.strip()
+            ] + ["127.0.0.1"]
+        ))
     )
     # --- Security headers / rate limiting (Fase B) ---
     security_headers_enabled: bool = True
