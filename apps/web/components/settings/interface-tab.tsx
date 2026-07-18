@@ -172,10 +172,10 @@ function InterfacePreview() {
         <div className="hidden w-28 shrink-0 flex-col gap-1.5 border-r border-[color:var(--border)] p-3 sm:flex" style={{ background: 'var(--surface-2)' }}>
           <div className="flex items-center gap-1.5">
             <span className="grid h-5 w-5 place-items-center rounded" style={{ background: 'var(--accent-gradient)' }}><Sparkles className="h-3 w-3 text-white" /></span>
-            <span className="text-[10px] font-bold text-[color:var(--text)]">LDCN OS</span>
+            <span className="text-xs font-bold text-[color:var(--text)]">LDCN OS</span>
           </div>
           {['Dashboard', 'Gerações', 'Laboratory', 'Status'].map((item, index) => (
-            <div key={item} className="flex items-center gap-1.5 rounded px-1.5 py-1 text-[9px]" style={index === 0 ? { background: 'color-mix(in srgb, var(--accent) 16%, transparent)', color: 'var(--text)' } : { color: 'var(--muted)' }}>
+            <div key={item} className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs" style={index === 0 ? { background: 'color-mix(in srgb, var(--accent) 16%, transparent)', color: 'var(--text)' } : { color: 'var(--muted)' }}>
               <span className="h-2 w-2 rounded-sm" style={{ background: index === 0 ? 'var(--accent)' : 'var(--muted-2)' }} />
               {item}
             </div>
@@ -186,7 +186,7 @@ function InterfacePreview() {
           <div className="mt-2 grid grid-cols-4 gap-1.5">
             {metrics.map((metric) => (
               <div key={metric.label} className="rounded-[var(--radius-sm)] border border-[color:var(--border)] p-2" style={{ background: 'var(--surface)' }}>
-                <p className="truncate text-[8px] text-[color:var(--muted)]">{metric.label}</p>
+                <p className="truncate text-xs text-[color:var(--muted)]">{metric.label}</p>
                 <p className="text-sm font-bold text-[color:var(--text)]">{metric.value}</p>
               </div>
             ))}

@@ -264,7 +264,7 @@ export function AiProvidersTab() {
                     </span>
                     <div className="min-w-[4.5rem] flex-1">
                       <p className="truncate text-sm font-semibold text-[color:var(--text)]">{provider.name}</p>
-                      <span className="mt-0.5 inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium" style={{ color: configured ? 'var(--success)' : 'var(--muted)' }}>
+                      <span className="mt-0.5 inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium" style={{ color: configured ? 'var(--success)' : 'var(--muted)' }}>
                         <span className="h-1.5 w-1.5 rounded-full" style={{ background: configured ? 'var(--success)' : 'var(--muted-2)' }} aria-hidden />
                         {configured ? t('settings.aiHub.active') : t('settings.aiHub.available')}
                       </span>
@@ -300,7 +300,7 @@ export function AiProvidersTab() {
                     <span className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] border border-[color:var(--border)]" style={{ background: 'color-mix(in srgb, var(--accent) 8%, transparent)', color: 'var(--accent)' }}>
                       <Icon className="h-4 w-4" aria-hidden />
                     </span>
-                    <span className="text-[11px] font-medium text-[color:var(--muted)]">{t(`settings.aiHub.pipeline.${id}`)}</span>
+                    <span className="text-xs font-medium text-[color:var(--muted)]">{t(`settings.aiHub.pipeline.${id}`)}</span>
                   </div>
                   {index < PIPELINE_STEPS.length - 1 ? <span className="mb-4 h-1 w-1 rounded-full bg-[color:var(--muted-2)]" aria-hidden /> : null}
                 </div>
@@ -668,7 +668,7 @@ function TokensBreakdown({ usage, totalTokens }: { readonly usage: LlmUsageStats
           <div className="absolute inset-0 grid place-items-center">
             <div className="text-center">
               <p className="text-xl font-bold text-[color:var(--text)]">{formatTokens(totalTokens)}</p>
-              <p className="text-[10px] text-[color:var(--muted)]">{t('settings.aiHub.tokens24h')}</p>
+              <p className="text-xs text-[color:var(--muted)]">{t('settings.aiHub.tokens24h')}</p>
             </div>
           </div>
         </div>

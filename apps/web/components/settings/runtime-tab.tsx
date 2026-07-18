@@ -115,7 +115,7 @@ export function RuntimeTab() {
                   </span>
                   <div className="min-w-0">
                     <p className="t-mono truncate text-xs font-semibold text-[color:var(--text)]">{`worker-${String(index + 1).padStart(2, '0')}`}</p>
-                    <p className="text-[11px]" style={{ color: busy ? 'var(--success)' : 'var(--muted)' }}>{busy ? t('settings.runtime.busy') : t('settings.runtime.idle')}</p>
+                    <p className="text-xs" style={{ color: busy ? 'var(--success)' : 'var(--muted)' }}>{busy ? t('settings.runtime.busy') : t('settings.runtime.idle')}</p>
                   </div>
                 </div>
               );
