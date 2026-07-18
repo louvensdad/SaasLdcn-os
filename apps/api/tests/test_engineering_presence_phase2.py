@@ -18,7 +18,9 @@ def event(*, user: str, workspace: str, event_id: str, severity: str, importance
 
 @pytest.fixture
 def engine():
-    root = Path(tempfile.mkdtemp(dir=Path(__file__).resolve().parents[1] / ".tmp-presence"))
+    temp_root = Path(__file__).resolve().parents[1] / ".tmp-presence"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    root = Path(tempfile.mkdtemp(dir=temp_root))
     database = root / "presence.db"
     url = database_url_for(database)
     Base.metadata.create_all(bind=get_engine(url))
