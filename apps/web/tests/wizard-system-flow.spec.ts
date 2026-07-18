@@ -2,23 +2,23 @@ import { expect, test, type Page } from '@playwright/test';
 
 const WEB_BASE = 'http://127.0.0.1:3000';
 
-const authFixture = {
+type AuthFixture = {
   user: {
-    user_id: 'wizard-test-user',
-    email: 'wizard@example.com',
-    full_name: 'Wizard Test User',
-    role: 'admin',
-    locale: 'en-US',
-    is_active: true,
-    consent_accepted_at: '2026-06-30T00:00:00Z',
-    consent_policy_version: '1.0.0',
-    created_at: '2026-06-30T00:00:00Z',
-    updated_at: '2026-06-30T00:00:00Z',
-  },
-  tokens: { access_token: 'wizard-test-token', token_type: 'bearer', expires_in: 3600 },
+    user_id: string;
+    email: string;
+    full_name: string;
+    role: string;
+    locale: string;
+    is_active: boolean;
+    consent_accepted_at: string;
+    consent_policy_version: string;
+    created_at: string;
+    updated_at: string;
+  };
+  tokens: { access_token: string; token_type: string; expires_in: number };
 };
 
-async function openAuthenticatedWizard(page: Page, auth: typeof authFixture) {
+async function openAuthenticatedWizard(page: Page, auth: AuthFixture) {
   await page.addInitScript((auth) => {
     window.localStorage.setItem(
       'ldcn-locale-preferences',
@@ -68,7 +68,7 @@ test('authenticated wizard enforces every step and completes the governed previe
     },
   });
   expect(registration.ok()).toBe(true);
-  const auth = (await registration.json()) as typeof authFixture;
+  const auth = (await registration.json()) as AuthFixture;
   await openAuthenticatedWizard(page, auth);
 
   const continueToTechnology = page.getByRole('button', { name: 'Continue to technology recommendations' });

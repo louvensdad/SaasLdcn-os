@@ -195,7 +195,7 @@ export default function ProjectsPage() {
   const projectsQuery = useProjects();
   const archetypesQuery = useArchetypes();
   const projects = projectsQuery.data ?? [];
-  const archetypes = archetypesQuery.data ?? [];
+  const archetypes = useMemo(() => archetypesQuery.data ?? [], [archetypesQuery.data]);
 
   const archetypeMap = useMemo(
     () => new Map(archetypes.map((item) => [item.id, item])),

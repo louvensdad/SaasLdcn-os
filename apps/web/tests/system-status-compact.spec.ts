@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const API_BASE = 'http://localhost:8001/api';
 const WEB_BASE = 'http://127.0.0.1:3000';
 
 function authFixture() {

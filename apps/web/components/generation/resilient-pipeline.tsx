@@ -121,6 +121,9 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Falha no streaming da pipeline.');
     });
     return () => controller.abort();
+    // Depends on job?.id (not the whole `job` object) so a snapshot update
+    // from the stream itself doesn't tear down and reconnect the SSE stream.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id, appendEvent, handleJobSnapshot]);
 
   // Staleness detector: an active job with no backend signal for 45s surfaces
@@ -134,6 +137,9 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
       setStale(lastActivityRef.current > 0 && Date.now() - lastActivityRef.current > 45_000);
     }, 5_000);
     return () => window.clearInterval(timer);
+    // Depends on job?.id/job?.status (not the whole `job` object) so the
+    // watchdog interval doesn't reset on every unrelated job field update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id, job?.status]);
 
   const runAction = useCallback(async (name: string, operation: () => Promise<ResilientGenerationJob>) => {
@@ -177,7 +183,7 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
   // possible STAGES list, so the grid never shows a phantom stage card.
   const visibleStages = useMemo(
     () => (job ? STAGES.filter(([key]) => key in job.stageStatuses) : STAGES),
-    [job?.stageStatuses],
+    [job],
   );
 
   if (loading) {

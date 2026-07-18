@@ -356,7 +356,7 @@ export default function RoadmapPage() {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [openSections, setOpenSections] = useState<ReadonlySet<SectionKey>>(() => new Set());
 
-  const items = roadmap?.items ?? [];
+  const items = useMemo(() => roadmap?.items ?? [], [roadmap]);
   const releases = roadmap?.releases?.length ? roadmap.releases : fallbackReleases(items);
   const timeline = roadmap?.platform_timeline?.length ? roadmap.platform_timeline : fallbackTimeline(items);
   const metrics = roadmap?.platform_metrics?.length ? roadmap.platform_metrics : fallbackMetrics(items);

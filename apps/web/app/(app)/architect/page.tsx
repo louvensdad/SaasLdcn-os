@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -15,7 +15,6 @@ import {
   Globe,
   KeyRound,
   Layers,
-  Loader2,
   Plug,
   Rocket,
   Server,
@@ -332,14 +331,6 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
 }
 
 
-function Meta({ label, value }: { readonly label: string; readonly value: ReactNode }) {
-  return (
-    <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_45%,transparent)] p-3">
-      <p className="t-overline">{label}</p>
-      <p className="mt-1 font-semibold text-[color:var(--text)]">{value}</p>
-    </div>
-  );
-}
 function ConfidenceBadge({ value }: { readonly value?: number }) {
   if (value === undefined || value === null) return null;
   const pct = Math.round(value * 100);

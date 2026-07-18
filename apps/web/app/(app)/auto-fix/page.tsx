@@ -183,7 +183,7 @@ function AutoFixInner() {
     }
   }
 
-  const issues = report?.technical.issues ?? [];
+  const issues = useMemo(() => report?.technical.issues ?? [], [report]);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();

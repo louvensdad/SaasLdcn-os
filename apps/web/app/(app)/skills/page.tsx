@@ -32,7 +32,7 @@ export default function SkillsPage() {
   const setPresenceState = useLDCNStore((state) => state.setPresenceState);
   const setContext = useLDCNStore((state) => state.setContext);
 
-  const skills = skillsQuery.data?.skills ?? [];
+  const skills = useMemo(() => skillsQuery.data?.skills ?? [], [skillsQuery.data]);
 
   const filteredSkills = useMemo(() => {
     const query = search.trim().toLowerCase();

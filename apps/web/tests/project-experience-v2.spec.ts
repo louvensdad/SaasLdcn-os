@@ -2,8 +2,6 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { webUrl } from './test-urls';
 
-const API_BASE = 'http://127.0.0.1:8001/api';
-
 const authFixture = {
   user: {
     user_id: 'test-user',

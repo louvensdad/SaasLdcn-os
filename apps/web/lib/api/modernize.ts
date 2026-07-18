@@ -3,7 +3,6 @@ import { getAccessToken, refreshAccessToken } from '@/lib/api/client';
 import type {
   CodeDiffSummary,
   ModernizeGenerateResponse,
-  ModernizeProject,
   ModernizeProjectIngest,
   ModernizeProjectSummary,
   ModernizeResponse,

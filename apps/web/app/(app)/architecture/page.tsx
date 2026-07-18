@@ -51,7 +51,7 @@ export default function ArchitecturePage() {
       summary: t('architecture.description'),
       suggestions: [],
     });
-  }, [locale, setContext, setPresenceState]);
+  }, [locale, setContext, setPresenceState, t]);
 
   return (
     <div className="space-y-8">

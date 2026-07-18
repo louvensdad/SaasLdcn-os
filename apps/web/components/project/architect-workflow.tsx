@@ -54,6 +54,10 @@ export function ArchitectWorkflowModal({ room, open, onClose, onRoom }: {
     setResult(null);
     setError('');
     void userKeysClient.status().then((status) => setProviders(status.sessions.filter((item) => item.active).map((item) => item.provider))).catch(() => setProviders([]));
+    // room.status is only read to pick the initial phase on open; re-running
+    // this reset whenever room.status changes later would wipe in-progress
+    // streamed decisions while the polling effect below is still generating.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, llm.provider]);
 
   useEffect(() => {
@@ -199,7 +203,6 @@ function Diff({ label, value }: { readonly label: string; readonly value: string
 function Completion({ room, blueprint, elapsed, onClose }: { readonly room: ProjectRoom; readonly blueprint: ArchitectureBlueprint; readonly elapsed: number; readonly onClose: () => void }) {
   const { t } = useLocale();
   const version = room.active_blueprint_version ?? room.blueprint_versions.at(-1)?.version ?? 1;
-  const tokens = Object.values(blueprint.tokens).reduce((sum, value) => sum + value, 0);
   const risks = blueprint.decisions.reduce((sum, item) => sum + (item.risks?.length ?? 0), 0);
   const download = () => { const url = URL.createObjectURL(new Blob([JSON.stringify(blueprint, null, 2)], { type: 'application/json' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${room.title}-blueprint-v${version}.json`; anchor.click(); URL.revokeObjectURL(url); };
   return <div className="p-6"><Card surface="primary" className="p-7"><CheckCircle2 className="h-9 w-9 text-[color:var(--success)]" /><h3 className="mt-4 ds-section">{t('architectWorkflow.done.title')}</h3><p className="mt-1 ds-body ds-text-muted">{t('architectWorkflow.done.version', { version })}</p><div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">{[['Provider', blueprint.providerLabel], ['Tempo', `${Math.max(elapsed, Math.round(blueprint.latencyMs / 1000))}s`], ['Tokens', blueprint.tokensUsed.toLocaleString()], ['Score', `${Math.round(blueprint.confidence * 100)}%`], ['Decisões', String(blueprint.decisions.length)], ['Riscos', String(risks)]].map(([label,value]) => <Diff key={label} label={label} value={value} />)}</div><div className="mt-7 flex flex-wrap gap-3"><Button variant="secondary" onClick={onClose}>{t('architectWorkflow.done.edit')}</Button><Link href={`/engineering-review?projectId=${room.room_id}`}><Button variant="primary">{t('architectWorkflow.done.openReview')}</Button></Link><Button variant="secondary" onClick={download}><Download className="h-4 w-4" />{t('architectWorkflow.done.export')}</Button><Button variant="ghost" onClick={() => window.print()}>{t('architectWorkflow.done.pdf')}</Button></div></Card></div>;

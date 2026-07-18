@@ -60,7 +60,7 @@ export default function DashboardPage() {
   const { t } = useLocale();
   const healthQuery = useHealth();
   const projectsQuery = useProjects();
-  const projects = projectsQuery.data ?? [];
+  const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
   const healthOk = healthQuery.data?.status === 'ok';
 
   const metrics = useMemo(() => {

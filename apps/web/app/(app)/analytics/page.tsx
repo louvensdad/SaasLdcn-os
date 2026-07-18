@@ -5,7 +5,6 @@ import Link from 'next/link';
 import {
   Activity,
   ArrowUpRight,
-  BarChart3,
   DatabaseZap,
   Layers3,
   Radio,

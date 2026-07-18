@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Activity,
@@ -79,12 +79,7 @@ function EngineeringLaboratoryInner() {
   const [terminalBusy, setTerminalBusy] = useState(false);
   const [terminalRuns, setTerminalRuns] = useState<EngineeringLabTerminalResponse[]>([]);
 
-  useEffect(() => {
-    if (!initialProjectId) return;
-    void load(initialProjectId);
-  }, [initialProjectId]);
-
-  async function load(id = projectId.trim()) {
+  const load = useCallback(async (id = projectId.trim()) => {
     if (!id) return;
     setLoading(true);
     setError(null);
@@ -98,7 +93,15 @@ function EngineeringLaboratoryInner() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!initialProjectId) return;
+    void load(initialProjectId);
+    // Only reacts to the URL-sourced initialProjectId, not later edits to the
+    // projectId input field (which would change `load`'s identity).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialProjectId]);
 
   async function runTerminal() {
     if (!loadedProjectId || !command.trim()) return;

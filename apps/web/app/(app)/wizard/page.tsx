@@ -12,14 +12,13 @@ import { Card } from '@/components/ui/card';
 import { Disclosure } from '@/components/ui/disclosure';
 import { EmptyState } from '@/components/empty-states/empty-state';
 import { PageError } from '@/components/feedback/error-system';
-import { ButtonLoading, CardLoading } from '@/components/feedback/loading-system';
+import { CardLoading } from '@/components/feedback/loading-system';
 import { CheckboxField, SelectField, TextareaField, TextField } from '@/components/forms/form-field';
 import { SectionHeader } from '@/components/shell/section-header';
 import { Tabs } from '@/components/ui/tabs';
 import {
   ArchitectureGraphSurface,
   ComplexityRadar,
-  DeploymentPathSurface,
   OperationalRail,
   ReadinessRing,
   StackEcosystemMap,
@@ -59,7 +58,6 @@ import { useRecommendedTemplates } from '@/hooks/use-templates';
 import { getApiErrorMessage } from '@/lib/api/errors';
 import type {
   Architecture,
-  Archetype,
   BusinessModule,
   Capability,
   DependencyGraphPayload,
@@ -206,11 +204,6 @@ function createRegionId(stepId: WizardStepId) {
 
 function createTriggerId(stepId: WizardStepId) {
   return `wizard-step-trigger-${stepId}`;
-}
-
-function formatComplexityLabel(value?: string | null) {
-  if (!value) return 'pending';
-  return value.replaceAll('_', ' ');
 }
 
 function projectNameFromSpec(spec: ProjectSpec) {
@@ -1056,6 +1049,10 @@ export default function WizardPage() {
     promptMasterPreviewMutation.reset();
     gatekeeperPreviewMutation.reset();
     saveProjectMutation.reset();
+    // Mutation objects are intentionally excluded: they are recreated every
+    // render, and including them here would re-fire this reset on every
+    // render instead of only when a form field actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     architectureId,
     archetypeId,
@@ -1595,7 +1592,7 @@ export default function WizardPage() {
     if (frameworkId === 'fastapi') return t('wizard.presence.fastapiAiServiceReady');
 
     return t('wizard.presence.specialistProfileReady', { framework: selectedFrameworkSpecialistProfile.framework_name });
-  }, [frameworkId, selectedFrameworkSpecialistProfile, selectedLanguageProfile?.name, t]);
+  }, [frameworkId, selectedFrameworkSpecialistProfile, selectedLanguageProfile, t]);
   const infrastructurePresenceMessage = useMemo(() => {
     if (!infrastructureRecommendations) {
       return t('wizard.presence.infrastructureProfileReady');
@@ -1661,7 +1658,7 @@ export default function WizardPage() {
     if (infrastructureComponentIds.length) return t('wizard.presence.operationalTopologyActive');
     if (architectureId) return t('wizard.presence.architectureGraphUpdated');
     return t('wizard.presence.operationalTopologyActive');
-  }, [architectureId, architecturalGraphPayload, capabilityIds, dependencyGraphPayload, dependencyGraphSnapshot, dependencyGraphSnapshot?.propagation.required_node_ids.length, dependencyRisks?.issues.length, infrastructureComponentIds, infrastructureComponentIds.length, t]);
+  }, [architectureId, architecturalGraphPayload, capabilityIds, dependencyGraphPayload, dependencyGraphSnapshot, dependencyRisks?.issues.length, infrastructureComponentIds, t]);
 
   const ldcnContext = useMemo(
     () =>
@@ -1756,10 +1753,9 @@ export default function WizardPage() {
       dependencyPresenceMessage,
       engineeringPresenceMessage,
       topologyPresenceMessage,
-      selectedLanguageProfile?.ecosystem,
-      selectedLanguageProfile?.name,
-      selectedLanguageProfile?.summary,
-      selectedFrameworkSpecialistProfile?.summary,
+      selectedLanguageProfile,
+      selectedFrameworkSpecialistProfile,
+      infrastructurePresenceMessage,
       infrastructureRecommendations,
       t,
     ],

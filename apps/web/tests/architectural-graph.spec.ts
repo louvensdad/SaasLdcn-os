@@ -2,7 +2,6 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { webUrl } from './test-urls';
 import { applyAuthToPage, openWizardAtTechnologyStep, registerWizardApiUser } from './wizard-flow-helpers';
 
-const WIZARD_URL = webUrl('/wizard');
 const API_URL = 'http://127.0.0.1:8001/api';
 
 async function openGraphReview(page: Page, request: APIRequestContext, options?: { payments?: boolean }) {

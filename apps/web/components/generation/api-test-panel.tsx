@@ -39,7 +39,7 @@ export function ApiTestPanel({ surface, projectId }: ApiTestPanelProps) {
     return () => {
       active = false;
     };
-  }, [surface, projectId]);
+  }, [surface, projectId, t]);
 
   async function download(format: 'postman' | 'insomnia') {
     setBusy(format);

@@ -21,12 +21,10 @@ import {
   GitBranch,
   GitPullRequest,
   Layers3,
-  Loader2,
   LockKeyhole,
   MessageSquareText,
   Network,
   PackageCheck,
-  Play,
   RefreshCw,
   Route,
   SearchCode,
@@ -68,10 +66,8 @@ import { metaFactoryClient } from '@/lib/api/meta-factory';
 import { DeepAnalysisPanel } from '@/components/engineering/deep-analysis-panel';
 import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
 import type {
-  MigrationMapping,
   ModernizeDetectedTechnology,
   ModernizeExecutiveSummary,
-  SecurityFinding,
 } from '@contracts/modernize.contract';
 
 type Tab = 'zip' | 'git';

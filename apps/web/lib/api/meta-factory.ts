@@ -269,7 +269,8 @@ async function request<T>(
  * for generation and only inflates the request body. */
 function stripBlueprintForTransport(blueprint: unknown): unknown {
   if (!blueprint || typeof blueprint !== 'object' || Array.isArray(blueprint)) return blueprint ?? null;
-  const { responseDiagnostics: _drop, ...rest } = blueprint as Record<string, unknown>;
+  const rest = { ...(blueprint as Record<string, unknown>) };
+  delete rest.responseDiagnostics;
   return rest;
 }
 
