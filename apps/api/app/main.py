@@ -58,6 +58,7 @@ from app.routes import (
     system_status,
     system_design_visualization,
     templates,
+    test_runner,
     tenants,
     user_ai_keys,
     user_preferences,
@@ -161,6 +162,7 @@ def create_application() -> FastAPI:
     app.include_router(project_rooms.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(change_requests.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(live_preview.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(test_runner.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(ai_status.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(activity_feed.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(analytics.router, prefix=settings.api_prefix, dependencies=protected)
