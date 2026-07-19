@@ -15,13 +15,17 @@ import {
   FileCode2,
   FileText,
   GitBranch,
+  GitPullRequestArrow,
   Layers3,
   Monitor,
   Package,
+  Play,
+  RefreshCw,
   Rocket,
   Server,
   ShieldCheck,
   Smartphone,
+  Square,
   Tablet,
   TerminalSquare,
   XCircle,
@@ -41,6 +45,7 @@ import { useGeneratedFileContent } from '@/hooks/use-generated-file-content';
 import { useGeneratedProjectQuality } from '@/hooks/use-generated-project-quality';
 import { usePrepareDownload } from '@/hooks/use-prepare-download';
 import { useGitProviderConnection } from '@/hooks/use-git-providers';
+import { livePreviewClient, type LivePreviewSession } from '@/lib/api/live-preview';
 import { useLocale } from '@/hooks/use-locale';
 import { useAuthStore } from '@/stores/use-auth-store';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
@@ -412,6 +417,15 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
         </Card>
       </section>
 
+      <section id="live-preview-runtime" className="scroll-mt-24 space-y-4">
+        <SectionTitle
+          eyebrow="01b"
+          title="Preview ao vivo"
+          description="Sobe o backend e o frontend gerados de verdade e abre um link temporario para navegar dentro deles -- diferente do preview de arquivos acima. Disponivel apenas em ambiente local/dev, para projetos Python/FastAPI + Next.js."
+        />
+        <LivePreviewPanel projectId={project.project_id} />
+      </section>
+
       <section className="grid gap-5 xl:grid-cols-[1fr_0.85fr]">
         <div className="space-y-5">
           <SectionTitle eyebrow="02" title={t('projectXp.tech.title')} description="Matriz automatica baseada nos arquivos gerados e no quality gate. Ausencias ficam visiveis." />
@@ -515,7 +529,7 @@ function ProjectHeroV2({ project, category, signature, generated, deployReady, q
           <div className="flex flex-wrap gap-2"><Badge tone="accent">{category}</Badge><Badge tone={project.status === 'generated' ? 'success' : 'warning'}>{formatStatus(project.status)}</Badge><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? t('projectXp.hero.deployReady') : t('projectXp.hero.deployPending')}</Badge></div>
           <div><p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--accent)]">{t('projectXp.hero.eyebrow')}</p><h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-[color:var(--text)] md:text-6xl">{project.project_name}</h1><p className="mt-4 max-w-2xl text-base leading-7 ds-text-secondary">{t('projectXp.hero.description')}</p></div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><HeroDatum label="Stack" value={`${project.technology_graph.language.name} / ${project.technology_graph.framework.name}`} /><HeroDatum label="Build" value={quality ? (quality.passed ? 'validado' : 'falhou') : generated ? 'verificando' : 'sem artefatos'} /><HeroDatum label="Confidence" value="nao informado" /><HeroDatum label="Empresa" value="nao informada" /></div>
-          <div className="flex flex-wrap gap-3"><AnchorButton href="#live-preview" icon={Monitor}>{t('projectXp.hero.openPreview')}</AnchorButton><AnchorButton href="#code" icon={Code2}>{t('projectXp.hero.openCode')}</AnchorButton><LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare}>{t('projectXp.lab.open')}</LinkButton><LinkButton href={`/meta-factory?projectId=${project.project_id}`} icon={Layers3}>{t('projectXp.hero.openMetaFactory')}</LinkButton><LinkButton href="/settings#integrations" icon={GitBranch}>{t('projectXp.hero.openGitHub')}</LinkButton><AnchorButton href="#deploy" icon={Rocket}>{t('projectXp.hero.openDeploy')}</AnchorButton></div>
+          <div className="flex flex-wrap gap-3"><AnchorButton href="#live-preview" icon={Monitor}>{t('projectXp.hero.openPreview')}</AnchorButton><AnchorButton href="#code" icon={Code2}>{t('projectXp.hero.openCode')}</AnchorButton><LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare}>{t('projectXp.lab.open')}</LinkButton><LinkButton href={`/meta-factory?projectId=${project.project_id}`} icon={Layers3}>{t('projectXp.hero.openMetaFactory')}</LinkButton><LinkButton href={`/change-requests?projectId=${project.project_id}`} icon={GitPullRequestArrow}>Alteracoes</LinkButton><LinkButton href="/settings#integrations" icon={GitBranch}>{t('projectXp.hero.openGitHub')}</LinkButton><AnchorButton href="#deploy" icon={Rocket}>{t('projectXp.hero.openDeploy')}</AnchorButton></div>
         </div>
         <JourneyConsole project={project} generated={generated} deployReady={deployReady} />
       </div>
@@ -555,6 +569,91 @@ function LinkButton({ href, icon: Icon, children, large = false }: { readonly hr
 
 function FileRail({ files, selectedPath, onSelect }: { readonly files: readonly GeneratedProjectFileEntry[]; readonly selectedPath: string | null; readonly onSelect: (path: string) => void }) {
   return <div className="max-h-[540px] overflow-auto border-r border-[color:var(--border)] p-3">{files.map((file) => <button key={file.relative_path} type="button" onClick={() => onSelect(file.relative_path)} className={cn('focus-ring mb-1 flex w-full items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left text-xs', selectedPath === file.relative_path ? 'bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'text-[color:var(--muted)] hover:bg-white/5')} aria-label={`Selecionar arquivo gerado ${file.relative_path}`}><FileCode2 className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{file.relative_path}</span></button>)}</div>;
+}
+
+function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
+  const [session, setSession] = useState<LivePreviewSession | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function start() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await livePreviewClient.start(projectId);
+      setSession(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Falha ao iniciar o preview ao vivo.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stop() {
+    if (!session?.session_id) return;
+    setBusy(true);
+    try {
+      await livePreviewClient.stop(session.session_id);
+    } catch {
+      // best-effort -- the session may already be gone (idle-reaped)
+    } finally {
+      setSession(null);
+      setBusy(false);
+    }
+  }
+
+  if (!session) {
+    return (
+      <Card className="flex flex-col items-center gap-4 p-8 text-center">
+        <Rocket className="h-8 w-8 text-[color:var(--accent)]" aria-hidden />
+        <div>
+          <p className="text-sm font-semibold text-[color:var(--text)]">Nenhum preview ao vivo em execucao</p>
+          <p className="mt-1 max-w-md text-sm text-[color:var(--muted)]">Instala dependencias reais e sobe os servidores de desenvolvimento -- pode levar alguns minutos na primeira vez.</p>
+        </div>
+        {error ? <p className="text-sm text-[color:var(--danger)]">{error}</p> : null}
+        <Button type="button" variant="primary" loading={busy} onClick={() => void start()}>
+          <Play className="h-4 w-4" aria-hidden />Iniciar preview ao vivo
+        </Button>
+      </Card>
+    );
+  }
+
+  if (session.status === 'unsupported') {
+    return (
+      <Card className="space-y-3 p-6">
+        <div className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-[color:var(--warning)]" aria-hidden /><p className="text-sm font-semibold text-[color:var(--text)]">Preview ao vivo indisponivel</p></div>
+        <p className="text-sm text-[color:var(--muted)]">{session.reason}</p>
+        <Button type="button" variant="secondary" onClick={() => setSession(null)}>Voltar</Button>
+      </Card>
+    );
+  }
+
+  if (session.status === 'failed') {
+    return (
+      <Card className="space-y-3 border-[color-mix(in_srgb,var(--danger)_32%,var(--border))] p-6">
+        <div className="flex items-center gap-2"><XCircle className="h-5 w-5 text-[color:var(--danger)]" aria-hidden /><p className="text-sm font-semibold text-[color:var(--text)]">O preview falhou ao iniciar</p></div>
+        <pre className="max-h-48 overflow-auto rounded-[var(--radius-md)] bg-black/30 p-3 text-xs text-[color:var(--muted)]">{session.reason}</pre>
+        <Button type="button" variant="secondary" loading={busy} onClick={() => void start()}><RefreshCw className="h-4 w-4" aria-hidden />Tentar novamente</Button>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--border)] p-4">
+        <div className="flex items-center gap-2">
+          <Badge tone="success">ao vivo</Badge>
+          <span className="font-mono text-xs text-[color:var(--muted)]">{session.session_id}</span>
+        </div>
+        <Button type="button" variant="secondary" loading={busy} onClick={() => void stop()}><Square className="h-4 w-4" aria-hidden />Parar preview</Button>
+      </div>
+      <iframe
+        title="Preview ao vivo do projeto"
+        src={session.preview_url ?? ''}
+        className="h-[720px] w-full bg-white"
+      />
+    </Card>
+  );
 }
 
 function VerificationRow({ item }: { readonly item: VerificationItem }) {

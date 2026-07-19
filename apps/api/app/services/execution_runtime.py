@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
@@ -891,7 +892,18 @@ class HostExecutionRuntime(ExecutionRuntime):
         proc, log_file, _ = entry
         try:
             if proc.poll() is None:
-                proc.terminate()
+                if sys.platform == "win32":
+                    # A dev-server command (e.g. "npm run dev") on Windows runs
+                    # inside a cmd.exe/npm.cmd wrapper whose child node.exe is
+                    # the one actually listening. proc.terminate() only signals
+                    # the wrapper PID -- the real server survives as an orphan,
+                    # port and all. taskkill /T walks the whole process tree.
+                    subprocess.run(
+                        ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                        capture_output=True, timeout=10, shell=False,
+                    )
+                else:
+                    proc.terminate()
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:

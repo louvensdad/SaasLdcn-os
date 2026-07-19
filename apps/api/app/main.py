@@ -22,6 +22,7 @@ from app.routes import (
     auth,
     backend_generation,
     blueprints,
+    change_requests,
     contracts,
     deep_engineering,
     dependency_graph,
@@ -39,6 +40,7 @@ from app.routes import (
     gatekeeper,
     health,
     language_domains,
+    live_preview,
     local_generation,
     llm_settings,
     localization,
@@ -157,6 +159,8 @@ def create_application() -> FastAPI:
     app.include_router(meta_factory.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(modernize.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(project_rooms.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(change_requests.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(live_preview.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(ai_status.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(activity_feed.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(analytics.router, prefix=settings.api_prefix, dependencies=protected)

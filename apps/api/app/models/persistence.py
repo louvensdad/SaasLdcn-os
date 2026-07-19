@@ -75,6 +75,43 @@ class ProjectRoom(Base):
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class ChangeRequest(Base):
+    __tablename__ = "change_requests"
+    __table_args__ = (
+        Index("idx_change_requests_project", "project_id", "updated_at"),
+        Index("idx_change_requests_owner", "owner_user_id"),
+    )
+
+    change_request_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    # The generated-project id (generated-projects/active/{project_id}/), i.e. the
+    # same id space as GenerationJob.generated_project_id -- NOT a project_room
+    # room_id and NOT the legacy `projects` table. Patch/diff/build/rollback only
+    # make sense against real files on disk.
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    room_id: Mapped[str | None] = mapped_column(String)  # traceability only, no engine logic depends on it
+    feature_id: Mapped[str | None] = mapped_column(String)  # reserved for a future Feature entity
+    task_id: Mapped[str | None] = mapped_column(String)  # reserved for a future Task entity
+    base_version: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="Draft", server_default="Draft", index=True)
+    intent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    classification_json: Mapped[str | None] = mapped_column(Text)
+    scope_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    impact_json: Mapped[str | None] = mapped_column(Text)
+    snapshot_json: Mapped[str | None] = mapped_column(Text)
+    diff_json: Mapped[str | None] = mapped_column(Text)
+    build_result_json: Mapped[str | None] = mapped_column(Text)
+    preview_result_json: Mapped[str | None] = mapped_column(Text)
+    approval_json: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[str | None] = mapped_column(Text)
+    history_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    operational_log_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    last_failure_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class ModernizeJob(Base):
     __tablename__ = "modernize_jobs"
     __table_args__ = (Index("idx_modernize_jobs_owner", "owner_user_id"),)

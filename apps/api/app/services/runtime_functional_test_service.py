@@ -278,8 +278,9 @@ class RuntimeFunctionalTestService:
 
     # ------------------------------------------------------------ preparation
 
+    @staticmethod
     def _prepare_backend(
-        self, host_runtime: HostExecutionRuntime, sandbox_id: str, project_id: str, relative_backend: str,
+        host_runtime: HostExecutionRuntime, sandbox_id: str, project_id: str, relative_backend: str,
     ) -> tuple[bool, str]:
         create = host_runtime.execute(
             sandbox_id,
@@ -304,8 +305,9 @@ class RuntimeFunctionalTestService:
             return False, f"Could not install backend dependencies: {_diagnose(install)}"
         return True, ""
 
+    @staticmethod
     def _prepare_frontend(
-        self, host_runtime: HostExecutionRuntime, sandbox_id: str, project_id: str, relative_frontend: str,
+        host_runtime: HostExecutionRuntime, sandbox_id: str, project_id: str, relative_frontend: str,
     ) -> tuple[bool, str]:
         npm = "npm.cmd" if sys.platform == "win32" else "npm"
         install = host_runtime.execute(

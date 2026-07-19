@@ -21,9 +21,11 @@ from app.repositories.llm_active_selection_repository import LlmActiveSelectionR
 from app.repositories.platform_runtime_config_repository import PlatformRuntimeConfigRepository
 from app.repositories.user_preferences_repository import UserPreferencesRepository
 from app.repositories.user_repository import AuditLogRepository, UserRepository
+from app.repositories.change_request_repository import ChangeRequestRepository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
 from app.repositories.git_provider_repository import GitProviderRepository
+from app.routes import change_requests as change_requests_route
 from app.routes import downloads as downloads_route
 from app.routes import local_generation as local_generation_route
 from app.routes import meta_factory as meta_factory_route
@@ -77,6 +79,7 @@ def client() -> TestClient:
     # the default DB at import time; point it at the isolated per-test database too.
     # (Done before the app/lifespan starts so initialize() targets this DB.)
     project_rooms_route.service.repository = ProjectRoomRepository(database_path)
+    change_requests_route.service.repository = ChangeRequestRepository(database_path)
     modernize_route._jobs_repo = ModernizeJobRepository(database_path)
     isolated_download_service = DownloadService(DownloadRepository(database_path))
     downloads_route.service = isolated_download_service
