@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -26,6 +27,13 @@ from app.services.runtime_functional_test_service import RuntimeFunctionalTestSe
 # helper that records a diagnostic + raises before any state change, a
 # history/operational-log audit trail. See Protocolo de alteracao incremental:
 # "Falha restaura snapshot ou mantem a versao nao publicada."
+#
+# apply() also implements 47 - Conflitos/Resolucao de Conflitos.md's minimum
+# bar ("nenhuma alteracao e perdida silenciosamente", "conflitos exibem
+# origem, autor e impacto") via a per-project lock (see _project_lock) plus
+# _describe_conflict(). Real semantic auto-merge is out of scope -- failing
+# closed with a named origin already satisfies "merge automatico exige
+# validacao" (no merge is attempted at all without one).
 
 _NON_TERMINAL_STATUSES = ("Draft", "Analyzed", "Planned", "Approved", "Applying", "Validating")
 
@@ -81,6 +89,24 @@ class ChangeRequestService:
         self.preview_service = preview_service or RuntimeFunctionalTestService()
         self.writer = writer or ProjectWriter()
         self.files_service = files_service or GeneratedProjectService()
+        # 47 - Conflitos/Resolucao de Conflitos.md: "Nenhuma alteracao e perdida
+        # silenciosamente." The base_version check below catches the SEQUENTIAL
+        # case (CR-B applies after CR-A already landed), but without a lock two
+        # apply() calls racing on the same project could both pass that check
+        # before either has written, then interleave writes -- a silent clobber
+        # the hash check alone can't catch. One lock per project_id serializes
+        # the check-through-write sequence instead of queuing/blocking requests:
+        # a second concurrent apply() fails closed immediately.
+        self._project_locks: dict[str, threading.Lock] = {}
+        self._project_locks_guard = threading.Lock()
+
+    def _project_lock(self, project_id: str) -> threading.Lock:
+        with self._project_locks_guard:
+            lock = self._project_locks.get(project_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._project_locks[project_id] = lock
+            return lock
 
     # ------------------------------------------------------------------ read
     def get(self, change_request_id: str, owner_user_id: str) -> dict[str, Any] | None:
@@ -200,49 +226,55 @@ class ChangeRequestService:
         project = self._project_dict(cr["project_id"])
         scope = list(cr["scope"])
 
-        current_hash = self._hash_scope(project, scope)
-        if current_hash != cr.get("base_version"):
-            self._fail(cr, endpoint=endpoint, expected=["Approved"], message="A versao base mudou desde o planejamento (outro patch pode ter alterado estes arquivos).", reason="base_version drift detected at apply().", correction="Reinicie o ciclo (analyze -> plan -> approve) para recapturar o estado atual do projeto.")
-
+        lock = self._project_lock(cr["project_id"])
+        if not lock.acquire(blocking=False):
+            self._fail(cr, endpoint=endpoint, expected=["Approved"], message="Outra alteracao esta sendo aplicada neste projeto agora.", reason="concurrent apply() in progress for this project_id.", correction="Aguarde a alteracao em andamento terminar e tente novamente.")
         try:
-            snapshot = self.snapshot_service.capture(project, scope)
-        except ChangeSnapshotError as exc:
-            self._fail(cr, endpoint=endpoint, expected=["Approved"], message=str(exc), reason="snapshot capture failed", correction="Reduza o escopo ou corrija os arquivos problematicos antes de tentar novamente.")
-        cr = self.repository.set_snapshot(change_request_id, owner_user_id, snapshot, status="Applying")
+            current_hash = self._hash_scope(project, scope)
+            if current_hash != cr.get("base_version"):
+                self._fail(cr, endpoint=endpoint, expected=["Approved"], message="A versao base mudou desde o planejamento (outro patch pode ter alterado estes arquivos).", reason=f"base_version drift detected at apply(). {self._describe_conflict(cr, scope)}", correction="Reinicie o ciclo (analyze -> plan -> approve) para recapturar o estado atual do projeto.")
 
-        patch_result = self.patch_engine.generate_patch(
-            cr["intent"], scope, snapshot, router=router, user_model_choice=user_model_choice, api_key=api_key,
-        )
+            try:
+                snapshot = self.snapshot_service.capture(project, scope)
+            except ChangeSnapshotError as exc:
+                self._fail(cr, endpoint=endpoint, expected=["Approved"], message=str(exc), reason="snapshot capture failed", correction="Reduza o escopo ou corrija os arquivos problematicos antes de tentar novamente.")
+            cr = self.repository.set_snapshot(change_request_id, owner_user_id, snapshot, status="Applying")
 
-        if patch_result.rejected_out_of_scope:
-            self._reject(cr, endpoint=endpoint, reason=f"Arquivos fora do escopo foram propostos e rejeitados (protegidos): {', '.join(patch_result.rejected_out_of_scope)}.")
-            return None  # unreachable -- _reject always raises
-        if not patch_result.accepted_files:
-            self._reject(cr, endpoint=endpoint, reason="O agente nao retornou nenhum arquivo dentro do escopo.")
-            return None  # unreachable -- _reject always raises
+            patch_result = self.patch_engine.generate_patch(
+                cr["intent"], scope, snapshot, router=router, user_model_choice=user_model_choice, api_key=api_key,
+            )
 
-        try:
-            self.writer.append(cr["project_id"], patch_result.accepted_files)
-        except ProjectWriteError as exc:
-            self._reject(cr, endpoint=endpoint, reason=f"Falha ao escrever o patch: {exc}", restore_snapshot=True, snapshot=snapshot)
-            return None  # unreachable -- _reject always raises
+            if patch_result.rejected_out_of_scope:
+                self._reject(cr, endpoint=endpoint, reason=f"Arquivos fora do escopo foram propostos e rejeitados (protegidos): {', '.join(patch_result.rejected_out_of_scope)}.")
+                return None  # unreachable -- _reject always raises
+            if not patch_result.accepted_files:
+                self._reject(cr, endpoint=endpoint, reason="O agente nao retornou nenhum arquivo dentro do escopo.")
+                return None  # unreachable -- _reject always raises
 
-        diff_dicts = [item.model_dump() for item in patch_result.diffs]
-        cr = self.repository.set_diff(change_request_id, owner_user_id, diff_dicts, status="Applying")
+            try:
+                self.writer.append(cr["project_id"], patch_result.accepted_files)
+            except ProjectWriteError as exc:
+                self._reject(cr, endpoint=endpoint, reason=f"Falha ao escrever o patch: {exc}", restore_snapshot=True, snapshot=snapshot)
+                return None  # unreachable -- _reject always raises
 
-        build_report = self.build_service.validate(project)
-        cr = self.repository.set_build_result(change_request_id, owner_user_id, build_report.model_dump())
+            diff_dicts = [item.model_dump() for item in patch_result.diffs]
+            cr = self.repository.set_diff(change_request_id, owner_user_id, diff_dicts, status="Applying")
 
-        if not build_report.ok:
-            self._reject(cr, endpoint=endpoint, reason="A build falhou apos o patch.", restore_snapshot=True, snapshot=snapshot)
-            return None  # unreachable -- _reject always raises
+            build_report = self.build_service.validate(project)
+            cr = self.repository.set_build_result(change_request_id, owner_user_id, build_report.model_dump())
 
-        preview_report = self.preview_service.run(project)
-        cr = self.repository.set_preview_result(change_request_id, owner_user_id, preview_report.model_dump(), status="Validating")
+            if not build_report.ok:
+                self._reject(cr, endpoint=endpoint, reason="A build falhou apos o patch.", restore_snapshot=True, snapshot=snapshot)
+                return None  # unreachable -- _reject always raises
 
-        self._history(cr, "Patch aplicado; build e preview concluidos", source="Change Request Engine")
-        self._log(cr, "POST", endpoint, 200, "success", "Patch aplicado, aguardando aceite")
-        return cr
+            preview_report = self.preview_service.run(project)
+            cr = self.repository.set_preview_result(change_request_id, owner_user_id, preview_report.model_dump(), status="Validating")
+
+            self._history(cr, "Patch aplicado; build e preview concluidos", source="Change Request Engine")
+            self._log(cr, "POST", endpoint, 200, "success", "Patch aplicado, aguardando aceite")
+            return cr
+        finally:
+            lock.release()
 
     def accept(self, change_request_id: str, owner_user_id: str) -> dict[str, Any] | None:
         endpoint = f"/api/change-requests/{change_request_id}/accept"
@@ -310,6 +342,27 @@ class ChangeRequestService:
         snapshot = self.snapshot_service.capture(project, scope)
         canonical = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def _describe_conflict(self, cr: dict[str, Any], scope: list[str]) -> str:
+        """47 - Conflitos: 'Conflitos exibem origem, autor e impacto.' Names the
+        other Change Request whose already-applied scope overlaps this one's,
+        instead of just saying 'something changed'."""
+        scope_set = set(scope)
+        candidates = [
+            other for other in self.repository.list_for_project(cr["project_id"], cr["owner_user_id"])
+            if other["change_request_id"] != cr["change_request_id"]
+            and other["status"] in ("Accepted", "Applying", "Validating")
+            and scope_set & set(other.get("scope") or [])
+        ]
+        if not candidates:
+            return "Nao foi possivel identificar qual alteracao causou a divergencia."
+        latest = max(candidates, key=lambda other: other["updated_at"])
+        overlap = sorted(scope_set & set(latest.get("scope") or []))
+        return (
+            f"Origem provavel: Change Request {latest['change_request_id']} "
+            f"({latest['intent'][:80]!r}), status {latest['status']}, atualizado em {latest['updated_at']}, "
+            f"arquivos sobrepostos: {', '.join(overlap)}."
+        )
 
     def _reject(
         self, cr: dict[str, Any], *, endpoint: str, reason: str,

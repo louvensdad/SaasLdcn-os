@@ -718,6 +718,61 @@ def test_orchestration_base_version_drift_detected_at_apply(cr_repo: ChangeReque
     assert final["status"] == "Approved"  # unchanged -- the drift check fires before any snapshot/write
 
 
+def test_orchestration_concurrent_apply_on_same_project_fails_closed_not_racing(cr_repo: ChangeRequestRepository, make_project) -> None:
+    project = make_project([("frontend/Button.tsx", "content v1")])
+    patch_engine = _FakePatchEngine(accepted=[EmittedFile(path="frontend/Button.tsx", content="content v2")])
+    service = ChangeRequestService(
+        repository=cr_repo, patch_engine=patch_engine,
+        build_service=_FakeBuildService(_ok_build_report()),
+        preview_service=_FakePreviewService(_unsupported_preview_report(project["project_id"])),
+    )
+    cr = service.create(owner_user_id="user_a", project_id=project["project_id"], intent="ajuste")
+    cr = _advance_to_approved(service, cr["change_request_id"], "user_a", affected_files=["frontend/Button.tsx"])
+
+    # Simulate another apply() already in flight for this project by holding
+    # the same per-project lock a real concurrent request would contend on.
+    lock = service._project_lock(project["project_id"])
+    lock.acquire()
+    try:
+        with pytest.raises(ChangeRequestError, match="Outra alteracao"):
+            service.apply(cr["change_request_id"], "user_a")
+    finally:
+        lock.release()
+
+    final = service.get(cr["change_request_id"], "user_a")
+    assert final["status"] == "Approved"  # rejected before touching snapshot/patch/write
+
+    # The lock is released again afterwards -- a real apply() can now proceed.
+    updated = service.apply(cr["change_request_id"], "user_a")
+    assert updated["status"] == "Validating"
+
+
+def test_orchestration_conflict_diagnostic_names_the_other_change_request(cr_repo: ChangeRequestRepository, make_project) -> None:
+    project = make_project([("frontend/Button.tsx", "content v1")])
+    patch_engine = _FakePatchEngine(accepted=[EmittedFile(path="frontend/Button.tsx", content="content v2")])
+    service = ChangeRequestService(
+        repository=cr_repo, patch_engine=patch_engine,
+        build_service=_FakeBuildService(_ok_build_report()),
+        preview_service=_FakePreviewService(_unsupported_preview_report(project["project_id"])),
+    )
+
+    cr_a = service.create(owner_user_id="user_a", project_id=project["project_id"], intent="CR-A: ajusta o botao")
+    cr_a = _advance_to_approved(service, cr_a["change_request_id"], "user_a", affected_files=["frontend/Button.tsx"])
+    cr_b = service.create(owner_user_id="user_a", project_id=project["project_id"], intent="CR-B: ajusta o mesmo botao")
+    cr_b = _advance_to_approved(service, cr_b["change_request_id"], "user_a", affected_files=["frontend/Button.tsx"])
+
+    applied_a = service.apply(cr_a["change_request_id"], "user_a")
+    assert applied_a["status"] == "Validating"
+    accepted_a = service.accept(cr_a["change_request_id"], "user_a")
+    assert accepted_a["status"] == "Accepted"
+
+    with pytest.raises(ChangeRequestError) as exc_info:
+        service.apply(cr_b["change_request_id"], "user_a")
+
+    assert cr_a["change_request_id"] in str(exc_info.value.reason)
+    assert "CR-A" in str(exc_info.value.reason)
+
+
 def test_orchestration_visual_only_with_backend_impact_blocks_plan(cr_repo: ChangeRequestRepository, make_project) -> None:
     project = make_project([("frontend/Button.tsx", "content"), ("backend/app.py", "content")])
     service = ChangeRequestService(repository=cr_repo)
