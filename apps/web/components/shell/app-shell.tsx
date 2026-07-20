@@ -274,7 +274,7 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         />
 
         <main id="main-content" tabIndex={-1} className="relative z-10 px-4 py-5 md:px-6 lg:py-7 xl:px-10">
-          <AnimatePresence mode="wait" initial={false}>
+          <AnimatePresence mode="sync" initial={false}>
             <motion.div
               key={pathname}
               initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 6 }}
