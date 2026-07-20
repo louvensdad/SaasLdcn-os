@@ -1,9 +1,10 @@
 {
-  "total": 322,
+  "total": 392,
   "byFile": {
     "app/(app)/analytics/page.tsx": 27,
     "app/(app)/architect/page.tsx": 10,
     "app/(app)/auto-fix/page.tsx": 2,
+    "app/(app)/change-requests/page.tsx": 58,
     "app/(app)/documentation/page.tsx": 4,
     "app/(app)/engineering-laboratory/page.tsx": 1,
     "app/global-error.tsx": 4,
@@ -22,6 +23,7 @@
     "components/llm/user-key-panel.tsx": 1,
     "components/platform/platform-overview.tsx": 53,
     "components/project/blueprint-response-viewer.tsx": 7,
+    "components/project/project-experience-v2.tsx": 12,
     "components/project/workflow-context-header.tsx": 2,
     "components/settings/account-tab.tsx": 3,
     "components/settings/activity-feed.tsx": 24,
