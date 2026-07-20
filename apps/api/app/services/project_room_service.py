@@ -9,9 +9,11 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from app.core.event_catalog import emit_named_event
 from app.engines.architect_engine import build_blueprint
 from app.engines.architecture_model_engine import build_architecture_model
 from app.engines.engineering_review_engine import build_engineering_review
+from app.engines import memory_engine
 from app.engines.orchestrator_engine import run_orchestrator
 from app.registry.execution_profiles_registry import resolve_execution_profile
 from app.engines.prompt_master_md_engine import author_prompt_master_md
@@ -98,6 +100,7 @@ class ProjectRoomService:
     def create_room(self, *, owner_user_id: str, title: str, raw_intent: str = "", locale: str = "pt-BR", api_key: str | None = None, user_model_choice: str | None = None, workspace_id: str | None = None, delivery_type: str = "web", preferred_language: str = "", execution_profile: str = "professional") -> dict[str, Any]:
         room = self.repository.create(owner_user_id=owner_user_id, title=title, locale=locale, raw_intent=raw_intent, workspace_id=workspace_id, delivery_type=delivery_type, preferred_language=preferred_language, execution_profile=execution_profile)
         self._log(room["room_id"], owner_user_id, "POST", "/api/project-rooms", 201, "success", "Project Room criado")
+        emit_named_event("ProjectCreated", owner_user_id, workspace_id=workspace_id, project_id=room["room_id"])
         if raw_intent.strip():
             return self._orchestrator_turn(room["room_id"], owner_user_id, raw_intent, api_key=api_key, user_model_choice=user_model_choice, status="UNDER_REVIEW")
         return self._decorate(room)
@@ -194,6 +197,7 @@ class ProjectRoomService:
         self.repository.append_message(room_id, owner_user_id, self._assistant_message(f"Blueprint arquitetural gerado ({len(blueprint.decisions)} decisoes justificadas)." + (" [Preview Deterministico]" if blueprint.degraded else " [LLM]"), degraded=blueprint.degraded))
         self._history(room_id, owner_user_id, "Blueprint criado", source=blueprint.providerLabel, metadata={"mode": blueprint.mode, "model": blueprint.model, "fallback": blueprint.fallback, "version": version_number})
         self._log(room_id, owner_user_id, "POST", f"/api/project-rooms/{room_id}/blueprint", 200, "success", "Blueprint salvo")
+        emit_named_event("BlueprintGenerated", owner_user_id, workspace_id=room.get("workspace_id"), project_id=room_id, metadata={"version": version_number, "degraded": blueprint.degraded})
         return self.get_room(room_id, owner_user_id)
 
     def cancel_blueprint_generation(self, room_id: str, owner_user_id: str) -> dict[str, Any] | None:
@@ -635,11 +639,34 @@ class ProjectRoomService:
         all_texts = [*prior_user_texts, content]
         raw_intent = room.get("raw_intent") or all_texts[0]
         prior_answers = [{"id": f"refine_{index}", "answer": text} for index, text in enumerate(all_texts[1:], start=1)]
+        # Memory Engine (vault 28 - Contexto + 54 - Memória e Conhecimento):
+        # retrieve before the call (never the whole table -- scope-filtered to
+        # this room), extract after. Scope is "project" for both, since a
+        # ProjectRoom IS the conversation in this codebase (1:1, no separate
+        # conversation entity to split from it yet).
+        existing_memories = memory_engine.retrieve_for_scope(owner_user_id, "project", room_id)
+        memory_context = memory_engine.prompt_block(existing_memories)
         # preferred_language, like delivery_type, is a room-level USER decision:
         # the orchestrator is told about it in the prompt and the resulting spec
         # is deterministically enforced (run_orchestrator/enforce_preferred_language),
         # so the model can never override the user's stack choice.
-        result = run_orchestrator(raw_intent, prior_answers, api_key=api_key, user_model_choice=user_model_choice, preferred_language=room.get("preferred_language") or None)
+        result = run_orchestrator(
+            raw_intent, prior_answers, api_key=api_key, user_model_choice=user_model_choice,
+            preferred_language=room.get("preferred_language") or None, memory_context=memory_context,
+        )
+        # Only the NEW answer this turn is classified -- prior_answers already
+        # accumulates every past turn, and re-classifying the whole history
+        # every turn would be wasteful (idempotency in record_memories()
+        # already prevents duplicate rows, but the LLM call itself would still
+        # be repeated for no reason).
+        if prior_user_texts:
+            new_answer_candidates = memory_engine.classify_confirmed_answers(
+                [{"id": "current_turn", "answer": content}], api_key=api_key, user_model_choice=user_model_choice,
+            )
+        else:
+            new_answer_candidates = []
+        memory_candidates = memory_engine.promote_assumptions(result.spec.assumptions, spec_confidence=result.spec.confidence) + new_answer_candidates
+        memory_engine.record_memories(memory_candidates, owner_user_id=owner_user_id, scope_type="project", scope_id=room_id)
         spec_dict = result.spec.model_dump(mode="json")
         # delivery_type is a room-level decision made at creation time, not
         # something the orchestrator infers from free text -- always carry the

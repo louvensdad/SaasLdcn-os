@@ -35,3 +35,13 @@ class LivePreviewSession(ApiModel):
 
 class StartLivePreviewRequest(ApiModel):
     project_id: str = Field(min_length=1)
+
+
+class ConsoleLogEntry(ApiModel):
+    type: str
+    text: str
+    at: str
+
+
+class NavigateRequest(ApiModel):
+    path: str = Field(default="/", min_length=1)

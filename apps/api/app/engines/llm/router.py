@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 from app.core.config import get_settings
-from app.data.model_registry import MODEL_REGISTRY, resolve_model
+from app.data.model_registry import MODEL_REGISTRY, ModelResolution, resolve_model_detailed
 from app.engines.llm.anthropic_adapter import AnthropicAdapter
 from app.engines.llm.base import LLMAdapter, LLMError
 from app.engines.llm.custom_adapter import CustomOpenAIAdapter
@@ -20,6 +20,7 @@ from app.engines.llm.resilience import (
     RetryPolicy,
 )
 from app.engines.llm.response_cache import llm_response_cache
+from app.repositories.llm_decision_trace_repository import record_decision_safely
 from app.repositories.llm_usage_repository import record_usage_safely
 from app.schemas.llm import LLMRequest, LLMResponse
 
@@ -125,6 +126,8 @@ class LLMRouter:
         allow_cache: bool = False,
         cache_namespace: str = "shared-platform",
         model_strategy: str | None = None,
+        project_id: str | None = None,
+        context_used: list[str] | None = None,
     ) -> LLMResponse:
         """`allow_cache` is opt-in and False everywhere by default: several
         callers (factory_pipeline.iter_single_agent's smart retry on an empty/
@@ -133,10 +136,16 @@ class LLMRouter:
         sampling is the whole point of the retry there, and a cache hit would
         silently defeat it. Only set True at call sites where a duplicate
         request really does mean "already answered, skip it" (e.g. the repair
-        loops in verification_engine.py / llm_repair_engine.py)."""
+        loops in verification_engine.py / llm_repair_engine.py).
+
+        `project_id`/`context_used` feed the AI decision-observability trace
+        (vault 65 - Observabilidade de IA): purely additive, optional at every
+        call site -- a call that doesn't pass them still gets a trace row with
+        provider/model/policy/cost, just without project attribution."""
         started = time.perf_counter()
         routed_model = getattr(api_key, "model", None)
-        model = resolve_model(user_choice=routed_model or user_choice, agent_role=agent_role, model_strategy=model_strategy)
+        resolution = resolve_model_detailed(user_choice=routed_model or user_choice, agent_role=agent_role, model_strategy=model_strategy)
+        model = resolution.model
         meta = MODEL_REGISTRY[model]
         provider = meta["provider"]
         settings = get_settings()
@@ -146,16 +155,22 @@ class LLMRouter:
             if hint:
                 req = req.model_copy(update={"system": req.system + hint})
 
+        def _recorded(response: LLMResponse) -> LLMResponse:
+            return self._recorded(
+                response, started, resolution=resolution, agent_role=agent_role, model_strategy=model_strategy,
+                project_id=project_id, context_used=context_used,
+            )
+
         # A user-owned key forces a real run with that key: never silently mock,
         # so the user learns if their own key is invalid / out of credit.
         if api_key:
             adapter = self._adapters.get(provider)
             if adapter is None:
                 raise LLMError(f"No adapter registered for provider '{provider}' (model {model}).")
-            return self._recorded(self._complete_resilient(adapter, provider, model, req, api_key=api_key), started)
+            return _recorded(self._complete_resilient(adapter, provider, model, req, api_key=api_key))
 
         if settings.force_mock:
-            return self._recorded(self._mock.complete(model, req), started)
+            return _recorded(self._mock.complete(model, req))
 
         # Token Intelligence: consult the app-level response cache before any
         # provider call (opt-in, see docstring above).
@@ -167,12 +182,12 @@ class LLMRouter:
         if cache_key is not None:
             cached = llm_response_cache.get(cache_key)
             if cached is not None:
-                return self._recorded(cached.model_copy(update={"served_by_cache": True}), started)
+                return _recorded(cached.model_copy(update={"served_by_cache": True}))
 
         adapter = self._adapters.get(provider)
         if adapter is None:
             if settings.mock_fallback_enabled:
-                return self._recorded(self._mock.complete(model, req), started)
+                return _recorded(self._mock.complete(model, req))
             raise LLMError(
                 f"No adapter registered for provider '{provider}' (model {model})."
             )
@@ -181,23 +196,46 @@ class LLMRouter:
             response = self._complete_resilient(adapter, provider, model, req, api_key=None)
         except LLMError:
             if settings.mock_fallback_enabled:
-                return self._recorded(self._mock.complete(model, req), started)
+                return _recorded(self._mock.complete(model, req))
             raise
         if cache_key is not None:
             llm_response_cache.set(cache_key, response)
-        return self._recorded(response, started)
+        return _recorded(response)
 
     @staticmethod
-    def _recorded(response: LLMResponse, started: float) -> LLMResponse:
+    def _recorded(
+        response: LLMResponse,
+        started: float,
+        *,
+        resolution: ModelResolution,
+        agent_role: str | None,
+        model_strategy: str | None,
+        project_id: str | None,
+        context_used: list[str] | None,
+    ) -> LLMResponse:
         """Real usage telemetry on every response leaving the router (tokens as
         reported by the provider, wall-clock latency). Fault-isolated inside
         record_usage_safely -- can never break or fail a generation call."""
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        provider = str(getattr(response.provider, "value", response.provider))
         record_usage_safely(
-            provider=str(getattr(response.provider, "value", response.provider)),
+            provider=provider,
             model=response.model,
             usage=response.usage or {},
             served_by_cache=response.served_by_cache,
-            latency_ms=int((time.perf_counter() - started) * 1000),
+            latency_ms=latency_ms,
+        )
+        record_decision_safely(
+            provider=provider,
+            model=response.model,
+            agent_role=agent_role,
+            model_strategy=model_strategy,
+            selection_policy=resolution.policy,
+            alternatives=resolution.alternatives,
+            context_used=context_used,
+            project_id=project_id,
+            usage=response.usage or {},
+            latency_ms=latency_ms,
         )
         return response
 

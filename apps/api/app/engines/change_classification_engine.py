@@ -119,6 +119,7 @@ def classify_change(
     api_key: str | None = None,
     user_model_choice: str | None = None,
     use_llm: bool = True,
+    project_id: str | None = None,
 ) -> ClassificationResult:
     deterministic = _deterministic_classify(intent)
     if not use_llm or not (api_key or ai_available()):
@@ -142,6 +143,7 @@ def classify_change(
             user_choice=user_model_choice,
             agent_role="change_classification",
             api_key=api_key,
+            project_id=project_id,
         )
     except LLMError:
         return deterministic

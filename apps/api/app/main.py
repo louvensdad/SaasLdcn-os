@@ -12,6 +12,7 @@ from app.core.exceptions import configure_exception_handlers
 from app.core.logging import RequestIdMiddleware, RequestLoggingMiddleware, logger
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.services.automation_scheduler import automation_scheduler
 from app.services.platform_runtime_config_service import platform_runtime_config_service
 from app.routes import (
     agent_foundation,
@@ -20,6 +21,8 @@ from app.routes import (
     analytics,
     architectural_graph,
     auth,
+    automations,
+    billing,
     backend_generation,
     blueprints,
     change_requests,
@@ -36,6 +39,8 @@ from app.routes import (
     git_export,
     git_providers,
     infrastructure,
+    infra_cost,
+    features,
     framework_specialists,
     gatekeeper,
     health,
@@ -46,7 +51,10 @@ from app.routes import (
     localization,
     meta_factory,
     modernize,
+    observability,
+    permissions,
     project_rooms,
+    sandbox_policy_exceptions,
     projects,
     prompt_master,
     registry,
@@ -54,6 +62,7 @@ from app.routes import (
     stacks,
     skills,
     runtime,
+    staging,
     system_presence,
     system_status,
     system_design_visualization,
@@ -80,7 +89,14 @@ async def lifespan(_: FastAPI):
             "Generation job recovery complete: stalled=%s resumed=%s",
             recovery["stalled"], recovery["resumed"],
         )
+    # Automation scheduler (DEC-004): a real in-process background poller for
+    # "scheduled" automations. Skipped in "test" so the full suite (hundreds
+    # of app start/stops via the `client` fixture) never accumulates threads
+    # or risks a stray due automation firing mid-test.
+    if get_settings().environment != "test":
+        automation_scheduler.start()
     yield
+    automation_scheduler.stop()
 
 
 def create_application() -> FastAPI:
@@ -129,6 +145,9 @@ def create_application() -> FastAPI:
     app.include_router(language_domains.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(framework_specialists.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(infrastructure.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(infra_cost.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(features.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(automations.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(templates.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(tenants.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(skills.router, prefix=settings.api_prefix, dependencies=protected)
@@ -162,12 +181,17 @@ def create_application() -> FastAPI:
     app.include_router(project_rooms.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(change_requests.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(live_preview.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(staging.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(billing.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(test_runner.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(ai_status.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(activity_feed.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(analytics.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(documentation.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(deep_engineering.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(observability.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(permissions.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(sandbox_policy_exceptions.router, prefix=settings.api_prefix, dependencies=protected)
     return app
 
 

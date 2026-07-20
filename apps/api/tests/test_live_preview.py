@@ -63,6 +63,41 @@ _FULL_STACK_FILES = [
     ("apps/web/package.json", '{"dependencies": {"next": "14.0.0", "react": "18.0.0", "react-dom": "18.0.0"}}'),
 ]
 
+# Every unit test below fakes the backend/frontend process pair -- none of
+# them should also pay for a real Chromium launch. Only the dedicated
+# inspector tests further down inject a real/fake PreviewInspector on purpose.
+_NO_INSPECTOR = lambda url: None  # noqa: E731
+
+
+class _FakeInspector:
+    def __init__(self) -> None:
+        self.console: list[dict[str, str]] = [{"type": "error", "text": "boom", "at": "2026-07-20T00:00:00+00:00"}]
+        self.navigated_to: list[str] = []
+        self.reloaded = False
+        self.stopped = False
+        self.raise_on: set[str] = set()
+
+    def snapshot_console(self) -> list[dict[str, str]]:
+        return self.console
+
+    def screenshot(self) -> bytes:
+        if "screenshot" in self.raise_on:
+            from app.services.preview_inspector import PreviewInspectorError
+            raise PreviewInspectorError("browser crashed")
+        return b"\x89PNG\r\n"
+
+    def navigate(self, url: str) -> None:
+        if "navigate" in self.raise_on:
+            from app.services.preview_inspector import PreviewInspectorError
+            raise PreviewInspectorError("navigation failed")
+        self.navigated_to.append(url)
+
+    def reload(self) -> None:
+        self.reloaded = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
 
 # ------------------------------------------------------------------- unsupported
 
@@ -113,7 +148,7 @@ def test_start_success_transitions_to_running_and_sets_preview_url(make_project,
     project = make_project(_FULL_STACK_FILES)
     root = Path(project["generated_project_path"])
     fake = _fake_runtime(root)
-    service = LivePreviewService(host_runtime_factory=lambda: fake)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
     monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
     monkeypatch.setattr(svc, "_free_port", lambda: 45000)
 
@@ -129,7 +164,7 @@ def test_start_replaces_any_existing_session_for_the_same_project(make_project, 
     root = Path(project["generated_project_path"])
     stopped: list[str] = []
     fake = _fake_runtime(root, stopped=stopped)
-    service = LivePreviewService(host_runtime_factory=lambda: fake)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
     monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
 
     first = service.start(project["project_id"], "user_a")
@@ -147,7 +182,7 @@ def test_fail_when_backend_never_becomes_ready_stops_nothing_left_running(make_p
     started: list[str] = []
     stopped: list[str] = []
     fake = _fake_runtime(root, started=started, stopped=stopped)
-    service = LivePreviewService(host_runtime_factory=lambda: fake)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
     monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: False)
 
     result = service.start(project["project_id"], "user_a")
@@ -164,7 +199,7 @@ def test_fail_when_frontend_never_becomes_ready_stops_backend_too(make_project, 
     started: list[str] = []
     stopped: list[str] = []
     fake = _fake_runtime(root, started=started, stopped=stopped)
-    service = LivePreviewService(host_runtime_factory=lambda: fake)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
     calls = {"n": 0}
 
     def _wait_ready(url, **kw):
@@ -184,7 +219,7 @@ def test_get_returns_none_for_wrong_owner(make_project, monkeypatch):
     project = make_project(_FULL_STACK_FILES)
     root = Path(project["generated_project_path"])
     fake = _fake_runtime(root)
-    service = LivePreviewService(host_runtime_factory=lambda: fake)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
     monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
 
     result = service.start(project["project_id"], "user_a")
@@ -197,7 +232,7 @@ def test_stop_returns_false_for_unknown_session_or_wrong_owner(make_project, mon
     project = make_project(_FULL_STACK_FILES)
     root = Path(project["generated_project_path"])
     fake = _fake_runtime(root)
-    service = LivePreviewService(host_runtime_factory=lambda: fake)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
     monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
 
     result = service.start(project["project_id"], "user_a")
@@ -214,7 +249,7 @@ def test_idle_sessions_are_reaped_on_next_start(make_project, monkeypatch):
     root_a = Path(project_a["generated_project_path"])
     root_b = Path(project_b["generated_project_path"])
     stopped: list[str] = []
-    service = LivePreviewService(host_runtime_factory=lambda: _fake_runtime(root_a, stopped=stopped))
+    service = LivePreviewService(host_runtime_factory=lambda: _fake_runtime(root_a, stopped=stopped), inspector_factory=_NO_INSPECTOR)
     monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
     monkeypatch.setattr(svc, "IDLE_TIMEOUT_SECONDS", 0.01)
 
@@ -225,6 +260,84 @@ def test_idle_sessions_are_reaped_on_next_start(make_project, monkeypatch):
     service.start(project_b["project_id"], "user_a")
 
     assert service.get(first.session_id, "user_a") is None
+
+
+# ----------------------------------------------------------------------- inspector
+
+
+def _running_service_with_inspector(make_project, monkeypatch, inspector: _FakeInspector) -> tuple[LivePreviewService, str]:
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    fake = _fake_runtime(root)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=lambda url: inspector)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+    monkeypatch.setattr(svc, "_free_port", lambda: 45500)
+    result = service.start(project["project_id"], "user_a")
+    assert result.status == "running"
+    return service, result.session_id
+
+
+def test_console_log_is_none_when_session_has_no_inspector(make_project, monkeypatch):
+    service, session_id = _running_service_with_inspector(make_project, monkeypatch, _FakeInspector())
+    service._sessions[session_id].inspector = None
+
+    assert service.console_log(session_id, "user_a") is None
+
+
+def test_console_log_returns_the_inspector_buffer(make_project, monkeypatch):
+    inspector = _FakeInspector()
+    service, session_id = _running_service_with_inspector(make_project, monkeypatch, inspector)
+
+    assert service.console_log(session_id, "user_a") == inspector.console
+    assert service.console_log(session_id, "user_b") is None  # wrong owner
+
+
+def test_screenshot_returns_bytes_from_the_inspector(make_project, monkeypatch):
+    inspector = _FakeInspector()
+    service, session_id = _running_service_with_inspector(make_project, monkeypatch, inspector)
+
+    assert service.screenshot(session_id, "user_a") == b"\x89PNG\r\n"
+
+
+def test_screenshot_propagates_inspector_errors(make_project, monkeypatch):
+    from app.services.preview_inspector import PreviewInspectorError
+
+    inspector = _FakeInspector()
+    inspector.raise_on.add("screenshot")
+    service, session_id = _running_service_with_inspector(make_project, monkeypatch, inspector)
+
+    with pytest.raises(PreviewInspectorError):
+        service.screenshot(session_id, "user_a")
+
+
+def test_navigate_targets_the_frontend_port_with_a_leading_slash(make_project, monkeypatch):
+    inspector = _FakeInspector()
+    service, session_id = _running_service_with_inspector(make_project, monkeypatch, inspector)
+
+    assert service.navigate(session_id, "user_a", "produtos") is True
+    assert inspector.navigated_to == ["http://127.0.0.1:45500/produtos"]
+
+
+def test_navigate_returns_false_for_unknown_session(make_project, monkeypatch):
+    service, _ = _running_service_with_inspector(make_project, monkeypatch, _FakeInspector())
+
+    assert service.navigate("unknown", "user_a", "/") is False
+
+
+def test_reload_calls_the_inspector_and_returns_true(make_project, monkeypatch):
+    inspector = _FakeInspector()
+    service, session_id = _running_service_with_inspector(make_project, monkeypatch, inspector)
+
+    assert service.reload(session_id, "user_a") is True
+    assert inspector.reloaded is True
+
+
+def test_stop_also_stops_the_inspector(make_project, monkeypatch):
+    inspector = _FakeInspector()
+    service, session_id = _running_service_with_inspector(make_project, monkeypatch, inspector)
+
+    assert service.stop(session_id, "user_a") is True
+    assert inspector.stopped is True
 
 
 # --------------------------------------------------------------------------- routes
@@ -256,6 +369,7 @@ def test_route_get_and_stop_are_404_for_other_owner(client, make_project, monkey
     root = Path(project["generated_project_path"])
     monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
     monkeypatch.setattr(live_preview_route.live_preview_service, "_host_runtime_factory", lambda: _fake_runtime(root))
+    monkeypatch.setattr(live_preview_route.live_preview_service, "_inspector_factory", _NO_INSPECTOR)
 
     started = live_preview_route.live_preview_service.start(project["project_id"], "user_a")
     assert started.status == "running"
@@ -270,3 +384,74 @@ def test_route_get_and_stop_are_404_for_other_owner(client, make_project, monkey
     assert stop_resp.status_code == 404
 
     live_preview_route.live_preview_service._stop_internal(started.session_id)
+
+
+def _running_session_via_route(client, make_project, monkeypatch, inspector: _FakeInspector | None) -> tuple[str, dict[str, str]]:
+    owner_id, token = _register_and_login(client)
+    project = make_project(_FULL_STACK_FILES, owner=owner_id)
+    root = Path(project["generated_project_path"])
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+    monkeypatch.setattr(live_preview_route.live_preview_service, "_host_runtime_factory", lambda: _fake_runtime(root))
+    monkeypatch.setattr(
+        live_preview_route.live_preview_service, "_inspector_factory",
+        _NO_INSPECTOR if inspector is None else (lambda url: inspector),
+    )
+    started = live_preview_route.live_preview_service.start(project["project_id"], owner_id)
+    assert started.status == "running"
+    return started.session_id, {"Authorization": f"Bearer {token}"}
+
+
+def test_route_console_returns_the_buffered_entries(client, make_project, monkeypatch) -> None:
+    inspector = _FakeInspector()
+    session_id, headers = _running_session_via_route(client, make_project, monkeypatch, inspector)
+
+    response = client.get(f"/api/live-preview/{session_id}/console", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == inspector.console
+
+
+def test_route_console_is_404_for_unknown_session(client) -> None:
+    response = client.get("/api/live-preview/does-not-exist/console")
+    assert response.status_code == 404
+
+
+def test_route_screenshot_returns_png_bytes(client, make_project, monkeypatch) -> None:
+    inspector = _FakeInspector()
+    session_id, headers = _running_session_via_route(client, make_project, monkeypatch, inspector)
+
+    response = client.post(f"/api/live-preview/{session_id}/screenshot", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "image/png"
+    assert response.content == b"\x89PNG\r\n"
+
+
+def test_route_screenshot_is_502_when_the_inspector_fails(client, make_project, monkeypatch) -> None:
+    inspector = _FakeInspector()
+    inspector.raise_on.add("screenshot")
+    session_id, headers = _running_session_via_route(client, make_project, monkeypatch, inspector)
+
+    response = client.post(f"/api/live-preview/{session_id}/screenshot", headers=headers)
+
+    assert response.status_code == 502
+    assert "browser crashed" in response.json()["error"]["message"]
+
+
+def test_route_navigate_forwards_the_path_to_the_inspector(client, make_project, monkeypatch) -> None:
+    inspector = _FakeInspector()
+    session_id, headers = _running_session_via_route(client, make_project, monkeypatch, inspector)
+
+    response = client.post(f"/api/live-preview/{session_id}/navigate", json={"path": "/checkout"}, headers=headers)
+
+    assert response.status_code == 204, response.text
+    assert inspector.navigated_to and inspector.navigated_to[0].endswith("/checkout")
+
+
+def test_route_reload_is_404_for_a_session_with_no_inspector(client, make_project, monkeypatch) -> None:
+    session_id, headers = _running_session_via_route(client, make_project, monkeypatch, None)
+
+    response = client.post(f"/api/live-preview/{session_id}/reload", headers=headers)
+
+    assert response.status_code == 404
+    live_preview_route.live_preview_service._stop_internal(session_id)

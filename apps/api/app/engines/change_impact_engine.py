@@ -68,6 +68,7 @@ def analyze_impact(
     api_key: str | None = None,
     user_model_choice: str | None = None,
     use_llm: bool = True,
+    project_id: str | None = None,
 ) -> ImpactAnalysis:
     files_service = files_service or GeneratedProjectService()
     listing = files_service.list_files(project)
@@ -93,6 +94,7 @@ def analyze_impact(
             user_choice=user_model_choice,
             agent_role="change_impact",
             api_key=api_key,
+            project_id=project_id,
         )
     except LLMError:
         return _deterministic_impact(classification)

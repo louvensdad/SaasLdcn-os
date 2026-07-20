@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { CircuitBoard, LogOut, PanelLeftClose, Settings as SettingsIcon, Shield } from 'lucide-react';
+import { CircuitBoard, LogOut, PanelLeftClose, Settings as SettingsIcon, ShieldCheck, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -153,7 +153,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
 
       <div className="mx-1 mt-3 rounded-[var(--radius-md)] border p-3" style={{ borderColor: 'var(--sidebar-border)', background: 'rgba(255,255,255,0.03)' }}>
         <div className="ds-caption mb-2 flex items-center gap-2" style={{ color: 'var(--sidebar-text-muted)' }}>
-          <Shield className="h-4 w-4" />
+          <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden />
           {t('sidebar.rules')}
         </div>
         <p className="text-sm leading-6" style={{ color: 'var(--sidebar-text)', opacity: 0.85 }}>
@@ -162,6 +162,13 @@ export function Sidebar({ compact = false }: SidebarProps) {
       </div>
 
       <div className="mt-3 flex items-center gap-2 rounded-[var(--radius-md)] border p-2" style={{ borderColor: 'var(--sidebar-border)' }}>
+        <span
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-sm)] border"
+          style={{ borderColor: 'var(--sidebar-border)', background: 'rgba(255,255,255,0.03)', color: 'var(--sidebar-text-muted)' }}
+          aria-hidden
+        >
+          <UserRound className="h-4 w-4" strokeWidth={1.75} />
+        </span>
         <span
           className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-bold"
           style={{ background: 'var(--accent-gradient)', color: 'var(--control-selected-text)' }}
@@ -176,20 +183,20 @@ export function Sidebar({ compact = false }: SidebarProps) {
         <Button
           type="button"
           variant="ghost"
-          className="h-9 w-9 shrink-0 rounded-[var(--radius-sm)] p-0"
-          style={{ color: 'var(--sidebar-text-muted)' }}
+          className="h-9 w-9 shrink-0 rounded-[var(--radius-sm)] border border-[color:var(--sidebar-border)] bg-[rgba(255,255,255,0.06)] p-0 text-[color:var(--sidebar-text)] transition-colors hover:border-[color:var(--sidebar-accent)] hover:bg-[rgba(124,58,237,0.18)] hover:text-[color:var(--sidebar-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--sidebar-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[color:var(--sidebar-bg)]"
           onClick={() => router.push('/settings')}
           aria-label={t('common.settings')}
+          title={t('common.settings')}
         >
           <SettingsIcon className="h-4 w-4" />
         </Button>
         <Button
           type="button"
           variant="ghost"
-          className="h-9 w-9 shrink-0 rounded-[var(--radius-sm)] p-0"
-          style={{ color: 'var(--sidebar-text-muted)' }}
+          className="h-9 w-9 shrink-0 rounded-[var(--radius-sm)] border border-[color:var(--sidebar-border)] bg-[rgba(255,255,255,0.06)] p-0 text-[color:var(--sidebar-text)] transition-colors hover:border-[color:var(--sidebar-accent)] hover:bg-[rgba(124,58,237,0.18)] hover:text-[color:var(--sidebar-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--sidebar-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[color:var(--sidebar-bg)]"
           onClick={() => void logout()}
           aria-label={t('settings.privacy.logout')}
+          title={t('settings.privacy.logout')}
         >
           <LogOut className="h-4 w-4" />
         </Button>

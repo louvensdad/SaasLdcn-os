@@ -591,9 +591,13 @@ class SandboxExecutionRuntime(ExecutionRuntime):
         if program.endswith((".cmd", ".exe", ".bat")):
             program = Path(program).stem
         if program in _BLOCKED_PROGRAMS:
+            # Hard security boundary -- never overridable by a policy exception
+            # (vault 59 - Segurança de Runtime: exceções widen the allowlist,
+            # they never lift a block on shell/network/privilege-escalation tools).
             return f"Program '{program}' is forbidden inside the sandbox."
         if program not in _ALLOWED_PROGRAMS and not program.startswith(("mvnw", "gradlew")):
-            return f"Program '{program}' is not in the execution policy."
+            if not self._has_program_exception(request.project_id, program):
+                return f"Program '{program}' is not in the execution policy."
         if any("\x00" in part for part in request.command):
             return "NUL bytes are forbidden in command arguments."
         try:
@@ -601,6 +605,21 @@ class SandboxExecutionRuntime(ExecutionRuntime):
         except ValueError as exc:
             return str(exc)
         return ""
+
+    @staticmethod
+    def _has_program_exception(project_id: str, program: str) -> bool:
+        """Approved, time-bound widening of the allowlist for one project (vault
+        59 - Segurança de Runtime, "Exceções exigem aprovação e expiração") --
+        fault-isolated: a lookup failure must deny, not silently bypass the
+        policy it exists to enforce."""
+        if not project_id:
+            return False
+        try:
+            from app.repositories.sandbox_policy_exception_repository import SandboxPolicyExceptionRepository
+
+            return SandboxPolicyExceptionRepository().is_program_allowed(project_id, program)
+        except Exception:  # noqa: BLE001 -- deny-closed: a broken lookup must not open the gate
+            return False
 
     @staticmethod
     def _safe_cwd(cwd: str) -> str:

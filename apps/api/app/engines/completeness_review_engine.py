@@ -62,6 +62,7 @@ class CompletenessReviewEngine:
             user_choice=user_model_choice,
             agent_role="reviewer",
             api_key=api_key,
+            project_id=project_id,
         )
         payload = response.parsed if response.parsed is not None else json.loads(response.text)
         if not isinstance(payload, dict):

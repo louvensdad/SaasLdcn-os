@@ -8,7 +8,13 @@ from app.schemas.common import ApiModel
 
 
 OrganizationRole = Literal["owner", "admin", "member"]
-WorkspaceRole = Literal["owner", "admin", "member", "viewer"]
+# "member" is kept as a deprecated alias for "developer" (see app/core/permissions.py
+# canonical_role()) -- the vault's official 5-role model (Owner/Admin/Developer/
+# Reviewer/Viewer, 57 - Especificações/Matriz de permissões por ação.md) splits the
+# old undifferentiated "member" into Developer/Reviewer. Existing stored rows and
+# callers using "member" keep working unchanged -- a minor, non-breaking addition
+# per the vault's own contract-compatibility policy (old terms kept as aliases).
+WorkspaceRole = Literal["owner", "admin", "member", "developer", "reviewer", "viewer"]
 
 
 class Organization(ApiModel):

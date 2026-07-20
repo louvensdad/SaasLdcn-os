@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
+from app.core.event_catalog import emit_named_event
 from app.schemas.live_preview import LivePreviewSession, LivePreviewStatus
 from app.services.execution_runtime import HostExecutionRuntime
+from app.services.preview_inspector import PreviewInspector
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
 from app.services.runtime_functional_test_service import (
     RuntimeFunctionalTestService,
@@ -61,6 +63,7 @@ class _Session:
         self.backend_handle_id: str | None = None
         self.frontend_handle_id: str | None = None
         self.frontend_port: int | None = None
+        self.inspector: PreviewInspector | None = None
         self.status: LivePreviewStatus = "starting"
         self.reason = ""
         self.started_at = _now()
@@ -77,10 +80,15 @@ class LivePreviewService:
         self,
         host_runtime_factory: Callable[[], HostExecutionRuntime] | None = None,
         writer: ProjectWriter | None = None,
+        inspector_factory: Callable[[str], PreviewInspector | None] | None = None,
     ) -> None:
         self.workspace_root = DEFAULT_OUTPUT_ROOT.resolve()
         self._host_runtime_factory = host_runtime_factory or HostExecutionRuntime
         self.writer = writer or ProjectWriter()
+        # Injectable for the same reason host_runtime_factory is: unit tests
+        # that fake the backend/frontend process pair must not also spin up a
+        # real Chromium instance per session.
+        self._inspector_factory = inspector_factory or PreviewInspector
         self._sessions: dict[str, _Session] = {}
         self._by_project: dict[str, str] = {}
         self._lock = threading.RLock()
@@ -175,6 +183,15 @@ class LivePreviewService:
         session.frontend_port = frontend_port
         session.status = "running"
         session.touch()
+        # Best-effort: the console/error panel and screenshot button are a
+        # bonus observability layer (see preview_inspector.py), not core
+        # preview correctness -- a Playwright/Chromium problem here must
+        # never fail the preview session itself.
+        try:
+            session.inspector = self._inspector_factory(f"http://127.0.0.1:{frontend_port}/")
+        except Exception:  # noqa: BLE001
+            session.inspector = None
+        emit_named_event("PreviewStarted", owner_user_id, project_id=project_id, metadata={"session_id": session_id})
         return self._to_model(session)
 
     # ------------------------------------------------------------------ read
@@ -184,6 +201,52 @@ class LivePreviewService:
         if session is None or session.owner_user_id != owner_user_id:
             return None
         return self._to_model(session)
+
+    def get_by_project(self, project_id: str, owner_user_id: str) -> LivePreviewSession | None:
+        with self._lock:
+            session_id = self._by_project.get(project_id)
+            session = self._sessions.get(session_id) if session_id else None
+        if session is None or session.owner_user_id != owner_user_id:
+            return None
+        return self._to_model(session)
+
+    def _authorized_session(self, session_id: str, owner_user_id: str) -> _Session | None:
+        with self._lock:
+            session = self._sessions.get(session_id)
+        if session is None or session.owner_user_id != owner_user_id:
+            return None
+        return session
+
+    def console_log(self, session_id: str, owner_user_id: str) -> list[dict[str, str]] | None:
+        session = self._authorized_session(session_id, owner_user_id)
+        if session is None or session.inspector is None:
+            return None
+        session.touch()
+        return session.inspector.snapshot_console()
+
+    def screenshot(self, session_id: str, owner_user_id: str) -> bytes | None:
+        session = self._authorized_session(session_id, owner_user_id)
+        if session is None or session.inspector is None:
+            return None
+        session.touch()
+        return session.inspector.screenshot()
+
+    def navigate(self, session_id: str, owner_user_id: str, path: str) -> bool:
+        session = self._authorized_session(session_id, owner_user_id)
+        if session is None or session.inspector is None or session.frontend_port is None:
+            return False
+        target = path if path.startswith("/") else f"/{path}"
+        session.inspector.navigate(f"http://127.0.0.1:{session.frontend_port}{target}")
+        session.touch()
+        return True
+
+    def reload(self, session_id: str, owner_user_id: str) -> bool:
+        session = self._authorized_session(session_id, owner_user_id)
+        if session is None or session.inspector is None:
+            return False
+        session.inspector.reload()
+        session.touch()
+        return True
 
     # ------------------------------------------------------------------ stop
     def stop(self, session_id: str, owner_user_id: str) -> bool:
@@ -201,12 +264,15 @@ class LivePreviewService:
                 self._by_project.pop(session.project_id, None)
         if session is None:
             return
+        if session.inspector is not None:
+            session.inspector.stop()
         if session.frontend_handle_id:
             session.host_runtime.stop_background(session.frontend_handle_id)
         if session.backend_handle_id:
             session.host_runtime.stop_background(session.backend_handle_id)
         session.host_runtime.close_session(session.sandbox_id)
         session.status = "stopped"
+        emit_named_event("PreviewStopped", session.owner_user_id, project_id=session.project_id, metadata={"session_id": session_id})
 
     def _reap_idle(self) -> None:
         with self._lock:

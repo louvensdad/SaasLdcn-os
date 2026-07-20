@@ -26,7 +26,9 @@ from app.engines.functional_coverage_engine import functional_coverage_engine
 from app.engines.product_certification_engine import product_certification_engine
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.execution_plan_engine import build_execution_plan
+from app.engines import evolution_engine
 from app.engines.ground_truth_engine import ground_truth_engine
+from app.engines.metering_engine import record_consumption
 from app.engines.generation_usage import usage_totals as _usage_totals
 from app.engines.generation_pipeline_policy import BACKEND_CHUNKS, MOBILE_CHUNKS, DELIVERY_TYPES_WITH_MOBILE, PipelineStep, STEPS, logical_stages_for, steps_for
 from app.engines.performance_review_engine import performance_review_engine
@@ -254,7 +256,7 @@ class GenerationJobEngine:
                 if build_skipped else "Pipeline concluida. Projeto validado e pacote pronto.",
             )
             self._finalize_pipeline(
-                job, owner_user_id,
+                job, owner_user_id, spec=spec,
                 outcome="DEGRADED_CONTINUATION" if build_skipped else "SUCCESS",
                 message=(
                     "Pipeline concluida em modo degradado: build pulado apos o limite de auto-reparo; "
@@ -287,7 +289,7 @@ class GenerationJobEngine:
             self._log(job, job["currentStage"], "error", str(exc), exc.diagnostic.get("recommended_action"))
             self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=str(exc))
             self._record_known_problem(job, owner_user_id, steps, str(exc))
-            self._finalize_pipeline(job, owner_user_id, outcome="NEEDS_USER_ACTION", message=str(exc))
+            self._finalize_pipeline(job, owner_user_id, outcome="NEEDS_USER_ACTION", message=str(exc), spec=spec)
         except StageStalled as exc:
             # A step ran past its timeout: never leave the job 'running'. Persist the
             # checkpoint, expose a full diagnostic and let the user recover.
@@ -314,7 +316,7 @@ class GenerationJobEngine:
             self._log(job, job["currentStage"], "warning", str(exc), exc.diagnostic.get("recommended_action"))
             self._emit(job, owner_user_id, "stalled", stage=job["currentStage"], level="warning", message=str(exc))
             self._record_known_problem(job, owner_user_id, steps, str(exc))
-            self._finalize_pipeline(job, owner_user_id, outcome="STALLED", message=str(exc))
+            self._finalize_pipeline(job, owner_user_id, outcome="STALLED", message=str(exc), spec=spec)
         except Exception as exc:  # keep every checkpoint; never claim success
             job = self.repository.get(job_id, owner_user_id) or job
             job["status"] = "FAILED"
@@ -325,7 +327,7 @@ class GenerationJobEngine:
             self._log(job, job["currentStage"], "error", "Falha inesperada da pipeline.", str(exc))
             self._emit(job, owner_user_id, "error", stage=job["currentStage"], level="error", message=f"Falha inesperada da pipeline: {exc}")
             self._record_known_problem(job, owner_user_id, steps, f"Falha inesperada da pipeline: {exc}")
-            self._finalize_pipeline(job, owner_user_id, outcome="FAILED", message=f"Falha inesperada da pipeline: {exc}")
+            self._finalize_pipeline(job, owner_user_id, outcome="FAILED", message=f"Falha inesperada da pipeline: {exc}", spec=spec)
         finally:
             self.repository.release_lease(job_id, self.worker_id, attempt_id)
 
@@ -338,7 +340,7 @@ class GenerationJobEngine:
             ) is not None:
                 resumed += 1
         return {"stalled": stalled, "resumed": resumed}
-    def _finalize_pipeline(self, job: dict[str, Any], owner: str, *, outcome: str, message: str) -> None:
+    def _finalize_pipeline(self, job: dict[str, Any], owner: str, *, outcome: str, message: str, spec: ProjectSpec | None = None) -> None:
         """State Transition Finalizer: EVERY pipeline run — success, degraded
         continuation (build skipped), user-action block, stall or crash — ends
         here. It stamps finishedAt and emits the mandatory PIPELINE_COMPLETE
@@ -354,6 +356,20 @@ class GenerationJobEngine:
             message=f"PIPELINE_COMPLETE ({outcome}): {message}",
         )
         self._save(job, owner)
+        # Evolution Engine: every terminal outcome (not just success) feeds the
+        # cross-generation signal store -- fault-isolated inside record_signal.
+        if spec is not None:
+            evolution_engine.record_signal(
+                owner_user_id=owner, spec=spec, model_strategy=(job.get("executionProfile") or {}).get("model_strategy"),
+                outcome=outcome, completeness_status=job.get("completenessStatus"),
+                repair_cycles=int(job.get("buildAttempts", 0) or 0),
+            )
+        # Metering (vault 56 - Monetização e Consumo): every terminal outcome
+        # is a real, owner-attributed generation run; LLM tokens are already
+        # tallied on the job by this point regardless of outcome.
+        record_consumption(owner_user_id=owner, resource_type="generation_run", quantity=1, unit="count", origin=f"generation_job:{job['id']}")
+        tokens = int(job.get("inputTokensTotal", 0) or 0) + int(job.get("outputTokensTotal", 0) or 0)
+        record_consumption(owner_user_id=owner, resource_type="llm_tokens", quantity=tokens, unit="tokens", origin=f"generation_job:{job['id']}")
 
     def _steps_for_job(self, job_id: str, owner_user_id: str) -> list[PipelineStep]:
         """Resolve the correct per-job step list (web vs. mobile-inclusive) for
@@ -553,6 +569,15 @@ class GenerationJobEngine:
             memory = project_memory_engine.build_initial(spec, blueprint)
             job["projectMemory"] = memory.as_dict()
             self._write_json_artifact(job, owner, step, PROJECT_MEMORY_FILE, job["projectMemory"], "generated")
+            # Evolution Engine (cross-generation, owner-scoped, consultivo-only --
+            # see evolution_engine.py's module docstring for scope): fixed here,
+            # same reasoning as Project Memory above, so every LLM step sees the
+            # same snapshot rather than a moving target mid-run. Fault-isolated:
+            # a lookup failure must never block PREPARING_CONTEXT.
+            try:
+                job["evolutionInsight"] = evolution_engine.evolution_insight_for(owner, spec).model_dump(mode="json")
+            except Exception:  # noqa: BLE001 -- deliberate isolation boundary
+                job["evolutionInsight"] = None
             if self._profile(job).enable_dependency_graph:
                 self._persist_dependency_graph(job, owner, step, blueprint)
         elif step.action == "plan":
@@ -604,6 +629,15 @@ class GenerationJobEngine:
         # Ground Truth above, so it always survives a partitioned/compressed retry.
         memory = ProjectMemory.from_dict(job.get("projectMemory"))
         context += "\n\n" + project_memory_engine.prompt_block(memory)
+        # Evolution Engine: cross-generation, owner-scoped advisory (never
+        # injected on a cold start -- see evolution_engine.prompt_block()).
+        insight_data = job.get("evolutionInsight")
+        if insight_data:
+            from app.schemas.evolution import EvolutionInsight
+
+            block = evolution_engine.prompt_block(EvolutionInsight.model_validate(insight_data))
+            if block:
+                context += "\n\n" + block
         # Stack Lock was fixed before generation started (PREPARING_CONTEXT): tell
         # the frontend/mobile agent the exact anchor versions so it emits matching
         # manifests instead of relying on the post-generation Auto Version Fixer.
@@ -754,6 +788,7 @@ class GenerationJobEngine:
             future = submit_agent(
                 _run_agent, LLMRouter(), role, context, model, api_key, language, framework,
                 self._profile(job).model_strategy,
+                project_id=job.get("projectId"), context_used=["project_memory"],
             )
         except Exception:
             self.repository.settle_reserved_usage(job["id"], owner, reserved_tokens)

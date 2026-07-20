@@ -116,6 +116,7 @@ class LlmRepairEngine:
             # it -- see execution_profiles_registry.py).
             allow_cache=profile.enable_cost_optimization,
             model_strategy=profile.model_strategy,
+            project_id=str(project["project_id"]),
         )
         parsed = parse_agent_output(response.text, agent_role="repair")
 

@@ -156,6 +156,7 @@ def run_orchestrator(
     api_key: str | None = None,
     user_model_choice: str | None = None,
     preferred_language: str | None = None,
+    memory_context: str | None = None,
 ) -> OrchestratorResult:
     """Stage 1: intent -> ProjectSpec via the orchestrator system prompt.
 
@@ -170,10 +171,13 @@ def run_orchestrator(
     prior_answers = prior_answers or []
     router = router or LLMRouter()
 
+    user_turn = _compose_user_turn(raw_intent, prior_answers, preferred_language)
+    if memory_context:
+        user_turn += "\n\n" + memory_context
     response = router.route(
         LLMRequest(
             system=ORCHESTRATOR_SYSTEM_PROMPT,
-            user=_compose_user_turn(raw_intent, prior_answers, preferred_language),
+            user=user_turn,
             reasoning=ReasoningLevel.high,
             json_schema=ProjectSpec.model_json_schema(),
         ),

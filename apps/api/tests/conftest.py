@@ -21,7 +21,10 @@ from app.repositories.llm_active_selection_repository import LlmActiveSelectionR
 from app.repositories.platform_runtime_config_repository import PlatformRuntimeConfigRepository
 from app.repositories.user_preferences_repository import UserPreferencesRepository
 from app.repositories.user_repository import AuditLogRepository, UserRepository
+from app.repositories.automation_repository import AutomationRepository
 from app.repositories.change_request_repository import ChangeRequestRepository
+from app.repositories.feature_repository import FeatureRepository
+from app.repositories.staging_deployment_repository import StagingDeploymentRepository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
 from app.repositories.git_provider_repository import GitProviderRepository
@@ -34,7 +37,10 @@ from app.routes import project_rooms as project_rooms_route
 from app.routes import prompt_master as prompt_master_route
 from app.routes.auth import service as auth_route_service
 from app.routes.projects import service as project_route_service
+from app.services.automation_service import automation_service
 from app.services.download_service import DownloadService
+from app.services.feature_service import feature_service
+from app.services.staging_service import staging_service
 from app.services.git_provider_service import git_provider_service
 from app.services.llm_settings_service import llm_settings_service
 from app.services.platform_runtime_config_service import platform_runtime_config_service
@@ -65,6 +71,13 @@ def client() -> TestClient:
     settings = get_settings()
     settings.sqlite_path = database_path
     settings.database_url = database_url_for(database_path)
+    # Real signal, not cosmetic: main.py's lifespan uses this to skip starting
+    # the automation scheduler's background thread during tests (hundreds of
+    # per-test app start/stops would otherwise accumulate threads and risk a
+    # stray due automation firing mid-test). Verified this doesn't affect any
+    # existing test (only main.py's docs_url gating also reads `environment`,
+    # and no test relies on docs being enabled via the global settings object).
+    settings.environment = "test"
     Base.metadata.create_all(bind=get_engine(settings.database_url))
     isolated_service = ProjectService()
     project_route_service.project_repository = isolated_service.project_repository
@@ -80,6 +93,9 @@ def client() -> TestClient:
     # (Done before the app/lifespan starts so initialize() targets this DB.)
     project_rooms_route.service.repository = ProjectRoomRepository(database_path)
     change_requests_route.service.repository = ChangeRequestRepository(database_path)
+    feature_service.repository = FeatureRepository(database_path)
+    automation_service.repository = AutomationRepository(database_path)
+    staging_service.repository = StagingDeploymentRepository(database_path)
     modernize_route._jobs_repo = ModernizeJobRepository(database_path)
     isolated_download_service = DownloadService(DownloadRepository(database_path))
     downloads_route.service = isolated_download_service

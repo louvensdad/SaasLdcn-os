@@ -135,6 +135,8 @@ def _run_agent(
     language: str | None = None,
     framework: str | None = None,
     model_strategy: str | None = None,
+    project_id: str | None = None,
+    context_used: list[str] | None = None,
 ) -> tuple[LLMResponse, ParsedAgentOutput]:
     """Route one agent call and parse it with the tolerant parser.
 
@@ -187,6 +189,8 @@ def _run_agent(
                 agent_role=role,
                 api_key=api_key,
                 model_strategy=model_strategy,
+                project_id=project_id,
+                context_used=context_used,
             )
         except Exception as exc:  # noqa: BLE001 — never lose the reason
             if isinstance(exc, LLMError) and is_payload_too_large(exc):

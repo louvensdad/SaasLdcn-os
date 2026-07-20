@@ -13,6 +13,7 @@ from app.engines.change_classification_engine import classify_change
 from app.engines.change_impact_engine import analyze_impact
 from app.engines.change_patch_engine import ChangePatchEngine
 from app.repositories.change_request_repository import ChangeRequestRepository
+from app.repositories.feature_repository import FeatureRepository
 from app.schemas.change_request import CONSCIOUS_APPROVAL_PHRASE, ClassificationResult
 from app.services.build_validation_service import BuildValidationService
 from app.services.change_snapshot_service import ChangeSnapshotError, ChangeSnapshotService
@@ -141,6 +142,15 @@ class ChangeRequestService:
             self.files_service.list_files(project)
         except HTTPException as exc:
             raise ChangeRequestAccessError(str(exc.detail)) from exc
+        if feature_id is not None:
+            # vault 67 - Features: "Change Requests apontam para uma Feature ou
+            # são marcados como manutenção" -- a feature_id must be real, owned
+            # by the same caller, and scoped to the SAME project, not a
+            # free-text label pointing nowhere (task_id stays unvalidated: no
+            # Task entity exists yet, see feature.py's model docstring).
+            feature = FeatureRepository().get_for_owner(feature_id, owner_user_id)
+            if feature is None or feature["project_id"] != project_id:
+                raise ChangeRequestAccessError(f"Feature '{feature_id}' was not found for this project.")
 
         cr = self.repository.create(
             owner_user_id=owner_user_id, project_id=project_id, intent=intent,
@@ -162,7 +172,7 @@ class ChangeRequestService:
         if cr["status"] != "Draft":
             self._fail(cr, endpoint=endpoint, expected=["Draft"], message="Analise so e permitida a partir de Draft.", reason=f"status atual: {cr['status']}", correction="Crie um novo Change Request ou verifique o estado atual.")
 
-        classification = classify_change(cr["intent"], router=router, api_key=api_key, user_model_choice=user_model_choice, use_llm=use_llm)
+        classification = classify_change(cr["intent"], router=router, api_key=api_key, user_model_choice=user_model_choice, use_llm=use_llm, project_id=cr["project_id"])
         updated = self.repository.set_classification(change_request_id, owner_user_id, classification.model_dump())
         self._history(updated, "Change Request classificado", source="Change Classification Engine", metadata={"category": classification.category})
         self._log(updated, "POST", endpoint, 200, "success", "Classificado")
@@ -181,7 +191,7 @@ class ChangeRequestService:
 
         classification = ClassificationResult.model_validate(cr["classification"])
         project = self._project_dict(cr["project_id"])
-        impact = analyze_impact(project, cr["intent"], classification, router=router, api_key=api_key, user_model_choice=user_model_choice, use_llm=use_llm)
+        impact = analyze_impact(project, cr["intent"], classification, router=router, api_key=api_key, user_model_choice=user_model_choice, use_llm=use_llm, project_id=cr["project_id"])
 
         if not impact.affected_files:
             self._fail(cr, endpoint=endpoint, expected=["Analyzed"], message="Nao foi possivel determinar o escopo desta alteracao.", reason=impact.summary or "impact.affected_files vazio.", correction="Configure um provedor de IA (chave), ou revise o pedido para ser mais especifico.")
@@ -242,6 +252,7 @@ class ChangeRequestService:
 
             patch_result = self.patch_engine.generate_patch(
                 cr["intent"], scope, snapshot, router=router, user_model_choice=user_model_choice, api_key=api_key,
+                project_id=cr["project_id"],
             )
 
             if patch_result.rejected_out_of_scope:

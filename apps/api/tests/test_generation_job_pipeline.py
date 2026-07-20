@@ -785,7 +785,7 @@ def test_pipeline_advances_through_backend_to_frontend_and_completes(isolated_en
     engine, repository, _ = isolated_engine
     job = _create(engine)
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None, **_kwargs):  # noqa: ANN001
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
             parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))
@@ -823,7 +823,7 @@ def test_mobile_delivery_type_pipeline_advances_through_mobile_stage_and_complet
     job = _create_mobile(engine)
     assert "mobile" in job["stageStatuses"]  # stageStatuses already reflects the mobile-inclusive step list
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None, **_kwargs):  # noqa: ANN001
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
             parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))
@@ -891,7 +891,7 @@ def test_mobile_job_reaches_ready_and_packages_real_mobile_zip(isolated_engine, 
     engine, repository, _ = isolated_engine
     job = _create_mobile(engine)
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None, **_kwargs):  # noqa: ANN001
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
             parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: Orders\n  version: 1.0.0\npaths: {}\n"))
@@ -1365,7 +1365,7 @@ def test_frontend_llm_context_includes_stack_lock_hint(isolated_engine, monkeypa
 
     captured_contexts: dict[str, str] = {}
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None, **_kwargs):  # noqa: ANN001
         captured_contexts[role] = context
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
@@ -1399,7 +1399,7 @@ def test_project_manifest_is_written_before_functional_completeness_is_evaluated
     monkeypatch.setattr(engine, "_write_project_manifest", lambda *a, **k: call_order.append("manifest"))
     monkeypatch.setattr(engine, "_evaluate_functional_completeness", lambda *a, **k: call_order.append("completeness"))
 
-    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None):  # noqa: ANN001
+    def _fake_agent(router, role, context, model, api_key, language=None, framework=None, model_strategy=None, **_kwargs):  # noqa: ANN001
         parsed = ParsedAgentOutput(raw_response="ok")
         if role == "contracts":
             parsed.files.append(EmittedFile("openapi.yaml", "openapi: 3.1.0\ninfo:\n  title: x\n  version: 1.0.0\npaths: {}\n"))

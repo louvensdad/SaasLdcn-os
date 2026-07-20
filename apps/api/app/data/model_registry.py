@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 # Model capability + cost registry for the multi-LLM router.
@@ -149,17 +150,60 @@ PROFILE_MODEL_OVERRIDES: dict[str, dict[str, str]] = {
 }
 
 
+@dataclass(frozen=True)
+class ModelResolution:
+    """Real output of the routing decision (AI decision-observability, vault
+    65 - Observabilidade de IA): not just the winning model, but WHICH rule
+    fired and what the other real candidates were -- so a decision trace can
+    later explain "why this model" without guessing."""
+
+    model: str
+    policy: str  # "user_choice" | "profile_override" | "role_hint" | "default"
+    alternatives: list[dict[str, str]]  # [{"policy": ..., "model": ...}, ...] -- real losing candidates, never invented
+
+
+def resolve_model_detailed(
+    user_choice: str | None = None, agent_role: str | None = None, model_strategy: str | None = None,
+) -> ModelResolution:
+    profile_candidate = None
+    overrides = PROFILE_MODEL_OVERRIDES.get(model_strategy or "")
+    if overrides and agent_role and overrides.get(agent_role) in MODEL_REGISTRY:
+        profile_candidate = overrides[agent_role]
+    role_candidate = None
+    if agent_role and ROLE_MODEL_HINTS.get(agent_role) in MODEL_REGISTRY:
+        role_candidate = ROLE_MODEL_HINTS[agent_role]
+
+    if user_choice and user_choice in MODEL_REGISTRY:
+        alternatives = [
+            {"policy": policy, "model": candidate}
+            for policy, candidate in (
+                ("profile_override", profile_candidate),
+                ("role_hint", role_candidate),
+                ("default", DEFAULT_MODEL),
+            )
+            if candidate and candidate != user_choice
+        ]
+        return ModelResolution(model=user_choice, policy="user_choice", alternatives=alternatives)
+
+    if profile_candidate:
+        alternatives = [
+            {"policy": policy, "model": candidate}
+            for policy, candidate in (("role_hint", role_candidate), ("default", DEFAULT_MODEL))
+            if candidate and candidate != profile_candidate
+        ]
+        return ModelResolution(model=profile_candidate, policy="profile_override", alternatives=alternatives)
+
+    if role_candidate:
+        alternatives = [{"policy": "default", "model": DEFAULT_MODEL}] if DEFAULT_MODEL != role_candidate else []
+        return ModelResolution(model=role_candidate, policy="role_hint", alternatives=alternatives)
+
+    return ModelResolution(model=DEFAULT_MODEL, policy="default", alternatives=[])
+
+
 def resolve_model(
     user_choice: str | None = None, agent_role: str | None = None, model_strategy: str | None = None,
 ) -> str:
-    if user_choice and user_choice in MODEL_REGISTRY:
-        return user_choice
-    overrides = PROFILE_MODEL_OVERRIDES.get(model_strategy or "")
-    if overrides and agent_role and overrides.get(agent_role) in MODEL_REGISTRY:
-        return overrides[agent_role]
-    if agent_role and ROLE_MODEL_HINTS.get(agent_role) in MODEL_REGISTRY:
-        return ROLE_MODEL_HINTS[agent_role]
-    return DEFAULT_MODEL
+    return resolve_model_detailed(user_choice=user_choice, agent_role=agent_role, model_strategy=model_strategy).model
 
 
 # Token Intelligence cost ladder (Engineering Policy gap #7): cheapest first,

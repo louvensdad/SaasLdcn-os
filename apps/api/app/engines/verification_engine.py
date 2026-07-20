@@ -129,7 +129,7 @@ def _repair_context(spec: ProjectSpec, report, files_service: GeneratedProjectSe
 def _run_repair(
     router: LLMRouter, context: str, user_model_choice: str | None, api_key: str | None,
     language: str | None = None, framework: str | None = None, allow_cache: bool = True,
-    model_strategy: str | None = None,
+    model_strategy: str | None = None, project_id: str | None = None,
 ):
     response = router.route(
         _agent_request(system_prompt_for("repair", language, framework), context, "repair"),
@@ -144,6 +144,7 @@ def _run_repair(
         # Gated by the execution profile's enable_cost_optimization (Enterprise
         # disables it -- see execution_profiles_registry.py).
         allow_cache=allow_cache,
+        project_id=project_id,
     )
     return parse_agent_output(response.text, agent_role="repair")
 
@@ -191,6 +192,7 @@ def iter_verification(
                 router, context, repair_model_choice, api_key,
                 language=spec.suggested_stack.language, framework=spec.suggested_stack.framework,
                 allow_cache=profile.enable_cost_optimization, model_strategy=profile.model_strategy,
+                project_id=project_id,
             ),
             repair_holder,
         )

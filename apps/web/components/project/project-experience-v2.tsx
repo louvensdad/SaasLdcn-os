@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
   Bot,
+  Camera,
   CheckCircle2,
   ChevronRight,
   Cloud,
@@ -17,6 +18,8 @@ import {
   GitBranch,
   GitPullRequestArrow,
   Layers3,
+  Maximize2,
+  Minimize2,
   Monitor,
   Package,
   Play,
@@ -45,7 +48,7 @@ import { useGeneratedFileContent } from '@/hooks/use-generated-file-content';
 import { useGeneratedProjectQuality } from '@/hooks/use-generated-project-quality';
 import { usePrepareDownload } from '@/hooks/use-prepare-download';
 import { useGitProviderConnection } from '@/hooks/use-git-providers';
-import { livePreviewClient, type LivePreviewSession } from '@/lib/api/live-preview';
+import { livePreviewClient, type ConsoleLogEntry, type LivePreviewSession } from '@/lib/api/live-preview';
 import { useLocale } from '@/hooks/use-locale';
 import { useAuthStore } from '@/stores/use-auth-store';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
@@ -571,10 +574,59 @@ function FileRail({ files, selectedPath, onSelect }: { readonly files: readonly 
   return <div className="max-h-[540px] overflow-auto border-r border-[color:var(--border)] p-3">{files.map((file) => <button key={file.relative_path} type="button" onClick={() => onSelect(file.relative_path)} className={cn('focus-ring mb-1 flex w-full items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left text-xs', selectedPath === file.relative_path ? 'bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'text-[color:var(--muted)] hover:bg-white/5')} aria-label={`Selecionar arquivo gerado ${file.relative_path}`}><FileCode2 className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{file.relative_path}</span></button>)}</div>;
 }
 
+const LIVE_PREVIEW_DEVICE_MODES = [
+  { id: 'desktop' as const, label: 'Desktop', icon: Monitor, width: '100%' },
+  { id: 'tablet' as const, label: 'Tablet', icon: Tablet, width: '768px' },
+  { id: 'mobile' as const, label: 'Celular', icon: Smartphone, width: '390px' },
+];
+
 function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
   const [session, setSession] = useState<LivePreviewSession | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deviceMode, setDeviceMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+  const [path, setPath] = useState('/');
+  const [pathInput, setPathInput] = useState('/');
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [consoleEntries, setConsoleEntries] = useState<ConsoleLogEntry[]>([]);
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [screenshotBusy, setScreenshotBusy] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!consoleOpen || session?.status !== 'running') return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const entries = await livePreviewClient.console(session.session_id);
+        if (!cancelled) setConsoleEntries(entries);
+      } catch {
+        // best-effort -- the inspector browser may not be available yet
+      }
+    };
+    void poll();
+    const interval = setInterval(poll, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [consoleOpen, session?.session_id, session?.status]);
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      setFullscreen(Boolean(document.fullscreenElement));
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (screenshotUrl) URL.revokeObjectURL(screenshotUrl);
+    };
+  }, [screenshotUrl]);
 
   async function start() {
     setBusy(true);
@@ -582,6 +634,8 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
     try {
       const result = await livePreviewClient.start(projectId);
       setSession(result);
+      setPath('/');
+      setPathInput('/');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Falha ao iniciar o preview ao vivo.');
     } finally {
@@ -598,7 +652,46 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
       // best-effort -- the session may already be gone (idle-reaped)
     } finally {
       setSession(null);
+      setConsoleOpen(false);
+      setConsoleEntries([]);
       setBusy(false);
+    }
+  }
+
+  function refresh() {
+    setRefreshNonce((value) => value + 1);
+    if (session?.session_id) void livePreviewClient.reload(session.session_id).catch(() => {});
+  }
+
+  function navigateTo(nextPath: string) {
+    const normalized = nextPath.startsWith('/') ? nextPath : `/${nextPath}`;
+    setPath(normalized);
+    setPathInput(normalized);
+    setRefreshNonce((value) => value + 1);
+    if (session?.session_id) void livePreviewClient.navigate(session.session_id, normalized).catch(() => {});
+  }
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void containerRef.current?.requestFullscreen();
+    }
+  }
+
+  async function captureScreenshot() {
+    if (!session?.session_id) return;
+    setScreenshotBusy(true);
+    try {
+      const blob = await livePreviewClient.screenshot(session.session_id);
+      setScreenshotUrl((previous) => {
+        if (previous) URL.revokeObjectURL(previous);
+        return URL.createObjectURL(blob);
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Falha ao capturar screenshot.');
+    } finally {
+      setScreenshotBusy(false);
     }
   }
 
@@ -638,21 +731,99 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
     );
   }
 
+  const previewOrigin = (session.preview_url ?? '').replace(/\/$/, '');
+  const iframeSrc = previewOrigin ? `${previewOrigin}${path}` : '';
+  const activeDevice = LIVE_PREVIEW_DEVICE_MODES.find((mode) => mode.id === deviceMode) ?? LIVE_PREVIEW_DEVICE_MODES[0];
+
   return (
-    <Card className="overflow-hidden p-0">
+    <div ref={containerRef}>
+    <Card className={cn('overflow-hidden p-0', fullscreen && 'bg-[color:var(--surface-2)]')}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--border)] p-4">
         <div className="flex items-center gap-2">
           <Badge tone="success">ao vivo</Badge>
           <span className="font-mono text-xs text-[color:var(--muted)]">{session.session_id}</span>
         </div>
-        <Button type="button" variant="secondary" loading={busy} onClick={() => void stop()}><Square className="h-4 w-4" aria-hidden />Parar preview</Button>
+        <div className="flex items-center gap-1">
+          {LIVE_PREVIEW_DEVICE_MODES.map((mode) => (
+            <Button
+              key={mode.id}
+              type="button"
+              variant={mode.id === deviceMode ? 'soft' : 'ghost'}
+              className="px-2.5 py-2"
+              title={mode.label}
+              aria-pressed={mode.id === deviceMode}
+              onClick={() => setDeviceMode(mode.id)}
+            >
+              <mode.icon className="h-4 w-4" aria-hidden />
+            </Button>
+          ))}
+          <Button type="button" variant="ghost" className="px-2.5 py-2" title="Console e erros" aria-pressed={consoleOpen} onClick={() => setConsoleOpen((value) => !value)}>
+            <TerminalSquare className="h-4 w-4" aria-hidden />
+          </Button>
+          <Button type="button" variant="ghost" className="px-2.5 py-2" title="Capturar screenshot" loading={screenshotBusy} onClick={() => void captureScreenshot()}>
+            <Camera className="h-4 w-4" aria-hidden />
+          </Button>
+          <Button type="button" variant="ghost" className="px-2.5 py-2" title="Tela cheia" onClick={toggleFullscreen}>
+            {fullscreen ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}
+          </Button>
+          <Button type="button" variant="secondary" loading={busy} onClick={() => void stop()}><Square className="h-4 w-4" aria-hidden />Parar preview</Button>
+        </div>
       </div>
-      <iframe
-        title="Preview ao vivo do projeto"
-        src={session.preview_url ?? ''}
-        className="h-[720px] w-full bg-white"
-      />
+      <form
+        className="flex items-center gap-2 border-b border-[color:var(--border)] bg-black/10 p-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          navigateTo(pathInput);
+        }}
+      >
+        <Button type="button" variant="ghost" className="px-2.5 py-2" title="Recarregar" onClick={refresh}>
+          <RefreshCw className="h-4 w-4" aria-hidden />
+        </Button>
+        <span className="truncate rounded-[var(--radius-sm)] bg-black/20 px-2 py-1 font-mono text-xs text-[color:var(--muted)]">{previewOrigin}</span>
+        <input
+          type="text"
+          value={pathInput}
+          onChange={(event) => setPathInput(event.target.value)}
+          placeholder="/rota"
+          aria-label="Navegar para um caminho do app gerado"
+          className="focus-ring min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[color:var(--border)] bg-transparent px-2 py-1 font-mono text-xs text-[color:var(--text)]"
+        />
+      </form>
+      {error ? <p className="border-b border-[color:var(--border)] p-2 text-xs text-[color:var(--danger)]">{error}</p> : null}
+      <div className="flex justify-center bg-black/20 p-4">
+        <iframe
+          key={refreshNonce}
+          title="Preview ao vivo do projeto"
+          src={iframeSrc}
+          style={{ width: activeDevice.width, maxWidth: '100%' }}
+          className={cn('bg-white transition-[width]', fullscreen ? 'h-[calc(100vh-160px)]' : 'h-[720px]')}
+        />
+      </div>
+      {consoleOpen ? (
+        <div className="max-h-56 overflow-auto border-t border-[color:var(--border)] bg-black/40 p-3 font-mono text-xs">
+          {consoleEntries.length === 0 ? (
+            <p className="text-[color:var(--muted)]">Nenhum erro ou aviso registrado ainda.</p>
+          ) : (
+            consoleEntries.map((entry, index) => (
+              <p key={`${entry.at}-${index}`} className={cn(entry.type === 'error' || entry.type === 'pageerror' ? 'text-[color:var(--danger)]' : 'text-[color:var(--warning)]')}>
+                <span className="text-[color:var(--muted-2)]">[{entry.at}]</span> {entry.text}
+              </p>
+            ))
+          )}
+        </div>
+      ) : null}
+      {screenshotUrl ? (
+        <div className="border-t border-[color:var(--border)] p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-semibold text-[color:var(--text)]">Screenshot capturado</p>
+            <Button type="button" variant="ghost" className="px-2 py-1 text-xs" onClick={() => setScreenshotUrl(null)}>Fechar</Button>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- a captured screenshot is an opaque blob URL, not an optimizable static asset */}
+          <img src={screenshotUrl} alt="Screenshot do preview ao vivo" className="max-h-96 w-full rounded-[var(--radius-md)] border border-[color:var(--border)] object-contain" />
+        </div>
+      ) : null}
     </Card>
+    </div>
   );
 }
 

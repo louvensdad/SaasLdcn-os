@@ -11,3 +11,12 @@ export interface LivePreviewSession {
   readonly started_at: string;
   readonly last_activity_at: string;
 }
+
+// Mirrors app/schemas/live_preview.py's ConsoleLogEntry. Backed by a real
+// headless Chromium page (preview_inspector.py), not the iframe itself --
+// the parent page can never legally read a cross-origin iframe's console.
+export interface ConsoleLogEntry {
+  readonly type: string;
+  readonly text: string;
+  readonly at: string;
+}

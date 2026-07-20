@@ -717,3 +717,57 @@ def test_delete_project_room_is_owner_scoped(client: TestClient) -> None:
 
     # The owner still sees the room untouched.
     assert client.get(f"/api/project-rooms/{room['room_id']}").status_code == 200
+
+
+# --- named events + global state machine -------------------------------------- #
+
+def test_create_room_emits_a_project_created_event(client: TestClient) -> None:
+    room = _create_room(client, title="Sala com evento")
+
+    feed = client.get("/api/activity-feed", params={"category": "project"})
+    assert feed.status_code == 200, feed.text
+    matches = [item for item in feed.json()["items"] if item["project_id"] == room["room_id"] and item["action"] == "created"]
+    assert len(matches) == 1
+    assert matches[0]["source"] == "event_catalog"
+    assert matches[0]["metadata"]["payload_version"] == 1
+
+
+def test_generate_blueprint_emits_a_blueprint_generated_event(client: TestClient) -> None:
+    room_id = _approved_prompt_room(client)
+    generated = client.post(f"/api/project-rooms/{room_id}/blueprint")
+    assert generated.status_code == 200, generated.text
+
+    feed = client.get("/api/activity-feed", params={"category": "project"})
+    assert feed.status_code == 200, feed.text
+    matches = [item for item in feed.json()["items"] if item["project_id"] == room_id and item["action"] == "blueprint_generated"]
+    assert len(matches) == 1
+    assert matches[0]["metadata"]["version"] == 1
+
+
+def test_abstract_state_reflects_room_status_before_generation(client: TestClient) -> None:
+    room = _create_room(client, title="Sala em rascunho")
+    response = client.get(f"/api/project-rooms/{room['room_id']}/abstract-state")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"abstract_state": "Idle", "room_status": "DRAFT"}
+
+    room_id = _approved_prompt_room(client)
+    response = client.get(f"/api/project-rooms/{room_id}/abstract-state")
+    assert response.status_code == 200, response.text
+    assert response.json()["abstract_state"] == "Planning"
+    assert response.json()["room_status"] == "PROMPT_APPROVED"
+
+
+def test_abstract_state_is_owner_scoped(client: TestClient) -> None:
+    room = _create_room(client, title="Sala privada")
+    other_token = _register_second_user(client)
+
+    foreign = client.get(
+        f"/api/project-rooms/{room['room_id']}/abstract-state",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert foreign.status_code == 404
+
+
+def test_abstract_state_unknown_room_is_404(client: TestClient) -> None:
+    response = client.get("/api/project-rooms/does-not-exist/abstract-state")
+    assert response.status_code == 404

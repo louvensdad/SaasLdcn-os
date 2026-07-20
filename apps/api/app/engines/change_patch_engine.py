@@ -75,6 +75,7 @@ class ChangePatchEngine:
         router: LLMRouter | None = None,
         user_model_choice: str | None = None,
         api_key: str | None = None,
+        project_id: str | None = None,
     ) -> ChangePatchResult:
         context = self._context_for(intent, scope, snapshot)
         response = (router or LLMRouter()).route(
@@ -82,6 +83,7 @@ class ChangePatchEngine:
             user_choice=user_model_choice,
             agent_role="change_request",
             api_key=api_key,
+            project_id=project_id,
         )
         parsed = parse_agent_output(response.text, agent_role="change_request")
 

@@ -20,8 +20,10 @@ from app.models.user import User
 
 
 ORG_ADMIN_ROLES = frozenset({"owner", "admin"})
-WORKSPACE_WRITE_ROLES = frozenset({"owner", "admin", "member"})
-WORKSPACE_ROLES = frozenset({"owner", "admin", "member", "viewer"})
+# "member" kept for back-compat (see app/schemas/tenant.py's WorkspaceRole comment);
+# "developer" is its 5-role-model successor -- both grant the same write access here.
+WORKSPACE_WRITE_ROLES = frozenset({"owner", "admin", "member", "developer"})
+WORKSPACE_ROLES = frozenset({"owner", "admin", "member", "developer", "reviewer", "viewer"})
 
 
 class TenantAccessError(RuntimeError):

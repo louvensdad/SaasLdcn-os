@@ -9,10 +9,17 @@ from fastapi import APIRouter, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.core.deps import CurrentUser
+from app.engines.evolution_engine import evolution_insight_for
+from app.engines.global_state_mapping import abstract_state_for
 from app.engines.llm.base import LLMError
 from app.engines.work_estimation_engine import estimate_generation_effort
+from app.repositories.memory_repository import MemoryRepository
+from app.schemas.evolution import EvolutionInsight
+from app.schemas.memory import CorrectMemoryRequest, Memory
 from app.schemas.orchestrator import ProjectSpec
 from app.schemas.work_estimate import WorkEstimate
+from app.services.live_preview_service import live_preview_service
+from app.services.staging_service import staging_service
 from app.schemas.project_room import (
     AcknowledgePreviewRequest,
     CreateRoomRequest,
@@ -180,6 +187,77 @@ def get_project_room_work_estimate(room_id: str, user: CurrentUser) -> WorkEstim
     return estimate_generation_effort(
         spec, room.get("architecture_blueprint"), project_name=room.get("title") or ""
     )
+
+
+@router.get("/project-rooms/{room_id}/evolution-insight", response_model=EvolutionInsight)
+def get_project_room_evolution_insight(room_id: str, user: CurrentUser) -> EvolutionInsight:
+    """Evolution Engine (consultivo, owner-scoped only -- see evolution_engine.py):
+    what this ACCOUNT's own past generations with a similar stack looked like."""
+    room = _require(service.get_room(room_id, user["user_id"]))
+    if not room.get("spec"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Spec ainda nao foi compilado para este projeto.",
+        )
+    spec = ProjectSpec.model_validate(room["spec"])
+    return evolution_insight_for(user["user_id"], spec)
+
+
+@router.get("/project-rooms/{room_id}/abstract-state")
+def get_project_room_abstract_state(room_id: str, user: CurrentUser) -> dict[str, str | None]:
+    """Máquina de Estados Global (vault 44 - Estados): the room/job's real,
+    granular status translated into the vault's 12-bucket conceptual model.
+    See global_state_mapping.py for the real semantic mismatches this
+    translation surfaces rather than hides."""
+    room = _require(service.get_room(room_id, user["user_id"]))
+    live_preview_status = None
+    staging_status = None
+    generated_project_id = room.get("generated_project_id")
+    if generated_project_id:
+        preview = live_preview_service.get_by_project(generated_project_id, user["user_id"])
+        live_preview_status = preview.status if preview else None
+        staging = staging_service.get(generated_project_id, user["user_id"])
+        staging_status = staging.status if staging else None
+    state = abstract_state_for(
+        room_status=room.get("status"), live_preview_status=live_preview_status, staging_status=staging_status,
+    )
+    return {"abstract_state": state, "room_status": room.get("status")}
+
+
+@router.get("/project-rooms/{room_id}/memories", response_model=list[Memory])
+def list_project_room_memories(room_id: str, user: CurrentUser) -> list[Memory]:
+    """Memory Engine (vault 28 - Contexto + 54 - Memória e Conhecimento):
+    "Usuário pode consultar, corrigir e excluir contexto." Read side of that
+    acceptance criterion -- correct/delete follow below."""
+    _require(service.get_room(room_id, user["user_id"]))
+    rows = MemoryRepository().list_for_scope(user["user_id"], "project", room_id)
+    return [Memory.model_validate(row) for row in rows]
+
+
+def _require_own_memory(room_id: str, memory_id: str, user_id: str) -> dict[str, Any]:
+    _require(service.get_room(room_id, user_id))
+    memory = MemoryRepository().get(memory_id)
+    if memory is None or memory["owner_user_id"] != user_id or memory["scope_id"] != room_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memória não encontrada.")
+    return memory
+
+
+@router.put("/project-rooms/{room_id}/memories/{memory_id}", response_model=Memory)
+def correct_project_room_memory(room_id: str, memory_id: str, payload: CorrectMemoryRequest, user: CurrentUser) -> Memory:
+    memory = _require_own_memory(room_id, memory_id, user["user_id"])
+    if memory["status"] != "active":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Memória não está mais ativa.")
+    corrected = MemoryRepository().correct(memory_id, new_content=payload.content)
+    return Memory.model_validate(corrected)
+
+
+@router.delete("/project-rooms/{room_id}/memories/{memory_id}", response_model=Memory)
+def delete_project_room_memory(room_id: str, memory_id: str, user: CurrentUser) -> Memory:
+    memory = _require_own_memory(room_id, memory_id, user["user_id"])
+    if memory["status"] == "deleted":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Memória já foi excluída.")
+    deleted = MemoryRepository().soft_delete(memory_id)
+    return Memory.model_validate(deleted)
 
 
 @router.post("/project-rooms/{room_id}/message", response_model=ProjectRoom)

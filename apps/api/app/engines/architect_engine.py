@@ -59,6 +59,8 @@ def build_blueprint(
                 user_choice=user_model_choice,
                 api_key=api_key,
                 model_strategy=model_strategy,
+                agent_role="architect",
+                project_id=project_id,
             )
             if not response.served_by_fallback:
                 latency_ms = _elapsed_ms(started)
