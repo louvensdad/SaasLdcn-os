@@ -407,7 +407,12 @@
   gap: 0.4rem;
   font-size: 0.8125rem;
   font-weight: 600;
-  animation: lp-fade-right 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: lp-slide-right 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes lp-slide-right {
+  from { transform: translateX(14px); }
+  to { transform: translateX(0); }
 }
 
 @keyframes lp-fade-right {
