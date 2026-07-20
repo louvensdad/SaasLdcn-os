@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from app.core.authorization import PermissionDeniedError, require_permission
 from app.core.config import get_settings
 from app.core.deps import CurrentUser
 from app.engines.auto_repair_engine import auto_repair_engine
@@ -171,17 +172,15 @@ def _generation_llm_context(
 def _writable_workspace(user: dict, requested_workspace_id: str | None) -> dict:
     repository = TenantRepository()
     if requested_workspace_id:
+        # Permission engine is authoritative for execute_build and audits the decision.
         try:
-            return repository.require_workspace(
-                requested_workspace_id,
-                user["user_id"],
-                WORKSPACE_WRITE_ROLES,
-            )
-        except TenantAccessError as exc:
+            require_permission("execute_build", requested_workspace_id, user["user_id"], tenant_repo=repository)
+        except PermissionDeniedError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Workspace not found or insufficient permission.",
             ) from exc
+        return repository.get_workspace_for_user(requested_workspace_id, user["user_id"])
     workspace = repository.personal_workspace(user["user_id"])
     return workspace or repository.ensure_personal_workspace(user["user_id"], user["full_name"])
 
