@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { CircuitBoard, LogOut, PanelLeftClose, Settings as SettingsIcon, ShieldCheck, UserRound } from 'lucide-react';
+import { LogOut, PanelLeftClose, Settings as SettingsIcon, ShieldCheck, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -60,7 +60,11 @@ export function Sidebar({ compact = false }: SidebarProps) {
             className="relative flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] border"
             style={{ borderColor: 'var(--sidebar-border)', background: 'rgba(255,255,255,0.04)' }}
           >
-            <CircuitBoard className="h-5 w-5" strokeWidth={1.75} style={{ color: 'var(--sidebar-accent)' }} />
+            <img
+              src="/ldcn-logo.png"
+              alt={t('product.name')}
+              className="h-8 w-8 object-contain"
+            />
           </div>
           <div>
             <p className="type-data text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--sidebar-text-muted)' }}>
@@ -188,7 +192,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
           aria-label={t('common.settings')}
           title={t('common.settings')}
         >
-          <SettingsIcon className="h-4 w-4" />
+          <SettingsIcon className="h-5 w-5 text-cyan-300 transition-colors hover:text-cyan-200" strokeWidth={2.25} aria-hidden />
         </Button>
         <Button
           type="button"
@@ -198,7 +202,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
           aria-label={t('settings.privacy.logout')}
           title={t('settings.privacy.logout')}
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-5 w-5 text-violet-300 transition-colors hover:text-violet-200" strokeWidth={2.25} aria-hidden />
         </Button>
       </div>
     </motion.aside>

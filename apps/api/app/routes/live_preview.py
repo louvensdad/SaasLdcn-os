@@ -3,8 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Response, status
 
 from app.core.deps import CurrentUser
+from app.repositories.project_repository import ProjectRepository
+from app.repositories.tenant_repository import TenantRepository
 from app.schemas.live_preview import ConsoleLogEntry, LivePreviewSession, NavigateRequest, StartLivePreviewRequest
 from app.services.live_preview_service import LivePreviewAccessError, live_preview_service
+from app.services.plan_access_engine import PlanAccessDeniedError, PlanAccessEngine
 from app.services.preview_inspector import PreviewInspectorError
 
 router = APIRouter(tags=["live-preview"])
@@ -12,8 +15,26 @@ router = APIRouter(tags=["live-preview"])
 _NOT_FOUND_DETAIL = "Live preview session não encontrada, não está em execução, ou o navegador de inspeção não está disponível."
 
 
+def _check_preview_plan_access(user: dict, project_id: str) -> None:
+    # Best-effort: a project_id that doesn't resolve to a tracked workspace
+    # (ad-hoc/API usage, same posture meta_factory.py already takes for an
+    # unresolvable projectId) is not gated here -- there is no organization to
+    # check a plan against.
+    project = ProjectRepository().get_project(project_id, user["user_id"])
+    if project is None or not project.get("workspace_id"):
+        return
+    workspace = TenantRepository().get_workspace_for_user(project["workspace_id"], user["user_id"])
+    if workspace is None:
+        return
+    try:
+        PlanAccessEngine().check_preview_create(user_id=user["user_id"], organization_id=workspace["organization_id"], project_id=project_id)
+    except PlanAccessDeniedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.to_detail()) from exc
+
+
 @router.post("/live-preview/start", response_model=LivePreviewSession)
 def start_live_preview(payload: StartLivePreviewRequest, user: CurrentUser) -> LivePreviewSession:
+    _check_preview_plan_access(user, payload.project_id)
     try:
         return live_preview_service.start(payload.project_id, user["user_id"])
     except LivePreviewAccessError as exc:

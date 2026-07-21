@@ -423,8 +423,8 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
       <section id="live-preview-runtime" className="scroll-mt-24 space-y-4">
         <SectionTitle
           eyebrow="01b"
-          title="Preview ao vivo"
-          description="Sobe o backend e o frontend gerados de verdade e abre um link temporario para navegar dentro deles -- diferente do preview de arquivos acima. Disponivel apenas em ambiente local/dev, para projetos Python/FastAPI + Next.js."
+          title={t('livePreview.sectionTitle')}
+          description={t('livePreview.sectionDescription')}
         />
         <LivePreviewPanel projectId={project.project_id} />
       </section>
@@ -532,7 +532,7 @@ function ProjectHeroV2({ project, category, signature, generated, deployReady, q
           <div className="flex flex-wrap gap-2"><Badge tone="accent">{category}</Badge><Badge tone={project.status === 'generated' ? 'success' : 'warning'}>{formatStatus(project.status)}</Badge><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? t('projectXp.hero.deployReady') : t('projectXp.hero.deployPending')}</Badge></div>
           <div><p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--accent)]">{t('projectXp.hero.eyebrow')}</p><h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-[color:var(--text)] md:text-6xl">{project.project_name}</h1><p className="mt-4 max-w-2xl text-base leading-7 ds-text-secondary">{t('projectXp.hero.description')}</p></div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><HeroDatum label="Stack" value={`${project.technology_graph.language.name} / ${project.technology_graph.framework.name}`} /><HeroDatum label="Build" value={quality ? (quality.passed ? 'validado' : 'falhou') : generated ? 'verificando' : 'sem artefatos'} /><HeroDatum label="Confidence" value="nao informado" /><HeroDatum label="Empresa" value="nao informada" /></div>
-          <div className="flex flex-wrap gap-3"><AnchorButton href="#live-preview" icon={Monitor}>{t('projectXp.hero.openPreview')}</AnchorButton><AnchorButton href="#code" icon={Code2}>{t('projectXp.hero.openCode')}</AnchorButton><LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare}>{t('projectXp.lab.open')}</LinkButton><LinkButton href={`/meta-factory?projectId=${project.project_id}`} icon={Layers3}>{t('projectXp.hero.openMetaFactory')}</LinkButton><LinkButton href={`/change-requests?projectId=${project.project_id}`} icon={GitPullRequestArrow}>Alteracoes</LinkButton><LinkButton href="/settings#integrations" icon={GitBranch}>{t('projectXp.hero.openGitHub')}</LinkButton><AnchorButton href="#deploy" icon={Rocket}>{t('projectXp.hero.openDeploy')}</AnchorButton></div>
+          <div className="flex flex-wrap gap-3"><AnchorButton href="#live-preview" icon={Monitor}>{t('projectXp.hero.openPreview')}</AnchorButton><AnchorButton href="#code" icon={Code2}>{t('projectXp.hero.openCode')}</AnchorButton><LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare}>{t('projectXp.lab.open')}</LinkButton><LinkButton href={`/meta-factory?projectId=${project.project_id}`} icon={Layers3}>{t('projectXp.hero.openMetaFactory')}</LinkButton><LinkButton href={`/change-requests?projectId=${project.project_id}`} icon={GitPullRequestArrow}>{t('projectXp.hero.openChangeRequests')}</LinkButton><LinkButton href="/settings#integrations" icon={GitBranch}>{t('projectXp.hero.openGitHub')}</LinkButton><AnchorButton href="#deploy" icon={Rocket}>{t('projectXp.hero.openDeploy')}</AnchorButton></div>
         </div>
         <JourneyConsole project={project} generated={generated} deployReady={deployReady} />
       </div>
@@ -581,6 +581,7 @@ const LIVE_PREVIEW_DEVICE_MODES = [
 ];
 
 function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
+  const { t } = useLocale();
   const [session, setSession] = useState<LivePreviewSession | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -700,12 +701,12 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
       <Card className="flex flex-col items-center gap-4 p-8 text-center">
         <Rocket className="h-8 w-8 text-[color:var(--accent)]" aria-hidden />
         <div>
-          <p className="text-sm font-semibold text-[color:var(--text)]">Nenhum preview ao vivo em execucao</p>
-          <p className="mt-1 max-w-md text-sm text-[color:var(--muted)]">Instala dependencias reais e sobe os servidores de desenvolvimento -- pode levar alguns minutos na primeira vez.</p>
+          <p className="text-sm font-semibold text-[color:var(--text)]">{t('livePreview.notRunning')}</p>
+          <p className="mt-1 max-w-md text-sm text-[color:var(--muted)]">{t('livePreview.notRunningHint')}</p>
         </div>
         {error ? <p className="text-sm text-[color:var(--danger)]">{error}</p> : null}
         <Button type="button" variant="primary" loading={busy} onClick={() => void start()}>
-          <Play className="h-4 w-4" aria-hidden />Iniciar preview ao vivo
+          <Play className="h-4 w-4" aria-hidden />{t('livePreview.start')}
         </Button>
       </Card>
     );
@@ -714,9 +715,9 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
   if (session.status === 'unsupported') {
     return (
       <Card className="space-y-3 p-6">
-        <div className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-[color:var(--warning)]" aria-hidden /><p className="text-sm font-semibold text-[color:var(--text)]">Preview ao vivo indisponivel</p></div>
+        <div className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-[color:var(--warning)]" aria-hidden /><p className="text-sm font-semibold text-[color:var(--text)]">{t('livePreview.unsupported')}</p></div>
         <p className="text-sm text-[color:var(--muted)]">{session.reason}</p>
-        <Button type="button" variant="secondary" onClick={() => setSession(null)}>Voltar</Button>
+        <Button type="button" variant="secondary" onClick={() => setSession(null)}>{t('livePreview.back')}</Button>
       </Card>
     );
   }
@@ -724,9 +725,9 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
   if (session.status === 'failed') {
     return (
       <Card className="space-y-3 border-[color-mix(in_srgb,var(--danger)_32%,var(--border))] p-6">
-        <div className="flex items-center gap-2"><XCircle className="h-5 w-5 text-[color:var(--danger)]" aria-hidden /><p className="text-sm font-semibold text-[color:var(--text)]">O preview falhou ao iniciar</p></div>
+        <div className="flex items-center gap-2"><XCircle className="h-5 w-5 text-[color:var(--danger)]" aria-hidden /><p className="text-sm font-semibold text-[color:var(--text)]">{t('livePreview.failed')}</p></div>
         <pre className="max-h-48 overflow-auto rounded-[var(--radius-md)] bg-black/30 p-3 text-xs text-[color:var(--muted)]">{session.reason}</pre>
-        <Button type="button" variant="secondary" loading={busy} onClick={() => void start()}><RefreshCw className="h-4 w-4" aria-hidden />Tentar novamente</Button>
+        <Button type="button" variant="secondary" loading={busy} onClick={() => void start()}><RefreshCw className="h-4 w-4" aria-hidden />{t('livePreview.retry')}</Button>
       </Card>
     );
   }
@@ -740,7 +741,7 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
     <Card className={cn('overflow-hidden p-0', fullscreen && 'bg-[color:var(--surface-2)]')}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--border)] p-4">
         <div className="flex items-center gap-2">
-          <Badge tone="success">ao vivo</Badge>
+          <Badge tone="success">{t('livePreview.liveBadge')}</Badge>
           <span className="font-mono text-xs text-[color:var(--muted)]">{session.session_id}</span>
         </div>
         <div className="flex items-center gap-1">
@@ -757,16 +758,16 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
               <mode.icon className="h-4 w-4" aria-hidden />
             </Button>
           ))}
-          <Button type="button" variant="ghost" className="px-2.5 py-2" title="Console e erros" aria-pressed={consoleOpen} onClick={() => setConsoleOpen((value) => !value)}>
+          <Button type="button" variant="ghost" className="px-2.5 py-2" title={t('livePreview.consoleTitle')} aria-pressed={consoleOpen} onClick={() => setConsoleOpen((value) => !value)}>
             <TerminalSquare className="h-4 w-4" aria-hidden />
           </Button>
-          <Button type="button" variant="ghost" className="px-2.5 py-2" title="Capturar screenshot" loading={screenshotBusy} onClick={() => void captureScreenshot()}>
+          <Button type="button" variant="ghost" className="px-2.5 py-2" title={t('livePreview.captureScreenshot')} loading={screenshotBusy} onClick={() => void captureScreenshot()}>
             <Camera className="h-4 w-4" aria-hidden />
           </Button>
-          <Button type="button" variant="ghost" className="px-2.5 py-2" title="Tela cheia" onClick={toggleFullscreen}>
+          <Button type="button" variant="ghost" className="px-2.5 py-2" title={t('livePreview.fullscreen')} onClick={toggleFullscreen}>
             {fullscreen ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}
           </Button>
-          <Button type="button" variant="secondary" loading={busy} onClick={() => void stop()}><Square className="h-4 w-4" aria-hidden />Parar preview</Button>
+          <Button type="button" variant="secondary" loading={busy} onClick={() => void stop()}><Square className="h-4 w-4" aria-hidden />{t('livePreview.stop')}</Button>
         </div>
       </div>
       <form
@@ -776,7 +777,7 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
           navigateTo(pathInput);
         }}
       >
-        <Button type="button" variant="ghost" className="px-2.5 py-2" title="Recarregar" onClick={refresh}>
+        <Button type="button" variant="ghost" className="px-2.5 py-2" title={t('livePreview.reload')} onClick={refresh}>
           <RefreshCw className="h-4 w-4" aria-hidden />
         </Button>
         <span className="truncate rounded-[var(--radius-sm)] bg-black/20 px-2 py-1 font-mono text-xs text-[color:var(--muted)]">{previewOrigin}</span>
@@ -784,8 +785,8 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
           type="text"
           value={pathInput}
           onChange={(event) => setPathInput(event.target.value)}
-          placeholder="/rota"
-          aria-label="Navegar para um caminho do app gerado"
+          placeholder={t('livePreview.pathPlaceholder')}
+          aria-label={t('livePreview.pathAriaLabel')}
           className="focus-ring min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[color:var(--border)] bg-transparent px-2 py-1 font-mono text-xs text-[color:var(--text)]"
         />
       </form>
@@ -793,7 +794,7 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
       <div className="flex justify-center bg-black/20 p-4">
         <iframe
           key={refreshNonce}
-          title="Preview ao vivo do projeto"
+          title={t('livePreview.iframeTitle')}
           src={iframeSrc}
           style={{ width: activeDevice.width, maxWidth: '100%' }}
           className={cn('bg-white transition-[width]', fullscreen ? 'h-[calc(100vh-160px)]' : 'h-[720px]')}
@@ -802,7 +803,7 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
       {consoleOpen ? (
         <div className="max-h-56 overflow-auto border-t border-[color:var(--border)] bg-black/40 p-3 font-mono text-xs">
           {consoleEntries.length === 0 ? (
-            <p className="text-[color:var(--muted)]">Nenhum erro ou aviso registrado ainda.</p>
+            <p className="text-[color:var(--muted)]">{t('livePreview.consoleEmpty')}</p>
           ) : (
             consoleEntries.map((entry, index) => (
               <p key={`${entry.at}-${index}`} className={cn(entry.type === 'error' || entry.type === 'pageerror' ? 'text-[color:var(--danger)]' : 'text-[color:var(--warning)]')}>
@@ -815,11 +816,11 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
       {screenshotUrl ? (
         <div className="border-t border-[color:var(--border)] p-3">
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-semibold text-[color:var(--text)]">Screenshot capturado</p>
-            <Button type="button" variant="ghost" className="px-2 py-1 text-xs" onClick={() => setScreenshotUrl(null)}>Fechar</Button>
+            <p className="text-xs font-semibold text-[color:var(--text)]">{t('livePreview.screenshotCaptured')}</p>
+            <Button type="button" variant="ghost" className="px-2 py-1 text-xs" onClick={() => setScreenshotUrl(null)}>{t('livePreview.close')}</Button>
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element -- a captured screenshot is an opaque blob URL, not an optimizable static asset */}
-          <img src={screenshotUrl} alt="Screenshot do preview ao vivo" className="max-h-96 w-full rounded-[var(--radius-md)] border border-[color:var(--border)] object-contain" />
+          <img src={screenshotUrl} alt={t('livePreview.screenshotAlt')} className="max-h-96 w-full rounded-[var(--radius-md)] border border-[color:var(--border)] object-contain" />
         </div>
       ) : null}
     </Card>

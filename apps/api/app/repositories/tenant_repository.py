@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import database_url_for, session_factory
@@ -277,6 +277,21 @@ class TenantRepository:
                 "role": membership.role,
                 "created_at": membership.created_at,
             }
+
+    def organization_role(self, organization_id: str, user_id: str) -> str | None:
+        with self._sessions() as session:
+            membership = session.get(OrganizationMembership, (organization_id, user_id))
+            return membership.role if membership is not None else None
+
+    def workspace_ids_for_organization(self, organization_id: str) -> list[str]:
+        with self._sessions() as session:
+            return list(session.scalars(select(Workspace.workspace_id).where(Workspace.organization_id == organization_id)).all())
+
+    def count_workspaces(self, organization_id: str) -> int:
+        with self._sessions() as session:
+            return int(session.scalar(
+                select(func.count()).select_from(Workspace).where(Workspace.organization_id == organization_id)
+            ) or 0)
 
     @staticmethod
     def _organization(model: Organization, *, role: str) -> dict[str, Any]:

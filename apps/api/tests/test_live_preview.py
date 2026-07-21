@@ -215,6 +215,34 @@ def test_fail_when_frontend_never_becomes_ready_stops_backend_too(make_project, 
     assert sorted(stopped) == sorted(started)
 
 
+def test_active_count_for_owner_counts_across_projects_for_the_same_owner(make_project, monkeypatch):
+    project_a = make_project(_FULL_STACK_FILES, name="preview-a")
+    project_b = make_project(_FULL_STACK_FILES, name="preview-b")
+    fake = _fake_runtime(Path(project_a["generated_project_path"]))
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+    monkeypatch.setattr(svc, "_free_port", lambda: 45100)
+
+    assert service.active_count_for_owner("user_a") == 0
+    service.start(project_a["project_id"], "user_a")
+    assert service.active_count_for_owner("user_a") == 1
+    service.start(project_b["project_id"], "user_a")
+    assert service.active_count_for_owner("user_a") == 2
+    assert service.active_count_for_owner("user_b") == 0
+
+
+def test_active_count_for_owner_excludes_the_projects_own_session(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES, name="preview-restart")
+    fake = _fake_runtime(Path(project["generated_project_path"]))
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+    monkeypatch.setattr(svc, "_free_port", lambda: 45200)
+
+    service.start(project["project_id"], "user_a")
+    assert service.active_count_for_owner("user_a") == 1
+    assert service.active_count_for_owner("user_a", exclude_project_id=project["project_id"]) == 0
+
+
 def test_get_returns_none_for_wrong_owner(make_project, monkeypatch):
     project = make_project(_FULL_STACK_FILES)
     root = Path(project["generated_project_path"])

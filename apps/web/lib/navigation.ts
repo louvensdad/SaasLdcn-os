@@ -16,6 +16,8 @@ import {
   Orbit,
   RefreshCw,
   Settings2,
+  Store,
+  Wallet,
   WandSparkles,
 } from 'lucide-react';
 
@@ -98,6 +100,18 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
     href: '/templates',
     icon: Library,
     descriptionKey: 'navigation.library.description',
+  },
+  {
+    labelKey: 'navigation.marketplace.label',
+    href: '/marketplace',
+    icon: Store,
+    descriptionKey: 'navigation.marketplace.description',
+  },
+  {
+    labelKey: 'navigation.pricing.label',
+    href: '/pricing',
+    icon: Wallet,
+    descriptionKey: 'navigation.pricing.description',
   },
   {
     labelKey: 'navigation.modernize.label',

@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "audit:i18n": "node scripts/audit-hardcoded-i18n.mjs",
     "audit:i18n:check": "node scripts/audit-hardcoded-i18n.mjs --check",
+    "audit:i18n:complete": "node scripts/check-i18n-complete.mjs",
     "audit:typography": "node scripts/audit-typography.mjs",
     "audit:typography:check": "node scripts/audit-typography.mjs --check",
     "audit:locales:check": "node scripts/check-locale-parity.mjs",

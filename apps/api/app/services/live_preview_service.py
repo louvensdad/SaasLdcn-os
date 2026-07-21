@@ -210,6 +210,20 @@ class LivePreviewService:
             return None
         return self._to_model(session)
 
+    def active_count_for_owner(self, owner_user_id: str, *, exclude_project_id: str | None = None) -> int:
+        """Concurrent preview-instance count for the plan-access engine's
+        `preview_instances` limit -- `_sessions` only ever holds starting/running
+        entries (stop/fail immediately pop the entry, see `_stop_internal`).
+        `exclude_project_id` lets a restart of the SAME project's own preview
+        (start() always stops any prior session for that project first) not
+        count against its own replacement."""
+        self._reap_idle()
+        with self._lock:
+            return sum(
+                1 for session in self._sessions.values()
+                if session.owner_user_id == owner_user_id and session.project_id != exclude_project_id
+            )
+
     def _authorized_session(self, session_id: str, owner_user_id: str) -> _Session | None:
         with self._lock:
             session = self._sessions.get(session_id)

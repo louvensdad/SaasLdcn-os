@@ -12,7 +12,7 @@ const referenceKeys = Object.keys(reference).sort();
 const placeholderPattern = /\{([A-Za-z0-9_]+)\}/g;
 const placeholders = (value) => [...String(value).matchAll(placeholderPattern)].map((match) => match[1]).sort();
 const failures = [];
-const missingBaseline = { 'en-US': 318, 'es-ES': 318, 'fr-FR': 318 };
+const missingBaseline = { 'en-US': 0, 'es-ES': 0, 'fr-FR': 0 };
 
 for (const locale of locales.slice(1)) {
   const keys = Object.keys(dictionaries[locale]).sort();

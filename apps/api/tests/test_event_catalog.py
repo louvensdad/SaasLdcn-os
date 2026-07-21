@@ -18,9 +18,15 @@ def test_catalog_entries_have_consistent_shape():
         assert isinstance(event.wired, bool)
 
 
-def test_wired_events_are_the_documented_three():
+def test_wired_events_are_the_documented_ones():
     wired = {name for name, event in EVENT_CATALOG.items() if event.wired}
-    assert wired == {"ProjectCreated", "BlueprintGenerated", "PreviewStarted", "PreviewStopped"}
+    assert wired == {
+        "ProjectCreated", "BlueprintGenerated", "PreviewStarted", "PreviewStopped",
+        "MarketplaceItemPublished", "MarketplaceItemInstalled",
+        "TrialStarted", "TrialExpired", "TrialConverted", "SubscriptionCreated", "SubscriptionChanged",
+        "SubscriptionCancelled", "PlanLimitReached", "PlanFeatureBlocked",
+        "StudentVerificationRequested", "StudentVerificationExpired", "StudentRevalidationRequested",
+    }
 
 
 def test_emit_named_event_rejects_unknown_event():

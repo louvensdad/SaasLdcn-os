@@ -14,6 +14,7 @@ from app.schemas.project import (
     ProjectUpdateRequest,
     SaveProjectFromWizardRequest,
 )
+from app.services.plan_access_engine import PlanAccessDeniedError, PlanAccessEngine
 from app.services.project_service import ProjectService
 
 
@@ -52,6 +53,10 @@ def save_project_from_wizard(payload: SaveProjectFromWizardRequest, user: Curren
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found or insufficient permission.") from exc
     else:
         workspace = repository.personal_workspace(user["user_id"]) or repository.ensure_personal_workspace(user["user_id"], user["full_name"])
+    try:
+        PlanAccessEngine().check_project_create(user_id=user["user_id"], organization_id=workspace["organization_id"])
+    except PlanAccessDeniedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.to_detail()) from exc
     return ProjectRecord.model_validate(
         service.save_from_wizard(payload, owner_user_id=user["user_id"], workspace_id=workspace["workspace_id"])
     )

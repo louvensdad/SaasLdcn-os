@@ -203,9 +203,11 @@ function LoginPageContent() {
 
         <div className={styles.heroContent}>
           <div className={styles.logo}>
-            <span className={styles.logoRing}>
-              <span className={styles.logoMark} />
-            </span>
+            <img
+              src="/ldcn-logo.png"
+              alt={t('product.name')}
+              style={{ width: '2.5rem', height: '2.5rem', objectFit: 'contain' }}
+            />
             <span className={styles.logoWord}>{t('product.name')}</span>
           </div>
 

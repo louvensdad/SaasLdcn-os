@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { Camera, ChevronRight, Download, History, LogOut, PowerOff, ShieldAlert, ShieldCheck, Smartphone, Trash2, Users } from 'lucide-react';
+import { Camera, ChevronRight, Download, GraduationCap, History, LogOut, PowerOff, ShieldAlert, ShieldCheck, Smartphone, Trash2, Users } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import { TwoFactorDialog } from '@/components/settings/two-factor-dialog';
 import { WorkspaceMembersDialog } from '@/components/settings/workspace-members-dialog';
 import { apiClient } from '@/lib/api/client';
 import { getApiErrorMessage } from '@/lib/api/errors';
+import { studentEligibilityClient, type StudentVerificationView } from '@/lib/api/student-eligibility';
 import { readImageAsAvatarDataUrl } from '@/lib/image/avatar';
 import { useLocale } from '@/hooks/use-locale';
 import { useAuthStore } from '@/stores/use-auth-store';
@@ -60,6 +61,14 @@ export function AccountTab() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [memberCount, setMemberCount] = useState<number | null>(null);
 
+  // Student-plan verification: consult status, submit/resubmit proof of
+  // enrollment (vault 56/70: the account area must expose this without
+  // touching Básico entitlements -- it only reads/writes StudentVerification).
+  const [studentVerification, setStudentVerification] = useState<StudentVerificationView | null>(null);
+  const [studentDocument, setStudentDocument] = useState('');
+  const [studentBusy, setStudentBusy] = useState(false);
+  const [studentError, setStudentError] = useState<unknown>(null);
+
   const [sessionsDialogOpen, setSessionsDialogOpen] = useState(false);
   const [twoFactorMode, setTwoFactorMode] = useState<'enroll' | 'disable' | null>(null);
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
@@ -87,6 +96,14 @@ export function AccountTab() {
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    studentEligibilityClient.get()
+      .then((record) => { if (!cancelled) setStudentVerification(record); })
+      .catch(() => { /* best-effort: the card degrades to the submission form */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,6 +164,8 @@ export function AccountTab() {
   }, []);
 
   const latestSession = sessions[0] ?? null;
+  const studentResubmittable =
+    studentVerification === null || ['REJECTED', 'REVALIDATION_REQUIRED', 'EXPIRED'].includes(studentVerification.student_status);
 
   function formatDateTime(iso: string): string {
     const date = new Date(iso);
@@ -259,6 +278,21 @@ export function AccountTab() {
       setError(caught);
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function submitStudentDocument() {
+    if (!studentDocument.trim()) return;
+    setStudentBusy(true);
+    setStudentError(null);
+    try {
+      const record = await studentEligibilityClient.submit({ student_document: studentDocument.trim() });
+      setStudentVerification(record);
+      setStudentDocument('');
+    } catch (caught) {
+      setStudentError(caught);
+    } finally {
+      setStudentBusy(false);
     }
   }
 
@@ -581,6 +615,44 @@ export function AccountTab() {
           ) : null}
         </div>
       </div>
+
+      <SettingsSection title={t('pricing.student.title')} className="rounded-[1.5rem]">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="h-4 w-4 text-[color:var(--accent)]" aria-hidden />
+            <p className="ds-caption">{t('pricing.student.description')}</p>
+          </div>
+          {studentVerification ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={studentVerification.student_status === 'VERIFIED' ? 'success' : studentResubmittable ? 'warning' : 'neutral'}>
+                {studentVerification.student_status}
+              </Badge>
+              {studentVerification.student_expires_at ? (
+                <span className="ds-caption">
+                  {t('settings.account.studentExpiresAt')} {new Date(studentVerification.student_expires_at).toLocaleDateString(locale)}
+                </span>
+              ) : null}
+              {studentVerification.student_notes ? <span className="ds-caption">— {studentVerification.student_notes}</span> : null}
+            </div>
+          ) : null}
+          {studentResubmittable ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                value={studentDocument}
+                onChange={(event) => setStudentDocument(event.target.value)}
+                placeholder={t('pricing.student.documentPlaceholder')}
+                aria-label={t('pricing.student.documentPlaceholder')}
+                className="min-w-[240px] flex-1"
+                error={Boolean(studentError)}
+              />
+              <Button variant="secondary" loading={studentBusy} disabled={!studentDocument.trim()} onClick={() => void submitStudentDocument()}>
+                {t('pricing.student.submit')}
+              </Button>
+            </div>
+          ) : null}
+          {studentError ? <p className="ds-caption text-[color:var(--danger)]" role="alert">{getApiErrorMessage(studentError, t('pricing.student.error'))}</p> : null}
+        </div>
+      </SettingsSection>
 
       <SettingsDangerZone title={t('settings.account.dangerTitle')} description={t('settings.account.dangerDescription')}>
         <div className="w-full divide-y divide-[color-mix(in_srgb,var(--danger)_16%,transparent)]">

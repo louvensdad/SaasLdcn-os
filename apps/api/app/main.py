@@ -23,6 +23,7 @@ from app.routes import (
     auth,
     automations,
     billing,
+    billing_catalog,
     backend_generation,
     blueprints,
     change_requests,
@@ -44,7 +45,9 @@ from app.routes import (
     framework_specialists,
     gatekeeper,
     health,
+    marketplace,
     language_domains,
+    language_model,
     live_preview,
     local_generation,
     llm_settings,
@@ -63,6 +66,7 @@ from app.routes import (
     skills,
     runtime,
     staging,
+    student_eligibility,
     system_presence,
     system_status,
     system_design_visualization,
@@ -143,11 +147,13 @@ def create_application() -> FastAPI:
     app.include_router(execution_profiles.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(registry.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(language_domains.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(language_model.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(framework_specialists.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(infrastructure.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(infra_cost.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(features.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(automations.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(marketplace.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(templates.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(tenants.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(skills.router, prefix=settings.api_prefix, dependencies=protected)
@@ -183,6 +189,11 @@ def create_application() -> FastAPI:
     app.include_router(live_preview.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(staging.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(billing.router, prefix=settings.api_prefix, dependencies=protected)
+    # Plan catalog is public (vault: "Rotas públicas: /{locale}/pricing" -- a
+    # visitor sees pricing before signing up); trial/subscription state is not.
+    app.include_router(billing_catalog.public_router, prefix=settings.api_prefix)
+    app.include_router(billing_catalog.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(student_eligibility.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(test_runner.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(ai_status.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(activity_feed.router, prefix=settings.api_prefix, dependencies=protected)

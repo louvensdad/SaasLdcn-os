@@ -122,6 +122,138 @@ EVENT_CATALOG: dict[str, NamedEvent] = {
         consumers=("activity feed", "Metering"),
         wired=False,  # mapped: automation_runs + metering_records already cover every execution in more detail
     ),
+    "MarketplaceItemPublished": NamedEvent(
+        category="marketplace", action="item_published", payload_version=1,
+        producer="marketplace_service.py:MarketplaceService.publish / .republish",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "MarketplaceItemInstalled": NamedEvent(
+        category="marketplace", action="item_installed", payload_version=1,
+        producer="marketplace_service.py:MarketplaceService.install",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "TrialStarted": NamedEvent(
+        category="billing", action="trial_started", payload_version=1,
+        producer="billing_service.py:BillingService.start_trial",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "TrialExpired": NamedEvent(
+        category="billing", action="trial_expired", payload_version=1,
+        producer="billing_service.py:BillingService.get_trial / plan_access_engine.py:PlanAccessEngine.check",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "SubscriptionCreated": NamedEvent(
+        category="billing", action="subscription_created", payload_version=1,
+        producer="billing_service.py:BillingService.subscribe",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "SubscriptionChanged": NamedEvent(
+        category="billing", action="subscription_changed", payload_version=1,
+        producer="billing_service.py:BillingService.subscribe",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "SubscriptionCancelled": NamedEvent(
+        category="billing", action="subscription_cancelled", payload_version=1,
+        producer="billing_service.py:BillingService.cancel",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "PlanLimitReached": NamedEvent(
+        category="billing", action="plan_limit_reached", payload_version=1,
+        producer="plan_access_engine.py:PlanAccessEngine.check",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "PlanFeatureBlocked": NamedEvent(
+        category="billing", action="plan_feature_blocked", payload_version=1,
+        producer="plan_access_engine.py:PlanAccessEngine.check",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "TrialConverted": NamedEvent(
+        category="billing", action="trial_converted", payload_version=1,
+        producer="billing_service.py:BillingService.subscribe / billing_repository.py:BillingRepository.convert_trial",
+        consumers=("activity feed",),
+        wired=True,  # real ACTIVE->CONVERTED transition when a user subscribes during an active trial
+    ),
+    "SubscriptionActivated": NamedEvent(
+        category="billing", action="subscription_activated", payload_version=1,
+        producer="billing_repository.py:BillingRepository.subscribe",
+        consumers=("activity feed",),
+        wired=False,  # mapped: a new subscription is created directly as ACTIVE -- SubscriptionCreated already covers it, no separate activation step exists
+    ),
+    "SubscriptionRenewed": NamedEvent(
+        category="billing", action="subscription_renewed", payload_version=1,
+        producer="(none)",
+        consumers=("activity feed",),
+        wired=False,  # no billing-cycle renewal exists -- would require real payment processing to know a renewal succeeded, not fabricated
+    ),
+    "SubscriptionExpired": NamedEvent(
+        category="billing", action="subscription_expired", payload_version=1,
+        producer="(none)",
+        consumers=("activity feed",),
+        wired=False,  # same reason as SubscriptionRenewed -- current_period_end is stored but nothing lazily auto-cancels on it (would fabricate a payment-failure policy)
+    ),
+    "UsageRecorded": NamedEvent(
+        category="billing", action="usage_recorded", payload_version=1,
+        producer="metering_engine.py:record_consumption",
+        consumers=("activity feed", "Billing"),
+        wired=False,  # mapped: metering_records already records every real consumption event in more detail
+    ),
+    "TrialExpirationWarningIssued": NamedEvent(
+        category="billing", action="trial_expiration_warning_issued", payload_version=1,
+        producer="(none)",
+        consumers=("activity feed", "frontend trial banner"),
+        wired=False,  # deferred (confirmed with the user 2026-07-21): no scheduled-notification infrastructure exists to fire a 24h/6h/1h warning
+    ),
+    "StudentVerificationRequested": NamedEvent(
+        category="billing", action="student_verification_requested", payload_version=1,
+        producer="student_eligibility_service.py:StudentEligibilityService.submit",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "StudentVerificationApproved": NamedEvent(
+        category="billing", action="student_verification_approved", payload_version=1,
+        producer="student_repository.py:StudentRepository.approve",
+        consumers=("activity feed",),
+        wired=False,  # real state transition exists but has no HTTP route -- no platform staff/admin role exists yet to gate approving ANOTHER user's document (confirmed scope 2026-07-21)
+    ),
+    "StudentVerificationRejected": NamedEvent(
+        category="billing", action="student_verification_rejected", payload_version=1,
+        producer="student_repository.py:StudentRepository.reject",
+        consumers=("activity feed",),
+        wired=False,  # same reason as StudentVerificationApproved
+    ),
+    "StudentVerificationExpired": NamedEvent(
+        category="billing", action="student_verification_expired", payload_version=1,
+        producer="student_repository.py:StudentRepository.latest",
+        consumers=("activity feed",),
+        wired=True,  # real lazy transition, same pattern as TrialExpired
+    ),
+    "StudentRevalidationRequested": NamedEvent(
+        category="billing", action="student_revalidation_requested", payload_version=1,
+        producer="student_repository.py:StudentRepository.latest",
+        consumers=("activity feed",),
+        wired=True,  # real lazy transition, same pattern as TrialExpired
+    ),
+    "StudentPlanActivated": NamedEvent(
+        category="billing", action="student_plan_activated", payload_version=1,
+        producer="(none)",
+        consumers=("activity feed",),
+        wired=False,  # mapped: subscribing to plan_code=STUDENT already goes through SubscriptionCreated/Changed -- no automatic link from an approved verification to a subscription exists yet
+    ),
+    "StudentPlanCancelled": NamedEvent(
+        category="billing", action="student_plan_cancelled", payload_version=1,
+        producer="(none)",
+        consumers=("activity feed",),
+        wired=False,  # would fire once verification-expiry <-> subscription-downgrade is wired; real gap, not built this pass
+    ),
 }
 
 

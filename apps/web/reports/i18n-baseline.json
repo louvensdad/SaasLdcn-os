@@ -1,5 +1,5 @@
 {
-  "total": 392,
+  "total": 380,
   "byFile": {
     "app/(app)/analytics/page.tsx": 27,
     "app/(app)/architect/page.tsx": 10,
@@ -23,7 +23,6 @@
     "components/llm/user-key-panel.tsx": 1,
     "components/platform/platform-overview.tsx": 53,
     "components/project/blueprint-response-viewer.tsx": 7,
-    "components/project/project-experience-v2.tsx": 12,
     "components/project/workflow-context-header.tsx": 2,
     "components/settings/account-tab.tsx": 3,
     "components/settings/activity-feed.tsx": 24,

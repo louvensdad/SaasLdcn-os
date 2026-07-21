@@ -110,6 +110,17 @@ class ProjectRepository:
                 ).fetchone()
             return int(row[0])
 
+    def count_active_projects_for_workspaces(self, workspace_ids: Sequence[str]) -> int:
+        if not workspace_ids:
+            return 0
+        placeholders = ",".join("?" for _ in workspace_ids)
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) FROM projects WHERE status != 'draft' AND workspace_id IN ({placeholders})",
+                list(workspace_ids),
+            ).fetchone()
+            return int(row[0])
+
     def get_project(self, project_id: str, user_id: str | None = None) -> dict[str, Any] | None:
         scope = ""
         params: list[Any] = [project_id, project_id]

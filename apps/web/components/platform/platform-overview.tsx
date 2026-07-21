@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity, ArrowRight, Bot, Boxes, CheckCircle2, CloudCog, Code2, Database,
-  Factory, Gauge, GitBranch, Hammer, Layers3, Network, Package, Search,
+  Factory, Gauge, GitBranch, GraduationCap, Hammer, Layers3, Network, Package, Search,
   Server, ShieldCheck, Sparkles, type LucideIcon,
 } from 'lucide-react';
 
@@ -15,6 +15,7 @@ import { useSystemStatus } from '@/hooks/use-system-status';
 import { apiRequest } from '@/lib/api/client';
 import { apiEndpoints } from '@/lib/api/endpoints';
 import { llmSettingsClient } from '@/lib/api/llm-settings';
+import { studentEligibilityClient, type StudentVerificationView } from '@/lib/api/student-eligibility';
 import type { Project } from '@/lib/api/types';
 import type { RuntimeMetrics } from '@contracts/runtime-metrics.contract';
 import type { LlmUsageStats } from '@contracts/llm-settings.contract';
@@ -216,6 +217,17 @@ export function PlatformOverview() {
     queryFn: () => apiRequest<ActivityFeedResponse>(`${apiEndpoints.activityFeed}?limit=5`),
     refetchInterval: 20_000, staleTime: 15_000, retry: 1,
   });
+  // Real student-verification status (vault 56/70: the Dashboard must surface
+  // it and the next step when revalidation is needed). Null (never submitted)
+  // and 404/network failures both degrade to simply not rendering the card.
+  const studentQuery = useQuery<StudentVerificationView | null>({
+    queryKey: ['student-verification'],
+    queryFn: studentEligibilityClient.get,
+    staleTime: 60_000, retry: 1,
+  });
+  const studentVerification = studentQuery.data ?? null;
+  const studentNeedsAction = studentVerification !== null
+    && ['REJECTED', 'REVALIDATION_REQUIRED', 'EXPIRED'].includes(studentVerification.student_status);
   const m = metricsQuery.data;
   const usage = usageQuery.data;
   const feedItems = feedQuery.data?.items ?? [];
@@ -325,6 +337,30 @@ export function PlatformOverview() {
           </Link>
         </aside>
       </section>
+
+      {studentVerification ? (
+        <section className="platform-card flex flex-wrap items-center justify-between gap-3 p-6">
+          <div className="flex items-center gap-3">
+            <GraduationCap className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
+            <div>
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t('dashboard.studentStatus.title')}</p>
+              <p className="ds-caption">
+                {studentNeedsAction ? t('dashboard.studentStatus.actionNeeded') : t('dashboard.studentStatus.upToDate')}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Badge tone={studentVerification.student_status === 'VERIFIED' ? 'success' : studentNeedsAction ? 'warning' : 'neutral'}>
+              {studentVerification.student_status}
+            </Badge>
+            {studentNeedsAction ? (
+              <Link href="/settings?tab=account" className="focus-ring ds-caption text-[color:var(--accent)]">
+                {t('dashboard.studentStatus.reviewLink')} →
+              </Link>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {/* ---- Espinha operacional + Feed ---- */}
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">

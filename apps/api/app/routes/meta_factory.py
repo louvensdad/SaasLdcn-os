@@ -81,6 +81,7 @@ from app.services.execution_terminal_service import ALLOWED_COMMANDS_DISPLAY, ex
 from app.services.download_service import DownloadService
 from app.services.generated_project_service import GeneratedProjectService
 from app.services.git_provider_service import git_provider_service
+from app.services.plan_access_engine import PlanAccessDeniedError, PlanAccessEngine
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter, ProjectWriteError
 router = APIRouter(tags=["meta-factory"])
 
@@ -208,6 +209,10 @@ def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser
             },
         )
     workspace = _writable_workspace(user, payload.workspaceId)
+    try:
+        PlanAccessEngine().check_build_execute(user_id=user["user_id"], organization_id=workspace["organization_id"])
+    except PlanAccessDeniedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.to_detail()) from exc
     # projectId is the Project Room id for the primary chat -> Meta Factory journey
     # (the frontend enforces this gate client-side; this is the server-side backstop
     # for any caller that skips straight to job creation). Callers whose projectId

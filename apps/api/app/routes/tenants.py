@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.deps import CurrentUser
-from app.repositories.tenant_repository import TenantAccessError, TenantRepository
+from app.repositories.tenant_repository import ORG_ADMIN_ROLES, TenantAccessError, TenantRepository
 from app.schemas.tenant import (
     CreateOrganizationRequest,
     CreateWorkspaceRequest,
@@ -12,6 +12,7 @@ from app.schemas.tenant import (
     Workspace,
     WorkspaceMember,
 )
+from app.services.plan_access_engine import PlanAccessDeniedError, PlanAccessEngine
 
 
 router = APIRouter(tags=["tenants"])
@@ -58,8 +59,19 @@ def default_workspace(user: CurrentUser) -> Workspace:
 
 @router.post("/organizations/{organization_id}/workspaces", response_model=Workspace, status_code=status.HTTP_201_CREATED)
 def create_workspace(organization_id: str, payload: CreateWorkspaceRequest, user: CurrentUser) -> Workspace:
+    repository = _repository()
+    # Permission is checked before the plan check so a non-member can't learn
+    # anything about an organization's subscription state (repository.create_workspace
+    # re-checks the same permission internally as its own atomic guarantee).
+    role = repository.organization_role(organization_id, user["user_id"])
+    if role is None or role not in ORG_ADMIN_ROLES:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found or insufficient permission.")
     try:
-        item = _repository().create_workspace(user["user_id"], organization_id, payload.name, payload.slug)
+        PlanAccessEngine().check_workspace_create(user_id=user["user_id"], organization_id=organization_id)
+    except PlanAccessDeniedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.to_detail()) from exc
+    try:
+        item = repository.create_workspace(user["user_id"], organization_id, payload.name, payload.slug)
     except TenantAccessError as exc:
         raise _not_found(exc) from exc
     except ValueError as exc:

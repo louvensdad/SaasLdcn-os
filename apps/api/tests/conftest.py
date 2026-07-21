@@ -24,6 +24,7 @@ from app.repositories.user_repository import AuditLogRepository, UserRepository
 from app.repositories.automation_repository import AutomationRepository
 from app.repositories.change_request_repository import ChangeRequestRepository
 from app.repositories.feature_repository import FeatureRepository
+from app.repositories.marketplace_repository import MarketplaceRepository
 from app.repositories.staging_deployment_repository import StagingDeploymentRepository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
@@ -40,6 +41,7 @@ from app.routes.projects import service as project_route_service
 from app.services.automation_service import automation_service
 from app.services.download_service import DownloadService
 from app.services.feature_service import feature_service
+from app.services.marketplace_service import marketplace_service
 from app.services.staging_service import staging_service
 from app.services.git_provider_service import git_provider_service
 from app.services.llm_settings_service import llm_settings_service
@@ -95,6 +97,8 @@ def client() -> TestClient:
     change_requests_route.service.repository = ChangeRequestRepository(database_path)
     feature_service.repository = FeatureRepository(database_path)
     automation_service.repository = AutomationRepository(database_path)
+    marketplace_service.repository = MarketplaceRepository(database_path)
+    marketplace_service.automation_repository = AutomationRepository(database_path)
     staging_service.repository = StagingDeploymentRepository(database_path)
     modernize_route._jobs_repo = ModernizeJobRepository(database_path)
     isolated_download_service = DownloadService(DownloadRepository(database_path))

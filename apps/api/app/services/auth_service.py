@@ -23,6 +23,8 @@ from app.core.security import (
 )
 from app.repositories.user_repository import AuditLogRepository, UserRepository
 from app.repositories.tenant_repository import TenantRepository
+from app.repositories.billing_repository import BillingRepository
+from app.services.billing_service import BillingService
 from app.schemas.auth import (
     ActivityExportResponse,
     AuthResponse,
@@ -133,6 +135,7 @@ class AuthService:
             user["user_id"],
             user["full_name"],
         )
+        BillingService(BillingRepository(self.user_repository.database_url)).start_trial(user["user_id"])
         self.audit_repository.record(user_id=user["user_id"], event_code="user_registered")
         self.audit_repository.record(user_id=user["user_id"], event_code="user_consent_recorded")
         return self._issue_tokens(user, ip_address=ip_address, device_label=device_label)
