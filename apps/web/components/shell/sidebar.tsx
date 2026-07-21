@@ -186,7 +186,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
                   {item.badgeCountKey === 'marketplaceUpdates' && marketplaceUpdatesCount > 0 ? (
                     <Badge
                       tone="accent"
-                      className="shrink-0 px-1.5 py-0 text-[10px]"
+                      className="ds-badge shrink-0 px-1.5 py-0"
                       aria-label={t('navigation.marketplace.updatesBadge', { count: marketplaceUpdatesCount })}
                     >
                       {marketplaceUpdatesCount}
@@ -216,7 +216,7 @@ export function Sidebar({ compact = false }: SidebarProps) {
 
       {planName ? (
         <div className="mx-1 mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius-md)] border px-3 py-2 text-xs" style={{ borderColor: 'var(--sidebar-border)', color: 'var(--sidebar-text-muted)' }}>
-          <Badge tone="accent" className="px-2 py-0.5 text-[10px]">{t('sidebar.plan', { plan: planName })}</Badge>
+          <Badge tone="accent" className="ds-badge px-2 py-0.5">{t('sidebar.plan', { plan: planName })}</Badge>
           {connectedProvidersCount > 0 ? <span>{t('sidebar.connectedProviders', { count: connectedProvidersCount })}</span> : null}
           {storageQuota ? <span>{t('sidebar.storageQuota', { quota: storageQuota })}</span> : null}
         </div>
