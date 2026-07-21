@@ -8,7 +8,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.core.config import get_settings
 from app.core.cors import configure_cors
 from app.core.deps import get_current_user
-from app.core.exceptions import configure_exception_handlers
+from app.core.exceptions import UnhandledExceptionMiddleware, configure_exception_handlers
 from app.core.logging import RequestIdMiddleware, RequestLoggingMiddleware, logger
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
@@ -119,6 +119,11 @@ def create_application() -> FastAPI:
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
     )
+    # Innermost middleware (added first): catches any exception a route/dependency
+    # doesn't handle, BEFORE it can escape past CORS/security/request-id headers.
+    # See UnhandledExceptionMiddleware's docstring for why this can't be a plain
+    # @app.exception_handler(Exception) -- that bypasses every middleware below.
+    app.add_middleware(UnhandledExceptionMiddleware)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
     configure_cors(app)
     configure_exception_handlers(app)

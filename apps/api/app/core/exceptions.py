@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 
 logger = logging.getLogger("ldcn.api.errors")
@@ -48,6 +51,37 @@ def _http_message_and_detail(raw_detail: Any) -> tuple[str, Any | None]:
         message = raw_detail.get("backend_message")
         return str(message) if message else "Request failed.", raw_detail
     return "Request failed.", raw_detail
+
+
+class UnhandledExceptionMiddleware(BaseHTTPMiddleware):
+    """Catches any exception a route/dependency doesn't handle and returns the
+    same JSON envelope as `configure_exception_handlers`' old `Exception`
+    handler -- but as real middleware, not `@app.exception_handler(Exception)`.
+
+    Starlette treats a handler registered for the bare `Exception` class
+    specially: it becomes the handler for `ServerErrorMiddleware`, which Starlette
+    wraps around the ENTIRE app -- outside every middleware added via
+    `app.add_middleware` (CORSMiddleware, SecurityHeadersMiddleware,
+    RequestIdMiddleware, ...). So a 500 handled that way was returned with none
+    of those headers, and browsers reported it to JS as an opaque
+    `TypeError: Failed to fetch` rather than a readable error (found while
+    diagnosing the Planos e Assinatura page, 2026-07-21).
+
+    This class must be added via `app.add_middleware()` BEFORE every other
+    middleware (i.e. first call, so it ends up innermost -- Starlette makes the
+    last-added middleware outermost) so CORS/security/request-id headers are
+    still applied normally to the response it constructs.
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            logger.exception("Unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content=_build_error_payload(code="internal_server_error", message="Internal server error."),
+            )
 
 
 def configure_exception_handlers(app: FastAPI) -> None:
@@ -147,22 +181,5 @@ def configure_exception_handlers(app: FastAPI) -> None:
             headers={"Retry-After": str(exc.retry_after)},
         )
 
-    @app.exception_handler(Exception)
-    async def unhandled_exception_handler(
-        request: Request,
-        exc: Exception,
-    ) -> JSONResponse:
-        logger.exception(
-            "Unhandled error on %s %s",
-            request.method,
-            request.url.path,
-            exc_info=exc,
-        )
-        payload = _build_error_payload(
-            code="internal_server_error",
-            message="Internal server error.",
-        )
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=payload,
-        )
+    # No @app.exception_handler(Exception) here: see UnhandledExceptionMiddleware
+    # above, which handles this case instead so CORS/security headers survive.

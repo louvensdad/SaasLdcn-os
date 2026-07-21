@@ -3,3 +3,4 @@ __pycache__/
 tests/.tmp/
 app/data/*.db
 app/data/execution-evidence/
+app/data/student-documents/

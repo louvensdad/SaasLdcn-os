@@ -13,6 +13,7 @@ import { Modal } from '@/components/ui/modal';
 import { IconButton } from '@/components/ui/icon-button';
 import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
 import { PageError } from '@/components/feedback/error-system';
+import { StudentDocumentUpload } from '@/components/billing/student-document-upload';
 import { LocaleSelector } from '@/components/shell/locale-selector';
 import { SettingsSection } from '@/components/settings/settings-section';
 import { SettingsDangerZone } from '@/components/settings/settings-danger-zone';
@@ -64,10 +65,9 @@ export function AccountTab() {
   // Student-plan verification: consult status, submit/resubmit proof of
   // enrollment (vault 56/70: the account area must expose this without
   // touching Básico entitlements -- it only reads/writes StudentVerification).
+  // Upload state (drag-drop, progress, validation) lives in the shared
+  // StudentDocumentUpload component, also used on /pricing.
   const [studentVerification, setStudentVerification] = useState<StudentVerificationView | null>(null);
-  const [studentDocument, setStudentDocument] = useState('');
-  const [studentBusy, setStudentBusy] = useState(false);
-  const [studentError, setStudentError] = useState<unknown>(null);
 
   const [sessionsDialogOpen, setSessionsDialogOpen] = useState(false);
   const [twoFactorMode, setTwoFactorMode] = useState<'enroll' | 'disable' | null>(null);
@@ -164,8 +164,6 @@ export function AccountTab() {
   }, []);
 
   const latestSession = sessions[0] ?? null;
-  const studentResubmittable =
-    studentVerification === null || ['REJECTED', 'REVALIDATION_REQUIRED', 'EXPIRED'].includes(studentVerification.student_status);
 
   function formatDateTime(iso: string): string {
     const date = new Date(iso);
@@ -278,21 +276,6 @@ export function AccountTab() {
       setError(caught);
     } finally {
       setBusy(null);
-    }
-  }
-
-  async function submitStudentDocument() {
-    if (!studentDocument.trim()) return;
-    setStudentBusy(true);
-    setStudentError(null);
-    try {
-      const record = await studentEligibilityClient.submit({ student_document: studentDocument.trim() });
-      setStudentVerification(record);
-      setStudentDocument('');
-    } catch (caught) {
-      setStudentError(caught);
-    } finally {
-      setStudentBusy(false);
     }
   }
 
@@ -622,35 +605,12 @@ export function AccountTab() {
             <GraduationCap className="h-4 w-4 text-[color:var(--accent)]" aria-hidden />
             <p className="ds-caption">{t('pricing.student.description')}</p>
           </div>
-          {studentVerification ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone={studentVerification.student_status === 'VERIFIED' ? 'success' : studentResubmittable ? 'warning' : 'neutral'}>
-                {studentVerification.student_status}
-              </Badge>
-              {studentVerification.student_expires_at ? (
-                <span className="ds-caption">
-                  {t('settings.account.studentExpiresAt')} {new Date(studentVerification.student_expires_at).toLocaleDateString(locale)}
-                </span>
-              ) : null}
-              {studentVerification.student_notes ? <span className="ds-caption">— {studentVerification.student_notes}</span> : null}
-            </div>
+          {studentVerification?.student_expires_at ? (
+            <p className="ds-caption">
+              {t('settings.account.studentExpiresAt')} {new Date(studentVerification.student_expires_at).toLocaleDateString(locale)}
+            </p>
           ) : null}
-          {studentResubmittable ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                value={studentDocument}
-                onChange={(event) => setStudentDocument(event.target.value)}
-                placeholder={t('pricing.student.documentPlaceholder')}
-                aria-label={t('pricing.student.documentPlaceholder')}
-                className="min-w-[240px] flex-1"
-                error={Boolean(studentError)}
-              />
-              <Button variant="secondary" loading={studentBusy} disabled={!studentDocument.trim()} onClick={() => void submitStudentDocument()}>
-                {t('pricing.student.submit')}
-              </Button>
-            </div>
-          ) : null}
-          {studentError ? <p className="ds-caption text-[color:var(--danger)]" role="alert">{getApiErrorMessage(studentError, t('pricing.student.error'))}</p> : null}
+          <StudentDocumentUpload verification={studentVerification} onSubmitted={setStudentVerification} />
         </div>
       </SettingsSection>
 

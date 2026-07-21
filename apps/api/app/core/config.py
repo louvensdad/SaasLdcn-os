@@ -287,6 +287,11 @@ class Settings(BaseModel):
     modernize_max_archive_uncompressed_bytes: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ARCHIVE_UNCOMPRESSED_BYTES", str(1024 * 1024 * 1024)))
     )
+    # A scanned enrollment document (vault 56 - Monetização e Consumo/Planos,
+    # assinaturas e controle de acesso.md, "Plano Estudante e elegibilidade").
+    student_document_max_upload_bytes: int = Field(
+        default_factory=lambda: int(os.environ.get("LDCN_STUDENT_DOCUMENT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+    )
     modernize_max_archive_depth: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ARCHIVE_DEPTH", "32"))
     )

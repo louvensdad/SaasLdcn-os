@@ -143,7 +143,7 @@ export async function startE2ERuntime({ webRoot = resolve(import.meta.dirname, '
     mkdirSync(resolve(webRoot, 'test-results'), { recursive: true });
     writeFileSync(resolve(webRoot, 'test-results', `e2e-runtime-${runId}.json`), JSON.stringify(manifest, null, 2));
     return { ...state, manifest };
-  } catch {
+  } catch (error) {
     await stopE2ERuntime(state);
     throw new Error(`E2E runtime startup failed for ${runId}: ${error instanceof Error ? error.message : String(error)}`);
   }
