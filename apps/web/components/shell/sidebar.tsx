@@ -52,9 +52,17 @@ export function Sidebar({ compact = false }: SidebarProps) {
   const { data: aiKeys } = useQuery({
     queryKey: ['user-ai-keys'], queryFn: () => aiKeyVaultClient.list(), staleTime: 60_000,
   });
-  const planName = plans?.find((plan) => plan.code === subscription?.plan_code)?.name ?? null;
-  const storageQuota = formatGb(plans?.find((plan) => plan.code === subscription?.plan_code)?.limits.storage_bytes ?? null);
-  const connectedProvidersCount = new Set((aiKeys?.keys ?? []).filter((key) => key.ativo).map((key) => key.provider)).size;
+  // Defensive against a malformed/unexpected response shape (e.g. a test's
+  // generic catch-all mock, or a real backend error surfaced as something
+  // other than the typed contract) -- this is a global shell component
+  // rendered on every authenticated page, so it must never throw and take
+  // the whole page down with it.
+  const planList = Array.isArray(plans) ? plans : [];
+  const keyList = Array.isArray(aiKeys?.keys) ? aiKeys.keys : [];
+  const activePlan = planList.find((plan) => plan.code === subscription?.plan_code);
+  const planName = activePlan?.name ?? null;
+  const storageQuota = formatGb(activePlan?.limits.storage_bytes ?? null);
+  const connectedProvidersCount = new Set(keyList.filter((key) => key.ativo).map((key) => key.provider)).size;
 
   // Same avatar the Account tab shows (Settings) -- kept in sync so the
   // sidebar never shows a stale "no photo" fallback once one is uploaded.

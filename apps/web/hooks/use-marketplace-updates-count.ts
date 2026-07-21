@@ -13,5 +13,10 @@ export function useMarketplaceUpdatesCount(): number {
     queryFn: marketplaceClient.myInstalls,
     staleTime: 60_000,
   });
-  return (data ?? []).filter((install) => !install.uninstalled_at && install.update_available).length;
+  // Array.isArray guard, not just `?? []`: a malformed/unexpected response
+  // shape (e.g. a test's generic catch-all mock) is still truthy and would
+  // otherwise throw on .filter() -- this hook feeds the global Sidebar nav
+  // badge, rendered on every authenticated page.
+  const installs = Array.isArray(data) ? data : [];
+  return installs.filter((install) => !install.uninstalled_at && install.update_available).length;
 }
