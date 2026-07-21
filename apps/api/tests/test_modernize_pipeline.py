@@ -105,14 +105,14 @@ def test_ignores_node_modules_and_build(client, cleanup):
     [("GPT", "openai"), ("DeepSeek", "openrouter"), ("Gemini", "google"), ("Claude", "anthropic")],
 )
 def test_select_provider_marks_ready(client, label, provider):
-    client.post("/api/user-ai-keys/session", json={"provider": provider, "api_key": f"key-for-{provider}-123456"})
+    client.post("/api/user-ai-keys", json={"provider": provider, "nome": "Minha chave", "api_key": f"key-for-{provider}-123456"})
     catalog = client.get("/api/modernize/llm/providers").json()["providers"]
     ready = [c for c in catalog if c["id"] == provider and c["status"] == "ready"]
     assert ready, f"{label} ({provider}) should be ready after a key is set"
 
 
 def test_llm_test_invalid_key_fails(client, monkeypatch):
-    client.post("/api/user-ai-keys/session", json={"provider": "openai", "api_key": INVALID_KEY})
+    client.post("/api/user-ai-keys", json={"provider": "openai", "nome": "Minha chave", "api_key": INVALID_KEY})
 
     class _FailingRouter:
         def route(self, *a, **k):
@@ -127,13 +127,13 @@ def test_llm_test_invalid_key_fails(client, monkeypatch):
 
 
 def test_key_never_exposed_in_responses(client):
-    client.post("/api/user-ai-keys/session", json={"provider": "anthropic", "api_key": INVALID_KEY})
-    status_body = client.get("/api/user-ai-keys/status").text
+    client.post("/api/user-ai-keys", json={"provider": "anthropic", "nome": "Minha chave", "api_key": INVALID_KEY})
+    status_body = client.get("/api/user-ai-keys").text
     providers_body = client.get("/api/modernize/llm/providers").text
     assert INVALID_KEY not in status_body
     assert INVALID_KEY not in providers_body
     # Only a masked tail is ever surfaced.
-    assert "••••" in status_body
+    assert "…" in status_body
 
 
 def test_analysis_generates_executive_and_technical_reports(client, cleanup):

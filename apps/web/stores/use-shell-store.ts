@@ -12,8 +12,10 @@ export type InterfaceDensity = 'comfortable' | 'compact';
  * "page announces its own context to the shell" shape useLDCNStore's
  * setContext already uses) and cleared on unmount so leaving the page reverts
  * Topbar to its default per-route title/subtitle. Never persisted. */
+export type BreadcrumbItem = string | { readonly label: string; readonly href: string };
+
 export interface TopbarConfig {
-  readonly breadcrumb?: readonly string[];
+  readonly breadcrumb?: readonly BreadcrumbItem[];
   readonly title?: string;
   readonly subtitle?: string;
   readonly primaryAction?: {

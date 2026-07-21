@@ -93,12 +93,15 @@ def test_plan_catalog_has_no_fabricated_pricing_or_limits(client):
     assert plans["PRO"]["price_cents"] is None
     assert plans["STUDENT"]["price_cents"] == 3000
 
-    assert plans["BASIC"]["limits"]["active_projects"] == 3
-    assert plans["ADVANCED"]["limits"]["active_projects"] == 15
-    assert plans["PRO"]["limits"]["active_projects"] is None
+    assert plans["STUDENT"]["limits"]["active_projects"] == 3
+    assert plans["BASIC"]["limits"]["active_projects"] == 5
+    assert plans["ADVANCED"]["limits"]["active_projects"] == 20
+    assert plans["PRO"]["limits"]["active_projects"] == 100
     # "limitado"/"maior" in the vault table are qualitative, not numbers.
-    assert plans["BASIC"]["limits"]["monthly_ai_credits"] is None
     assert plans["BASIC"]["limits"]["monthly_builds"] is None
+    # BYOK model: the platform never meters/bills AI usage, so there is no
+    # monthly_ai_credits limit at all (not even an unset one).
+    assert "monthly_ai_credits" not in plans["BASIC"]["limits"]
 
     assert "WORKSPACE_CREATE" not in plans["BASIC"]["features"]
     assert "WORKSPACE_CREATE" in plans["ADVANCED"]["features"]
@@ -192,32 +195,32 @@ def test_plan_feature_not_available_blocks_workspace_creation_on_basic(client):
 def test_project_limit_reached_after_basic_plans_active_project_cap(client):
     client.post("/api/billing/subscription", json={"plan_code": "basic"})
 
-    for _ in range(3):
+    for _ in range(5):
         response = _save_project(client)
         assert response.status_code == 201
 
-    fourth = _save_project(client)
-    assert fourth.status_code == 403
-    detail = fourth.json()["detail"]
+    sixth = _save_project(client)
+    assert sixth.status_code == 403
+    detail = sixth.json()["detail"]
     assert detail["code"] == "PROJECT_LIMIT_REACHED"
-    assert detail["details"]["usage"] == 3
-    assert detail["details"]["value"] == 3
+    assert detail["details"]["usage"] == 5
+    assert detail["details"]["value"] == 5
 
 
 def test_workspace_limit_reached_on_advanced_plan(client):
     organization_id = client.get("/api/organizations").json()[0]["organization_id"]
     client.post("/api/billing/subscription", json={"plan_code": "advanced"})
 
-    # 1 personal workspace already exists; ADVANCED allows 5 total.
-    for index in range(4):
+    # 1 personal workspace already exists; ADVANCED allows 10 total.
+    for index in range(9):
         response = client.post(f"/api/organizations/{organization_id}/workspaces", json={"name": f"Team {index}"})
         assert response.status_code == 201
 
-    sixth = client.post(f"/api/organizations/{organization_id}/workspaces", json={"name": "One too many"})
-    assert sixth.status_code == 403
-    detail = sixth.json()["detail"]
+    eleventh = client.post(f"/api/organizations/{organization_id}/workspaces", json={"name": "One too many"})
+    assert eleventh.status_code == 403
+    detail = eleventh.json()["detail"]
     assert detail["code"] == "WORKSPACE_LIMIT_REACHED"
-    assert detail["details"]["usage"] == 5
+    assert detail["details"]["usage"] == 10
 
 
 def test_workspace_creation_checks_permission_before_plan_state(client):

@@ -9,6 +9,8 @@ from app.engines.llm.base import LLMAdapter, LLMError
 from app.engines.llm.custom_adapter import CustomOpenAIAdapter
 from app.engines.llm.deepseek_adapter import DeepSeekAdapter
 from app.engines.llm.google_adapter import GoogleAdapter
+from app.engines.llm.groq_adapter import GroqAdapter
+from app.engines.llm.lmstudio_adapter import LMStudioAdapter
 from app.engines.llm.mock_adapter import MockAdapter
 from app.engines.llm.ollama_adapter import OllamaAdapter
 from app.engines.llm.openai_adapter import OpenAIAdapter
@@ -110,6 +112,8 @@ class LLMRouter:
             "ollama": OllamaAdapter(),
             "openrouter": OpenRouterAdapter(),
             "deepseek": DeepSeekAdapter(),
+            "groq": GroqAdapter(),
+            "lmstudio": LMStudioAdapter(),
             "custom": CustomOpenAIAdapter(),
         }
         self._mock: LLMAdapter = mock_adapter or MockAdapter()

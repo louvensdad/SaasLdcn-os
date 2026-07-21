@@ -27,7 +27,6 @@ from app.schemas.auth import (
     UserUpdateRequest,
 )
 from app.services.auth_service import AuthService, OAuthError, OAuthNotConfiguredError
-from app.services.user_key_session_service import user_key_session
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -117,8 +116,6 @@ def logout(request: Request, user: CurrentUser, payload: RefreshRequest | None =
     if refresh_token is None and payload is not None:
         refresh_token = payload.refresh_token
     service.logout(user["user_id"], refresh_token)
-    # Purge any in-memory user-owned LLM keys when the session ends.
-    user_key_session.clear(user["user_id"])
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     _clear_refresh_cookie(response)
     return response
@@ -300,7 +297,6 @@ def set_my_avatar(payload: AvatarUpdateRequest, user: CurrentUser) -> AvatarResp
 @router.post("/me/logout-all", status_code=status.HTTP_204_NO_CONTENT)
 def logout_all_devices(user: CurrentUser) -> Response:
     service.logout_everywhere(user["user_id"])
-    user_key_session.clear(user["user_id"])
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     _clear_refresh_cookie(response)
     return response
@@ -309,7 +305,6 @@ def logout_all_devices(user: CurrentUser) -> Response:
 @router.post("/me/deactivate", status_code=status.HTTP_200_OK)
 def deactivate_my_account(user: CurrentUser) -> Response:
     result = service.deactivate_account(user["user_id"])
-    user_key_session.clear(user["user_id"])
     response = JSONResponse(content=result, status_code=status.HTTP_200_OK)
     _clear_refresh_cookie(response)
     return response

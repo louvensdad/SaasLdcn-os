@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.database import database_url_for, session_factory
 from app.models.marketplace import MarketplaceInstall, MarketplaceItem
@@ -96,6 +96,13 @@ class MarketplaceRepository:
             session.flush()
             return self._as_dict(row)
 
+    def get_items_by_ids(self, item_ids: list[str]) -> dict[str, dict[str, Any]]:
+        if not item_ids:
+            return {}
+        with self._sessions() as session:
+            rows = session.scalars(select(MarketplaceItem).where(MarketplaceItem.id.in_(item_ids))).all()
+        return {row.id: self._as_dict(row) for row in rows}
+
     @staticmethod
     def _as_dict(row: MarketplaceItem) -> dict[str, Any]:
         return {
@@ -132,6 +139,20 @@ class MarketplaceRepository:
                 .order_by(MarketplaceInstall.installed_at.desc())
             ).all()
         return [self._install_as_dict(row) for row in rows]
+
+    def count_installs_for_items(self, item_ids: list[str]) -> dict[str, int]:
+        """Cumulative download count -- never filters out uninstalled rows,
+        since "downloads" (like npm/VSCode Marketplace) is a counter that
+        never decrements when something is later removed."""
+        if not item_ids:
+            return {}
+        with self._sessions() as session:
+            rows = session.execute(
+                select(MarketplaceInstall.item_id, func.count(MarketplaceInstall.id))
+                .where(MarketplaceInstall.item_id.in_(item_ids))
+                .group_by(MarketplaceInstall.item_id)
+            ).all()
+        return dict(rows)
 
     def mark_uninstalled(self, install_id: str, installer_user_id: str) -> dict[str, Any] | None:
         with self._sessions.begin() as session:

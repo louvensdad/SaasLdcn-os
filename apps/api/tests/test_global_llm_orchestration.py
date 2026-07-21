@@ -2,18 +2,11 @@ from __future__ import annotations
 
 import pytest
 
+from app.services.ai_key_vault_service import ai_key_vault_service
 from app.services.llm_provider_registry import normalize_provider_id
 from app.services.llm_settings_service import LlmSettingsService
-from app.services.user_key_session_service import user_key_session
 
 KEY = "sk-test-global-provider-secret-1234"
-
-
-@pytest.fixture(autouse=True)
-def clear_global_state():
-    user_key_session.clear("resolver-user")
-    yield
-    user_key_session.clear("resolver-user")
 
 
 @pytest.mark.parametrize(
@@ -35,9 +28,9 @@ def test_provider_ids_are_canonical(alias: str, canonical: str):
 
 def test_configured_claude_is_the_safe_active_setting(client):
     response = client.post(
-        "/api/user-ai-keys/session", json={"provider": "anthropic", "api_key": KEY}
+        "/api/user-ai-keys", json={"provider": "anthropic", "nome": "Test Key", "api_key": KEY}
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
 
     active = client.get("/api/llm/settings/active")
     assert active.status_code == 200
@@ -65,7 +58,6 @@ def test_cache_stats_reflect_real_counters_not_fabricated_data(client):
 
 
 def test_no_provider_returns_explained_deterministic_state(client):
-    client.delete("/api/user-ai-keys/session")
     body = client.get("/api/llm/settings/active").json()
     assert body["provider"] is None
     assert body["mode"] == "deterministic"
@@ -74,8 +66,8 @@ def test_no_provider_returns_explained_deterministic_state(client):
 
 
 def test_switching_default_updates_global_resolution(client):
-    client.post("/api/user-ai-keys/session", json={"provider": "anthropic", "api_key": KEY})
-    client.post("/api/user-ai-keys/session", json={"provider": "openai", "api_key": KEY})
+    client.post("/api/user-ai-keys", json={"provider": "anthropic", "nome": "Test Key", "api_key": KEY})
+    client.post("/api/user-ai-keys", json={"provider": "openai", "nome": "Test Key", "api_key": KEY})
     selected = client.put(
         "/api/llm/settings/active", json={"provider": "openai", "model": "gpt-4.1"}
     )
@@ -114,7 +106,7 @@ def test_every_capability_resolves_the_same_active_provider(capability: str, cli
     # at an isolated, table-initialized per-test SQLite DB -- LlmSettingsService()
     # below persists the active selection there, not into the shared dev DB.
     del client
-    user_key_session.set("resolver-user", "anthropic", KEY)
+    ai_key_vault_service.create("resolver-user", "anthropic", "Test Key", KEY)
     service = LlmSettingsService()
     service.configured("resolver-user", "anthropic")
     context = service.resolve(
@@ -159,7 +151,7 @@ def test_valid_provider_never_falls_back_silently(client):
     """Rule: no module may resolve to deterministic while a valid global
     provider exists, unless the user explicitly asked for it."""
     del client  # see comment in test_every_capability_resolves_the_same_active_provider
-    user_key_session.set("resolver-user", "anthropic", KEY)
+    ai_key_vault_service.create("resolver-user", "anthropic", "Test Key", KEY)
     service = LlmSettingsService()
     service.configured("resolver-user", "anthropic")
     context = service.resolve(
@@ -175,7 +167,7 @@ def test_mismatched_model_falls_back_to_configured_provider(client):
     """If a model picker passes a model from a provider with no key, the flow
     must still auto-use the configured (keyed) provider, not go deterministic."""
     del client  # see comment in test_every_capability_resolves_the_same_active_provider
-    user_key_session.set("resolver-user", "anthropic", KEY)
+    ai_key_vault_service.create("resolver-user", "anthropic", "Test Key", KEY)
     service = LlmSettingsService()
     service.configured("resolver-user", "anthropic")
     # 'gpt-4.1' maps to openai, which has no key for this user.
@@ -194,7 +186,7 @@ def test_mismatched_model_falls_back_to_configured_provider(client):
 def test_confirm_response_never_leaks_the_api_key(client):
     """Security regression: the confirm payload and its audit trail must never
     echo the secret, in any casing or field name."""
-    client.post("/api/user-ai-keys/session", json={"provider": "anthropic", "api_key": KEY})
+    client.post("/api/user-ai-keys", json={"provider": "anthropic", "nome": "Test Key", "api_key": KEY})
     response = client.post(
         "/api/llm/settings/confirm",
         json={"requestedCapability": "engineering_review", "mode": "llm"},

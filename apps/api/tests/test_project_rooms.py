@@ -641,7 +641,7 @@ def test_engineering_review_uses_active_llm_blueprint_metadata(client: TestClien
     from app.schemas.llm import LLMResponse, Provider
 
     room_id = _approved_prompt_room(client)
-    client.post("/api/user-ai-keys/session", json={"provider": "anthropic", "api_key": "sk-test-blueprint-provider-1234"})
+    client.post("/api/user-ai-keys", json={"provider": "anthropic", "nome": "Minha chave", "api_key": "sk-test-blueprint-provider-1234"})
     response = LLMResponse(
         provider=Provider.anthropic,
         model="claude-sonnet-4",

@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "blueprint_version": "1.0.0",
+  "status": "approved",
+  "source_prompt_id": "prompt_saas_demo",
+  "project_type": "saas",
+  "modules": [{"id": "tasks", "name": "Tasks", "status": "approved", "source_refs": ["req_001"], "dependencies": []}],
+  "screens": [{"id": "task_list", "name": "Task List", "status": "approved", "source_refs": ["flow_001"], "dependencies": ["tasks"]}],
+  "entities": [{"id": "task", "name": "Task", "status": "approved", "source_refs": ["req_001"], "dependencies": []}],
+  "apis": [{"id": "tasks_crud", "name": "Tasks CRUD", "status": "approved", "source_refs": ["req_001"], "dependencies": ["task"]}],
+  "permissions": ["workspace.member"],
+  "integrations": [],
+  "automations": [],
+  "technology": {"frontend": "React", "backend": "Node.js", "database": "PostgreSQL"},
+  "infrastructure": {"environments": ["preview", "staging", "production"], "resources": {"cpu": "1", "memory": "1Gi"}},
+  "tests": ["tasks_crud_e2e"],
+  "acceptance_criteria": ["CRUD de tarefas funciona"],
+  "dependencies": [],
+  "risks": [],
+  "decisions": [{"id": "dec_001", "text": "Stack fixa do MVP"}],
+  "approval": {"approved_by": "usr_demo", "approved_at": "2026-07-19T00:20:00Z"}
+}

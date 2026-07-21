@@ -8,7 +8,7 @@ from app.engines.llm.deepseek_adapter import DeepSeekAdapter
 from app.engines.llm.router import LLMRouter
 from app.schemas.llm import LLMRequest, LLMResponse, Provider
 from app.services.ai_availability import available_providers
-from app.services.user_key_session_service import UserKeySessionService
+from app.repositories.user_ai_key_repository import UserAiKeyRepository
 
 
 class _Msg:
@@ -94,13 +94,14 @@ def test_router_dispatches_deepseek_with_user_key():
     assert captured["model"] == "deepseek-chat"
 
 
-def test_user_key_vault_accepts_deepseek_provider():
-    vault = UserKeySessionService()
-    masked = vault.set("user_d", "deepseek", "sk-deepseek-1234567890")
-    assert vault.get("user_d", "deepseek") == "sk-deepseek-1234567890"
-    assert ("deepseek", masked) in [(p, m) for p, m, _expires in vault.status("user_d")]
-    # The vault resolves the key for a DeepSeek model choice.
-    assert vault.resolve_for_model_choice("user_d", "deepseek-chat") == "sk-deepseek-1234567890"
+def test_user_key_vault_accepts_deepseek_provider(client):
+    del client  # only needed to trigger the isolated per-test DB fixture
+    repo = UserAiKeyRepository()
+    row = repo.create("user_d", "deepseek", "Minha chave DeepSeek", "sk-deepseek-1234567890")
+    assert repo.get_decrypted("user_d", row["id"]) == "sk-deepseek-1234567890"
+    assert row["masked"] in [r["masked"] for r in repo.list_for_user("user_d", "deepseek")]
+    # The vault resolves the default key for a DeepSeek provider.
+    assert repo.get_decrypted_default("user_d", "deepseek") == "sk-deepseek-1234567890"
 
 
 def test_ai_availability_counts_server_deepseek_key(monkeypatch):

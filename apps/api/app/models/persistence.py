@@ -193,6 +193,40 @@ class GitProviderRepositoryRecord(Base):
     repo_key: Mapped[str] = mapped_column(String, nullable=False)
     repository_json: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UserAiKey(Base):
+    """A permanent, named, per-user BYOK provider key (vault 68 - Gestão de
+    Chaves de IA). Unlike GitProviderConnection this is NOT single-row-per-
+    (user, provider): a user may register several keys for the same provider,
+    so each row is individually addressable by `id` with no composite-PK
+    uniqueness constraint on (user_id, provider). `masked` is persisted (not
+    recomputed) so listing never needs to decrypt. `is_default_for_provider`
+    is enforced single-true-per-(user, provider) by the service layer in a
+    transaction, not a DB constraint (SQLite has no reliable partial unique
+    index here). Rotating a key is delete+recreate -- `encrypted_key` is
+    otherwise immutable once created, matching "never editable after
+    creation" from the vault."""
+
+    __tablename__ = "user_ai_keys"
+    __table_args__ = (Index("idx_user_ai_keys_user_provider", "user_id", "provider"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    nome: Mapped[str] = mapped_column(String, nullable=False)
+    apelido: Mapped[str | None] = mapped_column(String, nullable=True)
+    encrypted_key: Mapped[str] = mapped_column(Text, nullable=False)
+    masked: Mapped[str] = mapped_column(String, nullable=False)
+    modelo_padrao: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="untested")
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_default_for_provider: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    last_used_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_validated_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class DownloadRecord(Base):
     __tablename__ = "download_records"
     __table_args__ = (

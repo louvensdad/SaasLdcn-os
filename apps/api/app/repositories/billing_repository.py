@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.database import database_url_for, session_factory
@@ -18,29 +18,34 @@ BASIC_FEATURES = (
 ADVANCED_FEATURES = BASIC_FEATURES + ("WORKSPACE_CREATE", "AUTOMATION_EXECUTE", "ANALYTICS_ADVANCED")
 PRO_FEATURES = ADVANCED_FEATURES + ("DEPLOY_EXECUTE", "API_ACCESS", "MARKETPLACE_ACCESS", "AI_OBSERVABILITY")
 
+# BYOK model (vault 56): the platform never meters/bills AI usage, so there is
+# no "monthly_ai_credits" limit -- AI always runs on the user's own provider key.
 LIMITS = (
-    "active_projects", "workspaces", "members", "monthly_ai_credits", "monthly_builds",
+    "active_projects", "workspaces", "members", "monthly_builds",
     "storage_bytes", "preview_instances", "deployments", "automation_executions", "version_retention",
 )
+
+_GB = 1024**3
 
 # price_cents=None and any limit not listed below means "política comercial" /
 # "configurável" per the vault's own table -- genuinely undefined, never a
 # fabricated number (same rule already applied to resource_entitlements).
 DEFAULT_PLANS: dict[str, dict[str, Any]] = {
+    "STUDENT": {
+        "name": "Estudante", "audience": "student", "price_cents": 3000, "features": BASIC_FEATURES,
+        "limits": {"active_projects": 3, "workspaces": 1, "members": 1, "preview_instances": 1, "storage_bytes": 2 * _GB},
+    },
     "BASIC": {
         "name": "Básico", "audience": "individual", "price_cents": None, "features": BASIC_FEATURES,
-        "limits": {"active_projects": 3, "workspaces": 1, "members": 1, "preview_instances": 1},
+        "limits": {"active_projects": 5, "workspaces": 2, "members": 1, "preview_instances": 1, "storage_bytes": 10 * _GB},
     },
     "ADVANCED": {
         "name": "Avançado", "audience": "professional", "price_cents": None, "features": ADVANCED_FEATURES,
-        "limits": {"active_projects": 15, "workspaces": 5, "members": 5, "preview_instances": 3},
+        "limits": {"active_projects": 20, "workspaces": 10, "members": 5, "preview_instances": 3, "storage_bytes": 50 * _GB},
     },
     "PRO": {
-        "name": "Pro", "audience": "business", "price_cents": None, "features": PRO_FEATURES, "limits": {},
-    },
-    "STUDENT": {
-        "name": "Estudante", "audience": "student", "price_cents": 3000, "features": BASIC_FEATURES,
-        "limits": {"active_projects": 3, "workspaces": 1, "members": 1, "preview_instances": 1},
+        "name": "Pro", "audience": "business", "price_cents": None, "features": PRO_FEATURES,
+        "limits": {"active_projects": 100, "workspaces": 50, "storage_bytes": 200 * _GB},
     },
 }
 
@@ -73,16 +78,54 @@ class BillingRepository:
 
     # -------------------------------------------------------------- Catalog
     def ensure_catalog(self) -> None:
+        """Idempotently converges the catalog's *shape* to DEFAULT_PLANS/LIMITS
+        on every call (not just once): new plans/features get added, retired
+        limit keys (e.g. dropping `monthly_ai_credits` for the BYOK model) get
+        deleted, and newly-introduced limit keys (e.g. `storage_bytes`) get
+        seeded. It deliberately never overwrites the `limit_value` of a limit
+        row that already exists -- the vault states limits "são configuráveis
+        em plan_limits, nunca constantes no código", so once a row exists its
+        value is DB-owned, not re-stamped by code on every request."""
         with self._sessions.begin() as session:
-            if session.scalar(select(Plan.code).limit(1)):
-                return
+            existing_plans = {row.code: row for row in session.scalars(select(Plan)).all()}
             for code, spec in DEFAULT_PLANS.items():
-                session.add(Plan(
-                    code=code, name=spec["name"], audience=spec["audience"],
-                    price_cents=spec["price_cents"], currency="BRL", active=True,
-                ))
-                session.add_all(PlanFeature(plan_code=code, feature_code=f) for f in spec["features"])
-                session.add_all(PlanLimit(plan_code=code, limit_code=k, limit_value=spec["limits"].get(k)) for k in LIMITS)
+                plan = existing_plans.get(code)
+                if plan is None:
+                    plan = Plan(code=code, name=spec["name"], audience=spec["audience"],
+                                price_cents=spec["price_cents"], currency="BRL", active=True)
+                    session.add(plan)
+                else:
+                    plan.name = spec["name"]
+                    plan.audience = spec["audience"]
+                    plan.price_cents = spec["price_cents"]
+                    plan.currency = "BRL"
+                    plan.active = True
+
+                existing_features = set(session.scalars(
+                    select(PlanFeature.feature_code).where(PlanFeature.plan_code == code)
+                ).all())
+                target_features = set(spec["features"])
+                session.add_all(PlanFeature(plan_code=code, feature_code=f) for f in target_features - existing_features)
+                stale_features = existing_features - target_features
+                if stale_features:
+                    session.execute(delete(PlanFeature).where(
+                        PlanFeature.plan_code == code, PlanFeature.feature_code.in_(stale_features),
+                    ))
+
+                existing_limits = {
+                    row.limit_code: row for row in
+                    session.scalars(select(PlanLimit).where(PlanLimit.plan_code == code)).all()
+                }
+                for limit_code in LIMITS:
+                    if limit_code not in existing_limits:
+                        session.add(PlanLimit(
+                            plan_code=code, limit_code=limit_code, limit_value=spec["limits"].get(limit_code),
+                        ))
+                stale_limits = set(existing_limits) - set(LIMITS)
+                if stale_limits:
+                    session.execute(delete(PlanLimit).where(
+                        PlanLimit.plan_code == code, PlanLimit.limit_code.in_(stale_limits),
+                    ))
 
     def _plan_view(self, session: Session, plan: Plan) -> dict[str, Any]:
         return {

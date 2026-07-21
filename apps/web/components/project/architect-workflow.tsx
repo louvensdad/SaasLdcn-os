@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/card';
 import { useActiveLlm } from '@/hooks/use-active-llm';
 import { useLocale } from '@/hooks/use-locale';
 import { projectRoomsClient, type BlueprintStreamEvent } from '@/lib/api/project-rooms';
-import { userKeysClient } from '@/lib/api/user-keys';
+import { aiKeyVaultClient } from '@/lib/api/ai-key-vault';
 import type { ArchitectureBlueprint, BlueprintDecision } from '@contracts/architecture-blueprint.contract';
 import type { BlueprintVersion, ProjectRoom } from '@contracts/project-room.contract';
 
@@ -53,7 +53,7 @@ export function ArchitectWorkflowModal({ room, open, onClose, onRoom }: {
     setStreamed([]);
     setResult(null);
     setError('');
-    void userKeysClient.status().then((status) => setProviders(status.sessions.filter((item) => item.active).map((item) => item.provider))).catch(() => setProviders([]));
+    void aiKeyVaultClient.list().then((status) => setProviders(status.keys.filter((item) => item.ativo).map((item) => item.provider))).catch(() => setProviders([]));
     // room.status is only read to pick the initial phase on open; re-running
     // this reset whenever room.status changes later would wipe in-progress
     // streamed decisions while the polling effect below is still generating.

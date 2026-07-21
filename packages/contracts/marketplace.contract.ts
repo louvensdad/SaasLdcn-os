@@ -47,6 +47,10 @@ export interface MarketplaceItem {
   readonly status: MarketplaceItemStatus;
   readonly created_at: string;
   readonly updated_at: string;
+  /** Computed, never persisted -- see marketplace_service.derive_category. */
+  readonly category: string;
+  /** Computed, never persisted -- cumulative, never decrements on uninstall. */
+  readonly downloads: number;
 }
 
 export interface MarketplaceInstall {
@@ -56,4 +60,7 @@ export interface MarketplaceInstall {
   readonly installed_automation_id: string;
   readonly installed_at: string;
   readonly uninstalled_at?: string | null;
+  /** Computed, never persisted -- see MarketplaceService.list_my_installs. */
+  readonly current_item_version?: number | null;
+  readonly update_available?: boolean;
 }

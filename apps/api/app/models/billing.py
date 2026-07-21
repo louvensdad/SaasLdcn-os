@@ -9,10 +9,10 @@ class Plan(Base):
     e controle de acesso.md). `price_cents` is nullable and intentionally left
     unset for Básico/Avançado/Pro -- the vault's own pricing table lists their
     price as "política comercial" (undefined), not a number; only Estudante
-    (R$30,00/mês, a discounted Básico modality) has a real committed price.
-    Fabricating a number here would violate the same anti-fabrication rule
-    already applied to plan_limits and resource_entitlements elsewhere in
-    this codebase."""
+    (R$30,00/mês, its own independent tier, not a Básico discount) has a real
+    committed price. Fabricating a number here would violate the same
+    anti-fabrication rule already applied to plan_limits and
+    resource_entitlements elsewhere in this codebase."""
 
     __tablename__ = "plans"
     code: Mapped[str] = mapped_column(String, primary_key=True)

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ExternalLink, KeyRound, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
 
-import { userKeysClient, type KeyProvider, type KeySessionStatus } from '@/lib/api/user-keys';
+import { aiKeyVaultClient, type AiKeyView, type KeyProvider } from '@/lib/api/ai-key-vault';
 import { LLM_BUY_TOKENS_URL } from '@/lib/llm-provider-links';
 import { useLocale } from '@/hooks/use-locale';
 
@@ -29,14 +29,14 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
   const { t } = useLocale();
   const [provider, setProvider] = useState<KeyProvider>('anthropic');
   const [apiKey, setApiKey] = useState('');
-  const [sessions, setSessions] = useState<KeySessionStatus[]>([]);
+  const [keys, setKeys] = useState<AiKeyView[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string; model?: string | null } | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
-    void userKeysClient.status().then((r) => setSessions(r.sessions)).catch(() => undefined);
+    void aiKeyVaultClient.list().then((r) => setKeys(r.keys)).catch(() => undefined);
   }, [enabled]);
 
   async function testKey() {
@@ -44,7 +44,7 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const result = await userKeysClient.testKey(provider, apiKey.trim());
+      const result = await aiKeyVaultClient.testKey(provider, apiKey.trim());
       setTestResult({ ok: result.ok, message: result.message, model: result.model });
     } catch (err) {
       setTestResult({ ok: false, message: err instanceof Error ? err.message : t('userKey.error.save') });
@@ -58,8 +58,9 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const res = await userKeysClient.setKey(provider, apiKey.trim());
-      setSessions(res.sessions);
+      await aiKeyVaultClient.create(provider, t('userKey.autoName', { provider }), apiKey.trim());
+      const res = await aiKeyVaultClient.list();
+      setKeys(res.keys);
       setApiKey(''); // drop the raw key from component state immediately
       setTestResult(null);
     } catch (err) {
@@ -69,12 +70,12 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
     }
   }
 
-  async function remove(p: string) {
+  async function remove(keyId: string) {
     setBusy(true);
     try {
-      await userKeysClient.remove(p);
-      const res = await userKeysClient.status();
-      setSessions(res.sessions);
+      await aiKeyVaultClient.remove(keyId);
+      const res = await aiKeyVaultClient.list();
+      setKeys(res.keys);
     } finally {
       setBusy(false);
     }
@@ -100,7 +101,7 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
             {t('userKey.securityNote')}
           </p>
 
-          {!sessions.some((s) => s.provider === provider) && LLM_BUY_TOKENS_URL[provider] ? (
+          {!keys.some((k) => k.provider === provider) && LLM_BUY_TOKENS_URL[provider] ? (
             <a
               href={LLM_BUY_TOKENS_URL[provider]}
               target="_blank"
@@ -159,16 +160,16 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
           )}
           {error && <p className="text-xs text-amber-600 dark:text-amber-400">{error}</p>}
 
-          {sessions.length > 0 && (
+          {keys.length > 0 && (
             <ul className="flex flex-col gap-1 text-sm">
-              {sessions.map((s) => (
-                <li key={s.provider} className="flex items-center gap-2">
+              {keys.map((k) => (
+                <li key={k.id} className="flex items-center gap-2">
                   <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-                  <span className="font-medium">{s.provider}</span>
-                  <code className="text-xs text-muted-foreground">{s.masked}</code>
+                  <span className="font-medium">{k.provider}</span>
+                  <code className="text-xs text-muted-foreground">{k.masked}</code>
                   <button
                     type="button"
-                    onClick={() => void remove(s.provider)}
+                    onClick={() => void remove(k.id)}
                     className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground transition hover:text-red-500"
                   >
                     <Trash2 className="h-3.5 w-3.5" />

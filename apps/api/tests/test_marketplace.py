@@ -172,6 +172,53 @@ def test_republish_fails_once_the_source_automation_is_deleted(client):
     assert response.status_code == 409
 
 
+def test_category_is_derived_from_the_action_url_host(client):
+    automation = _create_automation(client, action_config={"method": "POST", "url": "https://hooks.slack.com/services/x"})
+    item = _publish(client, automation["id"]).json()
+    assert item["category"] == "Integrações"
+
+
+def test_category_falls_back_to_backend_for_an_unrecognized_manual_trigger_host(client):
+    automation = _create_automation(client)  # default url: https://example.com, trigger_type: manual
+    item = _publish(client, automation["id"]).json()
+    assert item["category"] == "Backend"
+
+
+def test_downloads_count_is_cumulative_and_survives_an_uninstall(client):
+    automation = _create_automation(client)
+    item = _publish(client, automation["id"]).json()
+    assert item["downloads"] == 0
+
+    other_token = _other_client_token(client)
+    headers = {"Authorization": f"Bearer {other_token}"}
+    install = client.post(f"/api/marketplace/items/{item['id']}/install", headers=headers).json()
+
+    after_install = client.get(f"/api/marketplace/items/{item['id']}").json()
+    assert after_install["downloads"] == 1
+
+    client.post(f"/api/marketplace/installs/{install['id']}/uninstall", headers=headers)
+    after_uninstall = client.get(f"/api/marketplace/items/{item['id']}").json()
+    assert after_uninstall["downloads"] == 1  # never decrements
+
+
+def test_update_available_flips_true_after_the_author_republishes(client):
+    automation = _create_automation(client)
+    item = _publish(client, automation["id"]).json()
+    other_token = _other_client_token(client)
+    headers = {"Authorization": f"Bearer {other_token}"}
+
+    client.post(f"/api/marketplace/items/{item['id']}/install", headers=headers)
+    installs_before = client.get("/api/marketplace/installs/mine", headers=headers).json()
+    assert installs_before[0]["update_available"] is False
+    assert installs_before[0]["current_item_version"] == 1
+
+    client.post(f"/api/marketplace/items/{item['id']}/republish", json={"note": "v2"})
+    installs_after = client.get("/api/marketplace/installs/mine", headers=headers).json()
+    assert installs_after[0]["update_available"] is True
+    assert installs_after[0]["current_item_version"] == 2
+    assert installs_after[0]["item_version"] == 1  # the install itself still records the version installed
+
+
 def test_installed_content_never_leaks_a_credential_placeholder_as_a_resolved_value(client):
     automation = _create_automation(client, action_config={"method": "GET", "url": "https://example.com", "headers": {"Authorization": "Bearer {{credential:token}}"}})
     client.put(f"/api/automations/{automation['id']}/credentials", json={"name": "token", "value": "sk-super-secret"})

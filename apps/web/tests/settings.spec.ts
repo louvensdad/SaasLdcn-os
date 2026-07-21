@@ -38,6 +38,14 @@ async function mockAuth(page: Page) {
       return originalFetch(input, init);
     };
   }, fixture);
+  // Safety net registered FIRST (Playwright checks the most-recently-registered
+  // matching route first, so anything more specific added later still wins): a
+  // real backend is reachable in this dev environment, and any endpoint left
+  // unmocked (e.g. /api/system/presence, /api/billing/student/verification)
+  // would get a REAL 401 for this fake token -- the app's global fetch wrapper
+  // treats any 401 as "session invalid" and force-logs-out, silently
+  // redirecting mid-test instead of failing the specific assertion under test.
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, json: null }));
   await page.route('**/api/auth/refresh', async (route) => route.fulfill({ json: fixture }));
   await page.route('**/api/auth/me', async (route) => route.fulfill({ json: fixture.user }));
 }
@@ -60,7 +68,7 @@ async function mockSettingsBackend(page: Page) {
   await page.route('**/api/registry/capabilities', async (route) => route.fulfill({ json: [] }));
   await page.route('**/api/integrations/git/github', async (route) => route.fulfill({ json: { status: 'not_connected' } }));
   await page.route('**/api/integrations/git/gitlab', async (route) => route.fulfill({ json: { status: 'not_connected' } }));
-  await page.route('**/api/user-ai-keys/status', async (route) => route.fulfill({ json: { sessions: [] } }));
+  await page.route('**/api/user-ai-keys', async (route) => route.fulfill({ json: { keys: [] } }));
   await page.route('**/api/llm/settings/active', async (route) =>
     route.fulfill({ json: { provider: null, providerLabel: null, model: null, hasKey: false, status: 'not_configured', lastValidatedAt: null } }));
   await page.route('**/api/llm/cache-stats', async (route) =>
@@ -123,6 +131,119 @@ test('all six settings tabs render without error', async ({ page }) => {
     await page.getByRole('tab', { name: pattern }).click();
     await expect(page.getByRole('tabpanel')).toBeVisible();
   }
+});
+
+function mockAiKeyVault(page: Page) {
+  const keys: Array<{
+    id: string; provider: string; nome: string; apelido: string | null; masked: string;
+    modelo_padrao: string | null; status: string; ativo: boolean; is_default: boolean;
+    created_at: string; last_used_at: string | null; last_validated_at: string | null;
+  }> = [];
+  let nextId = 1;
+
+  return page.route('**/api/user-ai-keys**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const method = request.method();
+
+    if (method === 'GET' && /\/api\/user-ai-keys$/.test(url.pathname)) {
+      return route.fulfill({ json: { keys } });
+    }
+    if (method === 'POST' && /\/api\/user-ai-keys$/.test(url.pathname)) {
+      const body = request.postDataJSON() as { provider: string; nome: string; api_key: string; apelido?: string | null };
+      const isFirstForProvider = !keys.some((k) => k.provider === body.provider);
+      const row = {
+        id: `aik_${nextId++}`, provider: body.provider, nome: body.nome, apelido: body.apelido ?? null,
+        masked: `${body.api_key.slice(0, 4)}…${body.api_key.slice(-4)}`, modelo_padrao: null,
+        status: 'untested', ativo: true, is_default: isFirstForProvider,
+        created_at: new Date().toISOString(), last_used_at: null, last_validated_at: null,
+      };
+      keys.push(row);
+      return route.fulfill({ status: 201, json: row });
+    }
+    if (method === 'POST' && /\/set-default$/.test(url.pathname)) {
+      const keyId = url.pathname.split('/').at(-2);
+      const target = keys.find((k) => k.id === keyId);
+      if (target) {
+        for (const row of keys) if (row.provider === target.provider) row.is_default = false;
+        target.is_default = true;
+        return route.fulfill({ json: target });
+      }
+      return route.fulfill({ status: 404, json: { detail: 'not found' } });
+    }
+    if (method === 'DELETE') {
+      const keyId = url.pathname.split('/').at(-1);
+      const index = keys.findIndex((k) => k.id === keyId);
+      if (index === -1) return route.fulfill({ status: 404, json: { detail: 'not found' } });
+      keys.splice(index, 1);
+      return route.fulfill({ status: 204 });
+    }
+    return route.continue();
+  });
+}
+
+test('AI tab shows an empty state until a key is registered for a provider', async ({ page }) => {
+  await mockAuth(page);
+  await mockSettingsBackend(page);
+  await mockAiKeyVault(page);
+  await page.goto('/settings');
+  await expect(page.getByRole('tablist')).toBeVisible();
+  await page.getByRole('tab', { name: TAB_LABELS.ai }).click();
+
+  await page.getByRole('button', { name: /Configurar Anthropic/i }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText(/Nenhuma chave cadastrada|No keys registered|Aún no hay claves|Aucune clé enregistrée/i)).toBeVisible();
+});
+
+test('registering an AI key lists it as the default; a second key can take over; deleting removes it', async ({ page }) => {
+  await mockAuth(page);
+  await mockSettingsBackend(page);
+  await mockAiKeyVault(page);
+  await page.route('**/api/user-ai-keys/test', async (route) =>
+    route.fulfill({ json: { ok: true, provider: 'anthropic', model: 'claude-haiku-4-5', http_status: 200, message: 'Chave validada com sucesso.' } }));
+  await page.goto('/settings');
+  await expect(page.getByRole('tablist')).toBeVisible();
+  await page.getByRole('tab', { name: TAB_LABELS.ai }).click();
+  await page.getByRole('button', { name: /Configurar Anthropic/i }).click();
+
+  const dialog = page.getByRole('dialog');
+
+  // First key: becomes the default automatically.
+  await dialog.getByLabel(/Nome da chave|Key name|Nombre de la clave|Nom de la clé/i).fill('Chave principal');
+  await dialog.getByLabel('Anthropic API key').fill('sk-ant-test-key-1234');
+  await dialog.getByRole('button', { name: /Testar chave|Test key/i }).click();
+  await dialog.getByRole('button', { name: /Adicionar chave|Add key/i }).click();
+  await expect(dialog.getByText('Chave principal')).toBeVisible();
+  await expect(dialog.getByText(/Provider padrão da plataforma|Make default/i).first()).toBeVisible();
+
+  // Second key for the same provider: does NOT replace the first, both listed.
+  await dialog.getByLabel(/Nome da chave|Key name|Nombre de la clave|Nom de la clé/i).fill('Chave secundária');
+  await dialog.getByLabel('Anthropic API key').fill('sk-ant-second-key-5678');
+  await dialog.getByRole('button', { name: /Testar chave|Test key/i }).click();
+  await dialog.getByRole('button', { name: /Adicionar chave|Add key/i }).click();
+  await expect(dialog.getByText('Chave principal')).toBeVisible();
+  await expect(dialog.getByText('Chave secundária')).toBeVisible();
+
+  // Switching the default to the second key.
+  await dialog.getByRole('button', { name: /Definir como padrão|Set as default/i }).click();
+  await expect(dialog.getByText('Chave secundária')).toBeVisible();
+
+  // Deleting the (now non-default) first key removes it from the list.
+  const firstRow = dialog.getByText('Chave principal').locator('..').locator('..');
+  await firstRow.getByRole('button', { name: /Remover chave|Remove key/i }).click();
+  const confirmDialog = page.getByRole('alertdialog');
+  await expect(confirmDialog).toBeVisible();
+  await confirmDialog.getByRole('button', { name: /Excluir permanentemente|Delete permanently/i }).click();
+  await expect(dialog.getByText('Chave principal')).toHaveCount(0);
+});
+
+test('the Sidebar/Topbar AI settings entry point is reachable from Configurações', async ({ page }) => {
+  await mockAuth(page);
+  await mockSettingsBackend(page);
+  await mockAiKeyVault(page);
+  await page.goto('/settings');
+  await page.getByRole('tab', { name: TAB_LABELS.ai }).click();
+  await expect(page.getByRole('tabpanel').getByText(/Provedores de IA|AI Providers/i).first()).toBeVisible();
 });
 
 test('account tab shows real session, 2FA and workspace context', async ({ page }) => {

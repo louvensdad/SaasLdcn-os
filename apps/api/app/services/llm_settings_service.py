@@ -8,8 +8,8 @@ from app.repositories.llm_active_selection_repository import LlmActiveSelectionR
 from app.repositories.user_repository import AuditLogRepository
 from app.data.model_registry import MODEL_REGISTRY
 from app.schemas.llm_settings import ActiveLlmSettings, LlmResolution
+from app.services.ai_key_vault_service import AiKeyVaultService, ai_key_vault_service
 from app.services.llm_provider_registry import PROVIDERS, normalize_provider_id, provider_for_model
-from app.services.user_key_session_service import user_key_session
 
 
 @dataclass
@@ -57,8 +57,12 @@ class LlmSettingsService:
     so it survives a backend restart -- it used to live only in an in-memory
     dict, which silently reset to 'nothing configured' on every deploy."""
 
-    def __init__(self, repository: LlmActiveSelectionRepository | None = None) -> None:
+    def __init__(
+        self, repository: LlmActiveSelectionRepository | None = None,
+        key_vault: AiKeyVaultService | None = None,
+    ) -> None:
         self.repository = repository or LlmActiveSelectionRepository()
+        self.key_vault = key_vault or ai_key_vault_service
 
     def _audit(self, user_id: str, event_code: str) -> None:
         try:
@@ -92,10 +96,10 @@ class LlmSettingsService:
         self.repository.remove(user_id, canonical)
 
     def _implicit_selection(self, user_id: str) -> _Selection | None:
-        sessions = user_key_session.status(user_id)
-        if not sessions:
+        active_rows = [row for row in self.key_vault.list_for_user(user_id) if row["ativo"]]
+        if not active_rows:
             return None
-        canonical = normalize_provider_id(sessions[0][0])
+        canonical = normalize_provider_id(active_rows[0]["provider"])
         self.repository.set_if_absent(user_id, provider=canonical, model=PROVIDERS[canonical].default_model)
         row = self.repository.get(user_id)
         return _Selection.from_row(row) if row else None
@@ -109,7 +113,7 @@ class LlmSettingsService:
                 reason="Nenhum LLM configurado. Configure um provider ou use o modo determinístico."
             )
         definition = PROVIDERS[selection.provider]
-        has_key = not definition.key_required or user_key_session.get(user_id, selection.provider) is not None
+        has_key = not definition.key_required or self.key_vault.get_default_for_provider(user_id, selection.provider) is not None
         resolved_status = selection.validation_status
         if definition.key_required and not has_key:
             resolved_status = "expired"
@@ -156,7 +160,7 @@ class LlmSettingsService:
         model = requested_model if provider_for_model(requested_model) == provider else (
             active.model if active.provider == provider else definition.default_model
         )
-        raw_key = None if not definition.key_required else user_key_session.get(user_id, provider)
+        raw_key = None if not definition.key_required else self.key_vault.get_decrypted_default(user_id, provider)
         if definition.key_required and raw_key is None:
             # Auto-detection: the provider was *inferred from the requested model*
             # (not an explicit override) and it has no key, but the user's
@@ -170,13 +174,13 @@ class LlmSettingsService:
                 and active.mode == "llm"
                 and (
                     not PROVIDERS[active.provider].key_required
-                    or user_key_session.get(user_id, active.provider) is not None
+                    or self.key_vault.get_decrypted_default(user_id, active.provider) is not None
                 )
             ):
                 provider = active.provider
                 definition = PROVIDERS[provider]
                 model = active.model or definition.default_model
-                raw_key = None if not definition.key_required else user_key_session.get(user_id, provider)
+                raw_key = None if not definition.key_required else self.key_vault.get_decrypted_default(user_id, provider)
             else:
                 self._audit(user_id, "LLM_PROVIDER_FAILED")
                 return LlmExecutionContext(LlmResolution(
@@ -187,6 +191,8 @@ class LlmSettingsService:
         row = self.repository.get(user_id)
         if row and row["provider"] == provider:
             self.repository.mark_used(user_id, provider)
+        if definition.key_required:
+            self.key_vault.mark_used(user_id, provider)
         self._audit(user_id, "LLM_PROVIDER_CONFIRMED")
         return LlmExecutionContext(LlmResolution(
             provider=provider, providerLabel=definition.label, model=model, mode="llm",

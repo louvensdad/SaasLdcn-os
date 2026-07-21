@@ -19,6 +19,7 @@ from app.main import create_application
 from app.repositories.download_repository import DownloadRepository
 from app.repositories.llm_active_selection_repository import LlmActiveSelectionRepository
 from app.repositories.platform_runtime_config_repository import PlatformRuntimeConfigRepository
+from app.repositories.user_ai_key_repository import UserAiKeyRepository
 from app.repositories.user_preferences_repository import UserPreferencesRepository
 from app.repositories.user_repository import AuditLogRepository, UserRepository
 from app.repositories.automation_repository import AutomationRepository
@@ -44,6 +45,7 @@ from app.services.feature_service import feature_service
 from app.services.marketplace_service import marketplace_service
 from app.services.staging_service import staging_service
 from app.services.git_provider_service import git_provider_service
+from app.services.ai_key_vault_service import ai_key_vault_service
 from app.services.llm_settings_service import llm_settings_service
 from app.services.platform_runtime_config_service import platform_runtime_config_service
 from app.services.project_service import ProjectService
@@ -122,6 +124,7 @@ def client() -> TestClient:
     # git_export_engine's `from ... import git_provider_service` -- sees the
     # swap too, not just whichever module conftest happens to reassign.
     llm_settings_service.repository = LlmActiveSelectionRepository(database_path)
+    ai_key_vault_service.repository = UserAiKeyRepository(database_path)
     user_preferences_service.repository = UserPreferencesRepository(database_path)
     platform_runtime_config_service.repository = PlatformRuntimeConfigRepository(database_path)
     git_provider_service._storage = GitProviderRepository(database_path)

@@ -1,36 +1,68 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.core.deps import CurrentUser
 from app.repositories.redaction import REDACTED, redact_text
 from app.schemas.user_ai_key import (
-    KeySessionStatus,
-    KeySessionStatusResponse,
+    AiKeyListResponse,
+    AiKeyView,
+    CreateAiKeyRequest,
     TestKeyRequest,
     TestKeyResponse,
-    UpsertKeyRequest,
+    UpdateAiKeyRequest,
 )
-from app.services.user_key_session_service import user_key_session
+from app.services.ai_key_vault_service import DuplicateKeyNameError, ai_key_vault_service
 from app.services.llm_settings_service import llm_settings_service
 
 router = APIRouter(tags=["user-ai-keys"])
 
 
-def _status(user_id: str) -> KeySessionStatusResponse:
-    return KeySessionStatusResponse(
-        sessions=[
-            KeySessionStatus(provider=provider, masked=masked, expires_in_seconds=expires_in)
-            for provider, masked, expires_in in user_key_session.status(user_id)
-        ]
+def _list_response(user_id: str, provider: str | None) -> AiKeyListResponse:
+    return AiKeyListResponse(keys=[AiKeyView(**row) for row in ai_key_vault_service.list_for_user(user_id, provider)])
+
+
+@router.get("/user-ai-keys", response_model=AiKeyListResponse)
+def list_user_ai_keys(user: CurrentUser, provider: str | None = Query(default=None)) -> AiKeyListResponse:
+    """List the user's registered AI keys, masked. Never the raw key."""
+    return _list_response(user["user_id"], provider)
+
+
+@router.post("/user-ai-keys", response_model=AiKeyView, status_code=status.HTTP_201_CREATED)
+def create_user_ai_key(payload: CreateAiKeyRequest, user: CurrentUser) -> AiKeyView:
+    """Register a new permanent, named AI key. A user may register several
+    keys for the same provider; the first one becomes that provider's default."""
+    try:
+        row = ai_key_vault_service.create(
+            user["user_id"], payload.provider, payload.nome, payload.api_key,
+            apelido=payload.apelido, modelo_padrao=payload.modelo_padrao,
+        )
+    except DuplicateKeyNameError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    llm_settings_service.configured(user["user_id"], payload.provider)
+    return AiKeyView(**row)
+
+
+@router.patch("/user-ai-keys/{key_id}", response_model=AiKeyView)
+def update_user_ai_key(key_id: str, payload: UpdateAiKeyRequest, user: CurrentUser) -> AiKeyView:
+    """Update a key's display metadata. The encrypted value itself is
+    immutable once created -- rotating a key means delete + recreate."""
+    row = ai_key_vault_service.update(
+        user["user_id"], key_id, nome=payload.nome, apelido=payload.apelido,
+        modelo_padrao=payload.modelo_padrao, ativo=payload.ativo,
     )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chave não encontrada.")
+    return AiKeyView(**row)
 
 
-@router.get("/user-ai-keys/status", response_model=KeySessionStatusResponse)
-def get_user_ai_key_status(user: CurrentUser) -> KeySessionStatusResponse:
-    """List the user's active encrypted key sessions, masked. Never the raw key."""
-    return _status(user["user_id"])
-
+@router.post("/user-ai-keys/{key_id}/set-default", response_model=AiKeyView)
+def set_default_user_ai_key(key_id: str, user: CurrentUser) -> AiKeyView:
+    """Mark this key as the default used for its provider when an agent doesn't specify another."""
+    row = ai_key_vault_service.set_default(user["user_id"], key_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chave não encontrada.")
+    return AiKeyView(**row)
 
 
 _PROVIDER_TEST_MODEL = {
@@ -39,6 +71,9 @@ _PROVIDER_TEST_MODEL = {
     "google": "gemini-2.5-flash",
     "openrouter": "deepseek/deepseek-r1:free",
     "deepseek": "deepseek-chat",
+    "groq": "llama-3.3-70b-versatile",
+    "ollama": "qwen2.5-coder:7b",
+    "lmstudio": "local-model",
     "custom": "custom",
 }
 
@@ -56,7 +91,7 @@ def _safe_message(exc: Exception, api_key: str) -> str:
 
 @router.post("/user-ai-keys/test", response_model=TestKeyResponse)
 def test_user_ai_key(payload: TestKeyRequest, user: CurrentUser) -> TestKeyResponse:
-    """Validate a user key without storing it or echoing it back."""
+    """Validate a candidate key without storing it or echoing it back."""
     from app.engines.llm.base import LLMError
     from app.engines.llm.router import LLMRouter
     from app.schemas.llm import LLMRequest
@@ -75,33 +110,16 @@ def test_user_ai_key(payload: TestKeyRequest, user: CurrentUser) -> TestKeyRespo
             api_key=payload.api_key,
         )
     except LLMError as exc:
-        llm_settings_service.validated(user["user_id"], payload.provider, ok=False)
         return TestKeyResponse(ok=False, provider=payload.provider, model=model, http_status=401, message=_safe_message(exc, payload.api_key))
     except Exception as exc:  # noqa: BLE001 - provider SDKs differ; surface exact message
-        llm_settings_service.validated(user["user_id"], payload.provider, ok=False)
         return TestKeyResponse(ok=False, provider=payload.provider, model=model, http_status=502, message=_safe_message(exc, payload.api_key))
-    llm_settings_service.validated(user["user_id"], payload.provider, ok=True)
+    _ = user  # test endpoint doesn't persist or attribute to a specific key row
     return TestKeyResponse(ok=True, provider=payload.provider, model=response.model, http_status=200, message="Chave validada com sucesso.")
 
-@router.post("/user-ai-keys/session", response_model=KeySessionStatusResponse)
-def upsert_user_ai_key(payload: UpsertKeyRequest, user: CurrentUser) -> KeySessionStatusResponse:
-    """Store a user-owned LLM key in the encrypted ephemeral vault for this user.
 
-    Redis deployments persist only ciphertext with a TTL; local development keeps ciphertext in RAM. The response
-    returns only the masked status of the user's sessions.
-    """
-    user_key_session.set(user["user_id"], payload.provider, payload.api_key, payload.ttl_seconds)
-    llm_settings_service.configured(user["user_id"], payload.provider)
-    return _status(user["user_id"])
-
-
-@router.delete("/user-ai-keys/session", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user_ai_key(
-    user: CurrentUser,
-    provider: str | None = Query(default=None),
-) -> Response:
-    """Purge one provider's key (or all of the user's keys when provider is omitted)."""
-    user_key_session.clear(user["user_id"], provider)
-    llm_settings_service.removed(user["user_id"], provider)
+@router.delete("/user-ai-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user_ai_key(key_id: str, user: CurrentUser) -> Response:
+    """Remove one specific key. Does not affect other keys for the same provider."""
+    if not ai_key_vault_service.delete(user["user_id"], key_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chave não encontrada.")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

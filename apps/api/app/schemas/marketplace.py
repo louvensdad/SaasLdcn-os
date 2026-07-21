@@ -41,6 +41,10 @@ class MarketplaceItem(ApiModel):
     status: MarketplaceItemStatus
     created_at: str
     updated_at: str
+    # Computed, never persisted -- see marketplace_service.derive_category /
+    # MarketplaceRepository.count_installs_for_items.
+    category: str
+    downloads: int = 0
 
 
 class PublishMarketplaceItemRequest(ApiModel):
@@ -61,3 +65,6 @@ class MarketplaceInstall(ApiModel):
     installed_automation_id: str
     installed_at: str
     uninstalled_at: str | None = None
+    # Computed, never persisted -- see MarketplaceService.list_my_installs.
+    current_item_version: int | None = None
+    update_available: bool = False

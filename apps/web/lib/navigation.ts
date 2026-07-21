@@ -26,6 +26,9 @@ export interface NavigationItem {
   readonly href: string;
   readonly icon: typeof LayoutDashboard;
   readonly descriptionKey: string;
+  /** Extensible union -- only one real variant exists today (Marketplace's
+   * real, computed "updates available" count). */
+  readonly badgeCountKey?: 'marketplaceUpdates';
 }
 
 export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
@@ -106,6 +109,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
     href: '/marketplace',
     icon: Store,
     descriptionKey: 'navigation.marketplace.description',
+    badgeCountKey: 'marketplaceUpdates',
   },
   {
     labelKey: 'navigation.pricing.label',

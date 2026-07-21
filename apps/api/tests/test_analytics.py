@@ -118,7 +118,7 @@ def test_technology_trends_real_or_empty(client):
 
 # 9. Never returns API keys
 def test_never_returns_api_keys(client):
-    client.post("/api/user-ai-keys/session", json={"provider": "anthropic", "api_key": SECRET_KEY})
+    client.post("/api/user-ai-keys", json={"provider": "anthropic", "nome": "Minha chave", "api_key": SECRET_KEY})
     text = client.get("/api/analytics/overview").text
     assert SECRET_KEY not in text
     assert "api_key" not in text

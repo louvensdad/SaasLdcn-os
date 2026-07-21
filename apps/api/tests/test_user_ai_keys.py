@@ -5,32 +5,68 @@ import pytest
 from app.engines.llm.base import LLMAdapter, LLMError
 from app.engines.llm.router import LLMRouter
 from app.schemas.llm import LLMRequest, LLMResponse, Provider
-from app.services.user_key_session_service import UserKeySessionService, user_key_session
+from app.services.ai_key_vault_service import ai_key_vault_service
+from app.repositories.user_ai_key_repository import UserAiKeyRepository
 
 RAW_KEY = "sk-ant-supersecret-key-value-1234"
 
 
 # --- vault unit -------------------------------------------------------------- #
 
-def test_vault_masks_and_never_exposes_raw_key():
-    vault = UserKeySessionService()
-    masked = vault.set("user_a", "anthropic", RAW_KEY)
-    assert RAW_KEY not in masked
-    assert masked.endswith(RAW_KEY[-4:])
-    # status carries only masked tails, never the raw key.
-    status = vault.status("user_a")
-    assert [(p, m) for p, m, _expires in status] == [("anthropic", masked)]
-    assert all(RAW_KEY not in m for _p, m, _e in status)
-    # get returns the plaintext only for client-build time.
-    assert vault.get("user_a", "anthropic") == RAW_KEY
+def test_vault_masks_and_never_exposes_raw_key(client):
+    del client  # only needed to trigger the isolated per-test DB fixture
+    repo = UserAiKeyRepository()
+    row = repo.create("user_a", "anthropic", "Minha chave", RAW_KEY)
+    assert RAW_KEY not in row["masked"]
+    assert row["masked"].endswith(RAW_KEY[-4:])
+    # list_for_user carries only masked tails, never the raw key.
+    listed = repo.list_for_user("user_a")
+    assert [r["masked"] for r in listed] == [row["masked"]]
+    assert all(RAW_KEY not in r["masked"] for r in listed)
+    # get_decrypted returns the plaintext only for client-build time.
+    assert repo.get_decrypted("user_a", row["id"]) == RAW_KEY
 
 
-def test_vault_isolates_users_and_clears():
-    vault = UserKeySessionService()
-    vault.set("user_a", "openai", RAW_KEY)
-    assert vault.get("user_b", "openai") is None  # isolation
-    vault.clear("user_a")
-    assert vault.get("user_a", "openai") is None
+def test_vault_isolates_users_and_supports_deletion(client):
+    del client
+    repo = UserAiKeyRepository()
+    row = repo.create("user_a", "openai", "Chave", RAW_KEY)
+    assert repo.list_for_user("user_b") == []  # isolation
+    assert repo.delete("user_a", row["id"]) is True
+    assert repo.list_for_user("user_a") == []
+
+
+def test_first_key_for_a_provider_becomes_its_default(client):
+    del client
+    repo = UserAiKeyRepository()
+    first = repo.create("user_a", "openai", "Primeira", RAW_KEY)
+    second = repo.create("user_a", "openai", "Segunda", "sk-second-key-1234")
+    assert first["is_default"] is True
+    assert second["is_default"] is False
+
+
+def test_deleting_the_default_key_promotes_the_next_active_one(client):
+    del client
+    repo = UserAiKeyRepository()
+    first = repo.create("user_a", "openai", "Primeira", RAW_KEY)
+    second = repo.create("user_a", "openai", "Segunda", "sk-second-key-1234")
+    repo.delete("user_a", first["id"])
+    remaining = repo.list_for_user("user_a")
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == second["id"]
+    assert remaining[0]["is_default"] is True
+
+
+def test_set_default_switches_the_active_key(client):
+    del client
+    repo = UserAiKeyRepository()
+    first = repo.create("user_a", "openai", "Primeira", RAW_KEY)
+    second = repo.create("user_a", "openai", "Segunda", "sk-second-key-1234")
+    repo.set_default("user_a", second["id"])
+    assert repo.get_default_for_provider("user_a", "openai")["id"] == second["id"]
+    listed = {r["id"]: r["is_default"] for r in repo.list_for_user("user_a")}
+    assert listed[first["id"]] is False
+    assert listed[second["id"]] is True
 
 
 # --- router behaviour with a user key --------------------------------------- #
@@ -96,44 +132,64 @@ def test_router_user_key_failure_is_not_silently_mocked():
 
 # --- HTTP endpoints ---------------------------------------------------------- #
 
-def _set_key(client, provider="anthropic", api_key=RAW_KEY):
-    return client.post("/api/user-ai-keys/session", json={"provider": provider, "api_key": api_key})
+def _create_key(client, provider="anthropic", nome="Minha chave", api_key=RAW_KEY):
+    return client.post("/api/user-ai-keys", json={"provider": provider, "nome": nome, "api_key": api_key})
 
 
-def test_session_endpoints_roundtrip_without_echoing_key(client):
-    resp = _set_key(client)
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert RAW_KEY not in resp.text  # never echoed
-    assert body["sessions"][0]["provider"] == "anthropic"
-    assert body["sessions"][0]["masked"].endswith(RAW_KEY[-4:])
+def test_crud_endpoints_roundtrip_without_echoing_key(client):
+    created = _create_key(client)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert RAW_KEY not in created.text  # never echoed
+    assert body["provider"] == "anthropic"
+    assert body["masked"].endswith(RAW_KEY[-4:])
+    assert body["is_default"] is True
+    key_id = body["id"]
 
-    status = client.get("/api/user-ai-keys/status").json()
-    assert RAW_KEY not in str(status)
-    assert {s["provider"] for s in status["sessions"]} == {"anthropic"}
+    listed = client.get("/api/user-ai-keys").json()
+    assert RAW_KEY not in str(listed)
+    assert {row["provider"] for row in listed["keys"]} == {"anthropic"}
 
-    assert client.delete("/api/user-ai-keys/session").status_code == 204
-    assert client.get("/api/user-ai-keys/status").json()["sessions"] == []
+    assert client.delete(f"/api/user-ai-keys/{key_id}").status_code == 204
+    assert client.get("/api/user-ai-keys").json()["keys"] == []
 
 
-def test_generate_with_use_user_key_but_no_session_errors(client):
-    # Asking to use my key without having stored one is a clear 400, never a
+def test_second_key_for_same_provider_does_not_replace_the_first(client):
+    _create_key(client, nome="Primeira")
+    second = _create_key(client, nome="Segunda", api_key="sk-ant-second-secret-5678")
+    assert second.status_code == 201
+    keys = client.get("/api/user-ai-keys").json()["keys"]
+    assert len(keys) == 2
+    assert {row["nome"] for row in keys} == {"Primeira", "Segunda"}
+
+
+def test_duplicate_key_name_for_same_provider_is_rejected(client):
+    _create_key(client, nome="Minha chave")
+    duplicate = _create_key(client, nome="Minha chave", api_key="sk-ant-another-secret-5678")
+    assert duplicate.status_code == 409
+
+
+def test_set_default_endpoint_switches_which_key_is_active(client):
+    first = _create_key(client, nome="Primeira").json()
+    second = _create_key(client, nome="Segunda", api_key="sk-ant-second-secret-5678").json()
+    response = client.post(f"/api/user-ai-keys/{second['id']}/set-default")
+    assert response.status_code == 200
+    assert response.json()["is_default"] is True
+    keys = {row["id"]: row["is_default"] for row in client.get("/api/user-ai-keys").json()["keys"]}
+    assert keys[first["id"]] is False
+    assert keys[second["id"]] is True
+
+
+def test_generate_with_use_user_key_but_no_key_registered_errors(client):
+    # Asking to use my key without having registered one is a clear 400, never a
     # silent server-key or mock run. The key check runs before any LLM call, so a
     # minimal spec is enough to reach it.
-    client.delete("/api/user-ai-keys/session")
     resp = client.post(
         "/api/meta-factory/generate",
         json={"spec": {"raw_intent": "API simples."}, "project_name": "x", "persist": False, "use_user_key": True},
     )
     assert resp.status_code == 400
     assert "key" in resp.text.lower()
-
-
-@pytest.fixture(autouse=True)
-def _clear_global_vault():
-    yield
-    # Keep the process-global vault clean between HTTP tests.
-    user_key_session.reset_for_tests()
 
 
 def test_test_key_endpoint_validates_without_persisting_or_echoing(client, monkeypatch):
@@ -150,35 +206,13 @@ def test_test_key_endpoint_validates_without_persisting_or_echoing(client, monke
     assert body["ok"] is True
     assert body["http_status"] == 200
     assert RAW_KEY not in resp.text
-    assert client.get("/api/user-ai-keys/status").json()["sessions"] == []
+    # A connectivity test never persists a row.
+    assert client.get("/api/user-ai-keys").json()["keys"] == []
 
 
-# --- user-chosen retention (TTL) --------------------------------------------- #
+def test_ensure_ready_raises_when_no_active_key(client):
+    del client
+    from app.services.ai_key_vault_service import NoAiKeyConfiguredError
 
-def test_vault_honours_user_chosen_ttl():
-    vault = UserKeySessionService()
-    vault.set("user_ttl", "openai", RAW_KEY, ttl_seconds=600)
-    status = vault.status("user_ttl")
-    assert len(status) == 1
-    _provider, _masked, expires_in = status[0]
-    assert expires_in is not None and 0 < expires_in <= 600
-
-
-def test_session_endpoint_accepts_ttl_and_reports_expiry(client):
-    response = client.post(
-        "/api/user-ai-keys/session",
-        json={"provider": "openai", "api_key": RAW_KEY, "ttl_seconds": 900},
-    )
-    assert response.status_code == 200, response.text
-    sessions = response.json()["sessions"]
-    session = next(s for s in sessions if s["provider"] == "openai")
-    assert session["expires_in_seconds"] is not None
-    assert 0 < session["expires_in_seconds"] <= 900
-
-
-def test_session_endpoint_rejects_ttl_below_minimum(client):
-    response = client.post(
-        "/api/user-ai-keys/session",
-        json={"provider": "openai", "api_key": RAW_KEY, "ttl_seconds": 10},
-    )
-    assert response.status_code == 422
+    with pytest.raises(NoAiKeyConfiguredError):
+        ai_key_vault_service.ensure_ready("user_without_keys", "anthropic")

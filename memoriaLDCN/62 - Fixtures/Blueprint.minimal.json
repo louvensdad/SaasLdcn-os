@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "blueprint_version": "1.0.0",
+  "status": "draft",
+  "source_prompt_id": "prompt_demo",
+  "project_type": "web_application",
+  "modules": [],
+  "screens": [],
+  "entities": [],
+  "apis": [],
+  "permissions": [],
+  "integrations": [],
+  "automations": [],
+  "technology": {"frontend": "React", "backend": "Node.js", "database": "PostgreSQL"},
+  "infrastructure": {"environments": ["preview"], "resources": {}},
+  "tests": [],
+  "acceptance_criteria": [],
+  "dependencies": [],
+  "risks": [],
+  "decisions": [],
+  "approval": {"approved_by": null, "approved_at": null}
+}

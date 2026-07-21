@@ -1,28 +1,35 @@
 'use client';
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Archive, Download, RefreshCw, Search, ShieldCheck, Store, Tag, Trash2 } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { PageError } from '@/components/feedback/error-system';
-import { SectionHeader } from '@/components/shell/section-header';
+import { CardLoading } from '@/components/feedback/loading-system';
+import { MarketplaceHeader } from '@/components/marketplace/marketplace-header';
+import { MarketplaceItemGrid } from '@/components/marketplace/marketplace-item-grid';
+import { MarketplacePublishForm } from '@/components/marketplace/marketplace-publish-cta';
+import { MarketplaceSearchBar, type MarketplaceSort } from '@/components/marketplace/marketplace-search-bar';
+import { MyInstallationsList } from '@/components/marketplace/marketplace-my-installations';
+import { MyItemsDashboard } from '@/components/marketplace/marketplace-my-items';
 import { useLocale } from '@/hooks/use-locale';
 import { automationsClient, type Automation } from '@/lib/api/automations';
 import { marketplaceClient, type MarketplaceInstall, type MarketplaceItem } from '@/lib/api/marketplace';
+import { useAuthStore } from '@/stores/use-auth-store';
 
 function errorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback;
 }
 
+const SEARCH_DEBOUNCE_MS = 300;
+
 export default function MarketplacePage() {
   const { t } = useLocale();
+  const currentUserId = useAuthStore((state) => state.user?.user_id);
 
   const [catalog, setCatalog] = useState<MarketplaceItem[] | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<string | null>(null);
+  const [sort, setSort] = useState<MarketplaceSort>('recent');
   const [installingId, setInstallingId] = useState<string | null>(null);
 
   const [mine, setMine] = useState<MarketplaceItem[] | null>(null);
@@ -72,7 +79,29 @@ export default function MarketplacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Debounced live search -- the backend match is a client-substring filter,
+  // so re-fetching on every keystroke would be wasted round-trips.
+  useEffect(() => {
+    const timer = setTimeout(() => void loadCatalog(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
   const availableAutomations = useMemo(() => (automations ?? []).filter((automation) => automation.status !== 'archived'), [automations]);
+
+  const categories = useMemo(
+    () => Array.from(new Set((catalog ?? []).map((item) => item.category))).sort(),
+    [catalog],
+  );
+
+  const visibleItems = useMemo(() => {
+    const items = (catalog ?? []).filter((item) => !category || item.category === category);
+    const sorted = [...items];
+    if (sort === 'downloads') sorted.sort((a, b) => b.downloads - a.downloads);
+    else if (sort === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
+    else sorted.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+    return sorted;
+  }, [catalog, category, sort]);
 
   async function handleInstall(itemId: string) {
     setInstallingId(itemId);
@@ -126,7 +155,7 @@ export default function MarketplacePage() {
       await marketplaceClient.republish(itemId, republishNote);
       setRepublishTargetId(null);
       setRepublishNote('');
-      await loadMine();
+      await Promise.all([loadMine(), loadInstalls()]);
     } finally {
       setRepublishBusy(false);
     }
@@ -147,183 +176,70 @@ export default function MarketplacePage() {
     [installs],
   );
 
+  function scrollToPublishForm() {
+    document.getElementById('marketplace-publish')?.scrollIntoView({ behavior: 'smooth' });
+  }
+
   return (
     <div className="space-y-8">
-      <SectionHeader title={t('marketplace.title')} description={t('marketplace.description')} />
+      <MarketplaceHeader catalog={catalog} />
 
-      <Card className="grid gap-3 p-4 sm:grid-cols-[1fr_auto]">
-        <label className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted)]" aria-hidden />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="pl-9"
-            placeholder={t('marketplace.searchPlaceholder')}
-            aria-label={t('marketplace.search')}
-          />
-        </label>
-        <Button type="button" variant="secondary" onClick={() => void loadCatalog(search)}>{t('marketplace.search')}</Button>
-      </Card>
+      <MarketplaceSearchBar
+        search={search}
+        onSearchChange={setSearch}
+        categories={categories}
+        category={category}
+        onCategoryChange={setCategory}
+        sort={sort}
+        onSortChange={setSort}
+      />
 
       {catalogError ? (
         <PageError title={t('marketplace.error.title')} description={catalogError} onRetry={() => void loadCatalog(search)} />
       ) : !catalog ? (
-        <Card className="p-6"><p className="text-sm text-[color:var(--muted)]">{t('marketplace.empty')}</p></Card>
-      ) : catalog.length === 0 ? (
-        <Card className="flex flex-col items-center gap-3 p-8 text-center">
-          <Store className="h-6 w-6 text-[color:var(--muted)]" aria-hidden />
-          <p className="text-sm text-[color:var(--muted)]">{t('marketplace.empty')}</p>
-        </Card>
-      ) : (
-        <div className="grid gap-5 lg:grid-cols-2">
-          {catalog.map((item) => (
-            <Card key={item.id} className="space-y-4 p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="ds-caption text-[color:var(--muted)]">{t('marketplace.version')} {item.version} · {t('marketplace.by')} {item.author_user_id.slice(0, 8)}</p>
-                  <h3 className="mt-1 text-xl font-semibold text-[color:var(--text)]">{item.name}</h3>
-                </div>
-                <Badge tone="success">{t('marketplace.free')}</Badge>
-              </div>
-              <p className="text-sm leading-6 text-[color:var(--muted)]">{item.description}</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge><Tag className="mr-1 h-3 w-3" aria-hidden />{item.license}</Badge>
-                {item.permissions.map((permission) => (
-                  <Badge key={permission} tone="accent"><ShieldCheck className="mr-1 h-3 w-3" aria-hidden />{permission}</Badge>
-                ))}
-              </div>
-              <Button
-                type="button"
-                variant="primary"
-                loading={installingId === item.id}
-                disabled={installedItemIds.has(item.id)}
-                onClick={() => void handleInstall(item.id)}
-              >
-                <Download className="h-4 w-4" aria-hidden />
-                {installedItemIds.has(item.id) ? t('marketplace.installed') : t('marketplace.install')}
-              </Button>
-            </Card>
-          ))}
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <CardLoading /><CardLoading /><CardLoading />
         </div>
+      ) : (
+        <MarketplaceItemGrid
+          items={visibleItems}
+          installedItemIds={installedItemIds}
+          installingId={installingId}
+          currentUserId={currentUserId}
+          onInstall={handleInstall}
+          onPublishFirst={scrollToPublishForm}
+        />
       )}
 
-      <Card className="space-y-4 p-6">
-        <div>
-          <h2 className="text-lg font-semibold text-[color:var(--text)]">{t('marketplace.publish.title')}</h2>
-          <p className="mt-1 text-sm text-[color:var(--muted)]">{t('marketplace.publish.description')}</p>
-        </div>
-        {availableAutomations.length === 0 ? (
-          <p className="text-sm text-[color:var(--muted)]">{t('marketplace.publish.noAutomations')}</p>
-        ) : (
-          <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => void handlePublish(event)}>
-            <label className="sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-[color:var(--muted)]">{t('marketplace.publish.automationLabel')}</span>
-              <select
-                required
-                value={sourceAutomationId}
-                onChange={(event) => setSourceAutomationId(event.target.value)}
-                className="focus-ring h-11 w-full rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_45%,transparent)] px-4 text-sm text-[color:var(--text)]"
-              >
-                <option value="">{t('marketplace.publish.automationPlaceholder')}</option>
-                {availableAutomations.map((automation) => (
-                  <option key={automation.id} value={automation.id}>{automation.title}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span className="mb-1 block text-xs font-medium text-[color:var(--muted)]">{t('marketplace.publish.nameLabel')}</span>
-              <Input required value={publishName} onChange={(event) => setPublishName(event.target.value)} />
-            </label>
-            <label>
-              <span className="mb-1 block text-xs font-medium text-[color:var(--muted)]">{t('marketplace.publish.licenseLabel')}</span>
-              <Input value={publishLicense} onChange={(event) => setPublishLicense(event.target.value)} />
-            </label>
-            <label className="sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-[color:var(--muted)]">{t('marketplace.publish.descriptionLabel')}</span>
-              <Input value={publishDescription} onChange={(event) => setPublishDescription(event.target.value)} />
-            </label>
-            {publishError ? <p className="sm:col-span-2 text-xs text-[color:var(--danger)]">{publishError}</p> : null}
-            {publishSuccess ? <p className="sm:col-span-2 text-xs text-[color:var(--success)]">{t('marketplace.publish.success')}</p> : null}
-            <div className="sm:col-span-2">
-              <Button type="submit" variant="primary" loading={publishBusy}>{t('marketplace.publish.submit')}</Button>
-            </div>
-          </form>
-        )}
-      </Card>
+      <MarketplacePublishForm
+        availableAutomations={availableAutomations}
+        sourceAutomationId={sourceAutomationId}
+        onSourceAutomationIdChange={setSourceAutomationId}
+        name={publishName}
+        onNameChange={setPublishName}
+        description={publishDescription}
+        onDescriptionChange={setPublishDescription}
+        license={publishLicense}
+        onLicenseChange={setPublishLicense}
+        busy={publishBusy}
+        error={publishError}
+        success={publishSuccess}
+        onSubmit={handlePublish}
+      />
 
-      <Card className="space-y-3 p-6">
-        <h2 className="text-lg font-semibold text-[color:var(--text)]">{t('marketplace.myItems.title')}</h2>
-        {!mine || mine.length === 0 ? (
-          <p className="text-sm text-[color:var(--muted)]">{t('marketplace.myItems.empty')}</p>
-        ) : (
-          <div className="space-y-3">
-            {mine.map((item) => (
-              <div key={item.id} className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-[color:var(--text)]">{item.name} <span className="font-normal text-[color:var(--muted)]">v{item.version}</span></p>
-                    <Badge tone={item.status === 'published' ? 'success' : item.status === 'archived' ? 'neutral' : 'warning'} className="mt-1">
-                      {t(`marketplace.myItems.status.${item.status}`)}
-                    </Badge>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {item.status !== 'archived' ? (
-                      <Button type="button" variant="ghost" onClick={() => { setRepublishTargetId(item.id); setRepublishNote(''); }}>
-                        <RefreshCw className="h-4 w-4" aria-hidden />{t('marketplace.myItems.republish')}
-                      </Button>
-                    ) : null}
-                    {item.status !== 'archived' ? (
-                      <Button type="button" variant="ghost" loading={archivingId === item.id} onClick={() => void handleArchive(item.id)}>
-                        <Archive className="h-4 w-4" aria-hidden />{t('marketplace.myItems.archive')}
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-                {republishTargetId === item.id ? (
-                  <form
-                    className="mt-3 flex flex-wrap gap-2"
-                    onSubmit={(event) => { event.preventDefault(); void handleRepublish(item.id); }}
-                  >
-                    <Input
-                      required
-                      value={republishNote}
-                      onChange={(event) => setRepublishNote(event.target.value)}
-                      placeholder={t('marketplace.myItems.republishNotePlaceholder')}
-                      className="flex-1"
-                    />
-                    <Button type="submit" variant="primary" loading={republishBusy}>{t('marketplace.myItems.republishSubmit')}</Button>
-                  </form>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      <MyItemsDashboard
+        items={mine}
+        archivingId={archivingId}
+        onArchive={handleArchive}
+        republishTargetId={republishTargetId}
+        onStartRepublish={(itemId) => { setRepublishTargetId(itemId); setRepublishNote(''); }}
+        republishNote={republishNote}
+        onRepublishNoteChange={setRepublishNote}
+        republishBusy={republishBusy}
+        onRepublishSubmit={handleRepublish}
+      />
 
-      <Card className="space-y-3 p-6">
-        <h2 className="text-lg font-semibold text-[color:var(--text)]">{t('marketplace.installs.title')}</h2>
-        {!installs || installs.length === 0 ? (
-          <p className="text-sm text-[color:var(--muted)]">{t('marketplace.installs.empty')}</p>
-        ) : (
-          <div className="space-y-2">
-            {installs.map((install) => (
-              <div key={install.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[color:var(--border)] p-4">
-                <div>
-                  <p className="font-mono text-xs text-[color:var(--muted)]">{install.installed_automation_id}</p>
-                  <Badge tone={install.uninstalled_at ? 'neutral' : 'success'} className="mt-1">
-                    {install.uninstalled_at ? t('marketplace.installs.uninstalled') : t('marketplace.installed')}
-                  </Badge>
-                </div>
-                {!install.uninstalled_at ? (
-                  <Button type="button" variant="ghost" loading={uninstallingId === install.id} onClick={() => void handleUninstall(install.id)}>
-                    <Trash2 className="h-4 w-4" aria-hidden />{t('marketplace.installs.uninstall')}
-                  </Button>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      <MyInstallationsList installs={installs} uninstallingId={uninstallingId} onUninstall={handleUninstall} />
     </div>
   );
 }

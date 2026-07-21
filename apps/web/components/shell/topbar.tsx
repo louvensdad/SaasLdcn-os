@@ -2,6 +2,7 @@
 
 import { motion, useReducedMotion } from 'framer-motion';
 import { ChevronRight, Menu, Settings2 } from 'lucide-react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { AiModeBadge } from '@/components/shell/ai-mode-badge';
@@ -52,13 +53,20 @@ export function Topbar({ title, subtitle, onOpenSearch }: TopbarProps) {
           </Button>
           <div className="min-w-0">
             {config?.breadcrumb?.length ? (
-              <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 type-data text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--accent)]">
-                {config.breadcrumb.map((crumb, index) => (
-                  <span key={crumb} className="flex items-center gap-1.5">
-                    {index > 0 ? <ChevronRight className="h-3 w-3 opacity-60" aria-hidden /> : null}
-                    {crumb}
-                  </span>
-                ))}
+              <nav aria-label={t('topbar.breadcrumbLabel')} className="flex flex-wrap items-center gap-1.5 type-data text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--accent)]">
+                {config.breadcrumb.map((crumb, index) => {
+                  const item = typeof crumb === 'string' ? { label: crumb, href: undefined } : crumb;
+                  return (
+                    <span key={item.label} className="flex items-center gap-1.5">
+                      {index > 0 ? <ChevronRight className="h-3 w-3 opacity-60" aria-hidden /> : null}
+                      {item.href ? (
+                        <Link href={item.href} className="focus-ring rounded-sm hover:underline">{item.label}</Link>
+                      ) : (
+                        item.label
+                      )}
+                    </span>
+                  );
+                })}
               </nav>
             ) : (
               <p className="type-data break-words text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--accent)]">

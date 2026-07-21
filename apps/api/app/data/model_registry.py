@@ -103,6 +103,17 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     # Sentinel id; the real model is settings.custom_model. Adapter errors clearly
     # if LDCN_CUSTOM_BASE_URL / LDCN_CUSTOM_MODEL are not set.
     "custom": {"provider": "custom", "supports_temperature": True},
+    # --- Groq (cloud inference, BYOK; free tier exists but pricing varies by
+    # model/plan -- $0 placeholder here until real per-token pricing is confirmed,
+    # same anti-fabrication rule as everywhere else in this registry) ---
+    "llama-3.3-70b-versatile": {
+        "provider": "groq",
+        "supports_temperature": True,
+        "in_per_mtok": 0.0,
+        "out_per_mtok": 0.0,
+    },
+    # --- LM Studio (local, key-free; model id is whatever the user has loaded) ---
+    "local-model": {"provider": "lmstudio", "supports_temperature": True, "local": True},
 }
 
 DEFAULT_MODEL = "claude-opus-4-8"

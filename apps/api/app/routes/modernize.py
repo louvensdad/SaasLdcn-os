@@ -75,7 +75,7 @@ from app.services.generated_project_service import GeneratedProjectService
 from app.services.git_provider_service import git_provider_service
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT
 from app.services.project_writer import ProjectWriter, ProjectWriteError
-from app.services.user_key_session_service import user_key_session
+from app.services.ai_key_vault_service import ai_key_vault_service
 from app.services.llm_settings_service import llm_provider_resolver
 
 router = APIRouter(tags=["modernize"])
@@ -117,7 +117,7 @@ def _require_flag(flag: str) -> None:
 
 
 def _provider_cards(user_id: str) -> list[LlmProviderConfig]:
-    active = {provider for provider, _masked, _expires_in in user_key_session.status(user_id)}
+    active = {row["provider"] for row in ai_key_vault_service.list_for_user(user_id) if row["ativo"]}
     return [
         LlmProviderConfig(
             id=card["id"], name=card["name"], description=card["description"],
@@ -553,9 +553,9 @@ def modernize_llm_test(payload: LlmConnectionTestRequest, user: CurrentUser) -> 
     if provider == "ollama":
         _audit(user["user_id"], "llm_connection_tested")
         return LlmConnectionTestResult(ok=True, provider=provider, model=None, message="Ollama local: nenhuma chave necessária.", degraded=True)
-    api_key = user_key_session.get(user["user_id"], provider)
+    api_key = ai_key_vault_service.get_decrypted_default(user["user_id"], provider)
     if api_key is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nenhuma chave na sessão para este provedor. Cole a chave primeiro.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nenhuma chave configurada para este provedor. Cadastre uma chave primeiro.")
     try:
         response = LLMRouter().route(
             LLMRequest(system="ping", user="responda apenas: ok"),

@@ -210,6 +210,14 @@ class Settings(BaseModel):
         default_factory=lambda: os.environ.get("LDCN_OLLAMA_BASE_URL", "http://localhost:11434/v1")
     )
 
+    # --- LM Studio ---
+    # Local, key-free generation via LM Studio's OpenAI-compatible endpoint --
+    # the same pattern as Ollama, but the model id is whatever the user has
+    # loaded locally rather than a pull-by-name convention.
+    lmstudio_base_url: str = Field(
+        default_factory=lambda: os.environ.get("LDCN_LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
+    )
+
     # --- OpenRouter ---
     # Online aggregator that exposes many models (OpenAI, Anthropic, Google,
     # DeepSeek, Llama, Qwen, incl. free tiers) behind one OpenAI-compatible API and
@@ -256,10 +264,7 @@ class Settings(BaseModel):
     )
     generation_daily_token_budget: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_GENERATION_DAILY_TOKEN_BUDGET", "2000000"))
-    )    # --- User LLM key vault TTL ---
-    # User-owned keys are session-scoped: they expire from the in-memory vault after
-    # this many seconds (defence in depth on top of "RAM only, lost on restart").
-    user_key_ttl_seconds: int = 3600
+    )
 
     # --- Modernize feature flags ---
     # When a flag is off, the corresponding action is hidden/blocked. Default on in

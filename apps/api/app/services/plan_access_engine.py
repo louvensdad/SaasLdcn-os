@@ -16,7 +16,6 @@ _LIMIT_ERROR_CODES = {
     "workspaces": "WORKSPACE_LIMIT_REACHED",
     "monthly_builds": "BUILD_LIMIT_REACHED",
     "preview_instances": "PREVIEW_LIMIT_REACHED",
-    "monthly_ai_credits": "AI_CREDIT_LIMIT_REACHED",
 }
 
 
@@ -45,11 +44,9 @@ class PlanAccessEngine:
     Wired for real into: project creation (`check_project_create`), workspace
     creation (`check_workspace_create`), generation-job/build creation
     (`check_build_execute`, /api/meta-factory/jobs) and live-preview start
-    (`check_preview_create`, /api/live-preview/start). `monthly_ai_credits` has
-    a mapped error code but NO check method -- doing so would require a
-    tokens->credits conversion rate that doesn't exist (same "Créditos de IA"
-    business decision already deferred in metering-entitlements-2026-07-20).
-    The vault also lists publish/invites as blocked post-trial-expiry --
+    (`check_preview_create`, /api/live-preview/start). There is no AI-credit
+    limit or check: the platform is BYOK (vault 56) and never meters or bills
+    AI/token usage. The vault also lists publish/invites as blocked post-trial-expiry --
     those are NOT wired to this engine and must not be assumed enforced."""
 
     def __init__(

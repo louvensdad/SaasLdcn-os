@@ -17,7 +17,7 @@ import { IconButton } from '@/components/ui/icon-button';
 import { CardLoading } from '@/components/feedback/loading-system';
 import { SettingsToggleRow } from '@/components/settings/settings-toggle-row';
 import { AiProviderKeyDialog, type AiProviderDef } from '@/components/settings/ai-provider-key-dialog';
-import { userKeysClient, type KeySessionStatusResponse } from '@/lib/api/user-keys';
+import { aiKeyVaultClient, type AiKeyListResponse } from '@/lib/api/ai-key-vault';
 import { llmSettingsClient } from '@/lib/api/llm-settings';
 import type { ActiveLlmSettings, LlmCacheStats, LlmModelUsage, LlmUsageStats } from '@contracts/llm-settings.contract';
 import { useLocale } from '@/hooks/use-locale';
@@ -36,7 +36,9 @@ const PROVIDERS: readonly (AiProviderDef & { readonly model: string; readonly co
   { id: 'google', name: 'Google', description: 'Gemini 2.5 Pro / Flash.', model: 'gemini-2.5-pro', contextTokens: null, Icon: Chrome, color: '#4285f4' },
   { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek V3 (chat) e R1 (reasoner).', model: 'deepseek-chat', contextTokens: null, Icon: Waves, color: '#4d6bfe' },
   { id: 'openrouter', name: 'OpenRouter', description: 'DeepSeek, Llama, Qwen — uma chave.', model: 'deepseek/deepseek-chat', contextTokens: null, Icon: Waypoints, color: '#8b5cf6' },
+  { id: 'groq', name: 'Groq', description: 'Inferência rápida na nuvem (Llama).', model: 'llama-3.3-70b-versatile', contextTokens: null, Icon: Zap, color: '#f97316' },
   { id: 'ollama', name: 'Ollama (Local)', description: 'Modelos locais na sua máquina.', model: 'qwen2.5-coder:7b', contextTokens: null, keyless: true, Icon: Bot, color: '#0ea5e9' },
+  { id: 'lmstudio', name: 'LM Studio (Local)', description: 'Modelos locais carregados no LM Studio.', model: 'local-model', contextTokens: null, keyless: true, Icon: Server, color: '#64748b' },
 ];
 
 const MEMORY_ICONS: Record<string, LucideIcon> = { shortTerm: Clock, longTerm: Archive, perProject: FolderKanban, continuousLearning: TrendingUp };
@@ -91,8 +93,8 @@ export function AiProvidersTab() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [openProvider, setOpenProvider] = useState<AiProviderDef | null>(null);
 
-  const statusQuery = useQuery<KeySessionStatusResponse>({
-    queryKey: ['user-ai-keys'], queryFn: () => userKeysClient.status(), staleTime: 30_000, retry: 1,
+  const statusQuery = useQuery<AiKeyListResponse>({
+    queryKey: ['user-ai-keys'], queryFn: () => aiKeyVaultClient.list(), staleTime: 30_000, retry: 1,
   });
   const activeQuery = useQuery<ActiveLlmSettings>({
     queryKey: ['llm-settings', 'active'], queryFn: llmSettingsClient.active, staleTime: 30_000,
@@ -107,7 +109,7 @@ export function AiProvidersTab() {
     queryKey: ['llm-settings', 'usage-by-model'], queryFn: llmSettingsClient.usageByModel, staleTime: 30_000, retry: 1,
   });
 
-  const sessions = statusQuery.data?.sessions ?? [];
+  const keys = statusQuery.data?.keys ?? [];
   const active = activeQuery.data;
   const usage = usageQuery.data;
   const cacheStats = cacheStatsQuery.data;
@@ -121,7 +123,7 @@ export function AiProvidersTab() {
     ? usage.previous.input_tokens + usage.previous.output_tokens + usage.previous.cache_read_tokens + usage.previous.saved_tokens
     : 0;
 
-  const hasKeyFor = (providerId: string) => sessions.some((item) => item.provider === providerId);
+  const hasKeyFor = (providerId: string) => keys.some((item) => item.provider === providerId && item.ativo);
 
   // Real fallback chain: active model first, then key-configured providers, Ollama last.
   const fallbackChain = useMemo(() => {
@@ -142,7 +144,7 @@ export function AiProvidersTab() {
     chain.push({ model: PROVIDERS.find((p) => p.id === 'ollama')!.model, roleKey: 'local', active: true });
     return chain.slice(0, 4);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.model, active?.provider, active?.status, sessions]);
+  }, [active?.model, active?.provider, active?.status, keys]);
 
   function exportProfile() {
     const snapshot: AiPreferencesSnapshot = {
@@ -584,8 +586,7 @@ export function AiProvidersTab() {
           open
           onClose={() => setOpenProvider(null)}
           def={openProvider}
-          session={sessions.find((item) => item.provider === openProvider.id)}
-          isDefault={active?.provider === openProvider.id}
+          keys={keys.filter((item) => item.provider === openProvider.id)}
         />
       ) : null}
     </div>

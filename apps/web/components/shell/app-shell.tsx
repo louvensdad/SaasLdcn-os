@@ -89,13 +89,28 @@ const shellCopy: Record<string, ShellCopy> = {
     titleKey: 'shell.settings.title',
     subtitleKey: 'shell.settings.subtitle',
   },
+  '/pricing': {
+    titleKey: 'shell.pricing.title',
+    subtitleKey: 'shell.pricing.subtitle',
+  },
 };
 
 function resolveShellCopy(pathname: string): ShellCopy {
   return shellCopy[pathname] ?? shellCopy['/dashboard'];
 }
 
-export function AppShell({ children }: { readonly children: ReactNode }) {
+interface AppShellProps {
+  readonly children: ReactNode;
+  /** Set to false for routes that must stay reachable by signed-out visitors
+   * (currently only /pricing, per the vault's "Rotas públicas: /{locale}/pricing").
+   * Skips the login redirect/gate entirely -- the page renders immediately and
+   * decides its own signed-out experience -- but still shows the Sidebar/Topbar
+   * chrome once a session IS present, instead of leaving authenticated users
+   * with no navigation at all. */
+  readonly requireAuth?: boolean;
+}
+
+export function AppShell({ children, requireAuth = true }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useLocale();
@@ -123,8 +138,8 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   }, [initializeAuth]);
 
   useEffect(() => {
-    if (authStatus === 'unauthenticated') router.replace('/login');
-  }, [authStatus, router]);
+    if (requireAuth && authStatus === 'unauthenticated') router.replace('/login');
+  }, [authStatus, requireAuth, router]);
 
   // Fail-safe: the whole app is gated on an authenticated session, so a session
   // bootstrap that never reaches a terminal state would leave every page on an
@@ -200,6 +215,21 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
       window.removeEventListener('keyup', onGlobalSearchKeyUp, true);
     };
   }, [closeDrawer, closeModal, closeNotificationCenter]);
+
+  if (!requireAuth && authStatus !== 'authenticated') {
+    // Public route (e.g. /pricing): render the page immediately with no
+    // Sidebar/Topbar chrome and no redirect -- it owns its own signed-out
+    // experience. Still mounts the overlay singletons so toasts/modals fired
+    // from the page itself work identically to every other route.
+    return (
+      <>
+        <ModalSystem />
+        <DrawerSystem />
+        <ToastProvider />
+        {children}
+      </>
+    );
+  }
 
   if (authStatus !== 'authenticated') {
     if (authTimedOut) {

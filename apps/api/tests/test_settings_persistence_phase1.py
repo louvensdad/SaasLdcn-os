@@ -6,8 +6,8 @@ from app.repositories.llm_active_selection_repository import LlmActiveSelectionR
 from app.repositories.llm_usage_repository import LlmUsageRepository
 from app.repositories.platform_runtime_config_repository import PlatformRuntimeConfigRepository
 from app.repositories.user_preferences_repository import UserPreferencesRepository
+from app.services.ai_key_vault_service import ai_key_vault_service
 from app.services.llm_settings_service import LlmSettingsService
-from app.services.user_key_session_service import user_key_session
 
 
 def _second_user_token(client) -> str:
@@ -116,14 +116,13 @@ class TestLlmActiveSelectionPersistence:
         from app.core.config import get_settings
 
         service_a = LlmSettingsService(LlmActiveSelectionRepository(get_settings().sqlite_path))
-        user_key_session.set("restart-user", "anthropic", "sk-test-restart-key")
+        ai_key_vault_service.create("restart-user", "anthropic", "Test Key", "sk-test-restart-key")
         service_a.select("restart-user", "anthropic")
 
         service_b = LlmSettingsService(LlmActiveSelectionRepository(get_settings().sqlite_path))
         active = service_b.active("restart-user")
         assert active.provider == "anthropic"
         assert active.mode == "llm"
-        user_key_session.clear("restart-user")
 
 
 class TestLlmUsageByModel:

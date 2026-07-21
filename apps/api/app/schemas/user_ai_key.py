@@ -6,31 +6,43 @@ from pydantic import Field
 
 from app.schemas.common import ApiModel
 
-KeyProvider = Literal["anthropic", "openai", "google", "openrouter", "deepseek", "custom"]
-
-# User-chosen retention window for a stored key: 5 minutes to 90 days.
-# None keeps the platform default (settings.user_key_ttl_seconds).
-MIN_KEY_TTL_SECONDS = 300
-MAX_KEY_TTL_SECONDS = 90 * 24 * 3600
+KeyProvider = Literal["anthropic", "openai", "google", "openrouter", "deepseek", "groq", "ollama", "lmstudio", "custom"]
 
 
-class UpsertKeyRequest(ApiModel):
+class CreateAiKeyRequest(ApiModel):
     provider: KeyProvider
-    # The raw key travels here over HTTPS, is stored only in the encrypted ephemeral vault
-    # vault, and is NEVER echoed back in any response.
+    nome: str = Field(min_length=1, max_length=120)
+    # The raw key travels here over HTTPS, is encrypted at rest, and is NEVER
+    # echoed back in any response after creation.
     api_key: str = Field(min_length=8, repr=False)
-    ttl_seconds: int | None = Field(default=None, ge=MIN_KEY_TTL_SECONDS, le=MAX_KEY_TTL_SECONDS)
+    apelido: str | None = Field(default=None, max_length=120)
+    modelo_padrao: str | None = None
 
 
-class KeySessionStatus(ApiModel):
+class UpdateAiKeyRequest(ApiModel):
+    nome: str | None = Field(default=None, min_length=1, max_length=120)
+    apelido: str | None = Field(default=None, max_length=120)
+    modelo_padrao: str | None = None
+    ativo: bool | None = None
+
+
+class AiKeyView(ApiModel):
+    id: str
     provider: str
+    nome: str
+    apelido: str | None = None
     masked: str
-    active: bool = True
-    expires_in_seconds: int | None = None
+    modelo_padrao: str | None = None
+    status: Literal["untested", "valid", "invalid"]
+    ativo: bool
+    is_default: bool
+    created_at: str
+    last_used_at: str | None = None
+    last_validated_at: str | None = None
 
 
-class KeySessionStatusResponse(ApiModel):
-    sessions: list[KeySessionStatus] = Field(default_factory=list)
+class AiKeyListResponse(ApiModel):
+    keys: list[AiKeyView] = Field(default_factory=list)
 
 
 class TestKeyRequest(ApiModel):

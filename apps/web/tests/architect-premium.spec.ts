@@ -75,10 +75,18 @@ async function setup(page: Page, room: ReturnType<typeof architectRoom>) {
       const headers = { 'Content-Type': 'application/json' };
       if (url.includes('/api/auth/refresh')) return new Response(JSON.stringify(auth), { status: 200, headers });
       if (/\/api\/project-rooms\/[^/?]+(?:\?.*)?$/.test(url)) return new Response(JSON.stringify(data), { status: 200, headers });
-      if (url.includes('/user-ai-keys') || url.includes('/user-keys')) return new Response(JSON.stringify({ sessions: [] }), { status: 200, headers });
+      if (url.includes('/user-ai-keys') || url.includes('/user-keys')) return new Response(JSON.stringify({ keys: [] }), { status: 200, headers });
       return original(input, init);
     };
   }, [authFixture, room] as const);
+  // Safety net registered FIRST (Playwright checks the most-recently-registered
+  // matching route first, so anything more specific added later still wins):
+  // a real backend is reachable in this dev environment, and any endpoint left
+  // unmocked (e.g. /api/ai-status, /api/system/presence, /api/users/me/preferences/*)
+  // would get a REAL 401 for this fake token -- the app's global fetch wrapper
+  // treats any 401 as "session invalid" and force-logs-out, silently
+  // redirecting mid-test instead of failing the specific assertion under test.
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, json: null }));
   await page.route('**/api/auth/me', async (route) => route.fulfill({ json: authFixture.user }));
   await page.route('**/api/registry/**', async (route) => route.fulfill({ json: [] }));
 }

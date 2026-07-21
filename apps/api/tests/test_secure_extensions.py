@@ -17,10 +17,10 @@ def assert_placeholder(response):
 
 def test_user_key_boost_validation_error_does_not_echo_api_key(client):
     # User Key Boost is implemented (see test_user_ai_keys.py). Here we keep the
-    # security invariant: even a validation error (missing provider) must never
-    # echo the raw key back in the HTTP response.
+    # security invariant: even a validation error (missing provider/nome) must
+    # never echo the raw key back in the HTTP response.
     response = client.post(
-        "/api/user-ai-keys/session",
+        "/api/user-ai-keys",
         json={"api_key": "sk-secret-value-that-must-not-return"},
     )
 

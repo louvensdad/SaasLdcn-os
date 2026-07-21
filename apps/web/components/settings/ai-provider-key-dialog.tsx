@@ -9,15 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
-import { RetentionSelect, formatRemaining } from '@/components/settings/retention-select';
-import { userKeysClient, type KeyProvider, type KeySessionStatus } from '@/lib/api/user-keys';
-import { llmSettingsClient } from '@/lib/api/llm-settings';
+import { aiKeyVaultClient, type AiKeyView, type KeyProvider } from '@/lib/api/ai-key-vault';
 import { LLM_BUY_TOKENS_URL } from '@/lib/llm-provider-links';
-import type { LlmProviderId } from '@contracts/llm-settings.contract';
 import { useLocale } from '@/hooks/use-locale';
 
 export interface AiProviderDef {
-  readonly id: KeyProvider | 'ollama';
+  readonly id: KeyProvider;
   readonly name: string;
   readonly description: string;
   readonly keyless?: boolean;
@@ -27,45 +24,44 @@ interface Props {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly def: AiProviderDef;
-  readonly session?: KeySessionStatus;
-  readonly isDefault: boolean;
+  readonly keys: readonly AiKeyView[];
 }
 
-/** Per-provider configuration dialog: the same real key-management flow the
- * old inline cards had (test -> save with TTL -> remove, make default), now
- * behind each provider row's gear button to match the reference layout. */
-export function AiProviderKeyDialog({ open, onClose, def, session, isDefault }: Props) {
+/** Per-provider key management dialog: a permanent, named, multi-key registry
+ * (vault 68 - Gestão de Chaves de IA). Lists every registered key for this
+ * provider with its own default/delete controls, plus an add-form below. */
+export function AiProviderKeyDialog({ open, onClose, def, keys }: Props) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
+  const [nome, setNome] = useState('');
+  const [apelido, setApelido] = useState('');
   const [key, setKey] = useState('');
-  const [ttlSeconds, setTtlSeconds] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string; model?: string | null } | null>(null);
-  const masked = session?.masked;
-  const hasKey = Boolean(masked);
+
+  const invalidateKeys = () => {
+    void queryClient.invalidateQueries({ queryKey: ['user-ai-keys'] });
+    void queryClient.invalidateQueries({ queryKey: ['llm-settings', 'active'] });
+  };
 
   const test = useMutation({
-    mutationFn: () => userKeysClient.testKey(def.id as KeyProvider, key.trim()),
+    mutationFn: () => aiKeyVaultClient.testKey(def.id, key.trim()),
     onSuccess: (result) => setTestResult({ ok: result.ok, message: result.message, model: result.model }),
     onError: (caught) => setTestResult({ ok: false, message: caught instanceof Error ? caught.message : t('settings.ai.providerError') }),
   });
-  const save = useMutation({
-    mutationFn: () => userKeysClient.setKey(def.id as KeyProvider, key.trim(), ttlSeconds),
+  const create = useMutation({
+    mutationFn: () => aiKeyVaultClient.create(def.id, nome.trim(), key.trim(), apelido.trim() || undefined),
     onSuccess: () => {
-      setKey('');
-      setTestResult(null);
-      void queryClient.invalidateQueries({ queryKey: ['user-ai-keys'] });
+      setNome(''); setApelido(''); setKey(''); setTestResult(null);
+      invalidateKeys();
     },
   });
   const remove = useMutation({
-    mutationFn: () => userKeysClient.remove(def.id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['user-ai-keys'] });
-      void queryClient.invalidateQueries({ queryKey: ['llm-settings', 'active'] });
-    },
+    mutationFn: (keyId: string) => aiKeyVaultClient.remove(keyId),
+    onSuccess: invalidateKeys,
   });
-  const makeDefault = useMutation({
-    mutationFn: () => llmSettingsClient.select(def.id as LlmProviderId),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['llm-settings', 'active'] }),
+  const setDefault = useMutation({
+    mutationFn: (keyId: string) => aiKeyVaultClient.setDefault(keyId),
+    onSuccess: invalidateKeys,
   });
 
   return (
@@ -73,74 +69,102 @@ export function AiProviderKeyDialog({ open, onClose, def, session, isDefault }: 
       <div className="space-y-4">
         {def.keyless ? (
           <p className="ds-caption">{t('settings.ai.keyless')}</p>
-        ) : hasKey ? (
-          <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_45%,transparent)] px-3 py-2">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="t-mono text-sm text-[color:var(--text)]" aria-label={t('settings.ai.maskedKey')}>{masked}</span>
-              <DeleteResourceButton
-                title={t('settings.ai.deleteKeyTitle', { provider: def.name })}
-                description={t('settings.ai.deleteKeyDescription', { provider: def.name })}
-                triggerLabel={t('settings.ai.removeKey')}
-                onConfirm={async () => { await remove.mutateAsync(); }}
-              />
-            </div>
-            {session?.expires_in_seconds != null ? (
-              <p className="mt-2 ds-caption">
-                {t('settings.retention.expiresIn', { time: formatRemaining(session.expires_in_seconds) })}
-              </p>
-            ) : null}
-          </div>
         ) : (
-          <div className="space-y-3">
-            {LLM_BUY_TOKENS_URL[def.id as KeyProvider] ? (
-              <a
-                href={LLM_BUY_TOKENS_URL[def.id as KeyProvider]}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 ds-caption text-[color:var(--accent)] hover:underline"
-              >
-                <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                {t('settings.ai.buyTokens', { provider: def.name })}
-              </a>
-            ) : null}
-            <Input
-              type="password"
-              name={`${def.id}-api-key`}
-              autoComplete="off"
-              spellCheck={false}
-              error={save.isError}
-              value={key}
-              onChange={(event) => { setKey(event.target.value); setTestResult(null); }}
-              placeholder={t('settings.ai.keyPlaceholder')}
-              aria-label={`${def.name} API key`}
-            />
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" disabled={!key.trim()} loading={test.isPending} onClick={() => test.mutate()}>
-                {test.isPending ? t('settings.ai.testing') : t('settings.ai.testKey')}
-              </Button>
-              <Button variant="primary" disabled={!key.trim() || !testResult?.ok} loading={save.isPending} onClick={() => save.mutate()}>
-                {save.isPending ? t('settings.ai.saving') : t('settings.ai.setKey')}
-              </Button>
-            </div>
-            <RetentionSelect
-              value={ttlSeconds}
-              onChange={setTtlSeconds}
-              defaultOptionLabel={t('settings.retention.keyDefault')}
-              disabled={save.isPending}
-              className="max-w-xs"
-            />
-          </div>
-        )}
+          <>
+            {keys.length > 0 ? (
+              <ul className="space-y-2">
+                {keys.map((row) => (
+                  <li
+                    key={row.id}
+                    className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_45%,transparent)] px-3 py-2"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[color:var(--text)]">{row.nome}</p>
+                        <p className="t-mono text-xs text-[color:var(--muted)]">
+                          {row.masked}{row.apelido ? ` · ${row.apelido}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {row.is_default ? (
+                          <Badge tone="accent">{t('settings.ai.defaultProvider')}</Badge>
+                        ) : (
+                          <Button variant="ghost" loading={setDefault.isPending} onClick={() => setDefault.mutate(row.id)}>
+                            {t('settings.ai.setAsDefault')}
+                          </Button>
+                        )}
+                        <DeleteResourceButton
+                          title={t('settings.ai.deleteKeyTitle', { provider: row.nome })}
+                          description={t('settings.ai.deleteKeyDescription', { provider: def.name })}
+                          triggerLabel={t('settings.ai.removeKey')}
+                          onConfirm={async () => { await remove.mutateAsync(row.id); }}
+                        />
+                      </div>
+                    </div>
+                    <p className="mt-1.5 ds-caption">
+                      {t('settings.ai.createdAt', { date: new Date(row.created_at).toLocaleDateString() })}
+                      {row.last_used_at ? ` · ${t('settings.ai.lastUsedAt', { date: new Date(row.last_used_at).toLocaleDateString() })}` : ''}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="ds-caption">{t('settings.ai.noKeysForProvider')}</p>
+            )}
 
-        {(hasKey || def.keyless) && def.id !== 'custom' ? (
-          isDefault ? (
-            <Badge tone="accent">{t('settings.ai.defaultProvider')}</Badge>
-          ) : (
-            <Button variant="ghost" loading={makeDefault.isPending} onClick={() => makeDefault.mutate()}>
-              {t('settings.ai.makeDefault')}
-            </Button>
-          )
-        ) : null}
+            <div className="space-y-3 border-t border-[color:var(--border)] pt-3">
+              {LLM_BUY_TOKENS_URL[def.id] ? (
+                <a
+                  href={LLM_BUY_TOKENS_URL[def.id]}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 ds-caption text-[color:var(--accent)] hover:underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                  {t('settings.ai.buyTokens', { provider: def.name })}
+                </a>
+              ) : null}
+              <Input
+                name={`${def.id}-key-name`}
+                value={nome}
+                onChange={(event) => setNome(event.target.value)}
+                placeholder={t('settings.ai.keyNamePlaceholder')}
+                aria-label={t('settings.ai.keyName')}
+              />
+              <Input
+                name={`${def.id}-key-nickname`}
+                value={apelido}
+                onChange={(event) => setApelido(event.target.value)}
+                placeholder={t('settings.ai.keyNicknamePlaceholder')}
+                aria-label={t('settings.ai.keyNickname')}
+              />
+              <Input
+                type="password"
+                name={`${def.id}-api-key`}
+                autoComplete="off"
+                spellCheck={false}
+                error={create.isError}
+                value={key}
+                onChange={(event) => { setKey(event.target.value); setTestResult(null); }}
+                placeholder={t('settings.ai.keyPlaceholder')}
+                aria-label={`${def.name} API key`}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" disabled={!key.trim()} loading={test.isPending} onClick={() => test.mutate()}>
+                  {test.isPending ? t('settings.ai.testing') : t('settings.ai.testKey')}
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={!key.trim() || !nome.trim() || !testResult?.ok}
+                  loading={create.isPending}
+                  onClick={() => create.mutate()}
+                >
+                  {create.isPending ? t('settings.ai.saving') : t('settings.ai.addKey')}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
 
         {testResult ? (
           <p className={testResult.ok ? 'flex items-center gap-1.5 ds-caption text-[color:var(--success)]' : 'flex items-center gap-1.5 ds-caption text-[color:var(--danger)]'} role="status">
@@ -148,7 +172,7 @@ export function AiProviderKeyDialog({ open, onClose, def, session, isDefault }: 
             {testResult.message}{testResult.model ? ` — ${testResult.model}` : ''}
           </p>
         ) : null}
-        {save.isError ? (
+        {create.isError ? (
           <p className="ds-caption text-[color:var(--danger)]" role="alert">{t('settings.ai.providerError')}</p>
         ) : null}
       </div>
