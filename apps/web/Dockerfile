@@ -28,6 +28,12 @@ RUN groupadd --gid 10001 ldcn \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=build --chown=10001:10001 /workspace/apps/web/.next/standalone ./
 COPY --from=build --chown=10001:10001 /workspace/apps/web/.next/static ./.next/static
+# next.config.ts sets output: 'standalone' -- the traced standalone bundle is
+# server code + only the node_modules it needs, it never includes public/
+# (Next.js's own documented deployment requirement, not optional). Without
+# this, every static asset served straight from public/ (logo, favicon, ...)
+# 404s at runtime even though the build succeeds cleanly.
+COPY --from=build --chown=10001:10001 /workspace/apps/web/public ./public
 USER 10001:10001
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
