@@ -80,6 +80,7 @@ class MissionInstance(Base):
     __table_args__ = (
         Index("idx_mission_instances_owner", "owner_user_id"),
         Index("idx_mission_instances_type", "mission_type"),
+        Index("idx_mission_instances_status", "status"),
     )
 
     mission_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -87,7 +88,7 @@ class MissionInstance(Base):
     workspace_id: Mapped[str | None] = mapped_column(String)
     mission_type: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="active", server_default="active", index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active", server_default="active")
     mode: Mapped[str] = mapped_column(String, nullable=False, default="guided", server_default="guided")
     experience_level: Mapped[str] = mapped_column(String, nullable=False, default="intermediate", server_default="intermediate")
     degraded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
