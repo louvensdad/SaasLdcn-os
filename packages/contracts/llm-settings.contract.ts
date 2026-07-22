@@ -3,14 +3,13 @@ export type LlmProviderId =
   | 'anthropic'
   | 'google'
   | 'deepseek'
-  | 'openrouter'
-  | 'ollama';
+  | 'groq';
 
 export type LlmSettingsStatus =
   | 'ready'
   | 'not_configured'
-  | 'invalid'
-  | 'expired'
+  | 'initializing'
+  | 'auth_error'
   | 'unavailable';
 
 export interface ActiveLlmSettings {

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Literal
 
@@ -75,7 +75,7 @@ class IngestStats(ApiModel):
     ever analyzed. Counts are derived from a single streaming pass."""
 
     files_found: int = 0  # every file entry in the archive/clone
-    ignored_count: int = 0  # auto-ignored (node_modules/.git/build/…) + irrelevant + oversized
+    ignored_count: int = 0  # auto-ignored (node_modules/.git/build/â€¦) + irrelevant + oversized
     analyzable_count: int = 0  # relevant code files actually indexed for the AI
     total_bytes: int = 0  # effective analyzable code size (uncompressed)
     lines_of_code: int = 0
@@ -229,12 +229,12 @@ class ModernizeProjectIngest(ModernizeResponse):
 
 
 class LlmProviderConfig(ApiModel):
-    id: str  # vault provider id (anthropic/openai/google/openrouter/custom/ollama)
+    id: Literal["openai", "anthropic", "google", "deepseek", "groq"]
     name: str
     description: str
     recommended_for: str
     key_required: bool = True
-    status: Literal["ready", "not_configured"] = "not_configured"
+    status: Literal["ready", "initializing", "not_configured", "auth_error", "unavailable"] = "not_configured"
 
 
 class LlmProviderCatalog(ApiModel):

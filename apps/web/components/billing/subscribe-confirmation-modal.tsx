@@ -7,9 +7,9 @@ import { Modal } from '@/components/ui/modal';
 import { useLocale } from '@/hooks/use-locale';
 import type { PlanView } from '@/lib/api/billing-catalog';
 
-function formatPrice(priceCents: number | null, currency: string, undefinedLabel: string): string {
+function formatPrice(locale: string, priceCents: number | null, currency: string, undefinedLabel: string): string {
   if (priceCents === null) return undefinedLabel;
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(priceCents / 100);
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(priceCents / 100);
 }
 
 interface SubscribeConfirmationModalProps {
@@ -20,7 +20,7 @@ interface SubscribeConfirmationModalProps {
 }
 
 export function SubscribeConfirmationModal({ plan, onClose, onConfirm, busy }: SubscribeConfirmationModalProps) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   if (!plan) return null;
   return (
     <Modal
@@ -49,7 +49,7 @@ export function SubscribeConfirmationModal({ plan, onClose, onConfirm, busy }: S
         <div className="flex items-center justify-between">
           <span className="text-sm text-[color:var(--muted)]">{t('billing.subscribeModal.price')}</span>
           <span className="text-sm font-semibold text-[color:var(--text)]">
-            {formatPrice(plan.price_cents, plan.currency, t('pricing.plan.priceUndefined'))}
+            {formatPrice(locale, plan.price_cents, plan.currency, t('pricing.plan.priceUndefined'))}
           </span>
         </div>
         <div className="flex items-center justify-between">

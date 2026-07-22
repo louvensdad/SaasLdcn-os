@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 
 const budgets = {
-  'app/(app)/wizard/page.tsx': 3793,
   '../api/app/services/framework_specialist_service.py': 2163,
   '../api/app/engines/generation_job_engine.py': 1682,
   // Bumped 2026-07-21: commit 050b1e3 added a real PlanAccessEngine

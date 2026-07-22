@@ -605,16 +605,6 @@ function MetaFactoryInner() {
             </select>
           </label>
           <LlmProviderInline />
-          {MODELS.find((m) => m.id === model)?.local && (
-            <p className="basis-full text-xs text-emerald-600 dark:text-emerald-400">
-              {t('metaFactory.localModelHint')}
-            </p>
-          )}
-          {MODELS.find((m) => m.id === model)?.custom && (
-            <p className="basis-full text-xs text-emerald-600 dark:text-emerald-400">
-              {t('metaFactory.customModelHint')}
-            </p>
-          )}
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             {t('metaFactory.language')}
             <select

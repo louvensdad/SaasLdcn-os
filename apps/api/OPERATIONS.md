@@ -1,4 +1,4 @@
-# LDCN OS API — Deployment & Operations Runbook
+﻿# LDCN OS API â€” Deployment & Operations Runbook
 
 Production deployment and day-2 operations for the FastAPI backend (`apps/api`).
 Addresses audit items **D1** (production README) and **D2** (operational runbook).
@@ -11,11 +11,11 @@ Addresses audit items **D1** (production README) and **D2** (operational runbook
 ## 1. Prerequisites
 
 - **Python 3.12+**
-- **PostgreSQL 14+** (production database — do not run SQLite in production)
+- **PostgreSQL 14+** (production database â€” do not run SQLite in production)
 - **Redis 6+** (distributed rate limiting + user LLM key vault; required for any
   multi-instance / HA deployment)
 - **S3-compatible object storage** (durable generated projects and prepared ZIPs)
-- A reverse proxy terminating TLS (nginx, Caddy, ALB, …) in front of Uvicorn
+- A reverse proxy terminating TLS (nginx, Caddy, ALB, â€¦) in front of Uvicorn
 
 Install dependencies:
 
@@ -48,12 +48,11 @@ real env vars always win). See `app/core/config.py` for defaults.
 | `LDCN_TOKEN_ENC_KEY` | derived from secret | Separate key for encrypting secrets at rest (rotate independently). |
 | `LDCN_TRUST_PROXY_HEADERS` | `0` | Set `1` behind a trusted proxy so rate limiting keys on the real client IP. |
 | `LDCN_AGENT_WORKERS` | `8` | Global bound on concurrent blocking LLM-agent threads (audit B5). |
-| `LDCN_MAX_CONCURRENT_GENERATIONS` | `3` | Max in-flight generations per user; extra → HTTP 429 (audit MF3). |
+| `LDCN_MAX_CONCURRENT_GENERATIONS` | `3` | Max in-flight generations per user; extra â†’ HTTP 429 (audit MF3). |
 | `LDCN_ARTIFACT_PREFIX` | `ldcn-artifacts` | Object-key prefix for project snapshots and downloads. |
 | `LDCN_ARTIFACT_ENDPOINT` | AWS default | S3-compatible endpoint for MinIO, R2 or another provider. |
 | `LDCN_ARTIFACT_REGION` | SDK default | Object-storage region. |
 | `LDCN_FORCE_MOCK` | `0` | `1` forces the deterministic Mock generator (offline demo/tests). |
-| Provider base URLs | — | `LDCN_OLLAMA_BASE_URL`, `LDCN_OPENROUTER_BASE_URL`, `LDCN_DEEPSEEK_BASE_URL`, `LDCN_CUSTOM_BASE_URL`, `LDCN_CUSTOM_MODEL`. |
 | Modernize limits | see config | `LDCN_MODERNIZE_MAX_ANALYZABLE_BYTES`, `_MAX_FILE_BYTES`, `_MAX_UPLOAD_BYTES`, `_ZIP_BOMB_RATIO`. |
 
 ---
@@ -82,7 +81,7 @@ alembic current             # verify the applied revision
 ```bash
 cd apps/api
 export LDCN_ENVIRONMENT=production
-# … set the required env vars from §2 …
+# â€¦ set the required env vars from Â§2 â€¦
 alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
@@ -120,9 +119,9 @@ explicit CORS and S3-compatible artifact-storage configuration before accepting 
 
 ### A generation looks stuck / failed
 - Generations are durable jobs (persisted; survive restart). Inspect:
-  `GET /api/meta-factory/jobs/{id}` and `…/jobs/{id}/events` (live console).
+  `GET /api/meta-factory/jobs/{id}` and `â€¦/jobs/{id}/events` (live console).
 - A step that exceeds its ceiling becomes **STALLED** (recoverable), never an eternal
-  "running". Recover with `…/jobs/{id}/retry`, `…/resume`, or `…/continue`.
+  "running". Recover with `â€¦/jobs/{id}/retry`, `â€¦/resume`, or `â€¦/continue`.
 - Diagnostic bundle: `GET /api/meta-factory/jobs/{id}/diagnostic`.
 
 ### Cost / usage
@@ -130,8 +129,8 @@ explicit CORS and S3-compatible artifact-storage configuration before accepting 
   Apply your per-model price to these measured tokens for billing.
 
 ### Capacity tuning
-- Thread starvation under load → raise/lower `LDCN_AGENT_WORKERS` (global agent pool).
-- Users overloading generation → `LDCN_MAX_CONCURRENT_GENERATIONS` (429 beyond the cap).
+- Thread starvation under load â†’ raise/lower `LDCN_AGENT_WORKERS` (global agent pool).
+- Users overloading generation â†’ `LDCN_MAX_CONCURRENT_GENERATIONS` (429 beyond the cap).
 
 ### Logs
 - Structured request logging is on; LLM provider error strings are redacted (no keys

@@ -52,8 +52,8 @@ class LlmRoutingKey(str):
 
 
 class LlmSettingsService:
-    """Source of truth for active LLM metadata; secrets remain in the TTL
-    vault. The selection itself is DB-backed (LlmActiveSelectionRepository)
+    """Source of truth for active LLM metadata; secrets remain in the encrypted
+    owner-scoped vault. The selection itself is DB-backed (LlmActiveSelectionRepository)
     so it survives a backend restart -- it used to live only in an in-memory
     dict, which silently reset to 'nothing configured' on every deploy."""
 
@@ -86,10 +86,10 @@ class LlmSettingsService:
         self._audit(user_id, "LLM_PROVIDER_SELECTED")
         return self.active(user_id)
 
-    def validated(self, user_id: str, provider: str, *, ok: bool) -> None:
+    def validated(self, user_id: str, provider: str, *, status: str) -> None:
         canonical = normalize_provider_id(provider)
-        self.repository.mark_validated(user_id, canonical, ok=ok)
-        self._audit(user_id, "LLM_PROVIDER_TESTED" if ok else "LLM_PROVIDER_FAILED")
+        self.repository.mark_validated(user_id, canonical, status=status)
+        self._audit(user_id, "LLM_PROVIDER_TESTED" if status == "ready" else "LLM_PROVIDER_FAILED")
 
     def removed(self, user_id: str, provider: str | None) -> None:
         canonical = normalize_provider_id(provider) if provider is not None else None
@@ -99,7 +99,9 @@ class LlmSettingsService:
         active_rows = [row for row in self.key_vault.list_for_user(user_id) if row["ativo"]]
         if not active_rows:
             return None
-        canonical = normalize_provider_id(active_rows[0]["provider"])
+        order = {provider_id: index for index, provider_id in enumerate(PROVIDERS)}
+        first = min(active_rows, key=lambda item: order.get(normalize_provider_id(item["provider"]), len(order)))
+        canonical = normalize_provider_id(first["provider"])
         self.repository.set_if_absent(user_id, provider=canonical, model=PROVIDERS[canonical].default_model)
         row = self.repository.get(user_id)
         return _Selection.from_row(row) if row else None
@@ -113,23 +115,42 @@ class LlmSettingsService:
                 reason="Nenhum LLM configurado. Configure um provider ou use o modo determinístico."
             )
         definition = PROVIDERS[selection.provider]
-        has_key = not definition.key_required or self.key_vault.get_default_for_provider(user_id, selection.provider) is not None
-        resolved_status = selection.validation_status
-        if definition.key_required and not has_key:
-            resolved_status = "expired"
+        key_row = self.key_vault.get_default_for_provider(user_id, selection.provider)
+        has_key = not definition.key_required or key_row is not None
+        resolved_status = self._key_state(key_row, key_required=definition.key_required)
         mode = "llm" if resolved_status == "ready" and has_key else "deterministic"
-        reason = (
-            f"{definition.label} está configurado como LLM principal."
-            if mode == "llm"
-            else f"Não foi possível usar {definition.label}. A chave está ausente, inválida ou expirada."
-        )
+        reason = self._state_reason(definition.label, resolved_status)
         context_tokens = MODEL_REGISTRY.get(selection.model or "", {}).get("ctx")
         return ActiveLlmSettings(
             provider=selection.provider, providerLabel=definition.label, model=selection.model,
             hasKey=has_key, status=resolved_status,  # type: ignore[arg-type]
-            lastValidatedAt=selection.last_validated_at, lastUsedAt=selection.last_used_at,
+            lastValidatedAt=_parse(key_row.get("last_validated_at")) if key_row else None,
+            lastUsedAt=_parse(key_row.get("last_used_at")) if key_row else selection.last_used_at,
             mode=mode, reason=reason, contextTokens=context_tokens,
         )
+
+    @staticmethod
+    def _key_state(key_row: dict | None, *, key_required: bool = True) -> str:
+        if not key_required:
+            return "ready"
+        if key_row is None:
+            return "not_configured"
+        return {
+            "valid": "ready",
+            "invalid": "auth_error",
+            "unavailable": "unavailable",
+            "untested": "initializing",
+        }.get(str(key_row.get("status")), "initializing")
+
+    @staticmethod
+    def _state_reason(provider_label: str, status: str) -> str:
+        return {
+            "ready": f"{provider_label} está validado e configurado como LLM principal.",
+            "initializing": f"A chave de {provider_label} ainda precisa ser validada.",
+            "not_configured": f"Nenhuma API configurada para {provider_label}.",
+            "auth_error": f"A autenticação de {provider_label} falhou. Revise a API key.",
+            "unavailable": f"{provider_label} está temporariamente indisponível.",
+        }[status]
 
     def resolve(
         self, *, workspace_id: str | None, user_id: str, requested_capability: str,
@@ -160,6 +181,8 @@ class LlmSettingsService:
         model = requested_model if provider_for_model(requested_model) == provider else (
             active.model if active.provider == provider else definition.default_model
         )
+        key_row = self.key_vault.get_default_for_provider(user_id, provider)
+        provider_state = self._key_state(key_row, key_required=definition.key_required)
         raw_key = None if not definition.key_required else self.key_vault.get_decrypted_default(user_id, provider)
         if definition.key_required and raw_key is None:
             # Auto-detection: the provider was *inferred from the requested model*
@@ -180,14 +203,23 @@ class LlmSettingsService:
                 provider = active.provider
                 definition = PROVIDERS[provider]
                 model = active.model or definition.default_model
+                key_row = self.key_vault.get_default_for_provider(user_id, provider)
+                provider_state = self._key_state(key_row, key_required=definition.key_required)
                 raw_key = None if not definition.key_required else self.key_vault.get_decrypted_default(user_id, provider)
             else:
                 self._audit(user_id, "LLM_PROVIDER_FAILED")
                 return LlmExecutionContext(LlmResolution(
                     provider=provider, providerLabel=definition.label, model=model,
-                    mode="deterministic", reason=f"A chave de {definition.label} está ausente ou expirada.",
-                    fallbackUsed=True, keyStatus="expired", requestedCapability=requested_capability,
+                    mode="deterministic", reason=f"Nenhuma API configurada para {definition.label}.",
+                    fallbackUsed=True, keyStatus="not_configured", requestedCapability=requested_capability,
                 ), None)
+        if provider_state != "ready":
+            self._audit(user_id, "LLM_PROVIDER_FAILED")
+            return LlmExecutionContext(LlmResolution(
+                provider=provider, providerLabel=definition.label, model=model,
+                mode="deterministic", reason=self._state_reason(definition.label, provider_state),
+                fallbackUsed=True, keyStatus=provider_state, requestedCapability=requested_capability,
+            ), None)
         row = self.repository.get(user_id)
         if row and row["provider"] == provider:
             self.repository.mark_used(user_id, provider)

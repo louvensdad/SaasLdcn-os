@@ -6,15 +6,11 @@ from pydantic import BaseModel, Field
 
 
 class Provider(str, Enum):
-    anthropic = "anthropic"
     openai = "openai"
+    anthropic = "anthropic"
     google = "google"
-    ollama = "ollama"  # local, key-free generation via an OpenAI-compatible endpoint
-    openrouter = "openrouter"  # online aggregator (many models, one key) via OpenAI-compatible API
-    deepseek = "deepseek"  # DeepSeek first-class API (deepseek-chat / deepseek-reasoner)
+    deepseek = "deepseek"  # DeepSeek first-class API (V4 Flash / V4 Pro)
     groq = "groq"  # Groq cloud inference, OpenAI-compatible, key required
-    lmstudio = "lmstudio"  # local, key-free generation via LM Studio's OpenAI-compatible endpoint
-    custom = "custom"  # any user-configured OpenAI-compatible endpoint (vLLM, Together, Fireworks, ...)
 
 
 class ReasoningLevel(str, Enum):

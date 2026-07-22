@@ -43,14 +43,7 @@ type MetricItem = NonNullable<RoadmapResponse['platform_metrics']>[number];
 type Edge = NonNullable<RoadmapResponse['dependency_edges']>[number];
 
 type SectionKey = 'implemented' | 'development' | 'current' | 'next' | 'backlog' | 'research' | 'archived';
-
-const statusLabel: Record<string, string> = {
-  IMPLEMENTED: 'Implementado',
-  IN_PROGRESS: 'Em desenvolvimento',
-  PLANNED: 'Planejado',
-  FUTURE: 'Futuro',
-  ARCHIVED: 'Arquivado',
-};
+type Translator = (key: string, values?: Record<string, string | number>) => string;
 
 const priorityTone: Record<string, BadgeTone> = {
   CRITICAL: 'danger',
@@ -86,38 +79,63 @@ const categoryIcon: Record<string, LucideIcon> = {
   laboratory: Gauge,
 };
 
-const filters = [
-  { id: 'all', label: 'Todos' },
-  { id: 'engine', label: 'Motores' },
-  { id: 'module', label: 'Modulos' },
-  { id: 'agent', label: 'Agentes' },
-  { id: 'skill', label: 'Skills' },
-  { id: 'template', label: 'Templates' },
-  { id: 'infrastructure', label: 'Infraestrutura' },
-  { id: 'backend', label: 'Backend' },
-  { id: 'frontend', label: 'Frontend' },
-  { id: 'ia', label: 'IA' },
-  { id: 'security', label: 'Seguranca' },
-  { id: 'deploy', label: 'Deploy' },
-  { id: 'architecture', label: 'Arquitetura' },
-];
+function buildFilters(t: Translator) {
+  return [
+    { id: 'all', label: t('roadmap.filters.all') },
+    { id: 'engine', label: t('roadmap.filters.engine') },
+    { id: 'module', label: t('roadmap.filters.module') },
+    { id: 'agent', label: t('roadmap.filters.agent') },
+    { id: 'skill', label: t('roadmap.filters.skill') },
+    { id: 'template', label: t('roadmap.filters.template') },
+    { id: 'infrastructure', label: t('roadmap.filters.infrastructure') },
+    { id: 'backend', label: t('roadmap.filters.backend') },
+    { id: 'frontend', label: t('roadmap.filters.frontend') },
+    { id: 'ia', label: t('roadmap.filters.ai') },
+    { id: 'security', label: t('roadmap.filters.security') },
+    { id: 'deploy', label: t('roadmap.filters.deploy') },
+    { id: 'architecture', label: t('roadmap.filters.architecture') },
+  ];
+}
 
-const sectionConfig: { key: SectionKey; label: string; detail: string }[] = [
-  { key: 'implemented', label: 'Implementado', detail: 'Entregue e disponivel no roadmap governado.' },
-  { key: 'development', label: 'Em Desenvolvimento', detail: 'Modulos ativos com progresso parcial.' },
-  { key: 'current', label: 'Sprint Atual', detail: 'Escopo da release ativa.' },
-  { key: 'next', label: 'Proxima Sprint', detail: 'Itens planejados para a proxima release.' },
-  { key: 'backlog', label: 'Backlog', detail: 'Trabalho futuro ainda nao iniciado.' },
-  { key: 'research', label: 'Pesquisa', detail: 'Iniciativas experimentais ou aguardando decisao.' },
-  { key: 'archived', label: 'Arquivado', detail: 'Itens documentados sem dependencia ativa.' },
-];
+function buildSectionConfig(t: Translator): { key: SectionKey; label: string; detail: string }[] {
+  return [
+    { key: 'implemented', label: t('roadmap.sections.implemented.label'), detail: t('roadmap.sections.implemented.detail') },
+    { key: 'development', label: t('roadmap.sections.development.label'), detail: t('roadmap.sections.development.detail') },
+    { key: 'current', label: t('roadmap.sections.current.label'), detail: t('roadmap.sections.current.detail') },
+    { key: 'next', label: t('roadmap.sections.next.label'), detail: t('roadmap.sections.next.detail') },
+    { key: 'backlog', label: t('roadmap.sections.backlog.label'), detail: t('roadmap.sections.backlog.detail') },
+    { key: 'research', label: t('roadmap.sections.research.label'), detail: t('roadmap.sections.research.detail') },
+    { key: 'archived', label: t('roadmap.sections.archived.label'), detail: t('roadmap.sections.archived.detail') },
+  ];
+}
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
 }
 
-function formatLabel(value?: string) {
-  return (value ?? 'nao informado').replaceAll('_', ' ');
+function statusText(t: Translator, status?: string) {
+  return status ? t(`roadmap.status.${status}`) : t('roadmap.common.notInformed');
+}
+
+function levelText(t: Translator, value?: string) {
+  if (!value) return t('roadmap.common.notInformed');
+  const key = `roadmap.level.${value}`;
+  const text = t(key);
+  return text === key ? value.replaceAll('_', ' ') : text;
+}
+
+function maturityText(t: Translator, value?: string) {
+  if (!value) return t('roadmap.common.notInformed');
+  const key = `roadmap.maturity.${value}`;
+  const text = t(key);
+  return text === key ? value.replaceAll('_', ' ') : text;
+}
+
+function releaseStatusText(t: Translator, value?: string) {
+  if (!value) return t('roadmap.common.notInformed');
+  const key = `roadmap.releaseStatus.${value}`;
+  const text = t(key);
+  return text === key ? value.replaceAll('_', ' ') : text;
 }
 
 function percent(value?: number) {
@@ -147,23 +165,24 @@ function gaugeTone(status?: string): string {
   return 'var(--warning)';
 }
 
-function fallbackMetrics(items: readonly RoadmapItem[]): MetricItem[] {
+function fallbackMetrics(t: Translator, items: readonly RoadmapItem[]): MetricItem[] {
   const active = items.filter((item) => item.status !== 'ARCHIVED');
   const progress = active.length ? Math.round(active.reduce((sum, item) => sum + (item.progress ?? 0), 0) / active.length) : 0;
   const countBy = (category: string) => items.filter((item) => item.category === category).length;
+  const categoryDetail = t('roadmap.fallback.categoryDetail');
   return [
-    { contractVersion: '1.0.0', id: 'platform', label: 'Plataforma', value: `${progress}%`, detail: 'Derivado dos itens carregados.' },
-    { contractVersion: '1.0.0', id: 'projects', label: 'Projetos', value: '0', detail: 'Telemetria de projetos nao veio no roadmap.' },
-    { contractVersion: '1.0.0', id: 'engines', label: 'Motores', value: String(countBy('engine')), detail: 'Derivado da categoria dos itens.' },
-    { contractVersion: '1.0.0', id: 'agents', label: 'Agentes', value: String(countBy('agent')), detail: 'Derivado da categoria dos itens.' },
-    { contractVersion: '1.0.0', id: 'modules', label: 'Modulos', value: String(countBy('module')), detail: 'Derivado da categoria dos itens.' },
-    { contractVersion: '1.0.0', id: 'skills', label: 'Skills', value: String(countBy('skill')), detail: 'Derivado da categoria dos itens.' },
-    { contractVersion: '1.0.0', id: 'templates', label: 'Templates', value: String(countBy('template')), detail: 'Derivado da categoria dos itens.' },
-    { contractVersion: '1.0.0', id: 'architectures', label: 'Arquiteturas', value: String(countBy('architecture')), detail: 'Derivado da categoria dos itens.' },
+    { contractVersion: '1.0.0', id: 'platform', label: t('roadmap.fallback.platform.label'), value: `${progress}%`, detail: t('roadmap.fallback.platform.detail') },
+    { contractVersion: '1.0.0', id: 'projects', label: t('roadmap.fallback.projects.label'), value: '0', detail: t('roadmap.fallback.projects.detail') },
+    { contractVersion: '1.0.0', id: 'engines', label: t('roadmap.fallback.engines.label'), value: String(countBy('engine')), detail: categoryDetail },
+    { contractVersion: '1.0.0', id: 'agents', label: t('roadmap.fallback.agents.label'), value: String(countBy('agent')), detail: categoryDetail },
+    { contractVersion: '1.0.0', id: 'modules', label: t('roadmap.fallback.modules.label'), value: String(countBy('module')), detail: categoryDetail },
+    { contractVersion: '1.0.0', id: 'skills', label: t('roadmap.fallback.skills.label'), value: String(countBy('skill')), detail: categoryDetail },
+    { contractVersion: '1.0.0', id: 'templates', label: t('roadmap.fallback.templates.label'), value: String(countBy('template')), detail: categoryDetail },
+    { contractVersion: '1.0.0', id: 'architectures', label: t('roadmap.fallback.architectures.label'), value: String(countBy('architecture')), detail: categoryDetail },
   ];
 }
 
-function fallbackReleases(items: readonly RoadmapItem[]): Release[] {
+function fallbackReleases(t: Translator, items: readonly RoadmapItem[]): Release[] {
   const releaseIds = Array.from(new Set(items.map((item) => item.release).filter(Boolean)));
   return releaseIds.map((id) => {
     const releaseItems = items.filter((item) => item.release === id);
@@ -172,7 +191,7 @@ function fallbackReleases(items: readonly RoadmapItem[]): Release[] {
       contractVersion: '1.0.0',
       id,
       title: id,
-      date: 'nao informado',
+      date: t('roadmap.common.notInformed'),
       status: progress >= 100 ? 'DELIVERED' : progress > 0 ? 'ACTIVE' : 'PLANNED',
       progress,
       features: releaseItems.map((item) => item.id),
@@ -230,7 +249,7 @@ function ModuleCard({ item, onOpen }: { readonly item: RoadmapItem; readonly onO
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-[color:var(--muted)]">{item.summary}</p>
           </div>
         </div>
-        <Badge tone={statusTone(item.status)} className="shrink-0">{statusLabel[item.status] ?? item.status}</Badge>
+        <Badge tone={statusTone(item.status)} className="shrink-0">{statusText(t, item.status)}</Badge>
       </div>
       <div className="mt-4 space-y-2">
         <div className="flex items-center justify-between text-xs text-[color:var(--muted)]">
@@ -240,15 +259,15 @@ function ModuleCard({ item, onOpen }: { readonly item: RoadmapItem; readonly onO
         <ProgressBar value={item.progress} />
       </div>
       <div className="mt-4 grid gap-2 text-xs text-[color:var(--muted)] sm:grid-cols-2">
-        <span>{t('roadmap.card.release')} <strong className="text-[color:var(--text)]">{item.release || 'nao informado'}</strong></span>
-        <span>{t('roadmap.card.owner')} <strong className="text-[color:var(--text)]">{item.owner || 'nao informado'}</strong></span>
-        <span>{t('roadmap.card.updated')} <strong className="text-[color:var(--text)]">{item.updated_at || 'nao informado'}</strong></span>
+        <span>{t('roadmap.card.release')} <strong className="text-[color:var(--text)]">{item.release || t('roadmap.common.notInformed')}</strong></span>
+        <span>{t('roadmap.card.owner')} <strong className="text-[color:var(--text)]">{item.owner || t('roadmap.common.notInformed')}</strong></span>
+        <span>{t('roadmap.card.updated')} <strong className="text-[color:var(--text)]">{item.updated_at || t('roadmap.common.notInformed')}</strong></span>
         <span>{t('roadmap.card.deps')} <strong className="text-[color:var(--text)]">{(item.dependencies ?? []).length}</strong></span>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Badge tone={priorityTone[item.priority] ?? 'neutral'}>{formatLabel(item.priority)}</Badge>
-        <Badge tone={riskTone[item.risk] ?? 'neutral'}>{t('roadmap.card.risk')} {formatLabel(item.risk)}</Badge>
-        <Badge>{formatLabel(item.maturity)}</Badge>
+        <Badge tone={priorityTone[item.priority] ?? 'neutral'}>{levelText(t, item.priority)}</Badge>
+        <Badge tone={riskTone[item.risk] ?? 'neutral'}>{t('roadmap.card.risk')} {levelText(t, item.risk)}</Badge>
+        <Badge>{maturityText(t, item.maturity)}</Badge>
         <Button type="button" variant="ghost" className="ml-auto h-8 px-3" onClick={() => onOpen(item)}>{t('roadmap.card.open')}</Button>
       </div>
     </article>
@@ -299,12 +318,12 @@ function DetailPanel({ item }: { readonly item?: RoadmapItem }) {
     );
   }
   const groups = [
-    ['Dependencias', item.dependencies ?? []],
-    ['Motores', item.engines ?? []],
-    ['APIs', item.apis ?? []],
-    ['Skills', item.skills ?? []],
-    ['Contratos', item.contracts ?? []],
-    ['Documentacao', item.documentation ?? []],
+    [t('roadmap.groups.dependencies'), item.dependencies ?? []],
+    [t('roadmap.groups.engines'), item.engines ?? []],
+    [t('roadmap.groups.apis'), item.apis ?? []],
+    [t('roadmap.groups.skills'), item.skills ?? []],
+    [t('roadmap.groups.contracts'), item.contracts ?? []],
+    [t('roadmap.groups.documentation'), item.documentation ?? []],
   ] as const;
   return (
     <Card className="space-y-5 p-5">
@@ -314,12 +333,12 @@ function DetailPanel({ item }: { readonly item?: RoadmapItem }) {
           <h2 className="mt-1 text-xl font-semibold text-[color:var(--text)]">{item.title}</h2>
           <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{item.summary}</p>
         </div>
-        <Badge tone={statusTone(item.status)}>{statusLabel[item.status] ?? item.status}</Badge>
+        <Badge tone={statusTone(item.status)}>{statusText(t, item.status)}</Badge>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <div><span className="text-xs text-[color:var(--muted)]">{t('roadmap.detail.release')}</span><p className="font-mono text-sm text-[color:var(--text)]">{item.release}</p></div>
-        <div><span className="text-xs text-[color:var(--muted)]">{t('roadmap.detail.priority')}</span><p className="font-mono text-sm text-[color:var(--text)]">{formatLabel(item.priority)}</p></div>
-        <div><span className="text-xs text-[color:var(--muted)]">{t('roadmap.detail.maturity')}</span><p className="font-mono text-sm text-[color:var(--text)]">{formatLabel(item.maturity)}</p></div>
+        <div><span className="text-xs text-[color:var(--muted)]">{t('roadmap.detail.priority')}</span><p className="font-mono text-sm text-[color:var(--text)]">{levelText(t, item.priority)}</p></div>
+        <div><span className="text-xs text-[color:var(--muted)]">{t('roadmap.detail.maturity')}</span><p className="font-mono text-sm text-[color:var(--text)]">{maturityText(t, item.maturity)}</p></div>
       </div>
       <div>
         <p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.detail.impact')}</p>
@@ -356,10 +375,13 @@ export default function RoadmapPage() {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [openSections, setOpenSections] = useState<ReadonlySet<SectionKey>>(() => new Set());
 
+  const filters = useMemo(() => buildFilters(t), [t]);
+  const sectionConfig = useMemo(() => buildSectionConfig(t), [t]);
+
   const items = useMemo(() => roadmap?.items ?? [], [roadmap]);
-  const releases = roadmap?.releases?.length ? roadmap.releases : fallbackReleases(items);
+  const releases = roadmap?.releases?.length ? roadmap.releases : fallbackReleases(t, items);
   const timeline = roadmap?.platform_timeline?.length ? roadmap.platform_timeline : fallbackTimeline(items);
-  const metrics = roadmap?.platform_metrics?.length ? roadmap.platform_metrics : fallbackMetrics(items);
+  const metrics = roadmap?.platform_metrics?.length ? roadmap.platform_metrics : fallbackMetrics(t, items);
   const health = roadmap?.executive_health ?? [];
   const coverage = roadmap?.coverage ?? [];
   const dependencyEdges = roadmap?.dependency_edges ?? [];
@@ -400,7 +422,7 @@ export default function RoadmapPage() {
       else buckets.get('research')?.push(item);
     }
     return buckets;
-  }, [filteredItems]);
+  }, [filteredItems, sectionConfig]);
 
   function toggleSection(section: SectionKey) {
     setOpenSections((current) => {
@@ -413,12 +435,12 @@ export default function RoadmapPage() {
 
   const visualColumns = useMemo(() => {
     return [
-      { label: 'Planejado', items: filteredItems.filter((item) => item.status === 'PLANNED' || item.status === 'FUTURE') },
-      { label: 'Em andamento', items: filteredItems.filter((item) => item.status === 'IN_PROGRESS') },
-      { label: 'Review', items: filteredItems.filter((item) => item.risk === 'HIGH' || item.risk === 'CRITICAL') },
-      { label: 'Concluido', items: filteredItems.filter((item) => item.status === 'IMPLEMENTED') },
+      { label: t('roadmap.columns.planned'), items: filteredItems.filter((item) => item.status === 'PLANNED' || item.status === 'FUTURE') },
+      { label: t('roadmap.columns.inProgress'), items: filteredItems.filter((item) => item.status === 'IN_PROGRESS') },
+      { label: t('roadmap.columns.review'), items: filteredItems.filter((item) => item.risk === 'HIGH' || item.risk === 'CRITICAL') },
+      { label: t('roadmap.columns.done'), items: filteredItems.filter((item) => item.status === 'IMPLEMENTED') },
     ];
-  }, [filteredItems]);
+  }, [filteredItems, t]);
 
   useEffect(() => {
     setPresenceState(roadmapQuery.isError ? 'warning' : 'observing');
@@ -512,15 +534,15 @@ export default function RoadmapPage() {
           {selectedRelease ? (
             <div className="grid gap-4 rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-white/5 p-4 md:grid-cols-[0.7fr_1.3fr]">
               <div className="space-y-2">
-                <Badge tone={releaseTone(selectedRelease.status)}>{formatLabel(selectedRelease.status)}</Badge>
+                <Badge tone={releaseTone(selectedRelease.status)}>{releaseStatusText(t, selectedRelease.status)}</Badge>
                 <h3 className="text-lg font-semibold text-[color:var(--text)]">{selectedRelease.title}</h3>
                 <p className="text-sm text-[color:var(--muted)]">{t('roadmap.releases.date')} {selectedRelease.date}</p>
                 <ProgressBar value={selectedRelease.progress} />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.releases.features')}</p><p className="mt-2 text-sm text-[color:var(--text)]">{releaseItems.map((item) => item.title).join(', ') || 'Nao informado'}</p></div>
-                <div><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.releases.deps')}</p><p className="mt-2 text-sm text-[color:var(--text)]">{(selectedRelease.dependencies ?? []).join(', ') || 'Sem dependencias registradas'}</p></div>
-                <div className="sm:col-span-2"><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.releases.risks')}</p><p className="mt-2 text-sm text-[color:var(--text)]">{(selectedRelease.risks ?? []).join(' ') || 'Sem risco registrado pelo backend.'}</p></div>
+                <div><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.releases.features')}</p><p className="mt-2 text-sm text-[color:var(--text)]">{releaseItems.map((item) => item.title).join(', ') || t('roadmap.common.notInformed')}</p></div>
+                <div><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.releases.deps')}</p><p className="mt-2 text-sm text-[color:var(--text)]">{(selectedRelease.dependencies ?? []).join(', ') || t('roadmap.releases.noDependencies')}</p></div>
+                <div className="sm:col-span-2"><p className="text-xs uppercase tracking-[0.18em] text-[color:var(--muted-2)]">{t('roadmap.releases.risks')}</p><p className="mt-2 text-sm text-[color:var(--text)]">{(selectedRelease.risks ?? []).join(' ') || t('roadmap.releases.noRisks')}</p></div>
               </div>
             </div>
           ) : null}
@@ -538,7 +560,7 @@ export default function RoadmapPage() {
             <div key={sprint.id} className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-white/5 p-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="font-semibold text-[color:var(--text)]">{sprint.title}</h3>
-                <Badge tone={sprint.status === 'ACTIVE' ? 'accent' : 'neutral'}>{formatLabel(sprint.status)}</Badge>
+                <Badge tone={sprint.status === 'ACTIVE' ? 'accent' : 'neutral'}>{releaseStatusText(t, sprint.status)}</Badge>
               </div>
               <div className="mt-3 flex items-end justify-between gap-3">
                 <span className="text-3xl font-semibold text-[color:var(--text)]">{sprint.progress}%</span>
@@ -569,7 +591,7 @@ export default function RoadmapPage() {
                   <span className="min-w-0">
                     <span className="flex items-center justify-between gap-3">
                       <strong className="truncate text-sm text-[color:var(--text)]">{step.title}</strong>
-                      <Badge tone={statusTone(step.status)}>{statusLabel[step.status] ?? step.status}</Badge>
+                      <Badge tone={statusTone(step.status)}>{statusText(t, step.status)}</Badge>
                     </span>
                     <span className="mt-1 line-clamp-2 text-xs leading-5 text-[color:var(--muted)]">{step.description}</span>
                   </span>
@@ -724,7 +746,7 @@ export default function RoadmapPage() {
               <button key={`risk-${item.id}`} type="button" onClick={() => setSelectedItemId(item.id)} className="focus-ring flex w-full items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/5 p-3 text-left">
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-[color:var(--text)]">{item.title}</span>
-                  <span className="text-xs text-[color:var(--muted)]">{formatLabel(item.priority)} {t('roadmap.risks.riskInfix')} {formatLabel(item.risk)}</span>
+                  <span className="text-xs text-[color:var(--muted)]">{levelText(t, item.priority)} {t('roadmap.risks.riskInfix')} {levelText(t, item.risk)}</span>
                 </span>
                 <Badge tone={riskTone[item.risk] ?? 'neutral'}>{percent(item.progress)}</Badge>
               </button>
@@ -746,12 +768,12 @@ export default function RoadmapPage() {
               .slice(0, 10)
               .map((item) => (
                 <button key={`history-${item.id}`} type="button" onClick={() => setSelectedItemId(item.id)} className="focus-ring grid w-full grid-cols-[9rem_1fr_auto] items-center gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/5 p-3 text-left">
-                  <span className="font-mono text-xs text-[color:var(--muted)]">{item.updated_at || 'nao informado'}</span>
+                  <span className="font-mono text-xs text-[color:var(--muted)]">{item.updated_at || t('roadmap.common.notInformed')}</span>
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-[color:var(--text)]">{item.title}</span>
                     <span className="text-xs text-[color:var(--muted)]">{item.owner}</span>
                   </span>
-                  <Badge tone={statusTone(item.status)}>{statusLabel[item.status] ?? item.status}</Badge>
+                  <Badge tone={statusTone(item.status)}>{statusText(t, item.status)}</Badge>
                 </button>
               ))}
           </div>

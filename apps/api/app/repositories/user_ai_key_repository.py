@@ -80,6 +80,13 @@ class UserAiKeyRepository:
             )
             return _as_dict(row) if row else None
 
+    def get_for_user(self, user_id: str, key_id: str) -> dict[str, Any] | None:
+        with self._sessions() as session:
+            row = session.get(UserAiKey, key_id)
+            if row is None or row.user_id != user_id:
+                return None
+            return _as_dict(row)
+
     def get_decrypted(self, user_id: str, key_id: str) -> str | None:
         with self._sessions() as session:
             row = session.get(UserAiKey, key_id)
@@ -134,12 +141,14 @@ class UserAiKeyRepository:
             session.flush()
             return _as_dict(row)
 
-    def mark_validated(self, user_id: str, key_id: str, *, ok: bool) -> None:
+    def mark_validated(self, user_id: str, key_id: str, *, status: str) -> None:
+        if status not in {"valid", "invalid", "unavailable"}:
+            raise ValueError(f"Unsupported AI key validation status '{status}'.")
         with self._sessions.begin() as session:
             row = session.get(UserAiKey, key_id)
             if row is None or row.user_id != user_id:
                 return
-            row.status = "valid" if ok else "invalid"
+            row.status = status
             row.last_validated_at = _now()
 
     def mark_used(self, user_id: str, provider: str) -> None:

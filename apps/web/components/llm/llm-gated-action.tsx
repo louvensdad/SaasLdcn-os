@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { Bot, Cpu } from 'lucide-react';
 
 import { useActiveLlm } from '@/hooks/use-active-llm';
+import { useLocale } from '@/hooks/use-locale';
 
 import { Badge } from '@/components/ui/badge';
 import { LlmConfirmationGate } from '@/components/llm/llm-confirmation-gate';
@@ -64,10 +65,11 @@ export function LlmGatedAction({ capability, usageLabel, onRun, children, compac
  * never mistaken for a real-AI result.
  */
 export function DeterministicBadge({ className }: { readonly className?: string }) {
+  const { t } = useLocale();
   return (
     <Badge tone="warning" className={className}>
       <Cpu className="h-3.5 w-3.5" aria-hidden />
-      Preview determinístico
+      {t('architect.blueprint.degraded')}
     </Badge>
   );
 }

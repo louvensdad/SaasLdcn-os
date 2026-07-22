@@ -98,7 +98,8 @@ def _create_token(*, subject: str, role: str, token_type: TokenType, expires_del
         "exp": expires_at,
         "jti": jti,
     }
-    token = jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+    signing_key = settings.refresh_secret_key if token_type == "refresh" else settings.secret_key
+    token = jwt.encode(payload, signing_key, algorithm=settings.jwt_algorithm)
     return token, jti, expires_at
 
 
@@ -130,7 +131,8 @@ def decode_token(token: str, *, expected_type: TokenType) -> dict[str, Any]:
     caller expects so access tokens cannot be replayed as refresh tokens or vice versa."""
     settings = get_settings()
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        signing_key = settings.refresh_secret_key if expected_type == "refresh" else settings.secret_key
+        payload = jwt.decode(token, signing_key, algorithms=[settings.jwt_algorithm])
     except jwt.ExpiredSignatureError as exc:
         raise TokenError("token_expired", "Token has expired.") from exc
     except jwt.InvalidTokenError as exc:

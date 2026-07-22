@@ -1,11 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
 from app.engines.llm.base import (
     LLMAdapter,
     LLMError,
-    is_transient_provider_error,
+    normalize_provider_error,
     timeout_seconds,
 )
 from app.schemas.llm import LLMRequest, LLMResponse, Provider
@@ -16,10 +16,8 @@ _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 class GroqAdapter(LLMAdapter):
     """Cloud generation via Groq's OpenAI-compatible endpoint.
 
-    Groq is cloud + key-required (unlike Ollama/LM Studio) -- there is no
     placeholder-key fallback, a real user-owned key is mandatory (BYOK, vault
     56/68). Reuses the `openai` SDK pointed at Groq's fixed base URL, same
-    translation contract as the other OpenAI-compatible adapters (custom/ollama).
     """
 
     def __init__(self, client=None):
@@ -37,7 +35,7 @@ class GroqAdapter(LLMAdapter):
 
     def _get_client(self, api_key: str | None):
         if not api_key:
-            raise LLMError("No Groq API key configured. Cadastre uma chave em Configurações → Inteligência Artificial.")
+            raise LLMError("No Groq API key configured. Cadastre uma chave em ConfiguraÃ§Ãµes â†’ InteligÃªncia Artificial.")
         if self._client is not None:
             return self._client
         self._client = self._import_sdk().OpenAI(base_url=_GROQ_BASE_URL, api_key=api_key)
@@ -65,10 +63,7 @@ class GroqAdapter(LLMAdapter):
         try:
             resp = client.chat.completions.create(**params)
         except Exception as exc:
-            raise LLMError(
-                f"Groq request failed for model '{model}': {exc}",
-                transient=is_transient_provider_error(exc),
-            ) from exc
+            raise normalize_provider_error("Groq", model, exc) from exc
 
         choice = resp.choices[0]
         text = getattr(choice.message, "content", "") or ""

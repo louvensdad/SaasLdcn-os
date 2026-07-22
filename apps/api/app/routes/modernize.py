@@ -76,7 +76,7 @@ from app.services.git_provider_service import git_provider_service
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT
 from app.services.project_writer import ProjectWriter, ProjectWriteError
 from app.services.ai_key_vault_service import ai_key_vault_service
-from app.services.llm_settings_service import llm_provider_resolver
+from app.services.llm_settings_service import llm_provider_resolver, llm_settings_service
 
 router = APIRouter(tags=["modernize"])
 service = codebase_ingest_service
@@ -92,14 +92,13 @@ _INGESTS: dict[str, dict] = {}
 # Keyed by the ingest id (== modernize project id). Foreign access yields 404.
 _jobs_repo = ModernizeJobRepository()
 
-# Provider catalog cards. DeepSeek is reached via the OpenRouter provider/key.
+# Canonical MVP provider catalog.
 _PROVIDER_CARDS: list[dict] = [
     {"id": "openai", "name": "GPT / OpenAI", "description": "Bom para análise geral, arquitetura e documentação.", "recommended_for": "Arquitetura e documentação", "key_required": True},
     {"id": "anthropic", "name": "Claude / Anthropic", "description": "Forte em análise longa de codebase e refatoração.", "recommended_for": "Refatoração de codebase", "key_required": True},
     {"id": "google", "name": "Gemini / Google", "description": "Bom custo-benefício para leitura e análise ampla.", "recommended_for": "Análise ampla", "key_required": True},
-    {"id": "openrouter", "name": "DeepSeek", "description": "Bom para análise de código e raciocínio técnico (via OpenRouter).", "recommended_for": "Análise de código", "key_required": True},
-    {"id": "openrouter", "name": "OpenRouter", "description": "Muitos modelos por uma única chave OpenRouter.", "recommended_for": "Flexibilidade de modelos", "key_required": True},
-    {"id": "ollama", "name": "Ollama Local", "description": "Modelos locais, sem chave (requer Ollama instalado).", "recommended_for": "Offline / local", "key_required": False},
+    {"id": "deepseek", "name": "DeepSeek", "description": "Análise de código e raciocínio técnico.", "recommended_for": "Análise de código", "key_required": True},
+    {"id": "groq", "name": "Groq", "description": "Inferência rápida em modelos abertos.", "recommended_for": "Baixa latência", "key_required": True},
 ]
 
 
@@ -117,12 +116,20 @@ def _require_flag(flag: str) -> None:
 
 
 def _provider_cards(user_id: str) -> list[LlmProviderConfig]:
-    active = {row["provider"] for row in ai_key_vault_service.list_for_user(user_id) if row["ativo"]}
+    defaults = {
+        row["provider"]: row for row in ai_key_vault_service.list_for_user(user_id)
+        if row["ativo"] and row["is_default"]
+    }
+    states = {"valid": "ready", "invalid": "auth_error", "unavailable": "unavailable", "untested": "initializing"}
     return [
         LlmProviderConfig(
             id=card["id"], name=card["name"], description=card["description"],
             recommended_for=card["recommended_for"], key_required=card["key_required"],
-            status="ready" if (card["id"] in active or not card["key_required"]) else "not_configured",
+            status=(
+                "ready" if not card["key_required"]
+                else states.get(defaults[card["id"]]["status"], "initializing") if card["id"] in defaults
+                else "not_configured"
+            ),
         )
         for card in _PROVIDER_CARDS
     ]
@@ -550,11 +557,9 @@ def modernize_llm_providers(user: CurrentUser) -> LlmProviderCatalog:
 def modernize_llm_test(payload: LlmConnectionTestRequest, user: CurrentUser) -> LlmConnectionTestResult:
     provider = payload.provider.strip().lower()
     _audit(user["user_id"], "llm_provider_selected")
-    if provider == "ollama":
-        _audit(user["user_id"], "llm_connection_tested")
-        return LlmConnectionTestResult(ok=True, provider=provider, model=None, message="Ollama local: nenhuma chave necessária.", degraded=True)
+    key_row = ai_key_vault_service.get_default_for_provider(user["user_id"], provider)
     api_key = ai_key_vault_service.get_decrypted_default(user["user_id"], provider)
-    if api_key is None:
+    if api_key is None or key_row is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nenhuma chave configurada para este provedor. Cadastre uma chave primeiro.")
     try:
         response = LLMRouter().route(
@@ -562,9 +567,15 @@ def modernize_llm_test(payload: LlmConnectionTestRequest, user: CurrentUser) -> 
             user_choice=_default_model_for(provider),
             api_key=api_key,
         )
-    except Exception as exc:  # noqa: BLE001 — any provider/SDK/network failure means "not connected"
+    except LLMError as exc:
+        key_status = "invalid" if exc.status_code in {401, 403} else "unavailable"
+        engine_status = "auth_error" if key_status == "invalid" else "unavailable"
+        ai_key_vault_service.mark_validated(user["user_id"], key_row["id"], status=key_status)
+        llm_settings_service.validated(user["user_id"], provider, status=engine_status)
         _audit(user["user_id"], "llm_connection_tested")
         return LlmConnectionTestResult(ok=False, provider=provider, model=None, message=f"Falha na conexão: {exc}"[:300], degraded=False)
+    ai_key_vault_service.mark_validated(user["user_id"], key_row["id"], status="valid")
+    llm_settings_service.validated(user["user_id"], provider, status="ready")
     _audit(user["user_id"], "llm_connection_tested")
     return LlmConnectionTestResult(ok=True, provider=provider, model=response.model, message="Conexão validada. LLM pronto.", degraded=False)
 

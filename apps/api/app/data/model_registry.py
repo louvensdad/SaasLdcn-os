@@ -7,11 +7,11 @@ from typing import Any
 #
 # Anthropic IDs and prices below are verified against the official Claude API
 # reference (claude-api skill, cached 2026-06-04). OpenAI / Google entries are
-# placeholders — CONFIRM exact model IDs and pricing in each provider's console
+# placeholders â€” CONFIRM exact model IDs and pricing in each provider's console
 # before enabling them in production.
 #
 # Key field: `supports_temperature`. Opus 4.8 / 4.7 and Fable 5 REJECT
-# temperature/top_p/top_k with HTTP 400 — the router must never forward them.
+# temperature/top_p/top_k with HTTP 400 â€” the router must never forward them.
 
 MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     # --- Anthropic (verified) ---
@@ -68,41 +68,12 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         "provider": "google",
         "supports_temperature": True,
     },
-    # --- Local via Ollama (no API key; runs on the user's machine, slower) ---
-    # IDs are Ollama tags — pull them with `ollama pull <id>`. They are opt-in:
     # selected explicitly from the UI, never auto-routed. Quality is below the
     # cloud frontier models but produces real, usable output without any key.
-    "qwen2.5-coder:7b": {
-        "provider": "ollama",
-        "supports_temperature": True,
-        "local": True,
-    },
-    "qwen2.5-coder:32b": {
-        "provider": "ollama",
-        "supports_temperature": True,
-        "local": True,
-    },
-    "deepseek-coder-v2:16b": {
-        "provider": "ollama",
-        "supports_temperature": True,
-        "local": True,
-    },
-    # --- OpenRouter (online aggregator; one user key, many models incl. free) ---
-    # CONFIRM exact IDs at https://openrouter.ai/models. The ":free" tier needs no
     # credit. Selected explicitly from the UI; never auto-routed.
-    "deepseek/deepseek-chat": {"provider": "openrouter", "supports_temperature": True},
-    "deepseek/deepseek-r1:free": {"provider": "openrouter", "supports_temperature": True, "free": True},
-    "qwen/qwen-2.5-coder-32b-instruct": {"provider": "openrouter", "supports_temperature": True},
-    "meta-llama/llama-3.3-70b-instruct": {"provider": "openrouter", "supports_temperature": True},
-    # --- DeepSeek (first-class API; one DeepSeek key) ---
-    # OpenAI-compatible. `deepseek-chat` is DeepSeek-V3; `deepseek-reasoner` is R1.
-    # Selected explicitly from the UI; never auto-routed.
-    "deepseek-chat": {"provider": "deepseek", "supports_temperature": True},
-    "deepseek-reasoner": {"provider": "deepseek", "reasoning": True, "supports_temperature": False},
-    # --- Custom OpenAI-compatible endpoint (configure base URL + model via env) ---
-    # Sentinel id; the real model is settings.custom_model. Adapter errors clearly
-    # if LDCN_CUSTOM_BASE_URL / LDCN_CUSTOM_MODEL are not set.
-    "custom": {"provider": "custom", "supports_temperature": True},
+    # --- DeepSeek V4 (first-class API; one DeepSeek key) ---
+    "deepseek-v4-flash": {"provider": "deepseek", "supports_temperature": True},
+    "deepseek-v4-pro": {"provider": "deepseek", "reasoning": True, "supports_temperature": False},
     # --- Groq (cloud inference, BYOK; free tier exists but pricing varies by
     # model/plan -- $0 placeholder here until real per-token pricing is confirmed,
     # same anti-fabrication rule as everywhere else in this registry) ---
@@ -112,8 +83,6 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         "in_per_mtok": 0.0,
         "out_per_mtok": 0.0,
     },
-    # --- LM Studio (local, key-free; model id is whatever the user has loaded) ---
-    "local-model": {"provider": "lmstudio", "supports_temperature": True, "local": True},
 }
 
 DEFAULT_MODEL = "claude-opus-4-8"

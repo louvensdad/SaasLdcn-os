@@ -9,14 +9,8 @@ if (!fs.existsSync(manifestPath)) {
 }
 
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-// Bumped 2026-07-21: all 4 locale dictionaries (lib/i18n/dictionaries/*.json)
-// are eagerly imported into every route's shared bundle (lib/i18n/index.ts),
-// so real new translated copy -- not bloat -- grows every route's size. The
-// BYOK/marketplace redesign work added ~360 real keys across 4 locales.
-// Real fix is lazy/per-locale dictionary loading (not done here, out of
-// scope); these budgets keep some headroom above today's actual sizes
-// (wizard 1,712,656 / static 4,666,606) so the check still catches genuine
-// regressions.
+// Locale dictionaries are generated into a compact key-deduplicated payload
+// before build. Keep budgets fixed: copy growth must not silently expand them.
 const maxRouteBytes = Number(process.env.BUNDLE_MAX_ROUTE_BYTES ?? 1_800_000);
 const maxStaticBytes = Number(process.env.BUNDLE_MAX_STATIC_BYTES ?? 4_800_000);
 const sizeOf = (file) => {

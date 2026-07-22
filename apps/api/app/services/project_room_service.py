@@ -730,7 +730,7 @@ class ProjectRoomService:
                 provider = normalize_provider_id(str(raw_provider))
             except (KeyError, ValueError):
                 provider = str(raw_provider).lower() if raw_provider else None
-            labels = {"anthropic": "Claude", "openai": "OpenAI", "google": "Gemini", "deepseek": "DeepSeek", "openrouter": "OpenRouter", "ollama": "Ollama", "custom": "Custom"}
+            labels = {"openai": "OpenAI", "anthropic": "Claude", "google": "Gemini", "deepseek": "DeepSeek", "groq": "Groq"}
             provider_label = normalized.get("providerLabel") or labels.get(provider or "", str(raw_provider or "LLM"))
             model = normalized.get("model") or normalized.get("llm_model") or "Modelo nao informado"
             mode = source = "llm"

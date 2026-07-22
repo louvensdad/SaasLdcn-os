@@ -12,7 +12,7 @@ import {
   LayoutTemplate,
   Library,
   MessagesSquare,
-  WandSparkles,
+  Rocket,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -37,7 +37,7 @@ const NODES: readonly MapNode[] = [
   { key: 'templates', href: '/templates', icon: LayoutTemplate },
   { key: 'library', href: '/projects', icon: Library },
   { key: 'panel', href: '/dashboard', icon: LayoutDashboard },
-  { key: 'builder', href: '/wizard', icon: WandSparkles },
+  { key: 'builder', href: '/wizard', icon: Rocket },
 ];
 
 const RADIUS = 37; // % of the square stage

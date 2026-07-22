@@ -1,9 +1,6 @@
 import type { LocaleCode, LocaleDefinition, TranslationKey } from '@contracts/locale.contract';
 
-import enUS from './dictionaries/en-US.json';
-import esES from './dictionaries/es-ES.json';
-import frFR from './dictionaries/fr-FR.json';
-import ptBR from './dictionaries/pt-BR.json';
+import compactSource from './compact.generated.json';
 
 export const DEFAULT_LOCALE: LocaleCode = 'pt-BR';
 export const LOCALES: readonly LocaleDefinition[] = [
@@ -13,15 +10,25 @@ export const LOCALES: readonly LocaleDefinition[] = [
   { code: 'fr-FR', language: 'Français' as never, name: 'French (France)', nativeName: 'Français', isDefault: false, direction: 'ltr' as never }
 ];
 
-export const dictionaries: Record<LocaleCode, Record<string, string>> = {
-  'pt-BR': { ...enUS, ...ptBR },
-  'en-US': enUS,
-  'es-ES': { ...enUS, ...esES },
-  'fr-FR': { ...enUS, ...frFR }
-};
+interface CompactDictionaries {
+  readonly keys: readonly string[];
+  readonly locales: Record<LocaleCode, readonly string[]>;
+}
+
+const compact = compactSource as CompactDictionaries;
+const dictionaryCache = new Map<LocaleCode, Record<string, string>>();
+
+function dictionary(locale: LocaleCode): Record<string, string> {
+  const cached = dictionaryCache.get(locale);
+  if (cached) return cached;
+  const values = compact.locales[locale];
+  const entries = Object.fromEntries(compact.keys.map((key, index) => [key, values[index]]));
+  dictionaryCache.set(locale, entries);
+  return entries;
+}
 
 export function translate(locale: LocaleCode, key: TranslationKey, values: Record<string, string | number> = {}, fallback: LocaleCode = DEFAULT_LOCALE) {
-  let text = dictionaries[locale]?.[key] ?? dictionaries[fallback]?.[key] ?? dictionaries[DEFAULT_LOCALE][key] ?? key;
+  let text = dictionary(locale)[key] ?? dictionary(fallback)[key] ?? dictionary(DEFAULT_LOCALE)[key] ?? key;
   for (const [name, value] of Object.entries(values)) text = text.replaceAll(`{{${name}}}`, String(value));
   return text;
 }

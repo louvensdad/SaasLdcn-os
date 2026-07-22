@@ -21,9 +21,11 @@ class LLMError(RuntimeError):
     auth) default to ``transient=False`` so they fail fast instead of being retried.
     """
 
-    def __init__(self, message: str, *, transient: bool = False) -> None:
+    def __init__(self, message: str, *, transient: bool = False, status_code: int | None = None, code: str = "provider_error") -> None:
         super().__init__(message)
         self.transient = transient
+        self.status_code = status_code
+        self.code = code
 
 
 class LLMTimeoutError(LLMError):
@@ -66,6 +68,50 @@ def is_transient_provider_error(exc: BaseException) -> bool:
         return True
     name = type(exc).__name__.lower()
     return any(hint in name for hint in _TRANSIENT_NAME_HINTS)
+
+
+def provider_error_details(exc: BaseException) -> tuple[int, str, str]:
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status is None:
+        status = getattr(exc, "code", None)
+    try:
+        status = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        status = None
+    name = type(exc).__name__.lower()
+    if "timeout" in name:
+        return 504, "timeout", "A conexão com o provider excedeu o tempo limite."
+    if any(hint in name for hint in ("connection", "network", "remoteprotocol")):
+        return 503, "network_error", "Não foi possível conectar ao provider. Verifique a rede e tente novamente."
+    messages = {
+        401: ("auth_error", "API key inválida ou não autorizada pelo provider."),
+        403: ("forbidden", "A API key não possui permissão para acessar este modelo."),
+        404: ("not_found", "Modelo ou endpoint não encontrado no provider."),
+        429: ("rate_limited", "Limite de requisições atingido. Aguarde e tente novamente."),
+        500: ("provider_error", "O provider encontrou um erro interno."),
+        502: ("provider_offline", "O provider está temporariamente indisponível."),
+        503: ("provider_offline", "O provider está temporariamente indisponível."),
+        504: ("timeout", "A conexão com o provider excedeu o tempo limite."),
+    }
+    code, message = messages.get(status, ("provider_error", "Falha ao comunicar com o provider."))
+    return int(status or 502), code, message
+
+
+def normalize_provider_error(provider: str, model: str, exc: BaseException) -> LLMError:
+    """Convert every provider SDK failure to the same safe public contract.
+
+    Raw SDK messages are deliberately not copied: some transports include request
+    URLs, headers or credentials in their exception text.
+    """
+    status_code, code, message = provider_error_details(exc)
+    return LLMError(
+        f"{provider} ({model}): {message}",
+        transient=is_transient_provider_error(exc),
+        status_code=status_code,
+        code=code,
+    )
 
 
 def timeout_seconds(req: LLMRequest) -> float:

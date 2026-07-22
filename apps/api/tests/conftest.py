@@ -27,6 +27,7 @@ from app.repositories.change_request_repository import ChangeRequestRepository
 from app.repositories.feature_repository import FeatureRepository
 from app.repositories.marketplace_repository import MarketplaceRepository
 from app.repositories.staging_deployment_repository import StagingDeploymentRepository
+from app.repositories.mission_repository import MissionRepository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
 from app.repositories.git_provider_repository import GitProviderRepository
@@ -34,6 +35,7 @@ from app.routes import change_requests as change_requests_route
 from app.routes import downloads as downloads_route
 from app.routes import local_generation as local_generation_route
 from app.routes import meta_factory as meta_factory_route
+from app.routes import missions as missions_route
 from app.routes import modernize as modernize_route
 from app.routes import project_rooms as project_rooms_route
 from app.routes import prompt_master as prompt_master_route
@@ -96,6 +98,7 @@ def client() -> TestClient:
     # the default DB at import time; point it at the isolated per-test database too.
     # (Done before the app/lifespan starts so initialize() targets this DB.)
     project_rooms_route.service.repository = ProjectRoomRepository(database_path)
+    missions_route.service.repository = MissionRepository(database_path)
     change_requests_route.service.repository = ChangeRequestRepository(database_path)
     feature_service.repository = FeatureRepository(database_path)
     automation_service.repository = AutomationRepository(database_path)

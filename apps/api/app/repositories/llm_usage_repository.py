@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -18,8 +18,7 @@ def _now() -> datetime:
 
 
 def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Real cost from the model registry's per-MTok prices; 0.0 for models whose
-    pricing is unknown/local (Ollama) rather than a made-up number."""
+    """Return the registry-backed estimated cost, or zero when pricing is unknown."""
     meta = MODEL_REGISTRY.get(model, {})
     in_price = float(meta.get("in_per_mtok", 0.0))
     out_price = float(meta.get("out_per_mtok", 0.0))

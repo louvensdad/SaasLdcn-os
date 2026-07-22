@@ -423,10 +423,7 @@ def _provider_label(provider: str) -> str:
         "anthropic": "Claude",
         "openai": "GPT",
         "google": "Gemini",
-        "openrouter": "OpenRouter",
         "deepseek": "DeepSeek",
-        "custom": "Custom",
-        "ollama": "Ollama",
     }.get(provider, provider)
 
 

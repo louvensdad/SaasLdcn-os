@@ -21,6 +21,8 @@ import type { RuntimeMetrics } from '@contracts/runtime-metrics.contract';
 import type { LlmUsageStats } from '@contracts/llm-settings.contract';
 import { cn } from '@/lib/cn';
 
+type Translator = (key: string, values?: Record<string, string | number>) => string;
+
 function fmtCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
@@ -28,16 +30,16 @@ function fmtCompact(n: number): string {
 }
 
 /** Real elapsed time since an ISO timestamp -- never a fabricated ETA. */
-function formatRelativeTime(iso: string | null | undefined): string | null {
+function formatRelativeTime(t: Translator, iso: string | null | undefined): string | null {
   if (!iso) return null;
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return null;
   const minutes = Math.max(0, Math.round((Date.now() - then) / 60_000));
-  if (minutes < 1) return 'agora mesmo';
-  if (minutes < 60) return `há ${minutes} min`;
+  if (minutes < 1) return t('platform.overview.relativeTime.now');
+  if (minutes < 60) return t('platform.overview.relativeTime.minutesAgo', { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `há ${hours}h`;
-  return `há ${Math.round(hours / 24)}d`;
+  if (hours < 24) return t('platform.overview.relativeTime.hoursAgo', { count: hours });
+  return t('platform.overview.relativeTime.daysAgo', { count: Math.round(hours / 24) });
 }
 
 /** A fixed, honest 5-step ladder derived from the real generation status --
@@ -72,14 +74,24 @@ const MODULES: Module[] = [
   { href: '/dashboard', labelKey: 'navigation.dashboard.label', icon: Gauge },
 ];
 
-const FLOW_STEP_TITLES = ['Definir intenção', 'Projetar sistema', 'Validar decisões', 'Construir projeto', 'Operar portfólio'];
+function buildFlowStepTitles(t: Translator) {
+  return [
+    t('platform.overview.flow.intake'),
+    t('platform.overview.flow.architecture'),
+    t('platform.overview.flow.review'),
+    t('platform.overview.flow.generation'),
+    t('platform.overview.flow.operation'),
+  ];
+}
 
-const catalog = [
-  ['Projetos IA', Sparkles, '/project-rooms'], ['Architect', Network, '/architect'], ['Engineering Review', Search, '/engineering-review'], ['Meta-Fábrica', Factory, '/meta-factory'],
-  ['Painel', Gauge, '/dashboard'], ['Analytics', Activity, '/analytics'], ['Status do sistema', Server, '/system-status'], ['Planejamento', GitBranch, '/roadmap'],
-  ['Assistente', Bot, '/assistant'], ['Auto-Fix', Code2, '/auto-fix'], ['Habilidades', Boxes, '/skills'], ['Biblioteca', Package, '/templates'],
-  ['Documentação', Layers3, '/documentation'], ['Configurações', CloudCog, '/settings'], ['Gerações', GitBranch, '/projects'], ['Engineering Lab', Database, '/engineering-laboratory'],
-] as const;
+function buildCatalog(t: Translator) {
+  return [
+    [t('platform.overview.catalog.items.projectRooms'), Sparkles, '/project-rooms'], [t('platform.overview.catalog.items.architect'), Network, '/architect'], [t('platform.overview.catalog.items.engineeringReview'), Search, '/engineering-review'], [t('platform.overview.catalog.items.metaFactory'), Factory, '/meta-factory'],
+    [t('platform.overview.catalog.items.dashboard'), Gauge, '/dashboard'], [t('platform.overview.catalog.items.analytics'), Activity, '/analytics'], [t('platform.overview.catalog.items.systemStatus'), Server, '/system-status'], [t('platform.overview.catalog.items.roadmap'), GitBranch, '/roadmap'],
+    [t('platform.overview.catalog.items.assistant'), Bot, '/assistant'], [t('platform.overview.catalog.items.autoFix'), Code2, '/auto-fix'], [t('platform.overview.catalog.items.skills'), Boxes, '/skills'], [t('platform.overview.catalog.items.library'), Package, '/templates'],
+    [t('platform.overview.catalog.items.documentation'), Layers3, '/documentation'], [t('platform.overview.catalog.items.settings'), CloudCog, '/settings'], [t('platform.overview.catalog.items.generations'), GitBranch, '/projects'], [t('platform.overview.catalog.items.engineeringLab'), Database, '/engineering-laboratory'],
+  ] as const;
+}
 
 interface ActivityItem {
   readonly id: string;
@@ -102,7 +114,16 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
 };
 
 const STATUS_TONE: Record<string, BadgeTone> = { success: 'success', warning: 'warning', failed: 'danger' };
-const STATUS_LABEL: Record<string, string> = { success: 'concluído', warning: 'em andamento', failed: 'resolvido' };
+const STATUS_LABEL_KEY: Record<string, string> = {
+  success: 'platform.overview.activityStatus.success',
+  warning: 'platform.overview.activityStatus.warning',
+  failed: 'platform.overview.activityStatus.failed',
+};
+
+function activityStatusLabel(t: Translator, status: string) {
+  const key = STATUS_LABEL_KEY[status];
+  return key ? t(key) : status;
+}
 
 const TONE_VAR: Record<BadgeTone, string> = {
   neutral: '--border', accent: '--accent', success: '--success', warning: '--warning', danger: '--danger',
@@ -165,13 +186,14 @@ type ProjectRowData = Pick<Project, 'project_id' | 'project_name' | 'status' | '
 };
 
 function ProjectRow({ project }: { project: ProjectRowData }) {
+  const { t } = useLocale();
   const step = project.status ? (STATUS_STEP[project.status] ?? 3) : project.readiness_status === 'ready' ? 5 : project.readiness_status === 'ready_with_warnings' ? 4 : 2;
   const percent = Math.round((step / 5) * 100);
   const tone = READINESS_TONE[project.readiness_status] ?? 'neutral';
   const stack = project.technology_graph
     ? [project.technology_graph.language?.name, project.technology_graph.framework?.name].filter(Boolean).join(' · ')
     : null;
-  const lastActive = formatRelativeTime(project.updated_at);
+  const lastActive = formatRelativeTime(t, project.updated_at);
 
   return (
     <Link href={`/projects/${project.project_id}`} className="focus-ring block rounded-[var(--radius-md)]">
@@ -180,8 +202,8 @@ function ProjectRow({ project }: { project: ProjectRowData }) {
         <Badge tone={tone}>{project.readiness_status?.replace(/_/g, ' ') ?? '—'}</Badge>
       </div>
       <p className="mt-1 ds-metadata">
-        {stack ?? 'Stack não identificado'}
-        {lastActive ? ` · atualizado ${lastActive}` : ''}
+        {stack ?? t('platform.overview.project.stackUnknown')}
+        {lastActive ? ` ${t('platform.overview.project.updatedPrefix', { time: lastActive })}` : ''}
       </p>
       <div className="mt-2 h-1.5 rounded-full bg-[color:var(--surface-3)]">
         <div className="h-1.5 rounded-full bg-[color:var(--accent)]" style={{ width: `${percent}%` }} />
@@ -191,7 +213,7 @@ function ProjectRow({ project }: { project: ProjectRowData }) {
 }
 
 export function PlatformOverview() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const systemStatus = useSystemStatus();
   const projects = useProjects();
   const status = systemStatus.data;
@@ -199,6 +221,8 @@ export function PlatformOverview() {
   const label = (key: string) => {
     try { return t(key); } catch { return key.split('.').pop() ?? key; }
   };
+  const flowStepTitles = buildFlowStepTitles(t);
+  const catalog = buildCatalog(t);
 
   // Real telemetry (best-effort: the page degrades to placeholders while
   // loading / if a collector is unavailable, never blocks the page).
@@ -251,7 +275,7 @@ export function PlatformOverview() {
 
   return (
     <div className="platform-dashboard space-y-8" data-testid="platform-overview">
-      <p className="platform-label">Plataforma operacional</p>
+      <p className="platform-label">{t('platform.overview.status.healthy')}</p>
 
       {/* ---- Hero + Engine ---- */}
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
@@ -259,7 +283,7 @@ export function PlatformOverview() {
           <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_24rem]">
             <div>
               <p className="platform-eyebrow" style={{ color: '#c4b5fd' }}>
-                SISTEMA OPERACIONAL DE ENGENHARIA <span style={{ color: '#4ade80' }}>● Sistema saudável</span>
+                {t('platform.overview.eyebrow')} <span style={{ color: '#4ade80' }}>● {t('platform.overview.healthySystemBadge')}</span>
               </p>
               {/* .platform-hero is a permanently-dark accent surface (like the
                   Sidebar), independent of the light/dark content theme -- its
@@ -267,41 +291,41 @@ export function PlatformOverview() {
                   --muted/--border (which flip to dark-on-light and would be
                   unreadable here in Light theme). */}
               <h1 className="ds-display mt-5 max-w-xl leading-[1.05]" style={{ color: '#f7f3ff' }}>
-                Do problema ao software operável, com uma linha de <span className="text-gradient">decisão clara.</span>
+                {t('platform.overview.title')}
               </h1>
               <p className="mt-5 max-w-xl ds-body" style={{ color: 'rgba(212,204,223,0.85)' }}>
-                Escolha o objetivo, entre no fluxo correto e acompanhe arquitetura, revisão, geração e operação a partir de uma única superfície.
+                {t('platform.overview.description')}
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
                 <Link href="/project-rooms/new" className="accent-fill focus-ring inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-md)] px-5 ds-badge">
-                  Iniciar novo projeto <ArrowRight className="h-4 w-4" />
+                  {t('platform.overview.primaryAction')} <ArrowRight className="h-4 w-4" />
                 </Link>
                 <Link
                   href="/architecture"
                   className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-md)] border px-5 ds-badge"
                   style={{ borderColor: 'rgba(255,255,255,0.16)', color: '#f7f3ff' }}
                 >
-                  Explorar arquitetura
+                  {t('platform.overview.secondaryAction')}
                 </Link>
               </div>
             </div>
-            <div className="engine-map relative mx-auto h-72 w-full max-w-[420px]" aria-label="Mapa operacional LDCN Engine">
+            <div className="engine-map relative mx-auto h-72 w-full max-w-[420px]" aria-label={t('platform.overview.engineMap.aria')}>
               <div className="engine-ring ring-a" />
               <div className="engine-ring ring-b" />
               <span className="engine-particle" style={{ transform: 'translate(72px, -38px)' }} aria-hidden />
               <span className="engine-particle" style={{ transform: 'translate(-96px, 24px)' }} aria-hidden />
               <span className="engine-particle" style={{ transform: 'translate(38px, 56px)' }} aria-hidden />
               <div className="engine-core">
-                <span>LDCN</span>
-                <strong>ENGINE</strong>
+                <span>{t('platform.overview.engineCore.name')}</span>
+                <strong>{t('platform.overview.engineCore.role')}</strong>
               </div>
               {[
-                ['AGENTS', '32 ativos', 'top-0 left-1/2'],
-                ['PROJECTS', '43 ativos', 'left-0 top-1/2'],
-                ['PIPELINES', '18 rodando', 'right-0 top-1/2'],
-                ['DATABASE', 'Healthy', 'bottom-0 left-1/2'],
-                ['SANDBOX', '8 isolados', 'left-10 bottom-6'],
-                ['DEPLOY', '6 ambientes', 'right-10 bottom-6'],
+                ['AGENTS', t('platform.overview.engineNode.activeCount', { count: 32 }), 'top-0 left-1/2'],
+                ['PROJECTS', t('platform.overview.engineNode.activeCount', { count: 43 }), 'left-0 top-1/2'],
+                ['PIPELINES', t('platform.overview.engineNode.runningCount', { count: 18 }), 'right-0 top-1/2'],
+                ['DATABASE', t('platform.overview.engineNode.database'), 'bottom-0 left-1/2'],
+                ['SANDBOX', t('platform.overview.engineNode.isolatedCount', { count: 8 }), 'left-10 bottom-6'],
+                ['DEPLOY', t('platform.overview.engineNode.environmentsCount', { count: 6 }), 'right-10 bottom-6'],
               ].map(([title, sub, pos], i) => (
                 <div key={title} className={cn('engine-node absolute -translate-x-1/2', pos)}>
                   <span className="grid h-9 w-9 place-items-center rounded-[var(--radius-sm)] border border-violet-500/40 bg-violet-500/15 text-violet-300">
@@ -316,24 +340,24 @@ export function PlatformOverview() {
         </div>
 
         <aside className="platform-card p-7">
-          <p className="platform-eyebrow">INVENTÁRIO ATIVO</p>
-          <h2 className="ds-card-title mt-3">Capacidades disponíveis agora</h2>
+          <p className="platform-eyebrow">{t('platform.overview.inventory')}</p>
+          <h2 className="ds-card-title mt-3">{t('platform.overview.inventoryDetail')}</h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {[
-              ['Engines', status?.active_engines.length ?? 12],
-              ['Skills', status?.active_skills.length ?? 128],
-              ['Templates', status?.active_templates.length ?? 67],
-              ['Projetos', projects.data?.length ?? 43],
+              [t('platform.overview.metric.engines'), status?.active_engines.length ?? 12],
+              [t('platform.overview.metric.skills'), status?.active_skills.length ?? 128],
+              [t('platform.overview.metric.templates'), status?.active_templates.length ?? 67],
+              [t('platform.overview.metric.projects'), projects.data?.length ?? 43],
             ].map(([name, value]) => (
               <div key={String(name)} className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-3.5">
                 <p className="ds-metadata">{name}</p>
                 <strong className="mt-1.5 block text-xl text-[color:var(--text)]">{value}</strong>
-                <span className="ds-metadata text-[color:var(--success)]">● Ativos</span>
+                <span className="ds-metadata text-[color:var(--success)]">● {t('platform.overview.activeLabel')}</span>
               </div>
             ))}
           </div>
           <Link href="/system-status" className="focus-ring mt-4 flex min-h-11 items-center justify-between rounded-[var(--radius-md)] border border-[color:var(--border)] px-3.5 ds-caption text-[color:var(--text)]">
-            Abrir status detalhado <ArrowRight className="h-3.5 w-3.5 text-[color:var(--accent)]" />
+            {t('platform.overview.openStatus')} <ArrowRight className="h-3.5 w-3.5 text-[color:var(--accent)]" />
           </Link>
         </aside>
       </section>
@@ -367,12 +391,12 @@ export function PlatformOverview() {
         <div className="platform-card p-7">
           <div className="flex items-end justify-between gap-4">
             <div>
-              <p className="platform-eyebrow">ESPINHA OPERACIONAL</p>
-              <h2 className="ds-card-title mt-2">Uma sequência, cinco decisões verificáveis</h2>
-              <p className="mt-2 ds-caption">Cada etapa tem uma saída concreta e conduz à próxima sem atalhos ocultos.</p>
-              <p className="mt-2 ds-caption">Criar um produto novo · Modernizar um sistema existente · Operar e governar</p>
+              <p className="platform-eyebrow">{t('platform.overview.flow.eyebrow')}</p>
+              <h2 className="ds-card-title mt-2">{t('platform.overview.flow.title')}</h2>
+              <p className="mt-2 ds-caption">{t('platform.overview.flow.description')}</p>
+              <p className="mt-2 ds-caption">{t('platform.overview.createNewProduct')} · {t('platform.overview.journey.modernize.title')} · {t('platform.overview.group.operate')}</p>
             </div>
-            <Link href="/project-rooms" className="hidden ds-caption text-[color:var(--accent)] sm:block">Ver fluxo completo →</Link>
+            <Link href="/project-rooms" className="hidden ds-caption text-[color:var(--accent)] sm:block">{t('platform.overview.flow.viewFull')} →</Link>
           </div>
           <div className="mt-6 grid gap-3 md:grid-cols-5">
             {MODULES.map(({ href, labelKey, icon: Icon }, i) => (
@@ -381,7 +405,7 @@ export function PlatformOverview() {
                   <b>0{i + 1}</b>
                   <Icon className="h-4 w-4 text-[color:var(--accent)]" />
                 </span>
-                <strong>{FLOW_STEP_TITLES[i]}</strong>
+                <strong>{flowStepTitles[i]}</strong>
                 <small>{label(labelKey)}</small>
                 {i < 4 ? <span className="flow-arrow">→</span> : null}
               </Link>
@@ -391,14 +415,14 @@ export function PlatformOverview() {
 
         <div className="platform-card p-7">
           <div className="flex items-center justify-between">
-            <p className="platform-eyebrow">FEED EM TEMPO REAL</p>
-            <span className="ds-metadata text-[color:var(--success)]">● Ao vivo</span>
+            <p className="platform-eyebrow">{t('platform.overview.feed.eyebrow')}</p>
+            <span className="ds-metadata text-[color:var(--success)]">● {t('platform.overview.feed.live')}</span>
           </div>
           <div className="mt-4 space-y-4">
             {feedQuery.isPending ? (
-              <p className="ds-caption">Carregando…</p>
+              <p className="ds-caption">{t('platform.overview.feed.loading')}</p>
             ) : feedItems.length === 0 ? (
-              <p className="ds-caption">Nenhuma atividade registrada ainda.</p>
+              <p className="ds-caption">{t('platform.overview.feed.empty')}</p>
             ) : (
               feedItems.map((item) => {
                 const Icon = CATEGORY_ICON[item.category] ?? Activity;
@@ -419,9 +443,9 @@ export function PlatformOverview() {
                       <p className="ds-body-sm font-semibold leading-snug text-[color:var(--text)]">{item.action.replaceAll('_', ' ')}</p>
                       <p className="mt-1 ds-caption leading-snug">{item.category.replaceAll('_', ' ')}</p>
                       <div className="mt-1.5 flex items-center gap-2">
-                        <Badge tone={tone}>{STATUS_LABEL[item.status] ?? item.status}</Badge>
+                        <Badge tone={tone}>{activityStatusLabel(t, item.status)}</Badge>
                         <span className="ds-metadata">
-                          {new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(item.occurred_at))}
+                          {new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(new Date(item.occurred_at))}
                         </span>
                       </div>
                     </div>
@@ -431,43 +455,43 @@ export function PlatformOverview() {
             )}
           </div>
           <Link href="/system-status" className="focus-ring mt-4 flex min-h-11 items-center justify-end ds-caption text-[color:var(--accent)]">
-            Ver todas as atividades →
+            {t('platform.overview.feed.viewAll')} →
           </Link>
         </div>
       </section>
 
       {/* ---- Métricas ---- */}
       <section>
-        <p className="platform-eyebrow mb-3">MÉTRICAS PRINCIPAIS</p>
+        <p className="platform-eyebrow mb-3">{t('platform.overview.metrics.eyebrow')}</p>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <MiniCard label="Projetos ativos" value={String(projects.data?.length ?? 0)} delta="12%" seed={2} />
-          <MiniCard label="Taxa de sucesso" value="98.6%" delta="5.1%" color="#2bd98b" seed={3} />
-          <MiniCard label="Lead time médio" value="2h 47m" delta="18%" color="#2b9dff" seed={4} />
-          <MiniCard label="Requisições (24h)" value={usage ? fmtCompact(usage.requests) : '—'} delta="28%" seed={5} />
-          <MiniCard label="Custo de IA (24h)" value={aiCostToday} delta="9.3%" color="#f59e0b" seed={6} />
-          <MiniCard label="Economia (cache)" value={aiSavings} delta="16%" color="#2bd98b" seed={2} />
+          <MiniCard label={t('platform.overview.metrics.activeProjects')} value={String(projects.data?.length ?? 0)} delta="12%" seed={2} />
+          <MiniCard label={t('platform.overview.metrics.successRate')} value="98.6%" delta="5.1%" color="#2bd98b" seed={3} />
+          <MiniCard label={t('platform.overview.metrics.avgLeadTime')} value="2h 47m" delta="18%" color="#2b9dff" seed={4} />
+          <MiniCard label={t('platform.overview.metrics.requests24h')} value={usage ? fmtCompact(usage.requests) : '—'} delta="28%" seed={5} />
+          <MiniCard label={t('platform.overview.metrics.aiCost24h')} value={aiCostToday} delta="9.3%" color="#f59e0b" seed={6} />
+          <MiniCard label={t('platform.overview.metrics.cacheSavings')} value={aiSavings} delta="16%" color="#2bd98b" seed={2} />
         </div>
       </section>
 
       {/* ---- Projetos | Saúde | Recursos ---- */}
       <section className="grid items-stretch gap-6 xl:grid-cols-[1.05fr_1.1fr_1fr]">
         <article className="platform-card flex flex-col p-7">
-          <p className="platform-eyebrow">PROJETOS EM EXECUÇÃO</p>
+          <p className="platform-eyebrow">{t('platform.overview.runningProjects.eyebrow')}</p>
           <div className="mt-4 flex-1 space-y-5">
             {projectRows.map((project) => <ProjectRow key={project.project_id} project={project} />)}
           </div>
           <Link href="/projects" className="focus-ring mt-5 flex min-h-11 items-center justify-center ds-caption text-[color:var(--accent)]">
-            Ver todos os projetos →
+            {t('platform.overview.runningProjects.viewAll')} →
           </Link>
         </article>
 
         <article className="platform-card flex flex-col p-7">
           <div className="flex items-center justify-between">
             <div>
-              <p className="platform-eyebrow">SAÚDE DA PLATAFORMA</p>
-              <h2 className="ds-card-title mt-1.5">Sistema operacional</h2>
+              <p className="platform-eyebrow">{t('platform.overview.health.title')}</p>
+              <h2 className="ds-card-title mt-1.5">{t('platform.overview.health.subtitle')}</h2>
             </div>
-            <span className="ds-metadata text-[color:var(--success)]">● Healthy</span>
+            <span className="ds-metadata text-[color:var(--success)]">● {t('platform.overview.signal.healthy')}</span>
           </div>
           <div className="mt-4 flex-1 space-y-2">
             {[
@@ -478,25 +502,25 @@ export function PlatformOverview() {
                 key={String(item)}
                 icon={Icon as LucideIcon}
                 label={String(item)}
-                status={i === 3 ? 'Degraded' : i === 5 ? '32 ativos' : 'Healthy'}
+                status={i === 3 ? t('platform.overview.signal.degraded') : i === 5 ? t('platform.overview.engineNode.activeCount', { count: 32 }) : t('platform.overview.signal.healthy')}
                 color={i === 3 ? 'var(--warning)' : 'var(--success)'}
               />
             ))}
           </div>
           <Link href="/system-status" className="focus-ring mt-5 flex min-h-11 items-center justify-center ds-caption text-[color:var(--accent)]">
-            Ver diagnóstico completo →
+            {t('platform.overview.health.viewAll')} →
           </Link>
         </article>
 
         <article className="platform-card flex flex-col p-7">
           <div className="flex items-center justify-between">
-            <p className="platform-eyebrow">USO DE RECURSOS</p>
-            <span className="ds-metadata text-[color:var(--success)]">● ao vivo</span>
+            <p className="platform-eyebrow">{t('platform.overview.resource.eyebrow')}</p>
+            <span className="ds-metadata text-[color:var(--success)]">● {t('platform.overview.resource.liveLower')}</span>
           </div>
           <div className="mt-4 grid flex-1 grid-cols-2 gap-3">
             {[
-              ['CPU', cpuPct, '#875bff'], ['Memória', memPct, '#2b9dff'],
-              ['Workers ativos', workersValue, '#2bd98b'], ['Jobs na fila', queuedValue, '#ff6b35'],
+              [t('platform.overview.resource.cpu'), cpuPct, '#875bff'], [t('platform.overview.resource.memory'), memPct, '#2b9dff'],
+              [t('platform.overview.resource.activeWorkers'), workersValue, '#2bd98b'], [t('platform.overview.resource.queuedJobs'), queuedValue, '#ff6b35'],
             ].map(([name, value, color], i) => (
               <div key={name} className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-4">
                 <p className="ds-metadata">{name}</p>
@@ -506,27 +530,35 @@ export function PlatformOverview() {
             ))}
           </div>
           <Link href="/analytics" className="focus-ring mt-5 flex min-h-11 items-center justify-center ds-caption text-[color:var(--accent)]">
-            Ver todos os recursos →
+            {t('platform.overview.resource.viewAll')} →
           </Link>
         </article>
       </section>
 
       {/* ---- Fluxo inteligente de entrega (a Pipeline) ---- */}
       <section className="platform-card p-8 sm:p-10">
-        <p className="platform-eyebrow">FLUXO INTELIGENTE DE ENTREGA</p>
-        <p className="mt-2 ds-body text-[color:var(--muted)]">Da intenção à produção, com validação contínua e governança embutida.</p>
+        <p className="platform-eyebrow">{t('platform.overview.pipeline.eyebrow')}</p>
+        <p className="mt-2 ds-body text-[color:var(--muted)]">{t('platform.overview.pipeline.description')}</p>
         <div className="delivery-line mt-8">
-          {['Ideia / Problema', 'Blueprint', 'Engineering Review', 'Meta-Fábrica', 'QA & Testes', 'Deploy', 'Produção'].map((item, i) => (
+          {[
+            t('platform.overview.pipeline.step.idea'), t('platform.overview.pipeline.step.blueprint'), t('platform.overview.pipeline.step.review'),
+            t('platform.overview.pipeline.step.factory'), t('platform.overview.pipeline.step.qa'), t('platform.overview.pipeline.step.deploy'),
+            t('platform.overview.pipeline.step.production'),
+          ].map((item, i) => (
             <DeliveryStep
               key={item}
               glyph={['◉', '◈', '◌', '▦', '◫', '◇', '◷'][i]}
               title={item}
-              hint={['Entrada', 'IA + Arquitetura', 'Qualidade e Riscos', 'Geração e Build', 'Automatizados', 'Ambientes', 'Monitoramento'][i]}
+              hint={[
+                t('platform.overview.pipeline.hint.intake'), t('platform.overview.pipeline.hint.architecture'), t('platform.overview.pipeline.hint.quality'),
+                t('platform.overview.pipeline.hint.generation'), t('platform.overview.pipeline.hint.automation'), t('platform.overview.pipeline.hint.environments'),
+                t('platform.overview.pipeline.hint.monitoring'),
+              ][i]}
             />
           ))}
         </div>
         <div className="mt-6 flex items-center gap-4 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-3 ds-caption">
-          <span>Pipeline global: 87% de eficiência operacional</span>
+          <span>{t('platform.overview.pipeline.globalEfficiency', { percent: 87 })}</span>
           <div className="h-1.5 flex-1 rounded-full bg-[color:var(--surface-3)]">
             <div className="h-full w-[87%] rounded-full bg-[color:var(--accent)]" />
           </div>
@@ -538,10 +570,10 @@ export function PlatformOverview() {
         <article className="platform-card p-7">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="platform-eyebrow">CATÁLOGO DA PLATAFORMA</p>
-              <p className="mt-1 ds-caption">Todos os módulos, organizados por responsabilidade</p>
+              <p className="platform-eyebrow">{t('platform.overview.catalog.eyebrow')}</p>
+              <p className="mt-1 ds-caption">{t('platform.overview.catalog.title')}</p>
             </div>
-            <Link href="/documentation" className="focus-ring inline-flex min-h-11 items-center ds-caption text-[color:var(--accent)]">Abrir catálogo completo →</Link>
+            <Link href="/documentation" className="focus-ring inline-flex min-h-11 items-center ds-caption text-[color:var(--accent)]">{t('platform.overview.catalog.openAll')} →</Link>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {catalog.map(([name, Icon, href]) => (
@@ -556,27 +588,27 @@ export function PlatformOverview() {
         <div className="grid gap-6">
           <article className="platform-card p-7">
             <div className="flex items-center justify-between">
-              <p className="platform-eyebrow">CUSTOS &amp; TOKENS (24H)</p>
+              <p className="platform-eyebrow">{t('platform.overview.costs.eyebrow')}</p>
               <span className="ds-badge text-[color:var(--text)]">{aiCostToday}</span>
             </div>
             <div className="mt-4 flex items-center gap-5">
               <div className="token-donut">
                 <strong>{totalTokens != null ? fmtCompact(totalTokens) : '—'}</strong>
-                <small>Tokens</small>
+                <small>{t('platform.overview.costs.tokensLabel')}</small>
               </div>
               <div className="space-y-1.5 ds-caption">
-                <p><i className="dot bg-violet-400" />Entrada <b className="text-[color:var(--text)]">{usage ? fmtCompact(usage.input_tokens) : '—'}</b></p>
-                <p><i className="dot bg-fuchsia-400" />Saída <b className="text-[color:var(--text)]">{usage ? fmtCompact(usage.output_tokens) : '—'}</b></p>
-                <p><i className="dot bg-cyan-400" />Cache <b className="text-[color:var(--text)]">{usage ? fmtCompact(usage.cache_read_tokens) : '—'}</b></p>
+                <p><i className="dot bg-violet-400" />{t('platform.overview.costs.input')} <b className="text-[color:var(--text)]">{usage ? fmtCompact(usage.input_tokens) : '—'}</b></p>
+                <p><i className="dot bg-fuchsia-400" />{t('platform.overview.costs.output')} <b className="text-[color:var(--text)]">{usage ? fmtCompact(usage.output_tokens) : '—'}</b></p>
+                <p><i className="dot bg-cyan-400" />{t('platform.overview.costs.cache')} <b className="text-[color:var(--text)]">{usage ? fmtCompact(usage.cache_read_tokens) : '—'}</b></p>
               </div>
             </div>
           </article>
           <article className="platform-card p-7">
-            <p className="platform-eyebrow">CONTINUIDADE</p>
+            <p className="platform-eyebrow">{t('platform.overview.recent.eyebrow')}</p>
             <div className="mt-3 space-y-2.5 ds-caption">
-              <p className="flex justify-between text-[color:var(--text-secondary)]">clinic-scheduler <span className="text-[color:var(--success)]">● Healthy</span></p>
-              <p className="flex justify-between text-[color:var(--text-secondary)]">saas-test <span className="text-[color:var(--accent)]">● Building</span></p>
-              <p className="flex justify-between text-[color:var(--text-secondary)]">ldcn-os <span className="text-[color:var(--accent)]">● Local</span></p>
+              <p className="flex justify-between text-[color:var(--text-secondary)]">{t('platform.overview.recent.clinicScheduler')} <span className="text-[color:var(--success)]">● {t('platform.overview.signal.healthy')}</span></p>
+              <p className="flex justify-between text-[color:var(--text-secondary)]">{t('platform.overview.recent.saasTest')} <span className="text-[color:var(--accent)]">● {t('platform.overview.status.building')}</span></p>
+              <p className="flex justify-between text-[color:var(--text-secondary)]">{t('platform.overview.recent.ldcnOs')} <span className="text-[color:var(--accent)]">● {t('platform.overview.status.local')}</span></p>
             </div>
           </article>
         </div>

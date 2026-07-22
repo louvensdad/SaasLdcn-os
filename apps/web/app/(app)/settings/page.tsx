@@ -1,20 +1,39 @@
 'use client';
 
 import { Activity, Check, Code2, GitBranch, Palette, Sparkles, User } from 'lucide-react';
+import dynamic from 'next/dynamic';
 
+import { CardLoading } from '@/components/feedback/loading-system';
 import { Tabs, type TabItem } from '@/components/ui/tabs';
 import { SettingsOverview } from '@/components/settings/settings-overview';
 import { AccountTab } from '@/components/settings/account-tab';
-import { AiProvidersTab } from '@/components/settings/ai-providers-tab';
-import { GitTab } from '@/components/settings/git-tab';
-import { InterfaceTab } from '@/components/settings/interface-tab';
-import { RuntimeTab } from '@/components/settings/runtime-tab';
-import { AdvancedTab } from '@/components/settings/advanced-tab';
 import { useSettingsDraftField } from '@/hooks/use-settings-draft-field';
 import { useTopbarConfig } from '@/hooks/use-topbar-config';
 import { useLocale } from '@/hooks/use-locale';
 import { useShellStore } from '@/stores/use-shell-store';
 import { ActivityFeed } from '@/components/settings/activity-feed';
+
+const tabLoading = () => <CardLoading className="min-h-56" />;
+const AiProvidersTab = dynamic(
+  () => import('@/components/settings/ai-providers-tab').then((module) => module.AiProvidersTab),
+  { loading: tabLoading },
+);
+const GitTab = dynamic(
+  () => import('@/components/settings/git-tab').then((module) => module.GitTab),
+  { loading: tabLoading },
+);
+const InterfaceTab = dynamic(
+  () => import('@/components/settings/interface-tab').then((module) => module.InterfaceTab),
+  { loading: tabLoading },
+);
+const RuntimeTab = dynamic(
+  () => import('@/components/settings/runtime-tab').then((module) => module.RuntimeTab),
+  { loading: tabLoading },
+);
+const AdvancedTab = dynamic(
+  () => import('@/components/settings/advanced-tab').then((module) => module.AdvancedTab),
+  { loading: tabLoading },
+);
 
 export default function SettingsPage() {
   const { t } = useLocale();

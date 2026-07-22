@@ -4,7 +4,9 @@ import time
 from typing import Any
 
 import httpx
+import httpcore
 
+from app.core.outbound_url import PublicHttpTarget, UnsafeOutboundUrlError, resolve_public_http_target
 from app.engines.metering_engine import record_consumption
 from app.repositories.automation_repository import AutomationRepository
 
@@ -68,19 +70,60 @@ def mask_request(action_config: dict[str, Any], credentials: dict[str, str]) -> 
     }
 
 
+class _PinnedNetworkBackend(httpcore.NetworkBackend):
+    """Connect only to IPs approved by the SSRF policy, without a second DNS lookup."""
+
+    def __init__(self, target: PublicHttpTarget) -> None:
+        self._target = target
+        self._delegate = httpcore.SyncBackend()
+
+    def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):  # noqa: ANN001, ANN201
+        if str(host).rstrip(".").lower() != self._target.hostname or port != self._target.port:
+            raise httpcore.ConnectError("Outbound destination differs from the validated target.")
+        last_error: Exception | None = None
+        for address in self._target.addresses:
+            try:
+                return self._delegate.connect_tcp(address, port, timeout, local_address, socket_options)
+            except Exception as exc:  # noqa: BLE001 - try the next pre-validated address
+                last_error = exc
+        raise httpcore.ConnectError("No validated public address accepted the connection.") from last_error
+
+    def connect_unix_socket(self, path, timeout=None, socket_options=None):  # noqa: ANN001, ANN201
+        raise httpcore.UnsupportedProtocol("Unix sockets are blocked for outbound automations.")
+
+    def sleep(self, seconds: float) -> None:
+        self._delegate.sleep(seconds)
+
+
+def _send_request(target: PublicHttpTarget, resolved: dict[str, Any]) -> httpx.Response:
+    backend = _PinnedNetworkBackend(target)
+    transport = httpx.HTTPTransport(trust_env=False, retries=0)
+    transport.close()
+    # HTTPX 0.28 does not expose network_backend in HTTPTransport's public
+    # constructor. Replace its pool with httpcore's supported pinned backend.
+    transport._pool = httpcore.ConnectionPool(  # noqa: SLF001
+        network_backend=backend, max_connections=1, max_keepalive_connections=0,
+    )
+    with httpx.Client(transport=transport, timeout=30.0, follow_redirects=False) as client:
+        return client.request(
+            resolved["method"], target.url, headers=resolved["headers"], content=resolved["body"],
+        )
+
+
 def execute_http_action(action_config: dict[str, Any], credentials: dict[str, str]) -> tuple[int | None, str | None, str | None, int]:
     """Real HTTP call via httpx (already a dependency), with retry on
     transient failure. Returns (status_code, response_text, error, attempts)."""
     resolved = resolve_action_config(action_config, credentials)
+    try:
+        target = resolve_public_http_target(resolved["url"], resolve_dns=True)
+    except UnsafeOutboundUrlError as exc:
+        return None, None, f"Blocked unsafe destination: {exc}", 1
     attempt = 0
     last_error: str | None = None
     while attempt < _MAX_ATTEMPTS:
         attempt += 1
         try:
-            response = httpx.request(
-                resolved["method"], resolved["url"], headers=resolved["headers"],
-                content=resolved["body"], timeout=30.0,
-            )
+            response = _send_request(target, resolved)
             if response.status_code >= 500 and attempt < _MAX_ATTEMPTS:
                 last_error = f"HTTP {response.status_code}"
                 time.sleep(_BACKOFF_BASE_S * (2 ** (attempt - 1)))

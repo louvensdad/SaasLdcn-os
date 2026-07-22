@@ -29,6 +29,7 @@ import { PageError } from '@/components/feedback/error-system';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAnalytics } from '@/hooks/use-analytics';
+import { useLocale } from '@/hooks/use-locale';
 import type {
   AnalyticsFilters,
   AnalyticsMetric,
@@ -86,6 +87,7 @@ function SectionContent({
   readonly section: AnalyticsSection;
   readonly onRecord: (record: AnalyticsRecord) => void;
 }) {
+  const { t } = useLocale();
   const series = section.series ?? [];
   const records = section.records ?? [];
   const columns = section.columns ?? (records[0] ? Object.keys(records[0]).slice(0, 8) : []);
@@ -99,8 +101,8 @@ function SectionContent({
   if (records.length && columns.length) return <AnalyticsAgentTable records={records} columns={columns} onSelect={onRecord} />;
   return (
     <div className="rounded-lg border border-dashed border-[color:var(--border)] px-5 py-8 text-center">
-      <p className="text-sm font-medium text-[color:var(--text)]">Sem série analítica para este recorte.</p>
-      <p className="mt-2 text-xs text-[color:var(--muted)]">A seção permanece vazia até o backend retornar observações agregadas.</p>
+      <p className="text-sm font-medium text-[color:var(--text)]">{t('analytics.page.section.emptyTitle')}</p>
+      <p className="mt-2 text-xs text-[color:var(--muted)]">{t('analytics.page.section.emptyDetail')}</p>
     </div>
   );
 }
@@ -114,6 +116,7 @@ function AnalyticsSectionPanel({
   readonly index: number;
   readonly onRecord: (record: AnalyticsRecord) => void;
 }) {
+  const { t } = useLocale();
   return (
     <details className="group rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface)_92%,transparent)] [content-visibility:auto]" open={index < 2}>
       <summary className="focus-ring flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
@@ -125,7 +128,7 @@ function AnalyticsSectionPanel({
           </div>
         </div>
         <span className="font-mono text-xs uppercase tracking-[0.14em] text-[color:var(--muted)] group-open:text-[color:var(--accent)]">
-          {section.metrics?.length ?? 0} métricas
+          {t('analytics.page.section.metricsCount', { count: section.metrics?.length ?? 0 })}
         </span>
       </summary>
       <div className="border-t border-[color:var(--border)] p-5">
@@ -146,6 +149,7 @@ function AnalyticsSectionPanel({
 }
 
 export default function AnalyticsPage() {
+  const { t } = useLocale();
   const [filters, setFilters] = useState<AnalyticsFilters>(INITIAL_FILTERS);
   const [drilldown, setDrilldown] = useState<{ title: string; records: readonly AnalyticsRecord[] } | null>(null);
   const query = useAnalytics(filters);
@@ -176,19 +180,19 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6" data-testid="analytics-page">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.14em] text-[color:var(--muted)]">
-        <Link href="/platform" className="focus-ring inline-flex min-h-11 items-center hover:text-[color:var(--text)]">Platform Map</Link>
+      <nav aria-label={t('analytics.page.breadcrumb.aria')} className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.14em] text-[color:var(--muted)]">
+        <Link href="/platform" className="focus-ring inline-flex min-h-11 items-center hover:text-[color:var(--text)]">{t('analytics.page.breadcrumb.platformMap')}</Link>
         <span>/</span>
-        <span className="text-[color:var(--accent)]">Analytics</span>
+        <span className="text-[color:var(--accent)]">{t('analytics.page.breadcrumb.analytics')}</span>
       </nav>
 
       <DataAnalysisWorkbench />
 
       <div className="flex items-end justify-between gap-4 border-t border-[color:var(--border)] pt-8">
         <div>
-          <p className="type-data text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">Telemetria da plataforma</p>
-          <h2 className="mt-2 font-[family-name:var(--font-display)] text-2xl font-semibold text-[color:var(--text)]">Operação interna do LDCN OS</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">Métricas persistidas de projetos, agentes, qualidade, consumo e segurança.</p>
+          <p className="type-data text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">{t('analytics.page.telemetryEyebrow')}</p>
+          <h2 className="mt-2 font-[family-name:var(--font-display)] text-2xl font-semibold text-[color:var(--text)]">{t('analytics.page.telemetryTitle')}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">{t('analytics.page.telemetryDescription')}</p>
         </div>
       </div>
 
@@ -198,13 +202,13 @@ export default function AnalyticsPage() {
           <div className="max-w-3xl">
             <div className="flex items-center gap-3">
               <span className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.24em] text-[color:var(--accent)]">
-                <Radio className="h-3.5 w-3.5" /> Data Intelligence Center
+                <Radio className="h-3.5 w-3.5" /> {t('analytics.page.hero.badge')}
               </span>
-              <span className="rounded-full border border-[color:var(--border)] px-2 py-0.5 font-mono text-xs uppercase text-[color:var(--muted)]">beta</span>
+              <span className="rounded-full border border-[color:var(--border)] px-2 py-0.5 font-mono text-xs uppercase text-[color:var(--muted)]">{t('analytics.page.hero.betaTag')}</span>
             </div>
-            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.045em] text-[color:var(--text)] sm:text-4xl">Inteligência operacional, sem estimativas.</h2>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.045em] text-[color:var(--text)] sm:text-4xl">{t('analytics.page.hero.title')}</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
-              Projetos, agentes, qualidade e consumo em uma superfície auditável. Cada número abre sua origem; campos sensíveis nunca chegam à interface.
+              {t('analytics.page.hero.description')}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -213,8 +217,8 @@ export default function AnalyticsPage() {
           </div>
         </div>
         <div className="relative mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[color:var(--border)] pt-4">
-          <span className="inline-flex items-center gap-2 text-xs text-[color:var(--muted)]"><DatabaseZap className="h-3.5 w-3.5 text-[color:var(--accent)]" /> Fonte: telemetria persistida</span>
-          <span className="inline-flex items-center gap-2 text-xs text-[color:var(--muted)]"><Layers3 className="h-3.5 w-3.5 text-[color:var(--accent)]" /> Filtros processados no servidor</span>
+          <span className="inline-flex items-center gap-2 text-xs text-[color:var(--muted)]"><DatabaseZap className="h-3.5 w-3.5 text-[color:var(--accent)]" /> {t('analytics.page.hero.sourceLabel')}</span>
+          <span className="inline-flex items-center gap-2 text-xs text-[color:var(--muted)]"><Layers3 className="h-3.5 w-3.5 text-[color:var(--accent)]" /> {t('analytics.page.hero.filtersLabel')}</span>
           <AnalyticsSecurityMark />
         </div>
       </header>
@@ -231,8 +235,8 @@ export default function AnalyticsPage() {
         <AnalyticsSkeleton />
       ) : query.isError ? (
         <PageError
-          title="Não foi possível consultar Analytics"
-          description={getApiErrorMessage(query.error, 'O endpoint respondeu com erro. Nenhum dado parcial foi exibido.')}
+          title={t('analytics.page.error.title')}
+          description={getApiErrorMessage(query.error, t('analytics.page.error.description'))}
           onRetry={() => void query.refetch()}
         />
       ) : !analytics || analytics.metrics.length === 0 ? (
@@ -242,10 +246,10 @@ export default function AnalyticsPage() {
           <section aria-labelledby="executive-overview-title">
             <div className="mb-4 flex items-end justify-between gap-4">
               <div>
-                <p className="font-mono text-xs uppercase tracking-[0.2em] text-[color:var(--accent)]">Executive overview</p>
-                <h2 id="executive-overview-title" className="mt-2 text-xl font-semibold tracking-[-0.025em] text-[color:var(--text)]">Pulso da plataforma</h2>
+                <p className="font-mono text-xs uppercase tracking-[0.2em] text-[color:var(--accent)]">{t('analytics.page.executive.eyebrow')}</p>
+                <h2 id="executive-overview-title" className="mt-2 text-xl font-semibold tracking-[-0.025em] text-[color:var(--text)]">{t('analytics.page.executive.title')}</h2>
               </div>
-              <span className="hidden items-center gap-2 text-xs text-[color:var(--muted)] sm:inline-flex"><Activity className="h-3.5 w-3.5" /> Clique em uma métrica para investigar</span>
+              <span className="hidden items-center gap-2 text-xs text-[color:var(--muted)] sm:inline-flex"><Activity className="h-3.5 w-3.5" /> {t('analytics.page.executive.hint')}</span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" data-testid="analytics-metric-grid">
               {analytics.metrics.map((metric) => <AnalyticsMetricCard key={metric.id} metric={metric} onOpen={openMetric} />)}
@@ -256,25 +260,25 @@ export default function AnalyticsPage() {
             <section className="space-y-3" aria-labelledby="analytics-domains-title">
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
-                  <p className="font-mono text-xs uppercase tracking-[0.2em] text-[color:var(--accent)]">Domínios analíticos</p>
-                  <h2 id="analytics-domains-title" className="mt-2 text-xl font-semibold tracking-[-0.025em] text-[color:var(--text)]">Leituras por operação</h2>
+                  <p className="font-mono text-xs uppercase tracking-[0.2em] text-[color:var(--accent)]">{t('analytics.page.domains.eyebrow')}</p>
+                  <h2 id="analytics-domains-title" className="mt-2 text-xl font-semibold tracking-[-0.025em] text-[color:var(--text)]">{t('analytics.page.domains.title')}</h2>
                 </div>
-                <span className="text-xs text-[color:var(--muted)]">{sections.length} fontes conectadas</span>
+                <span className="text-xs text-[color:var(--muted)]">{t('analytics.page.domains.sourcesCount', { count: sections.length })}</span>
               </div>
               {sections.map((section, index) => <AnalyticsSectionPanel key={section.id} section={section} index={index} onRecord={openRecord} />)}
             </section>
           ) : (
-            <AnalyticsChartCard title="Domínios analíticos" description="O overview foi recebido, mas ainda não há séries ou tabelas de detalhe.">
-              <p className="text-sm text-[color:var(--muted)]">Conecte os endpoints de domínio listados no relatório de contrato para habilitar comparações e drill-down.</p>
+            <AnalyticsChartCard title={t('analytics.page.domains.eyebrow')} description={t('analytics.page.domains.emptyDescription')}>
+              <p className="text-sm text-[color:var(--muted)]">{t('analytics.page.domains.emptyHint')}</p>
             </AnalyticsChartCard>
           )}
 
           <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold text-[color:var(--text)]">Precisa auditar a origem?</p>
-              <p className="mt-1 text-xs text-[color:var(--muted)]">Os filtros atuais seguem em cada consulta e exportação.</p>
+              <p className="text-sm font-semibold text-[color:var(--text)]">{t('analytics.page.footer.title')}</p>
+              <p className="mt-1 text-xs text-[color:var(--muted)]">{t('analytics.page.footer.detail')}</p>
             </div>
-            <Link href="/documentation" className="focus-ring inline-flex items-center gap-2 text-sm font-medium text-[color:var(--accent)]">Abrir documentação <ArrowUpRight className="h-4 w-4" /></Link>
+            <Link href="/documentation" className="focus-ring inline-flex items-center gap-2 text-sm font-medium text-[color:var(--accent)]">{t('analytics.page.footer.cta')} <ArrowUpRight className="h-4 w-4" /></Link>
           </Card>
         </>
       )}

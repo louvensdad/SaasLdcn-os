@@ -7,14 +7,14 @@ from app.core.config import get_settings
 from app.engines.llm.base import (
     LLMAdapter,
     LLMError,
-    is_transient_provider_error,
+    normalize_provider_error,
     timeout_seconds,
 )
 from app.schemas.llm import LLMRequest, LLMResponse, Provider
 
 
 class DeepSeekAdapter(LLMAdapter):
-    """Generation via DeepSeek's first-class API (``deepseek-chat``, ``deepseek-reasoner``).
+    """Generation via DeepSeek's first-class API (V4 Flash / V4 Pro).
 
     DeepSeek speaks the OpenAI Chat Completions API, so we reuse the ``openai`` SDK
     pointed at ``https://api.deepseek.com``. A key is required: the user's own DeepSeek
@@ -37,7 +37,7 @@ class DeepSeekAdapter(LLMAdapter):
         return openai
 
     def _get_client(self, api_key: str | None):
-        base_url = self._base_url or get_settings().deepseek_base_url
+        base_url = (self._base_url or get_settings().deepseek_base_url).rstrip("/")
         if api_key:
             # User-owned key: ephemeral client, never cached on the shared adapter.
             return self._import_sdk().OpenAI(base_url=base_url, api_key=api_key)
@@ -75,10 +75,7 @@ class DeepSeekAdapter(LLMAdapter):
         try:
             resp = client.chat.completions.create(**params)
         except Exception as exc:
-            raise LLMError(
-                f"DeepSeek request failed for {model}: {exc}",
-                transient=is_transient_provider_error(exc),
-            ) from exc
+            raise normalize_provider_error("DeepSeek", model, exc) from exc
 
         choice = resp.choices[0]
         text = getattr(choice.message, "content", "") or ""

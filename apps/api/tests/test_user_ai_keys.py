@@ -210,6 +210,45 @@ def test_test_key_endpoint_validates_without_persisting_or_echoing(client, monke
     assert client.get("/api/user-ai-keys").json()["keys"] == []
 
 
+def test_saved_key_test_persists_success_and_unlocks_engine(client, monkeypatch):
+    def fake_route(self, req, *, user_choice=None, agent_role=None, api_key=None):  # noqa: ANN001
+        assert api_key == RAW_KEY
+        return LLMResponse(provider=Provider.anthropic, model=user_choice or "claude-haiku-4-5", text="ok")
+
+    monkeypatch.setattr(LLMRouter, "route", fake_route)
+    created = _create_key(client).json()
+    before = client.get("/api/llm/settings/active").json()
+    assert before["status"] == "initializing"
+
+    tested = client.post(f"/api/user-ai-keys/{created['id']}/test")
+    assert tested.status_code == 200
+    assert tested.json()["ok"] is True
+    saved = client.get("/api/user-ai-keys").json()["keys"][0]
+    assert saved["status"] == "valid"
+    assert saved["last_validated_at"] is not None
+    active = client.get("/api/llm/settings/active").json()
+    assert active["status"] == "ready"
+    assert active["mode"] == "llm"
+
+
+@pytest.mark.parametrize(
+    ("http_status", "key_status", "engine_status"),
+    [(401, "invalid", "auth_error"), (504, "unavailable", "unavailable")],
+)
+def test_saved_key_test_persists_failure_state(client, monkeypatch, http_status, key_status, engine_status):
+    def fail_route(self, req, **kwargs):  # noqa: ANN001, ARG001
+        raise LLMError("Provider: falha controlada", status_code=http_status)
+
+    monkeypatch.setattr(LLMRouter, "route", fail_route)
+    created = _create_key(client).json()
+    tested = client.post(f"/api/user-ai-keys/{created['id']}/test")
+    assert tested.status_code == 200
+    assert tested.json()["http_status"] == http_status
+    saved = client.get("/api/user-ai-keys").json()["keys"][0]
+    assert saved["status"] == key_status
+    assert client.get("/api/llm/settings/active").json()["status"] == engine_status
+
+
 def test_ensure_ready_raises_when_no_active_key(client):
     del client
     from app.services.ai_key_vault_service import NoAiKeyConfiguredError

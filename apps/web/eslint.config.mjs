@@ -9,6 +9,7 @@ const config = [
   {
     ignores: [
       '.next/**',
+      '.next-final/**',
       '.next-responsive/**',
       'node_modules/**',
       'test-results/**',

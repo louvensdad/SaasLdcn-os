@@ -5,6 +5,7 @@ import { Coins, Loader2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import { metaFactoryClient, type GenerationUsageSummary } from '@/lib/api/meta-factory';
 
 function formatTokens(value: number): string {
@@ -20,6 +21,7 @@ function formatTokens(value: number): string {
  * disrupts the host page.
  */
 export function AiUsageCard({ periodDays = 30 }: { readonly periodDays?: number }) {
+  const { t } = useLocale();
   const [usage, setUsage] = useState<GenerationUsageSummary | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
 
@@ -39,7 +41,7 @@ export function AiUsageCard({ periodDays = 30 }: { readonly periodDays?: number 
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text)]">
           <Coins className="h-4 w-4 text-[color:var(--accent)]" aria-hidden />
-          Uso de IA · últimos {periodDays} dias
+          {t('generation.aiUsage.title', { days: periodDays })}
         </div>
         {state === 'loading' ? <Loader2 className="h-4 w-4 animate-spin text-[color:var(--muted)]" /> : null}
       </div>
@@ -47,27 +49,27 @@ export function AiUsageCard({ periodDays = 30 }: { readonly periodDays?: number 
       {usage ? (
         <>
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Metric label="Tokens (entrada)" value={formatTokens(usage.input_tokens)} />
-            <Metric label="Tokens (saída)" value={formatTokens(usage.output_tokens)} />
-            <Metric label="Total" value={formatTokens(usage.total_tokens)} />
-            <Metric label="Gerações" value={String(usage.job_count)} />
+            <Metric label={t('generation.aiUsage.inputTokens')} value={formatTokens(usage.input_tokens)} />
+            <Metric label={t('generation.aiUsage.outputTokens')} value={formatTokens(usage.output_tokens)} />
+            <Metric label={t('generation.aiUsage.total')} value={formatTokens(usage.total_tokens)} />
+            <Metric label={t('generation.aiUsage.generations')} value={String(usage.job_count)} />
           </div>
           {usage.by_model.length ? (
             <div className="mt-4 flex flex-wrap gap-2">
               {usage.by_model.slice(0, 6).map((row) => (
-                <Badge key={row.model ?? 'desconhecido'} tone="neutral">
-                  {row.model ?? 'desconhecido'}: {formatTokens(row.input_tokens + row.output_tokens)}
+                <Badge key={row.model ?? 'unknown'} tone="neutral">
+                  {row.model ?? t('generation.aiUsage.unknownModel')}: {formatTokens(row.input_tokens + row.output_tokens)}
                 </Badge>
               ))}
             </div>
           ) : (
             <p className="mt-4 text-sm text-[color:var(--muted)]">
-              Nenhuma geração registrada neste período.
+              {t('generation.aiUsage.empty')}
             </p>
           )}
         </>
       ) : (
-        <p className="mt-4 text-sm text-[color:var(--muted)]">Carregando uso…</p>
+        <p className="mt-4 text-sm text-[color:var(--muted)]">{t('generation.aiUsage.loading')}</p>
       )}
     </Card>
   );

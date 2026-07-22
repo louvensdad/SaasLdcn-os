@@ -49,6 +49,8 @@ export const aiKeyVaultClient = {
       method: 'POST',
       body: JSON.stringify({ provider, api_key }),
     }),
+  testSavedKey: (keyId: string) =>
+    send<TestKeyResponse>(`/api/user-ai-keys/${encodeURIComponent(keyId)}/test`, { method: 'POST' }),
   create: (provider: KeyProvider, nome: string, api_key: string, apelido?: string, modelo_padrao?: string) =>
     send<AiKeyView>('/api/user-ai-keys', {
       method: 'POST',

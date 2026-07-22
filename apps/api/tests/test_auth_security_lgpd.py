@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.security import TokenError, create_access_token, create_refresh_token, decode_token
 from app.core.config import (
     Settings,
     _default_allowed_origins,
@@ -49,6 +50,37 @@ def test_auth_uses_http_only_refresh_cookie_and_never_returns_it(client):
     assert refresh.status_code == 200
     assert "refresh_token" not in refresh.text
     assert refresh.json()["tokens"]["access_token"]
+
+
+def test_refresh_cookie_rejects_cross_site_origin(client):
+    response = client.post(
+        "/api/auth/refresh",
+        headers={"Origin": "https://attacker.example"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "http_403"
+
+
+def test_access_and_refresh_tokens_use_separate_signing_keys():
+    settings = get_settings()
+    original_access_secret = settings.secret_key
+    original_refresh_secret = settings.refresh_secret_key
+    settings.secret_key = "access-signing-key-that-is-distinct-and-long-enough"
+    settings.refresh_secret_key = "refresh-signing-key-that-is-distinct-and-long-enough"
+    try:
+        access_token, _ = create_access_token("user-1", "user")
+        refresh_token, _, _ = create_refresh_token("user-1", "user")
+
+        assert decode_token(access_token, expected_type="access")["sub"] == "user-1"
+        assert decode_token(refresh_token, expected_type="refresh")["sub"] == "user-1"
+        with pytest.raises(TokenError):
+            decode_token(access_token, expected_type="refresh")
+        with pytest.raises(TokenError):
+            decode_token(refresh_token, expected_type="access")
+    finally:
+        settings.secret_key = original_access_secret
+        settings.refresh_secret_key = original_refresh_secret
 
 
 def test_protected_routes_require_bearer_token(client):

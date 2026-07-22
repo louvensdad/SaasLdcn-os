@@ -8,6 +8,7 @@ import {
 
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 import type { GenerationExecutionEvent } from '@contracts/generation-job.contract';
 
@@ -46,6 +47,7 @@ function plainText(events: readonly GenerationExecutionEvent[]): string {
 }
 
 export function LiveExecutionConsole({ events, currentStage, running }: LiveExecutionConsoleProps) {
+  const { t } = useLocale();
   const [query, setQuery] = useState('');
   const [copied, setCopied] = useState(false);
   const [pinned, setPinned] = useState(true);
@@ -93,24 +95,24 @@ export function LiveExecutionConsole({ events, currentStage, running }: LiveExec
             <Terminal className="h-4 w-4" aria-hidden />
           </span>
           <div>
-            <p className="text-sm font-semibold text-[color:var(--text)]">Console de execução</p>
-            <p className="ds-caption">Etapa: {currentStage || '—'}</p>
+            <p className="text-sm font-semibold text-[color:var(--text)]">{t('console.execution.title')}</p>
+            <p className="ds-caption">{t('console.execution.stagePrefix', { stage: currentStage || '—' })}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {running ? (
-            <Badge tone="accent"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Executando</Badge>
+            <Badge tone="accent"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('console.execution.running')}</Badge>
           ) : (
-            <Badge tone="neutral">Aguardando</Badge>
+            <Badge tone="neutral">{t('console.execution.waiting')}</Badge>
           )}
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filtrar…"
+            placeholder={t('console.execution.filterPlaceholder')}
             className="focus-ring h-8 w-36 rounded-[var(--radius-sm)] border border-[color:var(--border)] bg-transparent px-2.5 text-xs text-[color:var(--text)]"
           />
           <Button variant="ghost" onClick={() => void copyAll()}>
-            <Copy className="h-3.5 w-3.5" /> {copied ? 'Copiado' : 'Copiar'}
+            <Copy className="h-3.5 w-3.5" /> {copied ? t('engineering.ds.copied') : t('engineering.ds.copy')}
           </Button>
         </div>
       </header>
@@ -121,7 +123,7 @@ export function LiveExecutionConsole({ events, currentStage, running }: LiveExec
         className="max-h-[420px] min-h-[160px] overflow-auto bg-black/40 p-4 font-mono text-xs leading-relaxed"
       >
         {filtered.length === 0 ? (
-          <p className="text-[color:var(--muted-2)]">Sem eventos de execução ainda. A saída em tempo real aparece aqui durante a geração e o build.</p>
+          <p className="text-[color:var(--muted-2)]">{t('console.execution.empty')}</p>
         ) : (
           <ul className="space-y-0.5">
             {filtered.map((event) => <ConsoleRow key={event.id} event={event} />)}
@@ -138,6 +140,7 @@ export function LiveExecutionConsole({ events, currentStage, running }: LiveExec
 }
 
 function ConsoleRow({ event }: { readonly event: GenerationExecutionEvent }) {
+  const { t } = useLocale();
   if (event.type === 'command_started') {
     return (
       <li className="mt-2 flex flex-wrap items-baseline gap-x-2 text-[color:var(--text)]">
@@ -155,7 +158,7 @@ function ConsoleRow({ event }: { readonly event: GenerationExecutionEvent }) {
         ) : (
           <XCircle className="h-3.5 w-3.5 text-[color:var(--danger)]" />
         )}
-        <Badge tone={exitTone(event.exitCode)}>exit {event.exitCode ?? '—'}</Badge>
+        <Badge tone={exitTone(event.exitCode)}>{t('console.execution.exitLabel')} {event.exitCode ?? '—'}</Badge>
         <span className="inline-flex items-center gap-1 text-[color:var(--muted-2)]">
           <Clock3 className="h-3 w-3" /> {formatDuration(event.durationMs)}
         </span>

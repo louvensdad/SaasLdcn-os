@@ -134,10 +134,10 @@ export default function DocumentationPage() {
             <Badge tone="accent">{t('documentation.map.title')}</Badge>
             <p className="text-sm leading-6 text-[color:var(--muted)]">{t('documentation.map.description')}</p>
             <div className="flex flex-wrap gap-2 pt-1 text-xs text-[color:var(--muted)]">
-              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">Blueprint</span>
-              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">Prompt Master</span>
-              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">Gatekeeper</span>
-              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">Registry</span>
+              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">{t('documentation.map.blueprint')}</span>
+              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">{t('documentation.map.promptMaster')}</span>
+              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">{t('documentation.map.gatekeeper')}</span>
+              <span className="rounded-full border border-[color:var(--border)] px-3 py-1">{t('documentation.map.registry')}</span>
             </div>
           </div>
           <Network className="hidden h-24 w-24 shrink-0 text-[color:var(--accent)] opacity-70 xl:block" aria-hidden />

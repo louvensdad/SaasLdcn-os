@@ -5,7 +5,7 @@ import json
 from app.engines.llm.base import (
     LLMAdapter,
     LLMError,
-    is_transient_provider_error,
+    normalize_provider_error,
     timeout_ms,
 )
 from app.schemas.llm import LLMRequest, LLMResponse, Provider, ReasoningLevel
@@ -151,10 +151,7 @@ class GoogleAdapter(LLMAdapter):
         try:
             resp = client.models.generate_content(model=model, contents=req.user, config=config)
         except Exception as exc:
-            raise LLMError(
-                f"Google request failed for {model}: {exc}",
-                transient=is_transient_provider_error(exc),
-            ) from exc
+            raise normalize_provider_error("Google", model, exc) from exc
 
         text = getattr(resp, "text", "") or ""
         parsed = None

@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 
 type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info';
@@ -238,6 +239,7 @@ export function EngineeringDecision({
   alternatives?: readonly string[];
   className?: string;
 }) {
+  const { t } = useLocale();
   return (
     <div className={cn('rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-white/[0.02] p-5', className)}>
       <div className="flex flex-wrap items-center gap-2">
@@ -246,20 +248,20 @@ export function EngineeringDecision({
       </div>
       {reason ? (
         <p className="ds-body-sm mt-2">
-          <span className="ds-text-secondary font-medium">Motivo: </span>
+          <span className="ds-text-secondary font-medium">{t('engineering.ds.reasonLabel')} </span>
           {reason}
         </p>
       ) : null}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {benefits && benefits.length > 0 ? (
-          <EngineeringChecklist items={benefits} tone="success" title="Benefícios" />
+          <EngineeringChecklist items={benefits} tone="success" title={t('engineering.ds.benefits')} />
         ) : null}
         {tradeoffs && tradeoffs.length > 0 ? (
           <div>
-            <p className="ds-label ds-text-warning mb-1.5">Trade-offs</p>
+            <p className="ds-label ds-text-warning mb-1.5">{t('engineering.ds.tradeoffsLabel')}</p>
             <ul className="space-y-1">
-              {tradeoffs.map((t, i) => (
-                <li key={i} className="ds-body-sm flex gap-2"><span className="ds-text-warning">•</span>{t}</li>
+              {tradeoffs.map((t2, i) => (
+                <li key={i} className="ds-body-sm flex gap-2"><span className="ds-text-warning">•</span>{t2}</li>
               ))}
             </ul>
           </div>
@@ -267,7 +269,7 @@ export function EngineeringDecision({
       </div>
       {alternatives && alternatives.length > 0 ? (
         <div className="mt-3">
-          <p className="ds-label mb-1.5">Alternativas avaliadas</p>
+          <p className="ds-label mb-1.5">{t('engineering.ds.alternativesEvaluated')}</p>
           <EngineeringChips>
             {alternatives.map((a) => <EngineeringBadge key={a} tone="neutral">{a}</EngineeringBadge>)}
           </EngineeringChips>
@@ -278,19 +280,23 @@ export function EngineeringDecision({
 }
 
 export function EngineeringTradeoff({ children }: { children: ReactNode }) {
-  return <Callout icon={Scale} tone="warning" title="Trade-off">{children}</Callout>;
+  const { t } = useLocale();
+  return <Callout icon={Scale} tone="warning" title={t('engineering.ds.calloutTradeoff')}>{children}</Callout>;
 }
 
 export function EngineeringRecommendation({ children }: { children: ReactNode }) {
-  return <Callout icon={Lightbulb} tone="info" title="Recomendação">{children}</Callout>;
+  const { t } = useLocale();
+  return <Callout icon={Lightbulb} tone="info" title={t('engineering.ds.calloutRecommendation')}>{children}</Callout>;
 }
 
 export function EngineeringWarning({ children }: { children: ReactNode }) {
-  return <Callout icon={AlertTriangle} tone="warning" title="Atenção">{children}</Callout>;
+  const { t } = useLocale();
+  return <Callout icon={AlertTriangle} tone="warning" title={t('engineering.ds.calloutWarning')}>{children}</Callout>;
 }
 
 export function EngineeringSuccess({ children }: { children: ReactNode }) {
-  return <Callout icon={CheckCircle2} tone="success" title="OK">{children}</Callout>;
+  const { t } = useLocale();
+  return <Callout icon={CheckCircle2} tone="success" title={t('engineering.ds.calloutSuccess')}>{children}</Callout>;
 }
 
 // --- Checklist --------------------------------------------------------------
@@ -342,6 +348,7 @@ export function EngineeringCode({
   collapsible?: boolean;
   className?: string;
 }) {
+  const { t } = useLocale();
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(!collapsible);
 
@@ -354,17 +361,17 @@ export function EngineeringCode({
   return (
     <div className={cn('overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-3)]', className)}>
       <div className="flex items-center justify-between gap-2 border-b border-[color:var(--border)] px-3 py-1.5">
-        <span className="ds-metadata">{language ?? 'code'}</span>
+        <span className="ds-metadata">{language ?? t('engineering.ds.codeFallback')}</span>
         <div className="flex items-center gap-1">
           {collapsible ? (
             <button type="button" onClick={() => setOpen((v) => !v)} className="ds-metadata inline-flex items-center gap-1 hover:text-[color:var(--text)]">
               <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
-              {open ? 'Recolher' : 'Expandir'}
+              {open ? t('engineering.ds.collapse') : t('engineering.ds.expand')}
             </button>
           ) : null}
           <button type="button" onClick={copy} className="ds-metadata inline-flex items-center gap-1 hover:text-[color:var(--text)]">
             {copied ? <Check className="h-3.5 w-3.5" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
-            {copied ? 'Copiado' : 'Copiar'}
+            {copied ? t('engineering.ds.copied') : t('engineering.ds.copy')}
           </button>
         </div>
       </div>

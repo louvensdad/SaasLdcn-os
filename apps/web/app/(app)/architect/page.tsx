@@ -93,10 +93,14 @@ function ArchitectChooser() {
     projectRoomsClient
       .list()
       .then((list) => active && setRooms(list.filter((room) => APPROVED_STATUSES.includes(room.status))))
-      .catch((caught) => active && setError(caught instanceof Error ? caught.message : 'error'));
+      .catch((caught) => active && setError(caught instanceof Error ? caught.message : t('architect.errors.generic')));
     return () => {
       active = false;
     };
+    // Runs once on mount to fetch the room list; `t` from useLocale() is
+    // stable in practice and re-running the fetch on locale change is not
+    // needed for this initial load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (error) {
@@ -170,9 +174,9 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
       setRoom(data);
     } catch (caught) {
       if (roomIdRef.current !== requestedRoomId) return;
-      setError(caught instanceof Error ? caught.message : 'error');
+      setError(caught instanceof Error ? caught.message : t('architect.errors.generic'));
     }
-  }, [roomId]);
+  }, [roomId, t]);
 
   useEffect(() => {
     void load();
@@ -195,7 +199,7 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
       syncProjectCaches();
       router.push(`/engineering-review?projectId=${roomId}`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'error');
+      setError(caught instanceof Error ? caught.message : t('architect.errors.generic'));
       setBusy(null);
     }
   }
@@ -234,7 +238,7 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
 
   return (
     <div className="space-y-6">
-      <WorkflowContextHeader room={room} stage={blueprint ? 'Architect AI' : 'Aguardando Blueprint'} />
+      <WorkflowContextHeader room={room} stage={blueprint ? t('architect.stage.architectAi') : t('architect.stage.awaitingBlueprint')} />
       <Card surface="primary" className="glass noise relative overflow-hidden p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
@@ -272,7 +276,7 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
               <Button variant="primary" loading={busy === 'send'} onClick={() => void send()}>
                 {busy === 'send' ? t('architect.sending') : t('architect.sendToEngineeringReview')} <ArrowRight className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" onClick={() => setWorkflowOpen(true)}>Regenerar com IA</Button>
+              <Button variant="ghost" onClick={() => setWorkflowOpen(true)}>{t('architect.regenerateWithAi')}</Button>
             </>
           )}
         </div>
@@ -285,7 +289,7 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
           items={[
             {
               id: 'decisions',
-              label: 'Decisões',
+              label: t('architect.tabs.decisions'),
               icon: Blocks,
               content: (
                 <div className="space-y-3">
@@ -297,20 +301,20 @@ function ArchitectStage({ roomId }: { readonly roomId: string }) {
             },
             {
               id: 'model',
-              label: 'Modelo',
+              label: t('architect.tabs.model'),
               icon: Boxes,
-              content: model ? <ArchitectureModelTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">Modelo de arquitetura indisponível.</p>,
+              content: model ? <ArchitectureModelTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">{t('architect.model.unavailable')}</p>,
             },
             {
               id: 'strategies',
-              label: 'Estratégias',
+              label: t('architect.tabs.strategies'),
               icon: Layers,
-              content: model ? <ArchitectureStrategiesTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">Estratégias indisponíveis.</p>,
+              content: model ? <ArchitectureStrategiesTab model={model} /> : <p className="ds-caption text-[color:var(--muted-2)]">{t('architect.strategies.unavailable')}</p>,
             },
             ...(blueprint.responseDiagnostics
               ? [{
                   id: 'ai-response',
-                  label: 'Resposta da IA',
+                  label: t('architect.tabs.aiResponse'),
                   icon: FileSearch,
                   content: <BlueprintResponseViewer diagnostics={blueprint.responseDiagnostics} />,
                 }]
@@ -344,17 +348,17 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
   const areaLabel = t(`architect.area.${decision.area}`);
   const label = areaLabel.startsWith('architect.area.') ? decision.area : areaLabel;
   const impacts: [string, string | undefined][] = [
-    ['Segurança', decision.security_impact],
-    ['Escalabilidade', decision.scalability_impact],
-    ['Custo', decision.cost_impact],
-    ['Manutenção', decision.maintainability_impact],
+    [t('architect.decision.impact.security'), decision.security_impact],
+    [t('architect.decision.impact.scalability'), decision.scalability_impact],
+    [t('architect.decision.impact.cost'), decision.cost_impact],
+    [t('architect.decision.impact.maintainability'), decision.maintainability_impact],
   ];
 
   return (
     <AccordionItem
       icon={Icon}
       title={`${label}: ${decision.choice}`}
-      subtitle={decision.confidence_basis ? `Confiança — ${decision.confidence_basis}` : undefined}
+      subtitle={decision.confidence_basis ? t('architect.decision.confidenceBasis', { basis: decision.confidence_basis }) : undefined}
       right={<ConfidenceBadge value={decision.confidence} />}
     >
     <div className="space-y-3">
@@ -367,7 +371,7 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
 
       {decision.impact ? (
         <div>
-          <p className="ds-caption font-semibold text-[color:var(--text)]">Impacto</p>
+          <p className="ds-caption font-semibold text-[color:var(--text)]">{t('architect.decision.impactLabel')}</p>
           <p className="mt-1 ds-caption text-[color:var(--muted)]">{decision.impact}</p>
         </div>
       ) : null}
@@ -385,7 +389,7 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
 
       {decision.tradeoffs?.length ? (
         <div>
-          <p className="ds-caption font-semibold text-[color:var(--text)]">Trade-offs</p>
+          <p className="ds-caption font-semibold text-[color:var(--text)]">{t('architect.decision.tradeoffs')}</p>
           <ul className="mt-1 ml-4 list-disc space-y-0.5 ds-caption text-[color:var(--muted)]">
             {decision.tradeoffs.map((item, index) => <li key={index}>{item}</li>)}
           </ul>
@@ -394,7 +398,7 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
 
       {decision.risks?.length ? (
         <div>
-          <p className="ds-caption font-semibold text-[color:var(--text)]">Riscos</p>
+          <p className="ds-caption font-semibold text-[color:var(--text)]">{t('architect.decision.risks')}</p>
           <ul className="mt-1 ml-4 list-disc space-y-0.5 ds-caption text-[color:var(--muted)]">
             {decision.risks.map((item, index) => <li key={index}>{item}</li>)}
           </ul>
@@ -403,7 +407,7 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
 
       {decision.when_to_reconsider ? (
         <div>
-          <p className="ds-caption font-semibold text-[color:var(--text)]">Quando reconsiderar</p>
+          <p className="ds-caption font-semibold text-[color:var(--text)]">{t('architect.decision.whenToReconsider')}</p>
           <p className="mt-1 ds-caption text-[color:var(--muted)]">{decision.when_to_reconsider}</p>
         </div>
       ) : null}
@@ -423,13 +427,13 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
         <div className="grid gap-2 border-t border-[color:var(--border)] pt-3 sm:grid-cols-2">
           {decision.dependencies?.length ? (
             <div>
-              <p className="t-overline">Dependências</p>
+              <p className="t-overline">{t('architect.decision.dependencies')}</p>
               <div className="mt-1 flex flex-wrap gap-1">{decision.dependencies.map((dep) => <Badge key={dep} tone="neutral">{dep}</Badge>)}</div>
             </div>
           ) : null}
           {decision.requirement_links?.length ? (
             <div>
-              <p className="t-overline">Requisitos da spec</p>
+              <p className="t-overline">{t('architect.decision.specRequirements')}</p>
               <ul className="mt-1 space-y-0.5 ds-caption text-[color:var(--muted)]">{decision.requirement_links.map((req, index) => <li key={index}>• {req}</li>)}</ul>
             </div>
           ) : null}
@@ -438,7 +442,7 @@ function DecisionCard({ decision }: { readonly decision: BlueprintDecision }) {
 
       {decision.evidence?.length ? (
         <div>
-          <p className="t-overline">Evidências utilizadas</p>
+          <p className="t-overline">{t('architect.decision.evidenceUsed')}</p>
           <ul className="mt-1 space-y-0.5 ds-caption text-[color:var(--muted)]">{decision.evidence.map((ev, index) => <li key={index}>• {ev}</li>)}</ul>
         </div>
       ) : null}

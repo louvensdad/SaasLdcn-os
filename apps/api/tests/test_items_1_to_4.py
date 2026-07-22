@@ -12,7 +12,7 @@ from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.schemas.orchestrator import ProjectSpec
 from app.services.ai_availability import ai_status
 
-_KEY_ENVS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY"]
+_KEY_ENVS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "DEEPSEEK_API_KEY", "GROQ_API_KEY"]
 
 
 # --- Item 1: AI as default / status ---------------------------------------- #
@@ -20,7 +20,6 @@ _KEY_ENVS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "OPENROUTE
 def _clear_keys(monkeypatch) -> None:
     for env in _KEY_ENVS:
         monkeypatch.delenv(env, raising=False)
-    monkeypatch.setenv("LDCN_CUSTOM_BASE_URL", "")
     monkeypatch.delenv("LDCN_FORCE_MOCK", raising=False)
     get_settings.cache_clear()
 

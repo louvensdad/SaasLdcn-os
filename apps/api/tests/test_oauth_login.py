@@ -3,8 +3,12 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.database import session_factory
+from app.models.user import OAuthAccount
+from app.repositories.user_repository import UserRepository
 from app.services import auth_service as auth_service_module
 
 
@@ -75,7 +79,11 @@ def _install_fake_httpx(monkeypatch, responses: dict[str, dict]) -> None:
 
 def _google_responses(*, sub: str, email: str, verified: bool = True) -> dict:
     return {
-        "https://oauth2.googleapis.com/token": {"access_token": "google-access-token"},
+        "https://oauth2.googleapis.com/token": {"access_token": "google-access-token", "id_token": "google-id-token", "expires_in": 3600},
+        "https://oauth2.googleapis.com/tokeninfo": {
+            "aud": "google-test-client-id", "iss": "https://accounts.google.com",
+            "nonce": "matching-nonce", "sub": sub,
+        },
         "https://www.googleapis.com/oauth2/v3/userinfo": {
             "sub": sub,
             "email": email,
@@ -83,6 +91,13 @@ def _google_responses(*, sub: str, email: str, verified: bool = True) -> dict:
             "name": "Ada Lovelace",
         },
     }
+
+
+def _set_oauth_cookies(client, *, google: bool = False, state: str = "matching-state") -> None:
+    client.cookies.set("ldcn_oauth_state", state)
+    client.cookies.set("ldcn_oauth_pkce", "test-code-verifier")
+    if google:
+        client.cookies.set("ldcn_oauth_nonce", "matching-nonce")
 
 
 def _github_responses(*, user_id: int, email: str | None, login: str = "ada") -> dict:
@@ -102,7 +117,10 @@ def test_oauth_start_redirects_to_provider_and_sets_state_cookie(client, oauth_s
     location = response.headers["location"]
     assert location.startswith("https://accounts.google.com/o/oauth2/v2/auth")
     assert "client_id=google-test-client-id" in location
+    assert "code_challenge_method=S256" in location
+    assert "nonce=" in location
     assert "ldcn_oauth_state=" in response.headers["set-cookie"]
+    assert "ldcn_oauth_pkce=" in response.headers["set-cookie"]
     assert "HttpOnly" in response.headers["set-cookie"]
 
 
@@ -117,11 +135,11 @@ def test_oauth_start_without_credentials_redirects_home_with_error(client):
         settings.google_client_id, settings.google_client_secret = previous
 
     assert response.status_code == 302
-    assert response.headers["location"] == f"{settings.frontend_base_url}/login?oauth=error&reason=not_configured"
+    assert response.headers["location"] == f"{settings.frontend_base_url}/auth/callback?oauth=error&reason=not_configured"
 
 
 def test_oauth_callback_rejects_mismatched_state(client, oauth_settings):
-    client.cookies.set("ldcn_oauth_state", "expected-state")
+    _set_oauth_cookies(client, google=True, state="expected-state")
     response = client.get(
         "/api/auth/oauth/google/callback",
         params={"code": "irrelevant", "state": "wrong-state"},
@@ -147,7 +165,7 @@ def test_oauth_callback_creates_new_account_and_sets_refresh_cookie(client, oaut
     email = f"oauth_{uuid4().hex}@example.com"
     _install_fake_httpx(monkeypatch, _google_responses(sub="google-subject-1", email=email))
 
-    client.cookies.set("ldcn_oauth_state", "matching-state")
+    _set_oauth_cookies(client, google=True)
     response = client.get(
         "/api/auth/oauth/google/callback",
         params={"code": "auth-code", "state": "matching-state"},
@@ -155,7 +173,7 @@ def test_oauth_callback_creates_new_account_and_sets_refresh_cookie(client, oaut
     )
 
     assert response.status_code == 302
-    assert response.headers["location"].endswith("/login?oauth=success")
+    assert response.headers["location"].endswith("/auth/callback?oauth=success")
     assert "ldcn_refresh_token=" in response.headers["set-cookie"]
 
     # The new session should resolve to a real, active user via the cookie.
@@ -178,7 +196,7 @@ def test_oauth_callback_links_existing_password_account_by_email(client, oauth_s
     existing_user_id = register.json()["user"]["user_id"]
 
     _install_fake_httpx(monkeypatch, _github_responses(user_id=987654, email=email))
-    client.cookies.set("ldcn_oauth_state", "matching-state")
+    _set_oauth_cookies(client)
     response = client.get(
         "/api/auth/oauth/github/callback",
         params={"code": "auth-code", "state": "matching-state"},
@@ -186,7 +204,7 @@ def test_oauth_callback_links_existing_password_account_by_email(client, oauth_s
     )
 
     assert response.status_code == 302
-    assert response.headers["location"].endswith("/login?oauth=success")
+    assert response.headers["location"].endswith("/auth/callback?oauth=success")
 
     me = client.post("/api/auth/refresh")
     assert me.json()["user"]["user_id"] == existing_user_id
@@ -204,7 +222,7 @@ def test_oauth_callback_exchange_failure_redirects_with_error(client, oauth_sett
 
     monkeypatch.setattr(auth_service_module.httpx, "Client", lambda **_kwargs: _RaisingClient({}))
 
-    client.cookies.set("ldcn_oauth_state", "matching-state")
+    _set_oauth_cookies(client, google=True)
     response = client.get(
         "/api/auth/oauth/google/callback",
         params={"code": "auth-code", "state": "matching-state"},
@@ -218,7 +236,7 @@ def test_oauth_callback_exchange_failure_redirects_with_error(client, oauth_sett
 def test_login_rejects_oauth_only_account_without_500(client, oauth_settings, monkeypatch):
     email = f"oauthonly_{uuid4().hex}@example.com"
     _install_fake_httpx(monkeypatch, _google_responses(sub="google-subject-2", email=email))
-    client.cookies.set("ldcn_oauth_state", "matching-state")
+    _set_oauth_cookies(client, google=True)
     client.get(
         "/api/auth/oauth/google/callback",
         params={"code": "auth-code", "state": "matching-state"},
@@ -240,3 +258,45 @@ def test_oauth_callback_url_uses_configured_public_origin_not_request_host(oauth
     finally:
         oauth_settings.api_public_base_url = previous
     assert callback == "https://api.example.com/api/auth/oauth/google/callback"
+
+
+def test_same_email_can_link_google_and_github_without_duplicate_user(client, oauth_settings, monkeypatch):
+    email = f"multi_{uuid4().hex}@example.com"
+    registered = client.post("/api/auth/register", json={
+        "email": email, "password": "SecurePassword123!", "full_name": "Multi Provider",
+        "privacy_policy_accepted": True,
+    }).json()["user"]
+
+    _install_fake_httpx(monkeypatch, _google_responses(sub="google-multi", email=email))
+    _set_oauth_cookies(client, google=True)
+    google = client.get("/api/auth/oauth/google/callback", params={"code": "g", "state": "matching-state"}, follow_redirects=False)
+    assert google.headers["location"].endswith("/auth/callback?oauth=success")
+
+    _install_fake_httpx(monkeypatch, _github_responses(user_id=112233, email=email))
+    _set_oauth_cookies(client)
+    github = client.get("/api/auth/oauth/github/callback", params={"code": "gh", "state": "matching-state"}, follow_redirects=False)
+    assert github.headers["location"].endswith("/auth/callback?oauth=success")
+
+    repository = UserRepository()
+    assert repository.get_by_email(email)["user_id"] == registered["user_id"]
+    assert repository.list_oauth_providers(registered["user_id"]) == ["github", "google"]
+    with session_factory()() as session:
+        accounts = session.scalars(select(OAuthAccount).where(OAuthAccount.user_id == registered["user_id"])).all()
+        assert len(accounts) == 2
+        assert all(account.access_token_encrypted not in {"google-access-token", "github-access-token"} for account in accounts)
+
+
+def test_google_callback_rejects_nonce_mismatch(client, oauth_settings, monkeypatch):
+    email = f"nonce_{uuid4().hex}@example.com"
+    responses = _google_responses(sub="google-nonce", email=email)
+    responses["https://oauth2.googleapis.com/tokeninfo"]["nonce"] = "different-nonce"
+    _install_fake_httpx(monkeypatch, responses)
+    _set_oauth_cookies(client, google=True)
+
+    response = client.get(
+        "/api/auth/oauth/google/callback",
+        params={"code": "auth-code", "state": "matching-state"},
+        follow_redirects=False,
+    )
+
+    assert "oauth=error&reason=exchange_failed" in response.headers["location"]

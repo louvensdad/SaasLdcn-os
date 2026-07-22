@@ -31,12 +31,12 @@ interface Props {
  * (vault 68 - Gestão de Chaves de IA). Lists every registered key for this
  * provider with its own default/delete controls, plus an add-form below. */
 export function AiProviderKeyDialog({ open, onClose, def, keys }: Props) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const queryClient = useQueryClient();
-  const [nome, setNome] = useState('');
+  const [nome, setNome] = useState(`${def.name} principal`);
   const [apelido, setApelido] = useState('');
   const [key, setKey] = useState('');
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; model?: string | null } | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; model?: string | null; latencyMs?: number | null; validatedAt?: string | null } | null>(null);
 
   const invalidateKeys = () => {
     void queryClient.invalidateQueries({ queryKey: ['user-ai-keys'] });
@@ -45,13 +45,21 @@ export function AiProviderKeyDialog({ open, onClose, def, keys }: Props) {
 
   const test = useMutation({
     mutationFn: () => aiKeyVaultClient.testKey(def.id, key.trim()),
-    onSuccess: (result) => setTestResult({ ok: result.ok, message: result.message, model: result.model }),
+    onSuccess: (result) => setTestResult({ ok: result.ok, message: result.message, model: result.model, latencyMs: result.latency_ms, validatedAt: result.validated_at }),
     onError: (caught) => setTestResult({ ok: false, message: caught instanceof Error ? caught.message : t('settings.ai.providerError') }),
   });
   const create = useMutation({
-    mutationFn: () => aiKeyVaultClient.create(def.id, nome.trim(), key.trim(), apelido.trim() || undefined),
-    onSuccess: () => {
-      setNome(''); setApelido(''); setKey(''); setTestResult(null);
+    mutationFn: async () => {
+      const saved = await aiKeyVaultClient.create(def.id, nome.trim(), key.trim(), apelido.trim() || undefined);
+      const validation = await aiKeyVaultClient.testSavedKey(saved.id);
+      return { saved, validation };
+    },
+    onSuccess: ({ validation }) => {
+      setNome(`${def.name} principal`); setApelido(''); setKey('');
+      setTestResult({
+        ok: validation.ok, message: validation.message, model: validation.model,
+        latencyMs: validation.latency_ms, validatedAt: validation.validated_at,
+      });
       invalidateKeys();
     },
   });
@@ -86,6 +94,9 @@ export function AiProviderKeyDialog({ open, onClose, def, keys }: Props) {
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
+                        <Badge tone={row.status === 'valid' ? 'success' : row.status === 'invalid' ? 'danger' : row.status === 'unavailable' ? 'warning' : 'neutral'}>
+                          {t(`settings.ai.keyStatus.${row.status}`)}
+                        </Badge>
                         {row.is_default ? (
                           <Badge tone="accent">{t('settings.ai.defaultProvider')}</Badge>
                         ) : (
@@ -102,8 +113,9 @@ export function AiProviderKeyDialog({ open, onClose, def, keys }: Props) {
                       </div>
                     </div>
                     <p className="mt-1.5 ds-caption">
-                      {t('settings.ai.createdAt', { date: new Date(row.created_at).toLocaleDateString() })}
-                      {row.last_used_at ? ` · ${t('settings.ai.lastUsedAt', { date: new Date(row.last_used_at).toLocaleDateString() })}` : ''}
+                      {t('settings.ai.createdAt', { date: new Date(row.created_at).toLocaleDateString(locale) })}
+                      {row.last_used_at ? ` · ${t('settings.ai.lastUsedAt', { date: new Date(row.last_used_at).toLocaleDateString(locale) })}` : ''}
+                      {row.last_validated_at ? ` · ${t('settings.ai.lastValidatedAt', { date: new Date(row.last_validated_at).toLocaleString(locale) })}` : ''}
                     </p>
                   </li>
                 ))}
@@ -124,31 +136,42 @@ export function AiProviderKeyDialog({ open, onClose, def, keys }: Props) {
                   {t('settings.ai.buyTokens', { provider: def.name })}
                 </a>
               ) : null}
-              <Input
-                name={`${def.id}-key-name`}
-                value={nome}
-                onChange={(event) => setNome(event.target.value)}
-                placeholder={t('settings.ai.keyNamePlaceholder')}
-                aria-label={t('settings.ai.keyName')}
-              />
-              <Input
-                name={`${def.id}-key-nickname`}
-                value={apelido}
-                onChange={(event) => setApelido(event.target.value)}
-                placeholder={t('settings.ai.keyNicknamePlaceholder')}
-                aria-label={t('settings.ai.keyNickname')}
-              />
-              <Input
-                type="password"
-                name={`${def.id}-api-key`}
-                autoComplete="off"
-                spellCheck={false}
-                error={create.isError}
-                value={key}
-                onChange={(event) => { setKey(event.target.value); setTestResult(null); }}
-                placeholder={t('settings.ai.keyPlaceholder')}
-                aria-label={`${def.name} API key`}
-              />
+              <label htmlFor={`${def.id}-api-key`} className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-[color:var(--text)]">{t('settings.ai.apiKeyLabel')} <span className="text-[color:var(--danger)]" aria-hidden>*</span></span>
+                <Input
+                  id={`${def.id}-api-key`}
+                  type="password"
+                  name={`${def.id}-api-key`}
+                  autoComplete="off"
+                  spellCheck={false}
+                  error={create.isError}
+                  value={key}
+                  onChange={(event) => { setKey(event.target.value); setTestResult(null); }}
+                  placeholder={t('settings.ai.keyPlaceholderNamed', { provider: def.name })}
+                  aria-describedby={`${def.id}-api-key-help`}
+                />
+                <span id={`${def.id}-api-key-help`} className="mt-1.5 block text-xs leading-5 text-[color:var(--muted)]">{t('settings.ai.apiKeyHelp')}</span>
+              </label>
+              <label htmlFor={`${def.id}-key-name`} className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-[color:var(--text)]">{t('settings.ai.keyName')} <span className="text-[color:var(--danger)]" aria-hidden>*</span></span>
+                <Input
+                  id={`${def.id}-key-name`}
+                  name={`${def.id}-key-name`}
+                  value={nome}
+                  onChange={(event) => setNome(event.target.value)}
+                  placeholder={t('settings.ai.keyNamePlaceholderExample')}
+                />
+              </label>
+              <label htmlFor={`${def.id}-key-nickname`} className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-[color:var(--text)]">{t('settings.ai.keyNicknameOptionalLabel')}</span>
+                <Input
+                  id={`${def.id}-key-nickname`}
+                  name={`${def.id}-key-nickname`}
+                  value={apelido}
+                  onChange={(event) => setApelido(event.target.value)}
+                  placeholder={t('settings.ai.keyNicknamePlaceholderExample')}
+                />
+              </label>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" disabled={!key.trim()} loading={test.isPending} onClick={() => test.mutate()}>
                   {test.isPending ? t('settings.ai.testing') : t('settings.ai.testKey')}
@@ -169,7 +192,9 @@ export function AiProviderKeyDialog({ open, onClose, def, keys }: Props) {
         {testResult ? (
           <p className={testResult.ok ? 'flex items-center gap-1.5 ds-caption text-[color:var(--success)]' : 'flex items-center gap-1.5 ds-caption text-[color:var(--danger)]'} role="status">
             {testResult.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-            {testResult.message}{testResult.model ? ` — ${testResult.model}` : ''}
+            {testResult.message}{testResult.model ? ` — ${def.name} · ${testResult.model}` : ''}
+            {testResult.latencyMs != null ? ` · ${t('settings.ai.testLatency', { ms: testResult.latencyMs })}` : ''}
+            {testResult.validatedAt ? ` · ${new Date(testResult.validatedAt).toLocaleString(locale)}` : ''}
           </p>
         ) : null}
         {create.isError ? (

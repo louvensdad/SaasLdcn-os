@@ -1,7 +1,7 @@
 # Premium Gap Analysis
 
 ## Already premium (real, keep)
-- **LLM router + 6 real adapters** (Anthropic/OpenAI/Google/OpenRouter/Ollama/custom) with a
+- **LLM router + 5 supported adapters** (OpenAI/Anthropic/Google/DeepSeek/Groq) with a
   clean degrade contract (`served_by_fallback`/`degraded`). Genuinely good engineering.
 - **Agent prompts** (`agent_prompts.py`) — production-grade, opinionated, integrity-enforcing.
 - **Meta-Factory codegen pipeline (with key)** — emits complete, runnable files; manifest

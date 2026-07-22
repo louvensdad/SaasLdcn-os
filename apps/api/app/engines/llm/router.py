@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import time
 
@@ -6,15 +6,11 @@ from app.core.config import get_settings
 from app.data.model_registry import MODEL_REGISTRY, ModelResolution, resolve_model_detailed
 from app.engines.llm.anthropic_adapter import AnthropicAdapter
 from app.engines.llm.base import LLMAdapter, LLMError
-from app.engines.llm.custom_adapter import CustomOpenAIAdapter
 from app.engines.llm.deepseek_adapter import DeepSeekAdapter
 from app.engines.llm.google_adapter import GoogleAdapter
 from app.engines.llm.groq_adapter import GroqAdapter
-from app.engines.llm.lmstudio_adapter import LMStudioAdapter
 from app.engines.llm.mock_adapter import MockAdapter
-from app.engines.llm.ollama_adapter import OllamaAdapter
 from app.engines.llm.openai_adapter import OpenAIAdapter
-from app.engines.llm.openrouter_adapter import OpenRouterAdapter
 from app.engines.llm.resilience import (
     DEFAULT_CIRCUIT_BREAKER,
     DEFAULT_RETRY_POLICY,
@@ -47,11 +43,10 @@ def _render_schema_hint(schema: dict) -> str:
     """Render the schema's top-level keys as plain, unmissable prompt text.
 
     Only Anthropic/OpenAI/Google adapters actually forward req.json_schema to the
-    provider as an enforced structured-output contract; DeepSeek/OpenRouter/Ollama/
     the custom OpenAI-compatible adapter only request generic "valid JSON" mode
     (response_format={"type": "json_object"}) because those providers don't
     reliably support strict schema enforcement. Without this, a model on one of
-    those four adapters has no explicit signal for the exact key names to emit —
+    those four adapters has no explicit signal for the exact key names to emit â€”
     confirmed live (2026-07-08): a 7-project audit on DeepSeek left
     ProjectSpec.entities empty in every single generation, even though sibling
     fields like business_rules/core_workflows were populated for the same
@@ -90,7 +85,7 @@ class LLMRouter:
 
     Graceful degrade (Prompt Mestre requirement #1): when the chosen provider is
     unavailable (no adapter / missing SDK / missing API key / missing capability),
-    the router falls back to the deterministic MockAdapter instead of failing — but
+    the router falls back to the deterministic MockAdapter instead of failing â€” but
     only when ``settings.mock_fallback_enabled``. The fallback is always signalled
     on the response (``served_by_fallback=True``), never disguised as a real run.
     """
@@ -106,15 +101,11 @@ class LLMRouter:
         # Adapters are cheap to construct (SDK import is lazy), so default wiring
         # is safe even without the provider packages installed.
         self._adapters: dict[str, LLMAdapter] = adapters or {
-            "anthropic": AnthropicAdapter(),
             "openai": OpenAIAdapter(),
+            "anthropic": AnthropicAdapter(),
             "google": GoogleAdapter(),
-            "ollama": OllamaAdapter(),
-            "openrouter": OpenRouterAdapter(),
             "deepseek": DeepSeekAdapter(),
             "groq": GroqAdapter(),
-            "lmstudio": LMStudioAdapter(),
-            "custom": CustomOpenAIAdapter(),
         }
         self._mock: LLMAdapter = mock_adapter or MockAdapter()
         self._retry = retry_policy or DEFAULT_RETRY_POLICY

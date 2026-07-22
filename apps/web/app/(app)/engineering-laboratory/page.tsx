@@ -245,13 +245,14 @@ function EngineeringLaboratoryInner() {
 }
 
 function TelemetryStrip({ overview }: { readonly overview: EngineeringLabOverview }) {
+  const { t, locale } = useLocale();
   const metrics = [
-    ['Health Score', `${overview.health_score}%`],
-    ['Arquivos', overview.file_count.toLocaleString('pt-BR')],
-    ['Linhas', overview.line_count.toLocaleString('pt-BR')],
-    ['Dependencias', overview.dependency_count.toLocaleString('pt-BR')],
-    ['Build', overview.build],
-    ['Coverage', overview.coverage],
+    [t('lab.telemetry.healthScore'), `${overview.health_score}%`],
+    [t('lab.telemetry.files'), overview.file_count.toLocaleString(locale)],
+    [t('lab.telemetry.lines'), overview.line_count.toLocaleString(locale)],
+    [t('lab.telemetry.dependencies'), overview.dependency_count.toLocaleString(locale)],
+    [t('lab.build'), overview.build],
+    [t('lab.telemetry.coverage'), overview.coverage],
   ];
   return (
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -478,7 +479,7 @@ function ExportPanel({ overview }: { readonly overview: EngineeringLabOverview }
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">{t('lab.export')}</h2>
         <Button onClick={downloadFullReport} className="h-9">
-          <Download className="h-4 w-4" /> Baixar relatorio completo (JSON)
+          <Download className="h-4 w-4" /> {t('lab.downloadFullReport')}
         </Button>
       </div>
       <p className="text-sm text-[color:var(--muted)]">{t('lab.exportHint')}</p>

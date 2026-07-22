@@ -1,15 +1,16 @@
-// Shared contract for LLM provider selection + temporary user key.
-// Mirrors apps/api/app/schemas/modernize.py + user_ai_key.contract.ts.
+// Shared contract for LLM provider selection and persistent encrypted user keys.
+// Mirrors apps/api/app/schemas/modernize.py and ai-key-vault.contract.ts.
 
-export type LlmProviderId = 'anthropic' | 'openai' | 'google' | 'deepseek' | 'openrouter' | 'ollama';
+export type LlmProviderId = 'openai' | 'anthropic' | 'google' | 'deepseek' | 'groq';
+export type LlmProviderStatus = 'ready' | 'initializing' | 'not_configured' | 'auth_error' | 'unavailable';
 
 export interface LlmProviderConfig {
-  id: string; // vault provider id; DeepSeek card maps to 'openrouter'
+  id: LlmProviderId;
   name: string;
   description: string;
   recommended_for: string;
   key_required: boolean;
-  status: 'ready' | 'not_configured';
+  status: LlmProviderStatus;
 }
 
 export interface LlmProviderCatalog {
@@ -17,21 +18,20 @@ export interface LlmProviderCatalog {
 }
 
 export interface LlmConnectionTestRequest {
-  provider: string;
+  provider: LlmProviderId;
 }
 
 export interface LlmConnectionTestResult {
   ok: boolean;
-  provider: string;
+  provider: LlmProviderId;
   model?: string | null;
-  message: string; // NEVER contains the key
+  message: string;
   degraded: boolean;
 }
 
-// The temporary key is session-scoped (TTL), encrypted in RAM, and only ever
-// surfaced as a masked tail â€” never the raw value.
-export interface TemporaryLlmKey {
-  provider: string;
-  masked: string; // e.g. "â€¢â€¢â€¢â€¢cdef"
+// Encrypted at rest and owner-scoped; clients receive only the masked value.
+export interface PersistentLlmKey {
+  provider: LlmProviderId;
+  masked: string;
   active: boolean;
 }

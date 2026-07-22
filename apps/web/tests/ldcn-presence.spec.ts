@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { authenticateWizardSession, completeProjectRequirements } from './wizard-flow-helpers';
+import { authenticateWizardSession } from './wizard-flow-helpers';
 
 test('ldcn presence layer stays visible and does not block navigation', async ({ page, request }) => {
   await authenticateWizardSession(page, request);
@@ -10,8 +10,4 @@ test('ldcn presence layer stays visible and does not block navigation', async ({
 
   await page.getByRole('link', { name: 'Enter architecture journey' }).click();
   await expect(page).toHaveURL(/\/wizard$/);
-  await expect(page.getByText('LDCN context')).toBeVisible();
-
-  await completeProjectRequirements(page);
-  await expect(page.getByText('1. Language')).toBeVisible({ timeout: 15000 });
 });

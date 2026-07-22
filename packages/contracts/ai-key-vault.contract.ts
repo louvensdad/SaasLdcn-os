@@ -3,7 +3,7 @@
 // The raw key is NEVER part of any response after creation -- only a masked tail.
 
 export type KeyProvider =
-  | 'anthropic' | 'openai' | 'google' | 'openrouter' | 'deepseek' | 'groq' | 'ollama' | 'lmstudio' | 'custom';
+  | 'openai' | 'anthropic' | 'google' | 'deepseek' | 'groq';
 
 export interface CreateAiKeyRequest {
   provider: KeyProvider;
@@ -27,7 +27,7 @@ export interface AiKeyView {
   apelido?: string | null;
   masked: string;
   modelo_padrao?: string | null;
-  status: 'untested' | 'valid' | 'invalid';
+  status: 'untested' | 'valid' | 'invalid' | 'unavailable';
   ativo: boolean;
   is_default: boolean;
   created_at: string;
@@ -50,4 +50,6 @@ export interface TestKeyResponse {
   model?: string | null;
   http_status: number;
   message: string;
+  latency_ms?: number | null;
+  validated_at?: string | null;
 }

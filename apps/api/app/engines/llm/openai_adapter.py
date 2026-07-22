@@ -6,7 +6,7 @@ from app.data.model_registry import MODEL_REGISTRY
 from app.engines.llm.base import (
     LLMAdapter,
     LLMError,
-    is_transient_provider_error,
+    normalize_provider_error,
     timeout_seconds,
 )
 from app.schemas.llm import LLMRequest, LLMResponse, Provider
@@ -77,10 +77,7 @@ class OpenAIAdapter(LLMAdapter):
         try:
             resp = client.chat.completions.create(**params)
         except Exception as exc:
-            raise LLMError(
-                f"OpenAI request failed for {model}: {exc}",
-                transient=is_transient_provider_error(exc),
-            ) from exc
+            raise normalize_provider_error("OpenAI", model, exc) from exc
 
         choice = resp.choices[0]
         text = getattr(choice.message, "content", "") or ""

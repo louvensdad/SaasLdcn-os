@@ -10,8 +10,7 @@ real-but-light vertical awareness + honest docs.
   `architect_engine.build_blueprint` author via the LLM whenever **AI is available** (server key
   OR user key), with the `served_by_fallback → deterministic` safety net intact.
 - `services/ai_availability.py` (`ai_available()` / `ai_status()`): real provider = any of
-  `ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY / OPENROUTER_API_KEY` or a custom base URL
-  (Ollama's default localhost excluded to avoid a false positive).
+  `OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY / DEEPSEEK_API_KEY / GROQ_API_KEY`.
 - `GET /api/ai-status` → `{ ai_active, mode: "ai" | "deterministic_preview", providers }`.
 - **Honest by default:** with no server key it is plainly labelled "deterministic preview".
 

@@ -102,13 +102,13 @@ def test_ignores_node_modules_and_build(client, cleanup):
 
 @pytest.mark.parametrize(
     "label,provider",
-    [("GPT", "openai"), ("DeepSeek", "openrouter"), ("Gemini", "google"), ("Claude", "anthropic")],
+    [("GPT", "openai"), ("Claude", "anthropic"), ("Gemini", "google"), ("DeepSeek", "deepseek"), ("Groq", "groq")],
 )
-def test_select_provider_marks_ready(client, label, provider):
+def test_saved_provider_stays_initializing_until_connection_test(client, label, provider):
     client.post("/api/user-ai-keys", json={"provider": provider, "nome": "Minha chave", "api_key": f"key-for-{provider}-123456"})
     catalog = client.get("/api/modernize/llm/providers").json()["providers"]
-    ready = [c for c in catalog if c["id"] == provider and c["status"] == "ready"]
-    assert ready, f"{label} ({provider}) should be ready after a key is set"
+    initializing = [c for c in catalog if c["id"] == provider and c["status"] == "initializing"]
+    assert initializing, f"{label} ({provider}) should require validation after a key is saved"
 
 
 def test_llm_test_invalid_key_fails(client, monkeypatch):

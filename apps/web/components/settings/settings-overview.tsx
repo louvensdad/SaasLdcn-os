@@ -40,9 +40,9 @@ export function SettingsOverview() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="grid h-10 w-10 place-items-center rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] text-[color:var(--accent)]"><Sparkles className="h-5 w-5" aria-hidden /></span>
             <Badge tone={statusTone(overall)}><StatusIcon status={overall} /> {overall ?? t('common.loading')}</Badge>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--border)] bg-[color:var(--surface-3)] px-3 py-1 text-xs text-[color:var(--muted)]"><Command className="h-3.5 w-3.5" aria-hidden /> Ctrl K</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--border)] bg-[color:var(--surface-3)] px-3 py-1 text-xs text-[color:var(--muted)]"><Command className="h-3.5 w-3.5" aria-hidden /> {t('settings.overview.shortcut')}</span>
           </div>
-          <p className="mt-5 ds-overline text-[color:var(--accent)]">LDCN / CONTROL PLANE</p>
+          <p className="mt-5 ds-overline text-[color:var(--accent)]">{t('settings.overview.controlPlane')}</p>
           <h1 className="mt-2 max-w-2xl text-3xl font-semibold tracking-[-0.03em] text-[color:var(--text)] text-balance md:text-4xl">{t('settings.title')}</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">{t('settings.description')}</p>
         </div>

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Index, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -37,6 +37,27 @@ class User(Base):
     # not ride along on every /auth/me or token-refresh response -- fetched via
     # GET /auth/me/avatar instead.
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class OAuthAccount(Base):
+    """Provider identity linked to a platform user, with encrypted tokens."""
+
+    __tablename__ = "oauth_accounts"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_user_id", name="uq_oauth_provider_identity"),
+        UniqueConstraint("user_id", "provider", name="uq_oauth_user_provider"),
+        Index("idx_oauth_accounts_user_id", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    provider_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 

@@ -8,9 +8,9 @@ import { Card } from '@/components/ui/card';
 import { useLocale } from '@/hooks/use-locale';
 import type { PlanView, SubscriptionView } from '@/lib/api/billing-catalog';
 
-function formatPrice(priceCents: number | null, currency: string, undefinedLabel: string): string {
+function formatPrice(locale: string, priceCents: number | null, currency: string, undefinedLabel: string): string {
   if (priceCents === null) return undefinedLabel;
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(priceCents / 100);
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(priceCents / 100);
 }
 
 interface CurrentSubscriptionCardProps {
@@ -40,7 +40,7 @@ export function CurrentSubscriptionCard({ subscription, plan, onChangePlan, onCa
             <p className="mt-0.5 text-xs text-[color:var(--muted)]">
               {t('billing.currentPlan.since', { date: startedAt.toLocaleDateString(locale) })}
               {nextBilling ? ` · ${t('billing.currentPlan.nextBilling', { date: nextBilling.toLocaleDateString(locale) })}` : ''}
-              {plan ? ` · ${formatPrice(plan.price_cents, plan.currency, t('pricing.plan.priceUndefined'))}` : ''}
+              {plan ? ` · ${formatPrice(locale, plan.price_cents, plan.currency, t('pricing.plan.priceUndefined'))}` : ''}
             </p>
           </div>
         </div>

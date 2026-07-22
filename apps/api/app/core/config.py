@@ -45,7 +45,7 @@ def _default_allowed_origins() -> list[str]:
 
 
 def _default_secret_key() -> str:
-    raw = os.environ.get("LDCN_SECRET_KEY")
+    raw = os.environ.get("LDCN_SECRET_KEY") or os.environ.get("JWT_SECRET")
     if raw:
         return raw
     if os.environ.get("LDCN_ENVIRONMENT", "local") == "production":
@@ -55,6 +55,15 @@ def _default_secret_key() -> str:
     # shared/production environment so sessions survive restarts and are not
     # guessable across instances.
     return secrets.token_hex(32)
+
+
+def _default_refresh_secret_key() -> str:
+    raw = os.environ.get("LDCN_JWT_REFRESH_SECRET") or os.environ.get("JWT_REFRESH_SECRET")
+    if raw:
+        return raw
+    if os.environ.get("LDCN_ENVIRONMENT", "local") == "production":
+        raise RuntimeError("JWT_REFRESH_SECRET is required in production.")
+    return _default_secret_key()
 
 
 class Settings(BaseModel):
@@ -68,7 +77,7 @@ class Settings(BaseModel):
     database_url: str = Field(
         default_factory=lambda: os.environ.get(
             "LDCN_DATABASE_URL",
-            f"sqlite:///{(DATA_DIR / 'ldcn_os.db').resolve().as_posix()}",
+            os.environ.get("DATABASE_URL", f"sqlite:///{(DATA_DIR / 'ldcn_os.db').resolve().as_posix()}"),
         )
     )
     # Temporary compatibility for constructors/tests that still pass a Path.
@@ -102,6 +111,7 @@ class Settings(BaseModel):
 
     # --- Auth (Fase B) ---
     secret_key: str = Field(default_factory=_default_secret_key)
+    refresh_secret_key: str = Field(default_factory=_default_refresh_secret_key)
     # Dedicated key for encrypting secrets at rest (git provider tokens, user LLM
     # keys), kept SEPARATE from the JWT signing secret so the two can be rotated
     # independently and a leak of one does not compromise the other (diagnosis M3).
@@ -109,8 +119,8 @@ class Settings(BaseModel):
     # ``secret_key`` so existing encrypted data keeps decrypting.
     token_encryption_key: str = Field(default_factory=lambda: os.environ.get("LDCN_TOKEN_ENC_KEY", ""))
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
-    refresh_token_expire_days: int = 7
+    access_token_expire_minutes: int = Field(default_factory=lambda: int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "15")))
+    refresh_token_expire_days: int = Field(default_factory=lambda: int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "30")))
     password_min_length: int = 8
     refresh_cookie_name: str = "ldcn_refresh_token"
     refresh_cookie_secure: bool = Field(
@@ -123,18 +133,18 @@ class Settings(BaseModel):
     # oauth=error) instead of starting a flow. Register the app in each
     # provider's console with the callback URL:
     #   <this API's public base URL>/api/auth/oauth/{google,github}/callback
-    google_client_id: str = Field(default_factory=lambda: os.environ.get("LDCN_GOOGLE_CLIENT_ID", "").strip())
-    google_client_secret: str = Field(default_factory=lambda: os.environ.get("LDCN_GOOGLE_CLIENT_SECRET", "").strip())
-    github_client_id: str = Field(default_factory=lambda: os.environ.get("LDCN_GITHUB_CLIENT_ID", "").strip())
-    github_client_secret: str = Field(default_factory=lambda: os.environ.get("LDCN_GITHUB_CLIENT_SECRET", "").strip())
+    google_client_id: str = Field(default_factory=lambda: (os.environ.get("LDCN_GOOGLE_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID", "")).strip())
+    google_client_secret: str = Field(default_factory=lambda: (os.environ.get("LDCN_GOOGLE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET", "")).strip())
+    github_client_id: str = Field(default_factory=lambda: (os.environ.get("LDCN_GITHUB_CLIENT_ID") or os.environ.get("GITHUB_CLIENT_ID", "")).strip())
+    github_client_secret: str = Field(default_factory=lambda: (os.environ.get("LDCN_GITHUB_CLIENT_SECRET") or os.environ.get("GITHUB_CLIENT_SECRET", "")).strip())
     # Where the browser lands after the OAuth provider hands control back to our
     # callback (both on success and on failure). Must be a URL the frontend is
     # actually served from.
     frontend_base_url: str = Field(
-        default_factory=lambda: os.environ.get("LDCN_FRONTEND_URL", "http://localhost:3000")
+        default_factory=lambda: os.environ.get("LDCN_FRONTEND_URL") or os.environ.get("FRONTEND_URL", "http://localhost:3000")
     )
     api_public_base_url: str = Field(
-        default_factory=lambda: os.environ.get("LDCN_API_PUBLIC_URL", "http://localhost:8000")
+        default_factory=lambda: os.environ.get("LDCN_API_PUBLIC_URL") or os.environ.get("BACKEND_URL", "http://localhost:8000")
     )
     # Always keeps 127.0.0.1 trusted regardless of LDCN_TRUSTED_HOSTS: the
     # container's own Docker healthcheck (see Dockerfile.prod /
@@ -202,50 +212,28 @@ class Settings(BaseModel):
     # fully offline demos and the test suite.
     force_mock: bool = Field(default_factory=lambda: os.environ.get("LDCN_FORCE_MOCK", "") == "1")
 
-    # --- Local LLM (Ollama) ---
     # The "no API key" path: real generation via an open-source model running on
-    # the user's own machine. Ollama exposes an OpenAI-compatible endpoint, so the
-    # OllamaAdapter reuses the openai SDK pointed here. No key required.
-    ollama_base_url: str = Field(
-        default_factory=lambda: os.environ.get("LDCN_OLLAMA_BASE_URL", "http://localhost:11434/v1")
-    )
 
-    # --- LM Studio ---
-    # Local, key-free generation via LM Studio's OpenAI-compatible endpoint --
-    # the same pattern as Ollama, but the model id is whatever the user has
     # loaded locally rather than a pull-by-name convention.
-    lmstudio_base_url: str = Field(
-        default_factory=lambda: os.environ.get("LDCN_LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
-    )
 
-    # --- OpenRouter ---
     # Online aggregator that exposes many models (OpenAI, Anthropic, Google,
     # DeepSeek, Llama, Qwen, incl. free tiers) behind one OpenAI-compatible API and
-    # one key. The user supplies their OpenRouter key via "Use my own key".
-    openrouter_base_url: str = Field(
-        default_factory=lambda: os.environ.get("LDCN_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-    )
 
     # --- DeepSeek ---
-    # First-class DeepSeek API (deepseek-chat / deepseek-reasoner), OpenAI-compatible.
+    # First-class DeepSeek API (deepseek-v4-flash / deepseek-v4-pro), OpenAI-compatible.
     # The user supplies their DeepSeek key via "Use my own key", or the server sets
     # DEEPSEEK_API_KEY. Base URL is overridable for proxies/mirrors.
     deepseek_base_url: str = Field(
         default_factory=lambda: os.environ.get("LDCN_DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     )
 
-    # --- Custom OpenAI-compatible endpoint ---
-    # Plug ANY server speaking the OpenAI Chat Completions API (vLLM, LM Studio,
     # Together, Groq, Fireworks, etc.). Set the base URL and the exact model id the
     # server expects; the key is optional (many local servers ignore it) and can
-    # come from this env var or the per-user vault (provider "custom").
-    custom_base_url: str = Field(default_factory=lambda: os.environ.get("LDCN_CUSTOM_BASE_URL", ""))
-    custom_model: str = Field(default_factory=lambda: os.environ.get("LDCN_CUSTOM_MODEL", ""))
 
     # --- Agent execution pool (bounded, shared) ---
     # Blocking LLM-agent calls run on ONE process-wide, bounded thread pool instead
     # of a fresh ThreadPoolExecutor per pipeline stage. This caps total worker
-    # threads under concurrent generations (diagnosis B5) — each worker may hold a
+    # threads under concurrent generations (diagnosis B5) â€” each worker may hold a
     # multi-minute LLM call, so tune per host. Minimum enforced at 1.
     agent_worker_limit: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_AGENT_WORKERS", "8"))
@@ -292,7 +280,7 @@ class Settings(BaseModel):
     modernize_max_archive_uncompressed_bytes: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ARCHIVE_UNCOMPRESSED_BYTES", str(1024 * 1024 * 1024)))
     )
-    # A scanned enrollment document (vault 56 - Monetização e Consumo/Planos,
+    # A scanned enrollment document (vault 56 - MonetizaÃ§Ã£o e Consumo/Planos,
     # assinaturas e controle de acesso.md, "Plano Estudante e elegibilidade").
     student_document_max_upload_bytes: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_STUDENT_DOCUMENT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
@@ -334,6 +322,10 @@ def _validate_production_settings(settings: Settings) -> None:
 
     if len(settings.secret_key) < 32:
         raise RuntimeError("Production LDCN_SECRET_KEY must contain at least 32 characters.")
+    if len(settings.refresh_secret_key) < 32:
+        raise RuntimeError("Production JWT_REFRESH_SECRET must contain at least 32 characters.")
+    if settings.refresh_secret_key == settings.secret_key:
+        raise RuntimeError("Access and refresh JWT signing keys must be distinct.")
     if len(settings.token_encryption_key) < 32:
         raise RuntimeError("Production requires a dedicated LDCN_TOKEN_ENC_KEY with at least 32 characters.")
     if settings.token_encryption_key == settings.secret_key:

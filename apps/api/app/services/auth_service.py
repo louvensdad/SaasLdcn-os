@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from urllib.parse import urlencode
 
@@ -63,6 +66,7 @@ _OAUTH_PROVIDER_SPEC: dict[OAuthProvider, dict[str, str]] = {
         "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
         "token_url": "https://oauth2.googleapis.com/token",
         "userinfo_url": "https://www.googleapis.com/oauth2/v3/userinfo",
+        "tokeninfo_url": "https://oauth2.googleapis.com/tokeninfo",
         "scope": "openid email profile",
     },
     "github": {
@@ -199,7 +203,7 @@ class AuthService:
     # ------------------------------------------------------------------
     # OAuth (Google / GitHub)
     # ------------------------------------------------------------------
-    def oauth_authorize_url(self, provider: OAuthProvider, redirect_uri: str) -> tuple[str, str]:
+    def oauth_authorize_url(self, provider: OAuthProvider, redirect_uri: str) -> tuple[str, str, str, str | None]:
         """Build the provider's consent-screen URL plus a fresh CSRF state token.
 
         The caller is responsible for round-tripping `state` (e.g. a short-lived
@@ -208,17 +212,25 @@ class AuthService:
         client_id, _ = _oauth_credentials(provider)
         spec = _OAUTH_PROVIDER_SPEC[provider]
         state = secrets.token_urlsafe(24)
+        code_verifier = secrets.token_urlsafe(64)
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode("ascii")).digest()
+        ).rstrip(b"=").decode("ascii")
+        nonce = secrets.token_urlsafe(24) if provider == "google" else None
         params = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "scope": spec["scope"],
             "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
         }
         if provider == "google":
             params["response_type"] = "code"
             params["access_type"] = "online"
             params["prompt"] = "select_account"
-        return f"{spec['authorize_url']}?{urlencode(params)}", state
+            params["nonce"] = nonce
+        return f"{spec['authorize_url']}?{urlencode(params)}", state, code_verifier, nonce
 
     def oauth_callback(
         self,
@@ -226,6 +238,8 @@ class AuthService:
         *,
         code: str,
         redirect_uri: str,
+        code_verifier: str,
+        expected_nonce: str | None = None,
         ip_address: str | None = None,
         device_label: str | None = None,
     ) -> tuple[AuthResponse, str]:
@@ -245,16 +259,20 @@ class AuthService:
                         "code": code,
                         "redirect_uri": redirect_uri,
                         "grant_type": "authorization_code",
+                        "code_verifier": code_verifier,
                     },
                     headers={"Accept": "application/json"},
                 )
                 token_response.raise_for_status()
-                access_token = token_response.json().get("access_token")
+                token_payload = token_response.json()
+                access_token = token_payload.get("access_token")
                 if not access_token:
                     raise OAuthError("Provider did not return an access token.")
 
                 if provider == "google":
-                    subject, email, email_verified, full_name = self._google_identity(client, access_token)
+                    subject, email, email_verified, full_name = self._google_identity(
+                        client, access_token, token_payload.get("id_token"), expected_nonce, client_id
+                    )
                 else:
                     subject, email, email_verified, full_name = self._github_identity(client, access_token)
         except httpx.HTTPError as exc:
@@ -269,7 +287,11 @@ class AuthService:
         if user is None:
             existing = self.user_repository.get_by_email(email)
             if existing is not None:
-                user = self.user_repository.link_oauth(existing["user_id"], provider, subject)
+                try:
+                    user = self.user_repository.link_oauth(existing["user_id"], provider, subject)
+                except ValueError as exc:
+                    raise OAuthError("This provider identity is already linked to another account.") from exc
+                self.audit_repository.record(user_id=existing["user_id"], event_code="oauth_account_linked")
             else:
                 user = self.user_repository.create_oauth_user(
                     email=email,
@@ -290,11 +312,31 @@ class AuthService:
         if user is None or not user["is_active"]:
             raise OAuthError("This account is not available for sign-in.")
 
-        self.audit_repository.record(user_id=user["user_id"], event_code="user_login")
+        expires_at = None
+        if isinstance(token_payload.get("expires_in"), (int, float)):
+            expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(token_payload["expires_in"]))).replace(microsecond=0).isoformat()
+        self.user_repository.store_oauth_tokens(
+            user_id=user["user_id"], provider=provider, access_token=access_token,
+            refresh_token=token_payload.get("refresh_token"), expires_at=expires_at,
+        )
+
+        self.audit_repository.record(user_id=user["user_id"], event_code=f"oauth_{provider}_login")
         return self._issue_tokens(user, ip_address=ip_address, device_label=device_label)
 
     @staticmethod
-    def _google_identity(client: httpx.Client, access_token: str) -> tuple[str | None, str | None, bool, str]:
+    def _google_identity(
+        client: httpx.Client, access_token: str, id_token: str | None,
+        expected_nonce: str | None, client_id: str,
+    ) -> tuple[str | None, str | None, bool, str]:
+        if not id_token or not expected_nonce:
+            raise OAuthError("Google did not return the required OpenID Connect identity token.")
+        tokeninfo = client.get(_OAUTH_PROVIDER_SPEC["google"]["tokeninfo_url"], params={"id_token": id_token})
+        tokeninfo.raise_for_status()
+        claims = tokeninfo.json()
+        if claims.get("aud") != client_id or claims.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
+            raise OAuthError("Google identity token audience or issuer is invalid.")
+        if not hmac.compare_digest(str(claims.get("nonce", "")), expected_nonce):
+            raise OAuthError("Google identity token nonce is invalid.")
         response = client.get(
             _OAUTH_PROVIDER_SPEC["google"]["userinfo_url"],
             headers={"Authorization": f"Bearer {access_token}"},
@@ -303,6 +345,8 @@ class AuthService:
         info = response.json()
         email = info.get("email")
         full_name = info.get("name") or (email.split("@")[0] if email else "User")
+        if claims.get("sub") != info.get("sub"):
+            raise OAuthError("Google identity token subject does not match userinfo.")
         return info.get("sub"), email, bool(info.get("email_verified", False)), full_name
 
     @staticmethod

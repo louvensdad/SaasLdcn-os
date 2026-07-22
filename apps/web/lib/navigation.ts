@@ -15,6 +15,7 @@ import {
   MonitorCog,
   Orbit,
   RefreshCw,
+  Rocket,
   Settings2,
   Store,
   Wallet,
@@ -65,7 +66,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
   {
     labelKey: 'navigation.wizard.label',
     href: '/wizard',
-    icon: WandSparkles,
+    icon: Rocket,
     descriptionKey: 'navigation.wizard.description',
   },
   {

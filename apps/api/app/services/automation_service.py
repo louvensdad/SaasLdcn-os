@@ -5,6 +5,7 @@ from typing import Any
 from croniter import CroniterBadCronError
 
 from app.engines.automation_engine import run_automation
+from app.core.outbound_url import UnsafeOutboundUrlError, validate_public_http_url
 from app.repositories.automation_repository import AutomationRepository
 from app.services.automation_scheduler import compute_next_run_at
 
@@ -21,6 +22,11 @@ class AutomationService:
 
     def create(self, *, owner_user_id: str, **kwargs: Any) -> dict[str, Any]:
         trigger_config = kwargs.get("trigger_config") or {}
+        action_config = kwargs.get("action_config") or {}
+        try:
+            validate_public_http_url(str(action_config.get("url") or ""), resolve_dns=False)
+        except UnsafeOutboundUrlError as exc:
+            raise AutomationValidationError(str(exc)) from exc
         if kwargs.get("trigger_type") == "scheduled":
             self._validate_cron(trigger_config)
         return self.repository.create(owner_user_id=owner_user_id, **kwargs)

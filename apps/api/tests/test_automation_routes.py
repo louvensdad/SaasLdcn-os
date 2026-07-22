@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.engines import automation_engine
 
 
@@ -27,6 +29,22 @@ def test_create_list_get_delete(client):
     deleted = client.delete(f"/api/automations/{automation['id']}")
     assert deleted.status_code == 204
     assert client.get(f"/api/automations/{automation['id']}").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/admin",
+        "http://169.254.169.254/latest/meta-data",
+        "http://localhost/internal",
+        "file:///etc/passwd",
+        "https://user:password@example.com",
+        "https://example.com:8443/private",
+    ],
+)
+def test_create_rejects_unsafe_outbound_urls(client, url):
+    response = _create(client, action_config={"method": "GET", "url": url})
+    assert response.status_code == 422
 
 
 def test_manual_automation_activates_without_a_cron(client):

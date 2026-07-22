@@ -68,7 +68,7 @@ export function RuntimeTab() {
       <Card surface="secondary" className="rounded-[1.5rem] p-5">
         <div className="mb-4">
           <h2 className="ds-section text-[color:var(--text)]">{t('settings.runtime.overviewTitle')}</h2>
-          <span className="ds-caption" role="status" aria-live="polite">Telemetry: {telemetryStream.transport}</span>
+          <span className="ds-caption" role="status" aria-live="polite">{t('settings.runtime.telemetryLabel')} {telemetryStream.transport}</span>
           <p className="mt-1 ds-body ds-text-muted">{t('settings.runtime.overviewDescription')}</p>
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">

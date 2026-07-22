@@ -53,6 +53,7 @@ from app.routes import (
     llm_settings,
     localization,
     meta_factory,
+    missions,
     modernize,
     observability,
     permissions,
@@ -190,6 +191,7 @@ def create_application() -> FastAPI:
     app.include_router(meta_factory.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(modernize.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(project_rooms.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(missions.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(change_requests.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(live_preview.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(staging.router, prefix=settings.api_prefix, dependencies=protected)

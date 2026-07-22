@@ -2,7 +2,7 @@
 // (e.g. http://localhost:3000) so the SameSite=Lax refresh-token cookie set
 // by the API is actually sent back on subsequent requests. 127.0.0.1 and
 // localhost are treated as different sites by browsers.
-const DEFAULT_API_URL = 'http://localhost:8001';
+const DEFAULT_API_URL = 'http://localhost:8000';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL;
 
@@ -30,7 +30,7 @@ export const apiEndpoints = {
     // Full-page redirect (not a fetch): the backend redirects on to the
     // provider's consent screen, then back to /login with the refresh
     // cookie already set.
-    oauthStart: (provider: 'google' | 'github') => `${API_BASE_URL}/api/auth/oauth/${provider}/start`,
+    oauthStart: (provider: 'google' | 'github') => `${API_BASE_URL}/api/auth/oauth/${provider}`,
   },
   localization: {
     locales: `${API_BASE_URL}/api/localization/locales`,

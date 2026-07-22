@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from copy import deepcopy
+import re
 from typing import Any
 from urllib.parse import urlparse
 
 from app.core.event_catalog import emit_named_event
+from app.core.outbound_url import UnsafeOutboundUrlError, validate_public_http_url
 from app.repositories.automation_repository import AutomationRepository
 from app.repositories.marketplace_repository import MarketplaceRepository
+from app.repositories.redaction import REDACTED, SENSITIVE_KEY_PATTERN, redact_text
 from app.services.automation_service import AutomationService, automation_service
 
 
@@ -13,6 +17,63 @@ class MarketplaceSourceGoneError(RuntimeError):
     """Raised when republishing a marketplace item whose source Automation
     was deleted after the item was first published -- the item's last
     published content stays installable, but there is nothing new to pull."""
+
+
+class UnsafeMarketplaceItemError(ValueError):
+    """Marketplace content contains an unsafe destination or literal secret."""
+
+
+_SENSITIVE_HEADERS = {"authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "api-key", "x-auth-token"}
+_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)(password|token|api[_-]?key|secret)[\"']?\s*[:=]\s*[\"']?[^{}\s,\"']+"
+)
+_CREDENTIAL_PLACEHOLDER = "{{credential:"
+
+
+def _contains_literal_secret(value: str) -> bool:
+    return (
+        _CREDENTIAL_PLACEHOLDER not in value
+        and (redact_text(value) != value or _SECRET_ASSIGNMENT.search(value) is not None)
+    )
+
+
+def validate_publishable_content(content: dict[str, Any]) -> None:
+    action_config = content.get("action_config") or {}
+    try:
+        validate_public_http_url(str(action_config.get("url") or ""), resolve_dns=False)
+    except UnsafeOutboundUrlError as exc:
+        raise UnsafeMarketplaceItemError(str(exc)) from exc
+    for name, value in (action_config.get("headers") or {}).items():
+        normalized = str(name).strip().lower()
+        text = str(value)
+        if (normalized in _SENSITIVE_HEADERS or SENSITIVE_KEY_PATTERN.search(normalized)) and _CREDENTIAL_PLACEHOLDER not in text:
+            raise UnsafeMarketplaceItemError(f"Header sensível '{name}' deve usar {{credential:nome}}.")
+        if _contains_literal_secret(text):
+            raise UnsafeMarketplaceItemError(f"O header '{name}' contém um segredo literal.")
+    for field in ("url", "body"):
+        value = action_config.get(field)
+        if value is not None and _contains_literal_secret(str(value)):
+            raise UnsafeMarketplaceItemError(f"O campo '{field}' contém um segredo literal.")
+
+
+def _public_content(content: dict[str, Any]) -> dict[str, Any]:
+    """Redact legacy unsafe values so catalog reads never expose credentials."""
+    safe = deepcopy(content)
+    action_config = safe.get("action_config") or {}
+    headers = action_config.get("headers") or {}
+    for name, value in list(headers.items()):
+        normalized = str(name).strip().lower()
+        text = str(value)
+        if (normalized in _SENSITIVE_HEADERS or SENSITIVE_KEY_PATTERN.search(normalized)) and _CREDENTIAL_PLACEHOLDER not in text:
+            headers[name] = REDACTED
+        else:
+            headers[name] = redact_text(text)
+    for field in ("body", "url"):
+        if action_config.get(field) is None:
+            continue
+        text = str(action_config[field])
+        action_config[field] = REDACTED if _contains_literal_secret(text) else redact_text(text)
+    return safe
 
 
 def _content_from_automation(automation: dict[str, Any]) -> dict[str, Any]:
@@ -36,7 +97,7 @@ def _derive_permissions(automation: dict[str, Any]) -> list[str]:
 # fall through to the trigger-based fallback below -- that's an honest
 # reflection of current platform usage, not a derivation bug.
 _CATEGORY_HOST_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("IA", ("openai.com", "anthropic.com", "generativelanguage.googleapis.com", "api.deepseek.com", "openrouter.ai", "groq.com")),
+    ("IA", ("openai.com", "anthropic.com", "generativelanguage.googleapis.com", "api.deepseek.com", "groq.com")),
     ("Cloud", ("amazonaws.com", "azure.com", "cloudflare.com", "digitalocean.com", "vercel.com", "hostinger.com")),
     ("DevOps", ("github.com", "gitlab.com", "circleci.com", "hooks.docker.com")),
     ("Banco de Dados", ("supabase.co", "mongodb.net", "planetscale.com", "neon.tech", "firebaseio.com")),
@@ -78,6 +139,7 @@ class MarketplaceService:
         for item in items:
             item["category"] = derive_category(item["content"])
             item["downloads"] = downloads.get(item["id"], 0)
+            item["content"] = _public_content(item["content"])
         return items
 
     def _enrich_item(self, item: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -91,10 +153,12 @@ class MarketplaceService:
         automation = self.automation_repository.get_for_owner(source_automation_id, author_user_id)
         if automation is None:
             return None
+        content = _content_from_automation(automation)
+        validate_publishable_content(content)
         item = self.repository.create_item(
             author_user_id=author_user_id, source_automation_id=source_automation_id, name=name,
             description=description, license=license, permissions=_derive_permissions(automation),
-            content=_content_from_automation(automation),
+            content=content,
         )
         item = self.repository.set_status(item["id"], author_user_id, "published")
         emit_named_event("MarketplaceItemPublished", author_user_id, metadata={"item_id": item["id"], "version": item["version"]})
@@ -125,6 +189,7 @@ class MarketplaceService:
         if automation is None:
             raise MarketplaceSourceGoneError("A automação de origem deste item não existe mais.")
         content = _content_from_automation(automation)
+        validate_publishable_content(content)
         updated = self.repository.update_content(item_id, author_user_id, content=content, note=note)
         emit_named_event("MarketplaceItemPublished", author_user_id, metadata={"item_id": item_id, "version": updated["version"]})
         return self._enrich_item(updated)
@@ -134,6 +199,7 @@ class MarketplaceService:
         if item is None or item["status"] != "published":
             return None
         content = item["content"]
+        validate_publishable_content(content)
         automation = self.automation_service.create(
             owner_user_id=installer_user_id, title=f"{item['name']} (Marketplace)", description=item["description"],
             trigger_type=content["trigger_type"], trigger_config=content["trigger_config"],

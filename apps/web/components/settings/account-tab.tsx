@@ -406,9 +406,9 @@ export function AccountTab() {
             <label className="grid gap-2 text-sm font-medium text-[color:var(--text)]">
               <span>{t('settings.account.dateFormat')}</span>
               <Select value={preferences.dateFormat} onChange={(event) => preferences.setDateFormat(event.target.value as DateFormat)}>
-                <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                {(['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'] as const).map((format) => (
+                  <option key={format} value={format}>{format}</option>
+                ))}
               </Select>
             </label>
             <label className="grid gap-2 text-sm font-medium text-[color:var(--text)]">

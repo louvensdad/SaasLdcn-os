@@ -268,7 +268,7 @@ from app.core.config import get_settings
 from app.core.security import decrypt_secret, encrypt_secret
 from app.data.model_registry import DEFAULT_MODEL, MODEL_REGISTRY
 
-_PROVIDERS = {"anthropic", "openai", "google", "openrouter", "deepseek", "custom"}
+_PROVIDERS = {"openai", "anthropic", "google", "deepseek", "groq"}
 
 
 def mask_key(raw: str) -> str:

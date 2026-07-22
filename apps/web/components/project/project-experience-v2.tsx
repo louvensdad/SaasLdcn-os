@@ -102,13 +102,27 @@ interface DerivedMetrics {
   readonly pipelines: number;
 }
 
-const DEVICE_MODES: readonly { id: DeviceMode; label: string; icon: LucideIcon }[] = [
-  { id: 'desktop', label: 'Desktop', icon: Monitor },
-  { id: 'tablet', label: 'Tablet', icon: Tablet },
-  { id: 'mobile', label: 'Mobile', icon: Smartphone },
-];
+type Translator = (key: string, values?: Record<string, string | number>) => string;
 
-const JOURNEY_LABELS = ['Ideia', 'PromptMaster', 'Architect', 'Engineering Review', 'Meta-Fabrica', 'Laboratorio', 'Deploy'] as const;
+function buildDeviceModes(t: Translator): readonly { id: DeviceMode; label: string; icon: LucideIcon }[] {
+  return [
+    { id: 'desktop', label: t('projectXp.device.desktop'), icon: Monitor },
+    { id: 'tablet', label: t('projectXp.device.tablet'), icon: Tablet },
+    { id: 'mobile', label: t('projectXp.device.mobile'), icon: Smartphone },
+  ];
+}
+
+function journeyLabels(t: (key: string) => string) {
+  return [
+    t('projectXp.journey.step.idea'),
+    t('workflow.stages.promptMaster'),
+    t('navigation.architect.label'),
+    t('navigation.engineeringReview.label'),
+    t('navigation.metaFactory.label'),
+    t('navigation.engineeringLaboratory.label'),
+    t('roadmap.filters.deploy'),
+  ] as const;
+}
 
 // project.status only has coarse stage granularity (no separate "prompt master
 // done" vs "architect done" states), so a status maps to the step the project
@@ -127,12 +141,24 @@ const STATUS_STAGE_INDEX: Partial<Record<Project['status'], number>> = {
 // whether generated files/deploy-readiness were actually observed), instead
 // of a constant that always rendered the same "done/done/done/current/pending"
 // regardless of the project's actual stage.
-function deriveJourneySteps(project: Project, generated: boolean, deployReady: boolean) {
-  const reached = deployReady ? JOURNEY_LABELS.length : generated ? 5 : (STATUS_STAGE_INDEX[project.status] ?? 1);
-  return JOURNEY_LABELS.map((label, index) => [label, index < reached ? 'done' : index === reached ? 'current' : 'pending'] as const);
+function deriveJourneySteps(t: (key: string) => string, project: Project, generated: boolean, deployReady: boolean) {
+  const labels = journeyLabels(t);
+  const reached = deployReady ? labels.length : generated ? 5 : (STATUS_STAGE_INDEX[project.status] ?? 1);
+  return labels.map((label, index) => [label, index < reached ? 'done' : index === reached ? 'current' : 'pending'] as const);
 }
 
-const INTRO_STAGES = ['Contracts', 'Backend', 'Frontend', 'Security', 'Testing', 'Architecture', 'Laboratory', 'Deploy Ready'] as const;
+function introStages(t: (key: string) => string) {
+  return [
+    t('roadmap.groups.contracts'),
+    t('roadmap.filters.backend'),
+    t('roadmap.filters.frontend'),
+    t('roadmap.filters.security'),
+    t('projectXp.intro.stage.testing'),
+    t('roadmap.filters.architecture'),
+    t('projectXp.intro.stage.laboratory'),
+    t('projectXp.intro.stage.deployReady'),
+  ] as const;
+}
 
 function formatStatus(status: string) {
   return status.replaceAll('_', ' ');
@@ -162,24 +188,24 @@ function pickPreviewFile(files: readonly GeneratedProjectFileEntry[]) {
     ?? null;
 }
 
-function deriveCategory(project: Project) {
+function deriveCategory(t: Translator, project: Project) {
   const raw = [project.archetype_id, ...project.selected_business_modules, project.blueprint_snapshot.project_requirements?.business_context ?? '']
     .join(' ')
     .toLowerCase();
-  if (includesAny(raw, ['clinic', 'medical', 'health', 'hospital', 'pacient'])) return 'Saude / Operacao Clinica';
-  if (includesAny(raw, ['market', 'commerce', 'cart', 'order', 'delivery'])) return 'Marketplace / Comercio';
-  if (includesAny(raw, ['bank', 'finance', 'payment', 'pix', 'invoice'])) return 'Financas / Banco Digital';
-  if (includesAny(raw, ['erp', 'stock', 'inventory', 'warehouse'])) return 'ERP / Operacao';
-  return project.archetype_id || 'Produto digital';
+  if (includesAny(raw, ['clinic', 'medical', 'health', 'hospital', 'pacient'])) return t('projectXp.category.health');
+  if (includesAny(raw, ['market', 'commerce', 'cart', 'order', 'delivery'])) return t('projectXp.category.marketplace');
+  if (includesAny(raw, ['bank', 'finance', 'payment', 'pix', 'invoice'])) return t('projectXp.category.finance');
+  if (includesAny(raw, ['erp', 'stock', 'inventory', 'warehouse'])) return t('projectXp.category.erp');
+  return project.archetype_id || t('projectXp.category.digitalProduct');
 }
 
-function domainSignature(project: Project) {
-  const category = deriveCategory(project).toLowerCase();
-  if (category.includes('saude')) return { title: 'clinical command surface', chips: ['agenda', 'pacientes', 'prontuario', 'triagem'] };
-  if (category.includes('marketplace')) return { title: 'commerce operations grid', chips: ['catalogo', 'pedidos', 'checkout', 'entrega'] };
-  if (category.includes('financas')) return { title: 'financial trust layer', chips: ['contas', 'pix', 'extratos', 'risco'] };
-  if (category.includes('erp')) return { title: 'enterprise resource map', chips: ['estoque', 'pedidos', 'relatorios', 'faturamento'] };
-  return { title: 'software architecture field', chips: ['frontend', 'backend', 'dados', 'deploy'] };
+function domainSignature(t: Translator, project: Project) {
+  const category = deriveCategory(t, project).toLowerCase();
+  if (category.includes(t('projectXp.category.health').toLowerCase())) return { title: t('projectXp.signature.health.title'), chips: [t('projectXp.signature.chip.agenda'), t('projectXp.signature.chip.patients'), t('projectXp.signature.chip.records'), t('projectXp.signature.chip.triage')] };
+  if (category.includes(t('projectXp.category.marketplace').toLowerCase())) return { title: t('projectXp.signature.marketplace.title'), chips: [t('projectXp.signature.chip.catalog'), t('projectXp.signature.chip.orders'), t('projectXp.signature.chip.checkout'), t('projectXp.signature.chip.delivery')] };
+  if (category.includes(t('projectXp.category.finance').toLowerCase())) return { title: t('projectXp.signature.finance.title'), chips: [t('projectXp.signature.chip.accounts'), t('projectXp.signature.chip.pix'), t('projectXp.signature.chip.statements'), t('projectXp.signature.chip.risk')] };
+  if (category.includes(t('projectXp.category.erp').toLowerCase())) return { title: t('projectXp.signature.erp.title'), chips: [t('projectXp.signature.chip.stock'), t('projectXp.signature.chip.orders'), t('projectXp.signature.chip.reports'), t('projectXp.signature.chip.billing')] };
+  return { title: t('projectXp.signature.default.title'), chips: [t('projectXp.signature.chip.frontend'), t('projectXp.signature.chip.backend'), t('projectXp.signature.chip.data'), t('projectXp.signature.chip.deploy')] };
 }
 
 function deriveMetrics(project: Project, filesData?: GeneratedProjectFilesResponse | null): DerivedMetrics {
@@ -200,7 +226,7 @@ function deriveMetrics(project: Project, filesData?: GeneratedProjectFilesRespon
   };
 }
 
-function technologyVerification(project: Project, filesData?: GeneratedProjectFilesResponse | null, quality?: GeneratedProjectQualityResponse | null): VerificationItem[] {
+function technologyVerification(t: Translator, project: Project, filesData?: GeneratedProjectFilesResponse | null, quality?: GeneratedProjectQualityResponse | null): VerificationItem[] {
   const files = filesData?.files ?? [];
   const filePaths = files.map((file) => file.relative_path);
   const checks = quality?.checks ?? [];
@@ -211,50 +237,50 @@ function technologyVerification(project: Project, filesData?: GeneratedProjectFi
   const stack = project.technology_graph;
   const languageExt = stack.language.id === 'typescript' ? '.ts' : stack.language.id === 'python' ? '.py' : stack.language.id === 'java' ? '.java' : `.${stack.language.id}`;
   const items: VerificationItem[] = [
-    { id: stack.language.id, label: stack.language.name, group: 'Stack', evidence: fromFiles([languageExt]), status: 'pending' },
-    { id: stack.framework.id, label: stack.framework.name, group: 'Stack', evidence: [...fromFiles([stack.framework.id, stack.framework.name, 'package.json', 'pom.xml', 'requirements.txt']), ...evidenceFromCheck(stack.framework.id)], status: 'pending' },
-    { id: 'docker', label: 'Docker', group: 'DevOps', evidence: fromFiles(['Dockerfile', 'docker-compose', 'compose.yaml']), status: 'pending' },
-    { id: 'tests', label: 'Tests', group: 'Quality', evidence: fromFiles(['test', 'spec', '__tests__']), status: 'pending' },
-    { id: 'openapi', label: 'OpenAPI / Swagger', group: 'API', evidence: fromFiles(['openapi', 'swagger']), status: 'pending' },
-    ...project.selected_capabilities.map((capability) => ({ id: capability, label: capability, group: 'Capabilities', evidence: fromFiles([capability, capability.replaceAll('_', '-')]), status: 'pending' as VerificationStatus })),
-    ...project.blueprint_snapshot.infrastructure_profile.selected_component_ids.map((component) => ({ id: component, label: component, group: 'Infrastructure', evidence: filePaths.filter((path) => includesAny(path, [component])).slice(0, 6), status: 'pending' as VerificationStatus })),
+    { id: stack.language.id, label: stack.language.name, group: t('projectXp.verificationGroup.stack'), evidence: fromFiles([languageExt]), status: 'pending' },
+    { id: stack.framework.id, label: stack.framework.name, group: t('projectXp.verificationGroup.stack'), evidence: [...fromFiles([stack.framework.id, stack.framework.name, 'package.json', 'pom.xml', 'requirements.txt']), ...evidenceFromCheck(stack.framework.id)], status: 'pending' },
+    { id: 'docker', label: 'Docker', group: t('projectXp.verificationGroup.devops'), evidence: fromFiles(['Dockerfile', 'docker-compose', 'compose.yaml']), status: 'pending' },
+    { id: 'tests', label: t('projectXp.verificationLabel.tests'), group: t('projectXp.verificationGroup.quality'), evidence: fromFiles(['test', 'spec', '__tests__']), status: 'pending' },
+    { id: 'openapi', label: 'OpenAPI / Swagger', group: t('projectXp.verificationGroup.api'), evidence: fromFiles(['openapi', 'swagger']), status: 'pending' },
+    ...project.selected_capabilities.map((capability) => ({ id: capability, label: capability, group: t('projectXp.verificationGroup.capabilities'), evidence: fromFiles([capability, capability.replaceAll('_', '-')]), status: 'pending' as VerificationStatus })),
+    ...project.blueprint_snapshot.infrastructure_profile.selected_component_ids.map((component) => ({ id: component, label: component, group: t('projectXp.verificationGroup.infrastructure'), evidence: filePaths.filter((path) => includesAny(path, [component])).slice(0, 6), status: 'pending' as VerificationStatus })),
   ];
   return items.map((item) => ({ ...item, status: status(item.evidence) }));
 }
 
-function buildTwin(project: Project, filesData?: GeneratedProjectFilesResponse | null): TwinNode[] {
+function buildTwin(t: Translator, project: Project, filesData?: GeneratedProjectFilesResponse | null): TwinNode[] {
   const files = filesData?.files ?? [];
   const infra = project.blueprint_snapshot.infrastructure_profile.selected_component_ids;
   const has = (needles: readonly string[]) => fileEvidence(files, needles);
   const nodes: TwinNode[] = [
-    { id: 'client', label: 'Cliente', kind: 'client', technology: 'Browser / Usuario', responsibility: 'Entrada de uso do produto.', dependencies: ['frontend'], files: [], logs: ['Sem log de cliente conectado.'] },
-    { id: 'frontend', label: 'Frontend', kind: 'frontend', technology: project.technology_graph.framework.name, responsibility: 'Interface, rotas e experiencia do usuario.', dependencies: ['backend'], files: has(['app/', 'pages/', 'components/', 'src/']), logs: ['Logs frontend ainda nao conectados.'] },
-    { id: 'gateway', label: 'Gateway', kind: 'gateway', technology: 'HTTP/API boundary', responsibility: 'Contrato entre UI e servicos.', dependencies: ['backend'], files: has(['route', 'router', 'controller', 'api']), logs: ['Nenhuma fonte de gateway configurada.'] },
-    { id: 'backend', label: 'Backend', kind: 'backend', technology: project.technology_graph.runtime.name, responsibility: 'Regras, casos de uso e persistencia.', dependencies: infra, files: has(['service', 'controller', 'repository', 'main.', 'app.']), logs: ['Logs backend ainda nao conectados.'] },
+    { id: 'client', label: t('projectXp.twin.label.client'), kind: 'client', technology: t('projectXp.twin.tech.browserUser'), responsibility: t('projectXp.twin.responsibility.client'), dependencies: ['frontend'], files: [], logs: [t('projectXp.twin.log.client')] },
+    { id: 'frontend', label: t('projectXp.twin.label.frontend'), kind: 'frontend', technology: project.technology_graph.framework.name, responsibility: t('projectXp.twin.responsibility.frontend'), dependencies: ['backend'], files: has(['app/', 'pages/', 'components/', 'src/']), logs: [t('projectXp.twin.log.frontend')] },
+    { id: 'gateway', label: t('projectXp.twin.label.gateway'), kind: 'gateway', technology: t('projectXp.twin.tech.httpBoundary'), responsibility: t('projectXp.twin.responsibility.gateway'), dependencies: ['backend'], files: has(['route', 'router', 'controller', 'api']), logs: [t('projectXp.twin.log.gateway')] },
+    { id: 'backend', label: t('projectXp.twin.label.backend'), kind: 'backend', technology: project.technology_graph.runtime.name, responsibility: t('projectXp.twin.responsibility.backend'), dependencies: infra, files: has(['service', 'controller', 'repository', 'main.', 'app.']), logs: [t('projectXp.twin.log.backend')] },
   ];
-  if (infra.some((item) => includesAny(item, ['redis', 'cache']))) nodes.push({ id: 'redis', label: 'Redis', kind: 'cache', technology: 'Redis', responsibility: 'Cache, sessoes ou filas leves.', dependencies: ['backend'], files: has(['redis']), logs: ['Redis nao possui log conectado.'] });
-  if (infra.some((item) => includesAny(item, ['rabbit', 'kafka', 'queue', 'sqs']))) nodes.push({ id: 'queue', label: 'Fila', kind: 'queue', technology: infra.find((item) => includesAny(item, ['rabbit', 'kafka', 'queue', 'sqs'])) ?? 'Queue', responsibility: 'Processamento assincrono.', dependencies: ['backend'], files: has(['queue', 'rabbit', 'kafka']), logs: ['Mensageria nao possui log conectado.'] });
+  if (infra.some((item) => includesAny(item, ['redis', 'cache']))) nodes.push({ id: 'redis', label: t('projectXp.twin.label.redis'), kind: 'cache', technology: 'Redis', responsibility: t('projectXp.twin.responsibility.redis'), dependencies: ['backend'], files: has(['redis']), logs: [t('projectXp.twin.log.redis')] });
+  if (infra.some((item) => includesAny(item, ['rabbit', 'kafka', 'queue', 'sqs']))) nodes.push({ id: 'queue', label: t('projectXp.twin.label.queue'), kind: 'queue', technology: infra.find((item) => includesAny(item, ['rabbit', 'kafka', 'queue', 'sqs'])) ?? t('projectXp.twin.tech.queueFallback'), responsibility: t('projectXp.twin.responsibility.queue'), dependencies: ['backend'], files: has(['queue', 'rabbit', 'kafka']), logs: [t('projectXp.twin.log.queue')] });
   const database = infra.find((item) => includesAny(item, ['postgres', 'mysql', 'sqlite', 'mongo', 'database', 'db']));
-  if (database) nodes.push({ id: 'database', label: 'Banco', kind: 'database', technology: database, responsibility: 'Persistencia transacional.', dependencies: ['backend'], files: has(['migration', 'schema', 'entity', database]), logs: ['Logs de banco nao conectados.'] });
+  if (database) nodes.push({ id: 'database', label: t('projectXp.twin.label.database'), kind: 'database', technology: database, responsibility: t('projectXp.twin.responsibility.database'), dependencies: ['backend'], files: has(['migration', 'schema', 'entity', database]), logs: [t('projectXp.twin.log.database')] });
   const storage = infra.find((item) => includesAny(item, ['storage', 's3', 'blob']));
-  if (storage) nodes.push({ id: 'storage', label: 'Storage', kind: 'storage', technology: storage, responsibility: 'Arquivos e objetos.', dependencies: ['backend'], files: has(['storage', 's3', 'blob']), logs: ['Storage nao possui log conectado.'] });
+  if (storage) nodes.push({ id: 'storage', label: t('projectXp.twin.label.storage'), kind: 'storage', technology: storage, responsibility: t('projectXp.twin.responsibility.storage'), dependencies: ['backend'], files: has(['storage', 's3', 'blob']), logs: [t('projectXp.twin.log.storage')] });
   const cloud = infra.find((item) => includesAny(item, ['aws', 'azure', 'gcp', 'vercel', 'netlify', 'railway', 'render', 'fly']));
-  nodes.push({ id: 'cloud', label: 'Cloud', kind: 'cloud', technology: cloud ?? 'Nao definido', responsibility: 'Hospedagem e entrega.', dependencies: ['frontend', 'backend'], files: has(['vercel', 'netlify', 'railway', 'render', 'Dockerfile', 'compose']), logs: ['Cloud logs aguardam integracao.'] });
+  nodes.push({ id: 'cloud', label: t('projectXp.twin.label.cloud'), kind: 'cloud', technology: cloud ?? t('projectXp.twin.tech.undefined'), responsibility: t('projectXp.twin.responsibility.cloud'), dependencies: ['frontend', 'backend'], files: has(['vercel', 'netlify', 'railway', 'render', 'Dockerfile', 'compose']), logs: [t('projectXp.twin.log.cloud')] });
   return nodes;
 }
 
-function panelGroups(project: Project, quality?: GeneratedProjectQualityResponse | null) {
+function panelGroups(t: Translator, project: Project, quality?: GeneratedProjectQualityResponse | null) {
   const checks = quality?.checks ?? [];
   return [
-    { title: 'Arquitetura', icon: Layers3, items: [project.technology_graph.architecture.name, `${project.selected_business_modules.length} modulos`, `${project.selected_capabilities.length} capacidades`] },
-    { title: 'Seguranca', icon: ShieldCheck, items: quality ? [`${quality.security_findings.length} achados`, `${quality.missing_files.length} arquivos ausentes`] : ['Quality gate ainda nao executado'] },
-    { title: 'Performance', icon: Activity, items: ['Benchmark nao configurado', 'P95/P99 indisponiveis'] },
-    { title: 'Cloud', icon: Cloud, items: project.blueprint_snapshot.infrastructure_profile.selected_component_ids },
-    { title: 'Banco', icon: Database, items: project.blueprint_snapshot.infrastructure_profile.selected_component_ids.filter((item) => includesAny(item, ['postgres', 'mysql', 'sqlite', 'mongo', 'database', 'db'])) },
-    { title: 'Frontend', icon: Monitor, items: [project.technology_graph.framework.name, `${project.selected_endpoints.length} endpoints planejados`] },
-    { title: 'Backend', icon: Server, items: [project.technology_graph.runtime.name, ...checks.filter((check) => check.category === 'structure').slice(0, 2).map((check) => check.label)] },
-    { title: 'DevOps', icon: TerminalSquare, items: ['Download seguro', 'Git export quando provider conectado'] },
-    { title: 'Observabilidade', icon: Activity, items: project.selected_capabilities.filter((capability) => includesAny(capability, ['observability', 'logs', 'metrics'])) },
+    { title: t('projectXp.panelTitle.architecture'), icon: Layers3, items: [project.technology_graph.architecture.name, t('projectXp.panelItem.modules', { count: project.selected_business_modules.length }), t('projectXp.panelItem.capabilities', { count: project.selected_capabilities.length })] },
+    { title: t('projectXp.panelTitle.security'), icon: ShieldCheck, items: quality ? [t('projectXp.panelItem.securityFindings', { count: quality.security_findings.length }), t('projectXp.panelItem.missingFiles', { count: quality.missing_files.length })] : [t('projectXp.panelItem.gateNotRun')] },
+    { title: t('projectXp.panelTitle.performance'), icon: Activity, items: [t('projectXp.panelItem.benchmarkNotConfigured'), t('projectXp.panelItem.p95Unavailable')] },
+    { title: t('projectXp.panelTitle.cloud'), icon: Cloud, items: project.blueprint_snapshot.infrastructure_profile.selected_component_ids },
+    { title: t('projectXp.panelTitle.database'), icon: Database, items: project.blueprint_snapshot.infrastructure_profile.selected_component_ids.filter((item) => includesAny(item, ['postgres', 'mysql', 'sqlite', 'mongo', 'database', 'db'])) },
+    { title: t('projectXp.panelTitle.frontend'), icon: Monitor, items: [project.technology_graph.framework.name, t('projectXp.panelItem.endpointsPlanned', { count: project.selected_endpoints.length })] },
+    { title: t('projectXp.panelTitle.backend'), icon: Server, items: [project.technology_graph.runtime.name, ...checks.filter((check) => check.category === 'structure').slice(0, 2).map((check) => check.label)] },
+    { title: t('projectXp.panelTitle.devops'), icon: TerminalSquare, items: [t('projectXp.panelItem.secureDownload'), t('projectXp.panelItem.gitExport')] },
+    { title: t('projectXp.panelTitle.observability'), icon: Activity, items: project.selected_capabilities.filter((capability) => includesAny(capability, ['observability', 'logs', 'metrics'])) },
   ];
 }
 
@@ -268,10 +294,10 @@ function statusTone(status: VerificationStatus): BadgeTone {
   return 'warning';
 }
 
-function verificationLabel(status: VerificationStatus) {
-  if (status === 'verified') return 'Verificado';
-  if (status === 'missing') return 'Nao encontrado';
-  return 'Aguardando arquivos';
+function verificationLabel(t: Translator, status: VerificationStatus) {
+  if (status === 'verified') return t('projectXp.verification.verified');
+  if (status === 'missing') return t('projectXp.verification.notFound');
+  return t('projectXp.verification.awaitingFiles');
 }
 
 export function ProjectExperienceV2({ projectId }: { readonly projectId: string | null }) {
@@ -293,6 +319,7 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
   const [qualityStarted, setQualityStarted] = useState(false);
   const [explanationOpen, setExplanationOpen] = useState(false);
 
+  const DEVICE_MODES = useMemo(() => buildDeviceModes(t), [t]);
   const generatedFiles = useMemo(() => generatedFilesQuery.data?.files ?? [], [generatedFilesQuery.data?.files]);
   const selectedPreview = useGeneratedFileContent(projectId, selectedPath);
   const quality = qualityMutation.data;
@@ -348,18 +375,18 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
 
   const derived = useMemo(() => {
     if (!project) return null;
-    const twin = buildTwin(project, generatedFilesQuery.data);
+    const twin = buildTwin(t, project, generatedFilesQuery.data);
     return {
-      category: deriveCategory(project),
-      signature: domainSignature(project),
+      category: deriveCategory(t, project),
+      signature: domainSignature(t, project),
       metrics: deriveMetrics(project, generatedFilesQuery.data),
-      verification: technologyVerification(project, generatedFilesQuery.data, quality),
+      verification: technologyVerification(t, project, generatedFilesQuery.data, quality),
       twin,
       selectedTwin: twin.find((node) => node.id === selectedTwinId) ?? twin[0],
-      panels: panelGroups(project, quality),
+      panels: panelGroups(t, project, quality),
       docs: documentationFiles(generatedFilesQuery.data),
     };
-  }, [generatedFilesQuery.data, project, quality, selectedTwinId]);
+  }, [generatedFilesQuery.data, project, quality, selectedTwinId, t]);
 
   if (projectQuery.isLoading) return <CardLoading className="h-96" />;
   if (projectQuery.isError || !project || !derived) {
@@ -378,7 +405,7 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
       <ProjectHeroV2 project={project} category={derived.category} signature={derived.signature} generated={generated} deployReady={deployReady} quality={quality} />
 
       <section id="live-preview" className="scroll-mt-24 space-y-4">
-        <SectionTitle eyebrow="01" title={t('projectXp.preview.title')} description="Preview seguro dos arquivos realmente gerados. Quando nao ha runtime de preview, a pagina mostra o artefato indexado em vez de simular uma aplicacao." />
+        <SectionTitle eyebrow="01" title={t('projectXp.preview.title')} description={t('projectXp.preview.descriptionFull')} />
         <Card className="overflow-hidden p-0">
           <div className="flex flex-col gap-3 border-b border-[color:var(--border)] p-4 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap gap-2">
@@ -394,15 +421,15 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
             <Badge tone={generated ? 'success' : 'warning'}>{generated ? t('projectXp.preview.filesIndexed', { count: generatedFiles.length }) : t('projectXp.preview.notGenerated')}</Badge>
           </div>
           {filesUnavailable ? (
-            <InlineState title={t('projectXp.preview.unavailable')} detail={getApiErrorMessage(generatedFilesQuery.error, 'Arquivos gerados nao foram encontrados.')} />
+            <InlineState title={t('projectXp.preview.unavailable')} detail={getApiErrorMessage(generatedFilesQuery.error, t('projectXp.preview.filesNotFound'))} />
           ) : generated ? (
             <div className="grid gap-0 xl:grid-cols-[300px_minmax(0,1fr)]">
               <FileRail files={generatedFiles} selectedPath={selectedPath} onSelect={setSelectedPath} />
               <div className="bg-[#05070a] p-4 md:p-8">
                 <div className={cn('mx-auto overflow-hidden rounded-[28px] border border-white/15 bg-black shadow-2xl transition-all', previewFrameClass)}>
                   <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-4 py-2 text-xs ds-text-secondary">
-                    <span>{selectedPath ?? 'sem arquivo selecionado'}</span>
-                    <span>{selectedPreview.data?.content_type ?? 'loading'}</span>
+                    <span>{selectedPath ?? t('projectXp.preview.noFileSelected')}</span>
+                    <span>{selectedPreview.data?.content_type ?? t('projectXp.preview.loadingContentType')}</span>
                   </div>
                   {selectedPreview.isLoading ? (
                     <div className="grid h-full place-items-center text-sm ds-text-muted">{t('projectXp.preview.loading')}</div>
@@ -415,7 +442,7 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
               </div>
             </div>
           ) : (
-            <InlineState title={t('projectXp.preview.noIndex')} detail="Gere o projeto ou conecte um artefato real para habilitar desktop, tablet e mobile." />
+            <InlineState title={t('projectXp.preview.noIndex')} detail={t('projectXp.preview.noIndexDetail')} />
           )}
         </Card>
       </section>
@@ -431,24 +458,24 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
 
       <section className="grid gap-5 xl:grid-cols-[1fr_0.85fr]">
         <div className="space-y-5">
-          <SectionTitle eyebrow="02" title={t('projectXp.tech.title')} description="Matriz automatica baseada nos arquivos gerados e no quality gate. Ausencias ficam visiveis." />
+          <SectionTitle eyebrow="02" title={t('projectXp.tech.title')} description={t('projectXp.tech.descriptionFull')} />
           <Card className="space-y-4"><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{derived.verification.map((item) => <VerificationRow key={`${item.group}-${item.id}`} item={item} />)}</div></Card>
         </div>
         <div className="space-y-5">
-          <SectionTitle eyebrow="03" title={t('projectXp.health.title')} description="Indicadores derivados. Sem score manual." />
+          <SectionTitle eyebrow="03" title={t('projectXp.health.title')} description={t('projectXp.health.descriptionFull')} />
           <Card className="grid gap-3 sm:grid-cols-2">
-            <Metric label="Arquivos" value={derived.metrics.files} />
-            <Metric label="Endpoints" value={derived.metrics.endpoints} />
-            <Metric label="Warnings" value={quality?.warnings.length ?? 'nao verificado'} />
-            <Metric label="Quality checks" value={quality?.checks.length ?? 'nao verificado'} />
-            <Metric label="Testes" value={derived.metrics.routes || 'nao detectado'} />
-            <Metric label="Containers" value={derived.metrics.containers} />
+            <Metric label={t('projectXp.metric.files')} value={derived.metrics.files} />
+            <Metric label={t('projectXp.metric.endpoints')} value={derived.metrics.endpoints} />
+            <Metric label={t('projectXp.metric.warnings')} value={quality?.warnings.length ?? t('projectXp.metric.notChecked')} />
+            <Metric label={t('projectXp.metric.qualityChecks')} value={quality?.checks.length ?? t('projectXp.metric.notChecked')} />
+            <Metric label={t('projectXp.metric.tests')} value={derived.metrics.routes || t('projectXp.metric.notDetected')} />
+            <Metric label={t('projectXp.metric.containers')} value={derived.metrics.containers} />
           </Card>
         </div>
       </section>
 
       <section className="space-y-5">
-        <SectionTitle eyebrow="04" title={t('projectXp.arch.title')} description="Digital twin clicavel derivado do blueprint e dos arquivos indexados." />
+        <SectionTitle eyebrow="04" title={t('projectXp.arch.title')} description={t('projectXp.arch.descriptionFull')} />
         <Card className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="overflow-x-auto pb-3">
             <div className="flex min-w-[820px] items-center gap-3">
@@ -475,23 +502,23 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
       </section>
 
       <section className="space-y-5">
-        <SectionTitle eyebrow="05" title={t('projectXp.dashboard.title')} description="Paineis compactos por dominio, substituindo a pagina infinita de cards." />
+        <SectionTitle eyebrow="05" title={t('projectXp.dashboard.title')} description={t('projectXp.dashboard.descriptionFull')} />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{derived.panels.map((panel) => <DashboardPanel key={panel.title} {...panel} />)}</div>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Card className="space-y-5 border-[color-mix(in_srgb,var(--accent)_30%,var(--border))]">
-          <SectionTitle eyebrow="06" title={t('projectXp.lab.title')} description="A continuacao natural da jornada de engenharia." compact />
+          <SectionTitle eyebrow="06" title={t('projectXp.lab.title')} description={t('projectXp.lab.descriptionFull')} compact />
           <p className="text-sm leading-6 text-[color:var(--muted)]">{t('projectXp.lab.description')}</p>
           <LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare} large>{t('projectXp.lab.open')}</LinkButton>
         </Card>
         <Card id="deploy" className="space-y-5 scroll-mt-24">
-          <SectionTitle eyebrow="07" title={t('projectXp.deploy.title')} description="Somente provedores suportados aparecem habilitados." compact />
+          <SectionTitle eyebrow="07" title={t('projectXp.deploy.title')} description={t('projectXp.deploy.descriptionFull')} compact />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <DeployItem label="GitHub" ready={githubConnection.data?.status === 'connected'} detail={githubConnection.data?.status ?? 'conectar em Settings'} />
-            <DeployItem label="GitLab" ready={gitlabConnection.data?.status === 'connected'} detail={gitlabConnection.data?.status ?? 'conectar em Settings'} />
-            <DeployItem label="Docker" ready={derived.metrics.containers > 0} detail={derived.metrics.containers > 0 ? 'artefato detectado' : 'Dockerfile ausente'} />
-            {['AWS', 'Azure', 'Google', 'Railway', 'Render', 'Fly', 'Vercel', 'Netlify'].map((provider) => <DeployItem key={provider} label={provider} ready={derived.verification.some((item) => item.id.toLowerCase().includes(provider.toLowerCase()) && item.status === 'verified')} detail="aguardando evidencia" />)}
+            <DeployItem label={t('projectXp.deployItem.github')} ready={githubConnection.data?.status === 'connected'} detail={githubConnection.data?.status ?? t('projectXp.deploy.connectInSettings')} />
+            <DeployItem label={t('projectXp.deployItem.gitlab')} ready={gitlabConnection.data?.status === 'connected'} detail={gitlabConnection.data?.status ?? t('projectXp.deploy.connectInSettings')} />
+            <DeployItem label={t('projectXp.deployItem.docker')} ready={derived.metrics.containers > 0} detail={derived.metrics.containers > 0 ? t('projectXp.deploy.artifactDetected') : t('projectXp.deploy.dockerfileMissing')} />
+            {['AWS', 'Azure', 'Google', 'Railway', 'Render', 'Fly', 'Vercel', 'Netlify'].map((provider) => <DeployItem key={provider} label={provider} ready={derived.verification.some((item) => item.id.toLowerCase().includes(provider.toLowerCase()) && item.status === 'verified')} detail={t('projectXp.deploy.awaitingEvidence')} />)}
           </div>
           <div className="flex flex-wrap gap-3">
             <Button type="button" variant="primary" disabled={!generated || prepareDownloadMutation.isPending} onClick={() => prepareDownloadMutation.mutate()}><Download className="h-4 w-4" aria-hidden />{t('projectXp.deploy.prepareZip')}</Button>
@@ -501,12 +528,12 @@ export function ProjectExperienceV2({ projectId }: { readonly projectId: string 
       </section>
 
       <section className="grid gap-5 xl:grid-cols-2">
-        <Card className="space-y-5"><SectionTitle eyebrow="08" title={t('projectXp.docs.title')} description="Documentos detectados no projeto gerado." compact />{derived.docs.length ? <FileList files={derived.docs} /> : <InlineState title={t('projectXp.docs.notFound')} detail="README, OpenAPI, ADR, diagrams ou changelog nao foram encontrados nos artefatos indexados." compact />}</Card>
-        <Card className="space-y-5"><SectionTitle eyebrow="09" title={t('projectXp.logs.title')} description="Eventos reais disponiveis e fontes ainda nao conectadas." compact /><LogLine label="Project created" value={project.created_at} /><LogLine label="Project updated" value={project.updated_at} /><LogLine label="File index" value={generated ? `${generatedFiles.length} arquivos` : 'sem arquivos indexados'} /><LogLine label="Quality gate" value={quality ? (quality.passed ? 'passed' : 'failed') : 'nao executado'} /><p className="text-xs text-[color:var(--muted)]">{t('projectXp.logs.pendingSources')}</p></Card>
+        <Card className="space-y-5"><SectionTitle eyebrow="08" title={t('projectXp.docs.title')} description={t('projectXp.docs.descriptionFull')} compact />{derived.docs.length ? <FileList files={derived.docs} /> : <InlineState title={t('projectXp.docs.notFound')} detail={t('projectXp.docs.notFoundDetail')} compact />}</Card>
+        <Card className="space-y-5"><SectionTitle eyebrow="09" title={t('projectXp.logs.title')} description={t('projectXp.logs.descriptionFull')} compact /><LogLine label={t('projectXp.logs.projectCreated')} value={project.created_at} /><LogLine label={t('projectXp.logs.projectUpdated')} value={project.updated_at} /><LogLine label={t('projectXp.logs.fileIndex')} value={generated ? t('projectXp.logs.filesCount', { count: generatedFiles.length }) : t('projectXp.logs.noFilesIndexed')} /><LogLine label={t('projectXp.logs.qualityGate')} value={quality ? (quality.passed ? t('projectXp.logs.gatePassed') : t('projectXp.logs.gateFailed')) : t('projectXp.logs.gateNotRun')} /><p className="text-xs text-[color:var(--muted)]">{t('projectXp.logs.pendingSources')}</p></Card>
       </section>
 
       <Card className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3"><SectionTitle eyebrow="AI" title={t('projectXp.ai.title')} description="Sem chave configurada nesta tela, a explicacao usa modo deterministico e declara isso." compact /><Button type="button" variant="secondary" onClick={() => setExplanationOpen((value) => !value)}><Bot className="h-4 w-4" />{t('projectXp.ai.explain')}</Button></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><SectionTitle eyebrow="AI" title={t('projectXp.ai.title')} description={t('projectXp.ai.descriptionFull')} compact /><Button type="button" variant="secondary" onClick={() => setExplanationOpen((value) => !value)}><Bot className="h-4 w-4" />{t('projectXp.ai.explain')}</Button></div>
         {explanationOpen ? <DeterministicExplanation project={project} verification={derived.verification} /> : null}
       </Card>
 
@@ -531,7 +558,7 @@ function ProjectHeroV2({ project, category, signature, generated, deployReady, q
         <div className="space-y-6">
           <div className="flex flex-wrap gap-2"><Badge tone="accent">{category}</Badge><Badge tone={project.status === 'generated' ? 'success' : 'warning'}>{formatStatus(project.status)}</Badge><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? t('projectXp.hero.deployReady') : t('projectXp.hero.deployPending')}</Badge></div>
           <div><p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--accent)]">{t('projectXp.hero.eyebrow')}</p><h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-[color:var(--text)] md:text-6xl">{project.project_name}</h1><p className="mt-4 max-w-2xl text-base leading-7 ds-text-secondary">{t('projectXp.hero.description')}</p></div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><HeroDatum label="Stack" value={`${project.technology_graph.language.name} / ${project.technology_graph.framework.name}`} /><HeroDatum label="Build" value={quality ? (quality.passed ? 'validado' : 'falhou') : generated ? 'verificando' : 'sem artefatos'} /><HeroDatum label="Confidence" value="nao informado" /><HeroDatum label="Empresa" value="nao informada" /></div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><HeroDatum label={t('projectXp.hero.stack')} value={`${project.technology_graph.language.name} / ${project.technology_graph.framework.name}`} /><HeroDatum label={t('projectXp.hero.build')} value={quality ? (quality.passed ? t('projectXp.hero.buildValidated') : t('projectXp.hero.buildFailed')) : generated ? t('projectXp.hero.buildChecking') : t('projectXp.hero.buildNoArtifacts')} /><HeroDatum label={t('projectXp.hero.confidence')} value={t('projectXp.hero.notInformedM')} /><HeroDatum label={t('projectXp.hero.company')} value={t('projectXp.hero.notInformedF')} /></div>
           <div className="flex flex-wrap gap-3"><AnchorButton href="#live-preview" icon={Monitor}>{t('projectXp.hero.openPreview')}</AnchorButton><AnchorButton href="#code" icon={Code2}>{t('projectXp.hero.openCode')}</AnchorButton><LinkButton href={`/engineering-laboratory?projectId=${project.project_id}`} icon={TerminalSquare}>{t('projectXp.lab.open')}</LinkButton><LinkButton href={`/meta-factory?projectId=${project.project_id}`} icon={Layers3}>{t('projectXp.hero.openMetaFactory')}</LinkButton><LinkButton href={`/change-requests?projectId=${project.project_id}`} icon={GitPullRequestArrow}>{t('projectXp.hero.openChangeRequests')}</LinkButton><LinkButton href="/settings#integrations" icon={GitBranch}>{t('projectXp.hero.openGitHub')}</LinkButton><AnchorButton href="#deploy" icon={Rocket}>{t('projectXp.hero.openDeploy')}</AnchorButton></div>
         </div>
         <JourneyConsole project={project} generated={generated} deployReady={deployReady} />
@@ -542,7 +569,7 @@ function ProjectHeroV2({ project, category, signature, generated, deployReady, q
 
 function CinematicIntro({ projectName }: { readonly projectName: string }) {
   const { t } = useLocale();
-  return <div className="fixed inset-0 z-[100] grid place-items-center bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur-md"><div className="w-full max-w-xl space-y-5 px-6"><p className="text-center text-xs font-semibold uppercase tracking-[0.45em] text-[color:var(--accent)]">{t('projectXp.intro.engine')}</p><h2 className="text-center text-3xl font-semibold text-[color:var(--text)]">{t('projectXp.intro.loading')}</h2><p className="text-center text-sm ds-text-secondary">{projectName}</p><div className="space-y-2">{INTRO_STAGES.map((stage, index) => <div key={stage} className="grid grid-cols-[110px_1fr] items-center gap-3 text-xs ds-text-secondary"><span>{stage}</span><span className="h-2 overflow-hidden rounded-full bg-[color:var(--surface-3)]"><span className="block h-full rounded-full bg-[color:var(--accent)]" style={{ width: `${30 + index * 9}%` }} /></span></div>)}</div></div></div>;
+  return <div className="fixed inset-0 z-[100] grid place-items-center bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur-md"><div className="w-full max-w-xl space-y-5 px-6"><p className="text-center text-xs font-semibold uppercase tracking-[0.45em] text-[color:var(--accent)]">{t('projectXp.intro.engine')}</p><h2 className="text-center text-3xl font-semibold text-[color:var(--text)]">{t('projectXp.intro.loading')}</h2><p className="text-center text-sm ds-text-secondary">{projectName}</p><div className="space-y-2">{introStages(t).map((stage, index) => <div key={stage} className="grid grid-cols-[110px_1fr] items-center gap-3 text-xs ds-text-secondary"><span>{stage}</span><span className="h-2 overflow-hidden rounded-full bg-[color:var(--surface-3)]"><span className="block h-full rounded-full bg-[color:var(--accent)]" style={{ width: `${30 + index * 9}%` }} /></span></div>)}</div></div></div>;
 }
 
 function CinematicBackground({ signature }: { readonly signature: { title: string; chips: readonly string[] } }) {
@@ -551,7 +578,7 @@ function CinematicBackground({ signature }: { readonly signature: { title: strin
 
 function JourneyConsole({ project, generated, deployReady }: { readonly project: Project; readonly generated: boolean; readonly deployReady: boolean }) {
   const { t } = useLocale();
-  return <div className="rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-5 backdrop-blur"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[0.28em] ds-text-secondary">{t('projectXp.journey.title')}</p><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? t('projectXp.journey.deployReady') : t('projectXp.journey.inProgress')}</Badge></div><div className="mt-5 space-y-3">{deriveJourneySteps(project, generated, deployReady).map(([label, state]) => <div key={label} className="flex items-center gap-3"><span className={cn('grid h-7 w-7 place-items-center rounded-full border', state === 'done' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : state === 'current' ? 'border-[color:var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'border-[color:var(--border)] ds-text-muted')}>{state === 'done' ? <CheckCircle2 className="h-4 w-4" /> : state === 'current' ? <Activity className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}</span><span className="text-sm ds-text-primary">{label}</span></div>)}</div><div className="mt-5 grid grid-cols-2 gap-3 text-xs ds-text-secondary"><span>{t('projectXp.journey.readiness')} {formatStatus(project.readiness_status)}</span><span>{t('projectXp.journey.files')} {generated ? t('projectXp.journey.indexed') : t('projectXp.journey.pending')}</span></div></div>;
+  return <div className="rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-5 backdrop-blur"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-[0.28em] ds-text-secondary">{t('projectXp.journey.title')}</p><Badge tone={deployReady ? 'success' : 'warning'}>{deployReady ? t('projectXp.journey.deployReady') : t('projectXp.journey.inProgress')}</Badge></div><div className="mt-5 space-y-3">{deriveJourneySteps(t, project, generated, deployReady).map(([label, state]) => <div key={label} className="flex items-center gap-3"><span className={cn('grid h-7 w-7 place-items-center rounded-full border', state === 'done' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : state === 'current' ? 'border-[color:var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'border-[color:var(--border)] ds-text-muted')}>{state === 'done' ? <CheckCircle2 className="h-4 w-4" /> : state === 'current' ? <Activity className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}</span><span className="text-sm ds-text-primary">{label}</span></div>)}</div><div className="mt-5 grid grid-cols-2 gap-3 text-xs ds-text-secondary"><span>{t('projectXp.journey.readiness')} {formatStatus(project.readiness_status)}</span><span>{t('projectXp.journey.files')} {generated ? t('projectXp.journey.indexed') : t('projectXp.journey.pending')}</span></div></div>;
 }
 
 function HeroDatum({ label, value }: { readonly label: string; readonly value: string }) {
@@ -571,17 +598,21 @@ function LinkButton({ href, icon: Icon, children, large = false }: { readonly hr
 }
 
 function FileRail({ files, selectedPath, onSelect }: { readonly files: readonly GeneratedProjectFileEntry[]; readonly selectedPath: string | null; readonly onSelect: (path: string) => void }) {
-  return <div className="max-h-[540px] overflow-auto border-r border-[color:var(--border)] p-3">{files.map((file) => <button key={file.relative_path} type="button" onClick={() => onSelect(file.relative_path)} className={cn('focus-ring mb-1 flex w-full items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left text-xs', selectedPath === file.relative_path ? 'bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'text-[color:var(--muted)] hover:bg-white/5')} aria-label={`Selecionar arquivo gerado ${file.relative_path}`}><FileCode2 className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{file.relative_path}</span></button>)}</div>;
+  const { t } = useLocale();
+  return <div className="max-h-[540px] overflow-auto border-r border-[color:var(--border)] p-3">{files.map((file) => <button key={file.relative_path} type="button" onClick={() => onSelect(file.relative_path)} className={cn('focus-ring mb-1 flex w-full items-center gap-2 rounded-[var(--radius-md)] px-3 py-2 text-left text-xs', selectedPath === file.relative_path ? 'bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[color:var(--accent)]' : 'text-[color:var(--muted)] hover:bg-white/5')} aria-label={t('projectXp.fileRail.selectAria', { path: file.relative_path })}><FileCode2 className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{file.relative_path}</span></button>)}</div>;
 }
 
-const LIVE_PREVIEW_DEVICE_MODES = [
-  { id: 'desktop' as const, label: 'Desktop', icon: Monitor, width: '100%' },
-  { id: 'tablet' as const, label: 'Tablet', icon: Tablet, width: '768px' },
-  { id: 'mobile' as const, label: 'Celular', icon: Smartphone, width: '390px' },
-];
+function buildLivePreviewDeviceModes(t: Translator) {
+  return [
+    { id: 'desktop' as const, label: t('projectXp.device.desktop'), icon: Monitor, width: '100%' },
+    { id: 'tablet' as const, label: t('projectXp.device.tablet'), icon: Tablet, width: '768px' },
+    { id: 'mobile' as const, label: t('livePreview.device.mobile'), icon: Smartphone, width: '390px' },
+  ];
+}
 
 function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
   const { t } = useLocale();
+  const LIVE_PREVIEW_DEVICE_MODES = useMemo(() => buildLivePreviewDeviceModes(t), [t]);
   const [session, setSession] = useState<LivePreviewSession | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -638,7 +669,7 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
       setPath('/');
       setPathInput('/');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Falha ao iniciar o preview ao vivo.');
+      setError(caught instanceof Error ? caught.message : t('livePreview.errors.startFailed'));
     } finally {
       setBusy(false);
     }
@@ -690,7 +721,7 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
         return URL.createObjectURL(blob);
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Falha ao capturar screenshot.');
+      setError(caught instanceof Error ? caught.message : t('livePreview.errors.screenshotFailed'));
     } finally {
       setScreenshotBusy(false);
     }
@@ -830,7 +861,7 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
 
 function VerificationRow({ item }: { readonly item: VerificationItem }) {
   const { t } = useLocale();
-  return <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/[0.03] p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-xs uppercase tracking-wide text-[color:var(--muted-2)]">{item.group}</p><p className="mt-1 text-sm font-semibold text-[color:var(--text)]">{item.label}</p></div><Badge tone={statusTone(item.status)}>{verificationLabel(item.status)}</Badge></div>{item.evidence.length ? <p className="mt-2 truncate font-mono text-xs text-[color:var(--muted)]">{item.evidence[0]}</p> : <p className="mt-2 text-xs text-[color:var(--muted)]">{t('projectXp.verification.noEvidence')}</p>}</div>;
+  return <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-white/[0.03] p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-xs uppercase tracking-wide text-[color:var(--muted-2)]">{item.group}</p><p className="mt-1 text-sm font-semibold text-[color:var(--text)]">{item.label}</p></div><Badge tone={statusTone(item.status)}>{verificationLabel(t, item.status)}</Badge></div>{item.evidence.length ? <p className="mt-2 truncate font-mono text-xs text-[color:var(--muted)]">{item.evidence[0]}</p> : <p className="mt-2 text-xs text-[color:var(--muted)]">{t('projectXp.verification.noEvidence')}</p>}</div>;
 }
 
 function Metric({ label, value }: { readonly label: string; readonly value: string | number }) {
@@ -844,7 +875,7 @@ function TwinIcon({ kind }: { readonly kind: TwinNodeKind }) {
 
 function TwinDetails({ node }: { readonly node: TwinNode }) {
   const { t } = useLocale();
-  return <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/10 p-4"><p className="text-xs uppercase tracking-wide text-[color:var(--muted)]">{t('projectXp.twin.selectedNode')}</p><h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{node.label}</h3><p className="mt-2 text-sm text-[color:var(--muted)]">{node.responsibility}</p><KeyValue label="Tecnologia" value={node.technology} /><KeyValue label="Dependencias" value={node.dependencies.join(', ') || 'nenhuma'} /><KeyValue label="Arquivos" value={node.files.join(', ') || 'sem evidencia'} mono /><KeyValue label="Logs" value={node.logs.join(' ')} /></div>;
+  return <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/10 p-4"><p className="text-xs uppercase tracking-wide text-[color:var(--muted)]">{t('projectXp.twin.selectedNode')}</p><h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{node.label}</h3><p className="mt-2 text-sm text-[color:var(--muted)]">{node.responsibility}</p><KeyValue label={t('projectXp.twin.keyLabel.technology')} value={node.technology} /><KeyValue label={t('projectXp.twin.keyLabel.dependencies')} value={node.dependencies.join(', ') || t('projectXp.twin.none')} /><KeyValue label={t('projectXp.twin.keyLabel.files')} value={node.files.join(', ') || t('projectXp.twin.noEvidence')} mono /><KeyValue label={t('projectXp.twin.keyLabel.logs')} value={node.logs.join(' ')} /></div>;
 }
 
 function KeyValue({ label, value, mono = false }: { readonly label: string; readonly value: string; readonly mono?: boolean }) {
@@ -876,5 +907,5 @@ function InlineState({ title, detail, compact = false }: { readonly title: strin
 function DeterministicExplanation({ project, verification }: { readonly project: Project; readonly verification: readonly VerificationItem[] }) {
   const { t } = useLocale();
   const missing = verification.filter((item) => item.status === 'missing');
-  return <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/10 p-4"><Badge tone="warning">{t('projectXp.explain.deterministic')}</Badge><p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">{t('projectXp.explain.combinesPrefix')} {project.technology_graph.framework.name}, {project.technology_graph.runtime.name}, {project.technology_graph.architecture.name} — {t('projectXp.explain.combinesSuffix')}</p><div className="mt-4 grid gap-3 md:grid-cols-2"><KeyValue label="Padroes" value={[project.technology_graph.architecture.name, ...project.selected_capabilities].join(', ')} /><KeyValue label="Melhorias futuras" value={missing.length ? missing.map((item) => item.label).join(', ') : 'Nenhuma ausencia detectada pela verificacao atual.'} /></div></div>;
+  return <div className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-black/10 p-4"><Badge tone="warning">{t('projectXp.explain.deterministic')}</Badge><p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">{t('projectXp.explain.combinesPrefix')} {project.technology_graph.framework.name}, {project.technology_graph.runtime.name}, {project.technology_graph.architecture.name} — {t('projectXp.explain.combinesSuffix')}</p><div className="mt-4 grid gap-3 md:grid-cols-2"><KeyValue label={t('projectXp.explain.keyLabel.patterns')} value={[project.technology_graph.architecture.name, ...project.selected_capabilities].join(', ')} /><KeyValue label={t('projectXp.explain.keyLabel.futureImprovements')} value={missing.length ? missing.map((item) => item.label).join(', ') : t('projectXp.explain.noGapsDetected')} /></div></div>;
 }

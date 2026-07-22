@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.core.deps import CurrentUser
@@ -69,12 +71,8 @@ _PROVIDER_TEST_MODEL = {
     "anthropic": "claude-haiku-4-5",
     "openai": "gpt-4.1",
     "google": "gemini-2.5-flash",
-    "openrouter": "deepseek/deepseek-r1:free",
-    "deepseek": "deepseek-chat",
+    "deepseek": "deepseek-v4-flash",
     "groq": "llama-3.3-70b-versatile",
-    "ollama": "qwen2.5-coder:7b",
-    "lmstudio": "local-model",
-    "custom": "custom",
 }
 
 
@@ -89,14 +87,14 @@ def _safe_message(exc: Exception, api_key: str) -> str:
     return message
 
 
-@router.post("/user-ai-keys/test", response_model=TestKeyResponse)
-def test_user_ai_key(payload: TestKeyRequest, user: CurrentUser) -> TestKeyResponse:
-    """Validate a candidate key without storing it or echoing it back."""
+def _test_key(provider: str, api_key: str, *, model: str | None = None) -> TestKeyResponse:
     from app.engines.llm.base import LLMError
     from app.engines.llm.router import LLMRouter
     from app.schemas.llm import LLMRequest
 
-    model = _PROVIDER_TEST_MODEL[payload.provider]
+    selected_model = model or _PROVIDER_TEST_MODEL[provider]
+    started = time.perf_counter()
+    validated_at = datetime.now(timezone.utc).isoformat()
     try:
         response = LLMRouter().route(
             LLMRequest(
@@ -106,15 +104,56 @@ def test_user_ai_key(payload: TestKeyRequest, user: CurrentUser) -> TestKeyRespo
                 timeout_ms=20_000,
                 cache_prefix=False,
             ),
-            user_choice=model,
-            api_key=payload.api_key,
+            user_choice=selected_model,
+            api_key=api_key,
         )
     except LLMError as exc:
-        return TestKeyResponse(ok=False, provider=payload.provider, model=model, http_status=401, message=_safe_message(exc, payload.api_key))
-    except Exception as exc:  # noqa: BLE001 - provider SDKs differ; surface exact message
-        return TestKeyResponse(ok=False, provider=payload.provider, model=model, http_status=502, message=_safe_message(exc, payload.api_key))
-    _ = user  # test endpoint doesn't persist or attribute to a specific key row
-    return TestKeyResponse(ok=True, provider=payload.provider, model=response.model, http_status=200, message="Chave validada com sucesso.")
+        return TestKeyResponse(
+            ok=False, provider=provider, model=selected_model,
+            http_status=exc.status_code or 502, message=_safe_message(exc, api_key),
+            latency_ms=int((time.perf_counter() - started) * 1000), validated_at=validated_at,
+        )
+    except Exception as exc:  # noqa: BLE001 - normalized into the public provider contract
+        return TestKeyResponse(
+            ok=False, provider=provider, model=selected_model, http_status=502,
+            message=_safe_message(exc, api_key),
+            latency_ms=int((time.perf_counter() - started) * 1000), validated_at=validated_at,
+        )
+    return TestKeyResponse(
+        ok=True, provider=provider, model=response.model, http_status=200,
+        message="Conectado.", latency_ms=int((time.perf_counter() - started) * 1000),
+        validated_at=validated_at,
+    )
+
+
+def _persist_test_result(user_id: str, key_id: str, provider: str, result: TestKeyResponse) -> None:
+    if result.ok:
+        key_status, engine_status = "valid", "ready"
+    elif result.http_status in {401, 403}:
+        key_status, engine_status = "invalid", "auth_error"
+    else:
+        key_status, engine_status = "unavailable", "unavailable"
+    ai_key_vault_service.mark_validated(user_id, key_id, status=key_status)
+    llm_settings_service.validated(user_id, provider, status=engine_status)
+
+
+@router.post("/user-ai-keys/test", response_model=TestKeyResponse)
+def test_user_ai_key(payload: TestKeyRequest, user: CurrentUser) -> TestKeyResponse:
+    """Validate a candidate key without storing it or echoing it back."""
+    _ = user
+    return _test_key(payload.provider, payload.api_key)
+
+
+@router.post("/user-ai-keys/{key_id}/test", response_model=TestKeyResponse)
+def test_saved_user_ai_key(key_id: str, user: CurrentUser) -> TestKeyResponse:
+    """Validate the encrypted, persisted key and update the canonical state."""
+    row = ai_key_vault_service.get_for_user(user["user_id"], key_id)
+    api_key = ai_key_vault_service.get_decrypted(user["user_id"], key_id)
+    if row is None or api_key is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chave não encontrada.")
+    result = _test_key(row["provider"], api_key, model=row.get("modelo_padrao"))
+    _persist_test_result(user["user_id"], key_id, row["provider"], result)
+    return result
 
 
 @router.delete("/user-ai-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)

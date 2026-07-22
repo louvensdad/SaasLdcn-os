@@ -8,11 +8,11 @@ import { LLM_BUY_TOKENS_URL } from '@/lib/llm-provider-links';
 import { useLocale } from '@/hooks/use-locale';
 
 const PROVIDERS: ReadonlyArray<{ id: KeyProvider; label: string }> = [
-  { id: 'anthropic', label: 'Anthropic' },
   { id: 'openai', label: 'OpenAI' },
-  { id: 'google', label: 'Google' },
-  { id: 'openrouter', label: 'OpenRouter' },
-  { id: 'custom', label: 'Custom (OpenAI-compat)' },
+  { id: 'anthropic', label: 'Claude' },
+  { id: 'google', label: 'Gemini' },
+  { id: 'deepseek', label: 'DeepSeek' },
+  { id: 'groq', label: 'Groq' },
 ];
 
 interface Props {
@@ -27,7 +27,7 @@ interface Props {
  */
 export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
   const { t } = useLocale();
-  const [provider, setProvider] = useState<KeyProvider>('anthropic');
+  const [provider, setProvider] = useState<KeyProvider>('openai');
   const [apiKey, setApiKey] = useState('');
   const [keys, setKeys] = useState<AiKeyView[]>([]);
   const [busy, setBusy] = useState(false);
@@ -139,7 +139,7 @@ export function UserKeyPanel({ enabled, onEnabledChange }: Props) {
               className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-background/60 disabled:opacity-50"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-              Testar chave
+              {t('userKey.test')}
             </button>
             <button
               type="button"

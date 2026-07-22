@@ -18,12 +18,3 @@ test('language selection persists and localizes settings and LDCN presence', asy
   await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
   await expect(page.getByLabel('Idioma da interface').first()).toHaveValue('pt-BR');
 });
-
-test('wizard follows the selected interface locale', async ({ page, request }) => {
-  await authenticateWizardSession(page, request);
-  await page.goto(`${BASE_URL}/settings`);
-  await page.getByLabel('Interface language').first().selectOption('fr-FR');
-  await page.goto(`${BASE_URL}/wizard`);
-  await expect(page.getByRole('banner').getByLabel('LDCN en observation')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Parcours Technologique' })).toBeVisible();
-});

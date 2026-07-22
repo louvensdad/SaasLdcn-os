@@ -2,11 +2,12 @@
 
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import {
   Archive, Atom, Bot, Brain, Bug, CheckCheck, Chrome, Clock, Cog, Database, Download,
   EyeOff, FileText, FlaskConical, FolderKanban, Gem, GitMerge, Globe, GraduationCap, Hammer,
   Layout, Leaf, Package, Palette, Rocket, ScanSearch, Scale, Server, Settings2, Share2, Shield,
-  ShieldCheck, Smartphone, Sparkles, Terminal, TrendingUp, Upload, Wand2, Waves, Waypoints,
+  ShieldCheck, Smartphone, Sparkles, Terminal, TrendingUp, Upload, Wand2, Waves,
   Wrench, Zap, type LucideIcon,
 } from 'lucide-react';
 
@@ -16,7 +17,7 @@ import { Card } from '@/components/ui/card';
 import { IconButton } from '@/components/ui/icon-button';
 import { CardLoading } from '@/components/feedback/loading-system';
 import { SettingsToggleRow } from '@/components/settings/settings-toggle-row';
-import { AiProviderKeyDialog, type AiProviderDef } from '@/components/settings/ai-provider-key-dialog';
+import type { AiProviderDef } from '@/components/settings/ai-provider-key-dialog';
 import { aiKeyVaultClient, type AiKeyListResponse } from '@/lib/api/ai-key-vault';
 import { llmSettingsClient } from '@/lib/api/llm-settings';
 import type { ActiveLlmSettings, LlmCacheStats, LlmModelUsage, LlmUsageStats } from '@contracts/llm-settings.contract';
@@ -26,29 +27,27 @@ import {
   type AiAgentId, type AiPreferencesSnapshot, type AiProfileId,
 } from '@/stores/use-ai-preferences-store';
 
-// Real platform providers only (DeepSeek/Llama/Qwen ride behind OpenRouter or
+const loadAiProviderKeyDialog = () => import('@/components/settings/ai-provider-key-dialog');
+const AiProviderKeyDialog = dynamic(
+  () => loadAiProviderKeyDialog().then((module) => module.AiProviderKeyDialog),
+  { loading: () => null },
+);
+
 // first-class DeepSeek; Mistral is NOT supported and deliberately not listed).
 // `model` = what the backend router would route for that provider today;
 // `contextTokens` = registry ctx when known, null shown as em dash.
 const PROVIDERS: readonly (AiProviderDef & { readonly model: string; readonly contextTokens: number | null; readonly Icon: LucideIcon; readonly color: string })[] = [
-  { id: 'anthropic', name: 'Anthropic', description: 'Claude — Opus, Sonnet, Haiku, Fable.', model: 'claude-opus-4-8', contextTokens: 1_000_000, Icon: Sparkles, color: '#d97757' },
   { id: 'openai', name: 'OpenAI', description: 'GPT-4.1, o4-mini.', model: 'gpt-4.1', contextTokens: null, Icon: Atom, color: '#10a37f' },
+  { id: 'anthropic', name: 'Claude', description: 'Anthropic Claude — Opus, Sonnet e Haiku.', model: 'claude-opus-4-8', contextTokens: 1_000_000, Icon: Sparkles, color: '#d97757' },
   { id: 'google', name: 'Google', description: 'Gemini 2.5 Pro / Flash.', model: 'gemini-2.5-pro', contextTokens: null, Icon: Chrome, color: '#4285f4' },
-  { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek V3 (chat) e R1 (reasoner).', model: 'deepseek-chat', contextTokens: null, Icon: Waves, color: '#4d6bfe' },
-  { id: 'openrouter', name: 'OpenRouter', description: 'DeepSeek, Llama, Qwen — uma chave.', model: 'deepseek/deepseek-chat', contextTokens: null, Icon: Waypoints, color: '#8b5cf6' },
+  { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek V4 Flash e V4 Pro.', model: 'deepseek-v4-flash', contextTokens: null, Icon: Waves, color: '#4d6bfe' },
   { id: 'groq', name: 'Groq', description: 'Inferência rápida na nuvem (Llama).', model: 'llama-3.3-70b-versatile', contextTokens: null, Icon: Zap, color: '#f97316' },
-  { id: 'ollama', name: 'Ollama (Local)', description: 'Modelos locais na sua máquina.', model: 'qwen2.5-coder:7b', contextTokens: null, keyless: true, Icon: Bot, color: '#0ea5e9' },
-  { id: 'lmstudio', name: 'LM Studio (Local)', description: 'Modelos locais carregados no LM Studio.', model: 'local-model', contextTokens: null, keyless: true, Icon: Server, color: '#64748b' },
 ];
 
 const MEMORY_ICONS: Record<string, LucideIcon> = { shortTerm: Clock, longTerm: Archive, perProject: FolderKanban, continuousLearning: TrendingUp };
 const SECURITY_ICONS: Record<string, LucideIcon> = { allowInternet: Globe, sandbox: Package, detailedLogs: FileText, doubleValidation: CheckCheck, tripleCheck: ShieldCheck, execution: Terminal };
 const POLICY_ICONS: Record<string, LucideIcon> = { sensitiveContent: EyeOff, storage: Database, retention: Clock, sharing: Share2, training: GraduationCap };
 const PROFILE_ICONS: Record<string, LucideIcon> = { fast: Zap, balanced: Scale, quality: Gem, economic: Leaf };
-
-const CUSTOM_PROVIDER: AiProviderDef = {
-  id: 'custom', name: 'Custom', description: 'Qualquer endpoint compatível com OpenAI (vLLM, LM Studio, Together…).',
-};
 
 const PIPELINE_STEPS = [
   { id: 'generate', Icon: Wand2 },
@@ -123,25 +122,23 @@ export function AiProvidersTab() {
     ? usage.previous.input_tokens + usage.previous.output_tokens + usage.previous.cache_read_tokens + usage.previous.saved_tokens
     : 0;
 
-  const hasKeyFor = (providerId: string) => keys.some((item) => item.provider === providerId && item.ativo);
+  const readyKeyFor = (providerId: string) => keys.some((item) => item.provider === providerId && item.ativo && item.status === 'valid');
 
-  // Real fallback chain: active model first, then key-configured providers, Ollama last.
   const fallbackChain = useMemo(() => {
     const chain: { model: string; roleKey: string; active: boolean }[] = [];
     if (active?.model) {
       chain.push({ model: active.model, roleKey: 'primary', active: active.status === 'ready' });
     }
     for (const provider of PROVIDERS) {
-      if (provider.id === active?.provider || provider.keyless) continue;
-      if (hasKeyFor(provider.id)) {
+      if (provider.id === active?.provider) continue;
+      if (readyKeyFor(provider.id)) {
         chain.push({ model: provider.model, roleKey: chain.length <= 1 ? 'backup' : 'fallback', active: true });
       }
     }
-    const remaining = PROVIDERS.filter((p) => !p.keyless && p.id !== active?.provider && !hasKeyFor(p.id));
+    const remaining = PROVIDERS.filter((p) => p.id !== active?.provider && !readyKeyFor(p.id));
     if (chain.length < 3 && remaining.length > 0) {
       chain.push({ model: remaining[0].model, roleKey: 'fallback', active: false });
     }
-    chain.push({ model: PROVIDERS.find((p) => p.id === 'ollama')!.model, roleKey: 'local', active: true });
     return chain.slice(0, 4);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.model, active?.provider, active?.status, keys]);
@@ -185,7 +182,7 @@ export function AiProvidersTab() {
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-bold text-[color:var(--text)]">LDCN AI Engine</h2>
+                <h2 className="text-lg font-bold text-[color:var(--text)]">{t('settings.aiHub.title')}</h2>
                 <Badge tone={active?.status === 'ready' ? 'success' : 'neutral'}>
                   {active?.status === 'ready' ? t('settings.aiHub.active') : t('settings.aiHub.available')}
                 </Badge>
@@ -258,7 +255,10 @@ export function AiProvidersTab() {
           ) : (
             <div className="mt-4 space-y-2">
               {PROVIDERS.map((provider) => {
-                const configured = provider.keyless || hasKeyFor(provider.id);
+                const providerKey = keys.find((item) => item.provider === provider.id && item.ativo && item.is_default)
+                  ?? keys.find((item) => item.provider === provider.id && item.ativo);
+                const keyStatus = providerKey?.status ?? 'notConfigured';
+                const statusTone = keyStatus === 'valid' ? 'success' : keyStatus === 'invalid' ? 'danger' : keyStatus === 'unavailable' ? 'warning' : 'neutral';
                 return (
                   <div key={provider.id} className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[color:var(--border)] p-2.5">
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius-sm)]" style={{ background: `color-mix(in srgb, ${provider.color} 15%, transparent)`, color: provider.color }}>
@@ -266,28 +266,25 @@ export function AiProvidersTab() {
                     </span>
                     <div className="min-w-[4.5rem] flex-1">
                       <p className="truncate text-sm font-semibold text-[color:var(--text)]">{provider.name}</p>
-                      <span className="mt-0.5 inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium" style={{ color: configured ? 'var(--success)' : 'var(--muted)' }}>
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: configured ? 'var(--success)' : 'var(--muted-2)' }} aria-hidden />
-                        {configured ? t('settings.aiHub.active') : t('settings.aiHub.available')}
-                      </span>
+                      <Badge tone={statusTone} className="mt-1">{t(`settings.ai.keyStatus.${keyStatus}`)}</Badge>
                     </div>
                     <div className="hidden shrink-0 text-right sm:block">
                       <p className="ds-caption">{t('settings.aiHub.model')}</p>
                       <p className="t-mono max-w-[7.5rem] truncate text-xs text-[color:var(--text)]">{provider.model}</p>
                     </div>
-                    <IconButton size="sm" variant="secondary" aria-label={t('settings.aiHub.configureProvider', { provider: provider.name })} onClick={() => setOpenProvider(provider)}>
+                    <IconButton
+                      size="sm"
+                      variant="secondary"
+                      aria-label={t('settings.aiHub.configureProvider', { provider: provider.name })}
+                      onMouseEnter={() => { void loadAiProviderKeyDialog(); }}
+                      onFocus={() => { void loadAiProviderKeyDialog(); }}
+                      onClick={() => setOpenProvider(provider)}
+                    >
                       <Settings2 className="h-4 w-4" />
                     </IconButton>
                   </div>
                 );
               })}
-              <button
-                type="button"
-                onClick={() => setOpenProvider(CUSTOM_PROVIDER)}
-                className="focus-ring w-full rounded-[var(--radius-md)] border border-dashed border-[color:var(--border)] p-2.5 text-sm font-medium text-[color:var(--accent)] transition-colors hover:border-[color:var(--accent)]"
-              >
-                + {t('settings.aiHub.addCustomProvider')}
-              </button>
             </div>
           )}
         </Card>

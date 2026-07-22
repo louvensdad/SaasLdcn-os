@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -33,6 +34,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 service = AuthService()
 
 _OAUTH_STATE_COOKIE = "ldcn_oauth_state"
+_OAUTH_VERIFIER_COOKIE = "ldcn_oauth_pkce"
+_OAUTH_NONCE_COOKIE = "ldcn_oauth_nonce"
 
 
 def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
@@ -72,6 +75,19 @@ def _request_context(request: Request) -> tuple[str, str | None]:
     return client_ip(request, get_settings()), describe_device(request.headers.get("user-agent"))
 
 
+def _verify_cookie_csrf(request: Request) -> None:
+    """Reject cookie-authenticated mutations originating outside trusted UI origins."""
+    settings = get_settings()
+    if not request.cookies.get(settings.refresh_cookie_name):
+        return
+    origin = request.headers.get("origin")
+    if not origin:  # Non-browser clients do not participate in browser CSRF.
+        return
+    trusted = {settings.frontend_base_url.rstrip("/"), *[item.rstrip("/") for item in settings.allowed_origins]}
+    if origin.rstrip("/") not in trusted:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Untrusted authentication origin.")
+
+
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: UserRegisterRequest, request: Request, response: Response) -> AuthResponse:
     ip_address, device_label = _request_context(request)
@@ -94,6 +110,7 @@ def refresh_tokens(
     response: Response,
     payload: RefreshRequest | None = None,
 ) -> AuthResponse:
+    _verify_cookie_csrf(request)
     settings = get_settings()
     refresh_token = request.cookies.get(settings.refresh_cookie_name)
     if refresh_token is None and payload is not None:
@@ -111,6 +128,7 @@ def refresh_tokens(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(request: Request, user: CurrentUser, payload: RefreshRequest | None = None) -> Response:
+    _verify_cookie_csrf(request)
     settings = get_settings()
     refresh_token = request.cookies.get(settings.refresh_cookie_name)
     if refresh_token is None and payload is not None:
@@ -126,16 +144,17 @@ def _oauth_callback_url(request: Request, provider: str) -> str:
     return f"{settings.api_public_base_url.rstrip('/')}{settings.api_prefix}/auth/oauth/{provider}/callback"
 
 
-@router.get("/oauth/{provider}/start")
+@router.get("/oauth/{provider}")
+@router.get("/oauth/{provider}/start", include_in_schema=False)
 def oauth_start(provider: Literal["google", "github"], request: Request) -> RedirectResponse:
     settings = get_settings()
     frontend_url = settings.frontend_base_url.rstrip("/")
     redirect_uri = _oauth_callback_url(request, provider)
     try:
-        authorize_url, state = service.oauth_authorize_url(provider, redirect_uri)
+        authorize_url, state, code_verifier, nonce = service.oauth_authorize_url(provider, redirect_uri)
     except OAuthNotConfiguredError:
         return RedirectResponse(
-            f"{frontend_url}/login?oauth=error&reason=not_configured",
+            f"{frontend_url}/auth/callback?oauth=error&reason=not_configured",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -149,6 +168,17 @@ def oauth_start(provider: Literal["google", "github"], request: Request) -> Redi
         samesite="lax",
         path=f"{settings.api_prefix}/auth/oauth",
     )
+    response.set_cookie(
+        key=_OAUTH_VERIFIER_COOKIE, value=code_verifier, max_age=600,
+        httponly=True, secure=settings.refresh_cookie_secure, samesite="lax",
+        path=f"{settings.api_prefix}/auth/oauth",
+    )
+    if nonce:
+        response.set_cookie(
+            key=_OAUTH_NONCE_COOKIE, value=nonce, max_age=600,
+            httponly=True, secure=settings.refresh_cookie_secure, samesite="lax",
+            path=f"{settings.api_prefix}/auth/oauth",
+        )
     return response
 
 
@@ -163,18 +193,22 @@ def oauth_callback(
     settings = get_settings()
     frontend_url = settings.frontend_base_url.rstrip("/")
     cookie_state = request.cookies.get(_OAUTH_STATE_COOKIE)
+    code_verifier = request.cookies.get(_OAUTH_VERIFIER_COOKIE)
+    expected_nonce = request.cookies.get(_OAUTH_NONCE_COOKIE)
 
     def _fail(reason: str) -> RedirectResponse:
         redirect = RedirectResponse(
-            f"{frontend_url}/login?oauth=error&reason={reason}",
+            f"{frontend_url}/auth/callback?oauth=error&reason={reason}",
             status_code=status.HTTP_302_FOUND,
         )
         redirect.delete_cookie(_OAUTH_STATE_COOKIE, path=f"{settings.api_prefix}/auth/oauth")
+        redirect.delete_cookie(_OAUTH_VERIFIER_COOKIE, path=f"{settings.api_prefix}/auth/oauth")
+        redirect.delete_cookie(_OAUTH_NONCE_COOKIE, path=f"{settings.api_prefix}/auth/oauth")
         return redirect
 
     if error:
         return _fail("provider_denied")
-    if not code or not state or not cookie_state or state != cookie_state:
+    if not code or not state or not cookie_state or not code_verifier or not hmac.compare_digest(state, cookie_state):
         return _fail("invalid_state")
 
     ip_address, device_label = _request_context(request)
@@ -183,6 +217,8 @@ def oauth_callback(
             provider,
             code=code,
             redirect_uri=_oauth_callback_url(request, provider),
+            code_verifier=code_verifier,
+            expected_nonce=expected_nonce,
             ip_address=ip_address,
             device_label=device_label,
         )
@@ -192,9 +228,11 @@ def oauth_callback(
         return _fail("exchange_failed")
 
     del payload  # the frontend re-fetches the session from the refresh cookie
-    redirect = RedirectResponse(f"{frontend_url}/login?oauth=success", status_code=status.HTTP_302_FOUND)
+    redirect = RedirectResponse(f"{frontend_url}/auth/callback?oauth=success", status_code=status.HTTP_302_FOUND)
     _set_refresh_cookie(redirect, refresh_token)
     redirect.delete_cookie(_OAUTH_STATE_COOKIE, path=f"{settings.api_prefix}/auth/oauth")
+    redirect.delete_cookie(_OAUTH_VERIFIER_COOKIE, path=f"{settings.api_prefix}/auth/oauth")
+    redirect.delete_cookie(_OAUTH_NONCE_COOKIE, path=f"{settings.api_prefix}/auth/oauth")
     return redirect
 
 

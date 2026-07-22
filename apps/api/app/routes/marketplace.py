@@ -9,14 +9,21 @@ from app.schemas.marketplace import (
     PublishMarketplaceItemRequest,
     RepublishMarketplaceItemRequest,
 )
-from app.services.marketplace_service import MarketplaceSourceGoneError, marketplace_service
+from app.services.marketplace_service import (
+    MarketplaceSourceGoneError,
+    UnsafeMarketplaceItemError,
+    marketplace_service,
+)
 
 router = APIRouter(tags=["marketplace"])
 
 
 @router.post("/marketplace/items", response_model=MarketplaceItem, status_code=status.HTTP_201_CREATED)
 def publish_marketplace_item(payload: PublishMarketplaceItemRequest, user: CurrentUser) -> MarketplaceItem:
-    item = marketplace_service.publish(author_user_id=user["user_id"], **payload.model_dump())
+    try:
+        item = marketplace_service.publish(author_user_id=user["user_id"], **payload.model_dump())
+    except UnsafeMarketplaceItemError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Automação de origem não encontrada.")
     return MarketplaceItem.model_validate(item)
@@ -54,6 +61,8 @@ def republish_marketplace_item(item_id: str, payload: RepublishMarketplaceItemRe
         item = marketplace_service.republish(item_id, user["user_id"], note=payload.note)
     except MarketplaceSourceGoneError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except UnsafeMarketplaceItemError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item do marketplace não encontrado.")
     return MarketplaceItem.model_validate(item)
@@ -61,7 +70,10 @@ def republish_marketplace_item(item_id: str, payload: RepublishMarketplaceItemRe
 
 @router.post("/marketplace/items/{item_id}/install", response_model=MarketplaceInstall, status_code=status.HTTP_201_CREATED)
 def install_marketplace_item(item_id: str, user: CurrentUser) -> MarketplaceInstall:
-    install = marketplace_service.install(item_id, user["user_id"])
+    try:
+        install = marketplace_service.install(item_id, user["user_id"])
+    except UnsafeMarketplaceItemError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este item foi bloqueado pela política de segurança.") from exc
     if install is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item do marketplace não encontrado ou não publicado.")
     return MarketplaceInstall.model_validate(install)

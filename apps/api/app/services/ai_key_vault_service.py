@@ -63,6 +63,12 @@ class AiKeyVaultService:
     def get_default_for_provider(self, user_id: str, provider: str) -> dict[str, Any] | None:
         return self.repository.get_default_for_provider(user_id, normalize_provider_id(provider))
 
+    def get_for_user(self, user_id: str, key_id: str) -> dict[str, Any] | None:
+        return self.repository.get_for_user(user_id, key_id)
+
+    def get_decrypted(self, user_id: str, key_id: str) -> str | None:
+        return self.repository.get_decrypted(user_id, key_id)
+
     def get_decrypted_default(self, user_id: str, provider: str) -> str | None:
         return self.repository.get_decrypted_default(user_id, normalize_provider_id(provider))
 
@@ -90,8 +96,8 @@ class AiKeyVaultService:
             self._audit(user_id, "AI_KEY_DELETED")
         return deleted
 
-    def mark_validated(self, user_id: str, key_id: str, *, ok: bool) -> None:
-        self.repository.mark_validated(user_id, key_id, ok=ok)
+    def mark_validated(self, user_id: str, key_id: str, *, status: str) -> None:
+        self.repository.mark_validated(user_id, key_id, status=status)
 
     def mark_used(self, user_id: str, provider: str) -> None:
         self.repository.mark_used(user_id, normalize_provider_id(provider))

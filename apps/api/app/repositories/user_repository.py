@@ -12,7 +12,8 @@ from sqlalchemy.exc import IntegrityError
 from app.core import runtime_overrides
 from app.core.config import get_settings
 from app.core.database import database_url_for, session_factory
-from app.models.user import AuditLog, RefreshToken, User, UserSession
+from app.core.security import encrypt_secret
+from app.models.user import AuditLog, OAuthAccount, RefreshToken, User, UserSession
 
 
 def _now() -> str:
@@ -68,7 +69,9 @@ class UserRepository:
     def get_by_oauth(self, provider: str, subject: str) -> dict[str, Any] | None:
         with self._sessions() as session:
             model = session.scalar(
-                select(User).where(User.oauth_provider == provider, User.oauth_subject == subject)
+                select(User)
+                .join(OAuthAccount, OAuthAccount.user_id == User.user_id)
+                .where(OAuthAccount.provider == provider, OAuthAccount.provider_user_id == subject)
             )
             return self._model_to_user(model) if model else None
 
@@ -97,6 +100,18 @@ class UserRepository:
             )
             session.add(model)
             session.flush()
+            session.add(OAuthAccount(
+                id=f"oauth_{uuid4().hex[:16]}",
+                user_id=model.user_id,
+                provider=oauth_provider,
+                provider_user_id=oauth_subject,
+                access_token_encrypted=None,
+                refresh_token_encrypted=None,
+                expires_at=None,
+                created_at=now,
+                updated_at=now,
+            ))
+            session.flush()
             return self._model_to_user(model)
 
     def link_oauth(self, user_id: str, provider: str, subject: str) -> dict[str, Any] | None:
@@ -104,10 +119,53 @@ class UserRepository:
             model = session.get(User, user_id)
             if model is None:
                 return None
-            model.oauth_provider = provider
-            model.oauth_subject = subject
+            account = session.scalar(
+                select(OAuthAccount).where(OAuthAccount.user_id == user_id, OAuthAccount.provider == provider)
+            )
+            if account is None:
+                account = OAuthAccount(
+                    id=f"oauth_{uuid4().hex[:16]}", user_id=user_id, provider=provider,
+                    provider_user_id=subject, access_token_encrypted=None,
+                    refresh_token_encrypted=None, expires_at=None,
+                    created_at=_now(), updated_at=_now(),
+                )
+                session.add(account)
+            else:
+                account.provider_user_id = subject
+                account.updated_at = _now()
+            # Legacy columns remain populated during the compatibility window,
+            # but are no longer the source of truth.
+            if model.oauth_provider is None:
+                model.oauth_provider = provider
+                model.oauth_subject = subject
             model.updated_at = _now()
+            try:
+                session.flush()
+            except IntegrityError as exc:
+                raise ValueError("OAuth identity is already linked to another user.") from exc
         return self.get_by_id(user_id)
+
+    def store_oauth_tokens(
+        self, *, user_id: str, provider: str, access_token: str,
+        refresh_token: str | None, expires_at: str | None,
+    ) -> None:
+        with self._sessions.begin() as session:
+            account = session.scalar(
+                select(OAuthAccount).where(OAuthAccount.user_id == user_id, OAuthAccount.provider == provider)
+            )
+            if account is None:
+                raise ValueError("OAuth account must be linked before storing tokens.")
+            account.access_token_encrypted = encrypt_secret(access_token)
+            if refresh_token:
+                account.refresh_token_encrypted = encrypt_secret(refresh_token)
+            account.expires_at = expires_at
+            account.updated_at = _now()
+
+    def list_oauth_providers(self, user_id: str) -> list[str]:
+        with self._sessions() as session:
+            return list(session.scalars(
+                select(OAuthAccount.provider).where(OAuthAccount.user_id == user_id).order_by(OAuthAccount.provider)
+            ).all())
 
     def update_profile(self, user_id: str, *, full_name: str | None = None, locale: str | None = None) -> dict[str, Any] | None:
         with self._sessions.begin() as session:
@@ -401,6 +459,7 @@ class UserRepository:
 class AuditLogRepository:
     SAFE_EVENT_CODES = {
         "user_registered", "user_login", "user_login_failed", "user_logout",
+        "oauth_google_login", "oauth_github_login", "oauth_account_linked",
         "user_password_changed", "user_consent_recorded", "user_data_exported",
         "user_account_deleted", "token_refreshed", "quality_gate_run",
         "quality_gate_failed", "auto_repair_started", "auto_repair_action_applied",

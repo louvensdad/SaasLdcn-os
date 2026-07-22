@@ -42,7 +42,7 @@ class LlmActiveSelectionRepository:
         insert = sqlite_insert if self.database_url.startswith("sqlite") else postgresql_insert
         with self._sessions.begin() as session:
             stmt = insert(LlmActiveSelection).values(
-                user_id=user_id, provider=provider, model=model, validation_status="ready",
+                user_id=user_id, provider=provider, model=model, validation_status="initializing",
             )
             stmt = stmt.on_conflict_do_nothing(index_elements=[LlmActiveSelection.user_id])
             session.execute(stmt)
@@ -51,20 +51,22 @@ class LlmActiveSelectionRepository:
         insert = sqlite_insert if self.database_url.startswith("sqlite") else postgresql_insert
         with self._sessions.begin() as session:
             stmt = insert(LlmActiveSelection).values(
-                user_id=user_id, provider=provider, model=model, validation_status="ready",
+                user_id=user_id, provider=provider, model=model, validation_status="initializing",
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=[LlmActiveSelection.user_id],
-                set_={"provider": provider, "model": model, "validation_status": "ready"},
+                set_={"provider": provider, "model": model, "validation_status": "initializing", "last_validated_at": None},
             )
             session.execute(stmt)
 
-    def mark_validated(self, user_id: str, provider: str, *, ok: bool) -> None:
+    def mark_validated(self, user_id: str, provider: str, *, status: str) -> None:
+        if status not in {"ready", "auth_error", "unavailable"}:
+            raise ValueError(f"Unsupported LLM validation status '{status}'.")
         with self._sessions.begin() as session:
             session.execute(
                 update(LlmActiveSelection)
                 .where(LlmActiveSelection.user_id == user_id, LlmActiveSelection.provider == provider)
-                .values(validation_status="ready" if ok else "invalid", last_validated_at=_now())
+                .values(validation_status=status, last_validated_at=_now())
             )
 
     def mark_used(self, user_id: str, provider: str) -> None:

@@ -6,7 +6,7 @@ Uniformizar provedores e modelos de IA.
 
 ## Princípio BYOK
 
-O MLTagente não revende LLM. Toda execução usa a API Key do próprio usuário; a plataforma nunca fornece créditos de IA (ver [[Planos, assinaturas e controle de acesso]]). Provedores suportados: OpenAI, Anthropic Claude, Google Gemini, Groq, OpenRouter, Ollama, LM Studio e endpoints customizados compatíveis com a API OpenAI. Novos provedores são adicionados via Provider Adapter, sem alterar o núcleo do sistema nem os agentes.
+O MLTagente não revende LLM. Toda execução usa a API Key do próprio usuário; a plataforma nunca fornece créditos de IA (ver [[Planos, assinaturas e controle de acesso]]). O MVP suporta exclusivamente OpenAI, Anthropic Claude, Google Gemini, DeepSeek e Groq, nessa ordem canônica.
 
 ## Entrada e saída
 

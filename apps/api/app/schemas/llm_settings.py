@@ -5,8 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-LlmProviderId = Literal["openai", "anthropic", "google", "deepseek", "openrouter", "ollama"]
-LlmSettingsStatus = Literal["ready", "not_configured", "invalid", "expired", "unavailable"]
+LlmProviderId = Literal["openai", "anthropic", "google", "deepseek", "groq"]
+LlmSettingsStatus = Literal["ready", "initializing", "not_configured", "auth_error", "unavailable"]
 LlmMode = Literal["llm", "deterministic"]
 
 

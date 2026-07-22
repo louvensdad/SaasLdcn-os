@@ -42,7 +42,7 @@ export function InterfaceTab({ density, onDensityChange }: InterfaceTabProps) {
               <button
                 key={id}
                 type="button"
-                aria-label={id === 'light' ? 'Light' : id === 'dark' ? 'Dark' : 'System'}
+                aria-label={t(`settings.interface.theme.${id}`)}
                 aria-pressed={selected}
                 onClick={() => { if (id !== 'system') setThemeId(id); }}
                 className="focus-ring rounded-[var(--radius-md)] border p-3 text-center transition-colors"
@@ -96,8 +96,8 @@ export function InterfaceTab({ density, onDensityChange }: InterfaceTabProps) {
           </Field>
           <Field label={t('settings.personalization.title')}>
             <div role="group" aria-label={t('settings.personalization.title')} className="grid grid-cols-2 gap-2">
-              <button type="button" aria-label="Comfortable" aria-pressed={density === 'comfortable'} onClick={() => onDensityChange('comfortable')} className="focus-ring rounded-[var(--radius-md)] border px-3 py-2 text-sm" style={density === 'comfortable' ? { borderColor: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' } : { borderColor: 'var(--border)' }}>{t('settings.personalization.density.comfortable')}</button>
-              <button type="button" aria-label="Compact" aria-pressed={density === 'compact'} onClick={() => onDensityChange('compact')} className="focus-ring rounded-[var(--radius-md)] border px-3 py-2 text-sm" style={density === 'compact' ? { borderColor: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' } : { borderColor: 'var(--border)' }}>{t('settings.personalization.density.compact')}</button>
+              <button type="button" aria-label={t('settings.personalization.density.comfortable')} aria-pressed={density === 'comfortable'} onClick={() => onDensityChange('comfortable')} className="focus-ring rounded-[var(--radius-md)] border px-3 py-2 text-sm" style={density === 'comfortable' ? { borderColor: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' } : { borderColor: 'var(--border)' }}>{t('settings.personalization.density.comfortable')}</button>
+              <button type="button" aria-label={t('settings.personalization.density.compact')} aria-pressed={density === 'compact'} onClick={() => onDensityChange('compact')} className="focus-ring rounded-[var(--radius-md)] border px-3 py-2 text-sm" style={density === 'compact' ? { borderColor: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' } : { borderColor: 'var(--border)' }}>{t('settings.personalization.density.compact')}</button>
             </div>
           </Field>
           <div>
@@ -172,9 +172,14 @@ function InterfacePreview() {
         <div className="hidden w-28 shrink-0 flex-col gap-1.5 border-r border-[color:var(--border)] p-3 sm:flex" style={{ background: 'var(--surface-2)' }}>
           <div className="flex items-center gap-1.5">
             <span className="grid h-5 w-5 place-items-center rounded" style={{ background: 'var(--accent-gradient)' }}><Sparkles className="h-3 w-3 text-white" /></span>
-            <span className="text-xs font-bold text-[color:var(--text)]">LDCN OS</span>
+            <span className="text-xs font-bold text-[color:var(--text)]">{t('common.productName')}</span>
           </div>
-          {['Dashboard', 'Gerações', 'Laboratory', 'Status'].map((item, index) => (
+          {[
+            t('settings.interface.previewNav.dashboard'),
+            t('settings.interface.previewNav.generations'),
+            t('settings.interface.previewNav.laboratory'),
+            t('settings.interface.previewNav.status'),
+          ].map((item, index) => (
             <div key={item} className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs" style={index === 0 ? { background: 'color-mix(in srgb, var(--accent) 16%, transparent)', color: 'var(--text)' } : { color: 'var(--muted)' }}>
               <span className="h-2 w-2 rounded-sm" style={{ background: index === 0 ? 'var(--accent)' : 'var(--muted-2)' }} />
               {item}

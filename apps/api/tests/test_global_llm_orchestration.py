@@ -4,9 +4,24 @@ import pytest
 
 from app.services.ai_key_vault_service import ai_key_vault_service
 from app.services.llm_provider_registry import normalize_provider_id
-from app.services.llm_settings_service import LlmSettingsService
+from app.services.llm_settings_service import LlmSettingsService, llm_settings_service
 
 KEY = "sk-test-global-provider-secret-1234"
+
+
+def _validate_default_for_client(client, provider: str) -> None:
+    user_id = client.get("/api/auth/me").json()["user_id"]
+    row = ai_key_vault_service.get_default_for_provider(user_id, provider)
+    assert row is not None
+    ai_key_vault_service.mark_validated(user_id, row["id"], status="valid")
+    llm_settings_service.validated(user_id, provider, status="ready")
+
+
+def _configure_valid(service: LlmSettingsService, user_id: str, provider: str) -> None:
+    row = ai_key_vault_service.create(user_id, provider, "Test Key", KEY)
+    ai_key_vault_service.mark_validated(user_id, row["id"], status="valid")
+    service.configured(user_id, provider)
+    service.validated(user_id, provider, status="ready")
 
 
 @pytest.mark.parametrize(
@@ -18,15 +33,13 @@ KEY = "sk-test-global-provider-secret-1234"
         ("gemini", "google"),
         ("google_genai", "google"),
         ("DeepSeek", "deepseek"),
-        ("open-router", "openrouter"),
-        ("local", "ollama"),
     ],
 )
 def test_provider_ids_are_canonical(alias: str, canonical: str):
     assert normalize_provider_id(alias) == canonical
 
 
-def test_configured_claude_is_the_safe_active_setting(client):
+def test_saved_but_untested_claude_is_initializing_not_ready(client):
     response = client.post(
         "/api/user-ai-keys", json={"provider": "anthropic", "nome": "Test Key", "api_key": KEY}
     )
@@ -39,8 +52,8 @@ def test_configured_claude_is_the_safe_active_setting(client):
     assert body["providerLabel"] == "Claude"
     assert body["model"] == "claude-sonnet-4-6"
     assert body["hasKey"] is True
-    assert body["status"] == "ready"
-    assert body["mode"] == "llm"
+    assert body["status"] == "initializing"
+    assert body["mode"] == "deterministic"
     assert "apiKey" not in active.text
     assert KEY not in active.text
 
@@ -68,6 +81,7 @@ def test_no_provider_returns_explained_deterministic_state(client):
 def test_switching_default_updates_global_resolution(client):
     client.post("/api/user-ai-keys", json={"provider": "anthropic", "nome": "Test Key", "api_key": KEY})
     client.post("/api/user-ai-keys", json={"provider": "openai", "nome": "Test Key", "api_key": KEY})
+    _validate_default_for_client(client, "openai")
     selected = client.put(
         "/api/llm/settings/active", json={"provider": "openai", "model": "gpt-4.1"}
     )
@@ -106,9 +120,8 @@ def test_every_capability_resolves_the_same_active_provider(capability: str, cli
     # at an isolated, table-initialized per-test SQLite DB -- LlmSettingsService()
     # below persists the active selection there, not into the shared dev DB.
     del client
-    ai_key_vault_service.create("resolver-user", "anthropic", "Test Key", KEY)
     service = LlmSettingsService()
-    service.configured("resolver-user", "anthropic")
+    _configure_valid(service, "resolver-user", "anthropic")
     context = service.resolve(
         workspace_id="workspace-a",
         user_id="resolver-user",
@@ -120,7 +133,7 @@ def test_every_capability_resolves_the_same_active_provider(capability: str, cli
     assert context.api_key == KEY
 
 
-def test_expired_key_is_explicit_and_never_silently_ready(client):
+def test_selected_provider_without_key_is_explicit_and_never_silently_ready(client):
     del client  # see comment in test_every_capability_resolves_the_same_active_provider
     service = LlmSettingsService()
     service.configured("resolver-user", "anthropic")
@@ -130,9 +143,9 @@ def test_expired_key_is_explicit_and_never_silently_ready(client):
         requested_capability="documentation_ai_writer",
     )
     assert context.resolution.mode == "deterministic"
-    assert context.resolution.keyStatus == "expired"
+    assert context.resolution.keyStatus == "not_configured"
     assert context.resolution.fallbackUsed is True
-    assert "ausente ou expirada" in context.resolution.reason
+    assert "Nenhuma API configurada" in context.resolution.reason
 
 
 def test_deterministic_choice_is_audited(client):
@@ -151,9 +164,8 @@ def test_valid_provider_never_falls_back_silently(client):
     """Rule: no module may resolve to deterministic while a valid global
     provider exists, unless the user explicitly asked for it."""
     del client  # see comment in test_every_capability_resolves_the_same_active_provider
-    ai_key_vault_service.create("resolver-user", "anthropic", "Test Key", KEY)
     service = LlmSettingsService()
-    service.configured("resolver-user", "anthropic")
+    _configure_valid(service, "resolver-user", "anthropic")
     context = service.resolve(
         workspace_id=None,
         user_id="resolver-user",
@@ -167,9 +179,8 @@ def test_mismatched_model_falls_back_to_configured_provider(client):
     """If a model picker passes a model from a provider with no key, the flow
     must still auto-use the configured (keyed) provider, not go deterministic."""
     del client  # see comment in test_every_capability_resolves_the_same_active_provider
-    ai_key_vault_service.create("resolver-user", "anthropic", "Test Key", KEY)
     service = LlmSettingsService()
-    service.configured("resolver-user", "anthropic")
+    _configure_valid(service, "resolver-user", "anthropic")
     # 'gpt-4.1' maps to openai, which has no key for this user.
     context = service.resolve(
         workspace_id=None,
@@ -187,6 +198,7 @@ def test_confirm_response_never_leaks_the_api_key(client):
     """Security regression: the confirm payload and its audit trail must never
     echo the secret, in any casing or field name."""
     client.post("/api/user-ai-keys", json={"provider": "anthropic", "nome": "Test Key", "api_key": KEY})
+    _validate_default_for_client(client, "anthropic")
     response = client.post(
         "/api/llm/settings/confirm",
         json={"requestedCapability": "engineering_review", "mode": "llm"},

@@ -24,6 +24,7 @@ import { useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'rea
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 import {
   SAMPLE_DATASET,
@@ -36,27 +37,33 @@ import {
 
 type WorkbenchView = 'overview' | 'columns' | 'correlations' | 'data';
 type SortDirection = 'ascending' | 'descending';
+type Translator = (key: string, values?: Record<string, string | number>) => string;
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
-const NUMBER_FORMAT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
 
-const TOOLS = [
-  { icon: Braces, title: 'Perfil de schema', detail: 'Tipos, cardinalidade e campos ausentes.' },
-  { icon: ShieldCheck, title: 'Auditoria de qualidade', detail: 'Completude, duplicatas e riscos de uso.' },
-  { icon: Network, title: 'Explorador de correlação', detail: 'Associações lineares entre variáveis numéricas.' },
-  { icon: ScanSearch, title: 'Scanner de anomalias', detail: 'Valores além de três desvios-padrão.' },
-  { icon: Table2, title: 'Tabela de investigação', detail: 'Preview ordenável e rastreável por coluna.' },
-  { icon: Download, title: 'Exportador', detail: 'Relatório JSON e dados normalizados em CSV.' },
-] as const;
+function numberFormat(locale: string) {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
+}
 
-function formatCell(value: DatasetCell): string {
+function buildTools(t: Translator) {
+  return [
+    { icon: Braces, title: t('analytics.workbench.tools.schema.title'), detail: t('analytics.workbench.tools.schema.detail') },
+    { icon: ShieldCheck, title: t('analytics.workbench.tools.quality.title'), detail: t('analytics.workbench.tools.quality.detail') },
+    { icon: Network, title: t('analytics.workbench.tools.correlation.title'), detail: t('analytics.workbench.tools.correlation.detail') },
+    { icon: ScanSearch, title: t('analytics.workbench.tools.anomaly.title'), detail: t('analytics.workbench.tools.anomaly.detail') },
+    { icon: Table2, title: t('analytics.workbench.tools.table.title'), detail: t('analytics.workbench.tools.table.detail') },
+    { icon: Download, title: t('analytics.workbench.tools.exporter.title'), detail: t('analytics.workbench.tools.exporter.detail') },
+  ] as const;
+}
+
+function formatCell(locale: string, value: DatasetCell): string {
   if (value === null) return '—';
-  if (typeof value === 'number') return NUMBER_FORMAT.format(value);
+  if (typeof value === 'number') return numberFormat(locale).format(value);
   return String(value);
 }
 
-function fileSize(bytes: number): string {
-  if (!bytes) return 'amostra interna';
+function fileSize(t: Translator, bytes: number): string {
+  if (!bytes) return t('analytics.workbench.internalSample');
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -74,9 +81,16 @@ function downloadBlob(content: string, name: string, type: string) {
 }
 
 function Pipeline({ ready }: { readonly ready: boolean }) {
-  const steps = ['Fonte', 'Schema', 'Qualidade', 'Padrões', 'Relatório'];
+  const { t } = useLocale();
+  const steps = [
+    t('analytics.workbench.pipeline.source'),
+    t('analytics.workbench.pipeline.schema'),
+    t('analytics.workbench.pipeline.quality'),
+    t('analytics.workbench.pipeline.patterns'),
+    t('analytics.workbench.pipeline.report'),
+  ];
   return (
-    <ol className="grid gap-px overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--border)] sm:grid-cols-5" aria-label="Pipeline de análise">
+    <ol className="grid gap-px overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--border)] sm:grid-cols-5" aria-label={t('analytics.workbench.pipeline.aria')}>
       {steps.map((step, index) => (
         <li key={step} className="flex min-h-14 items-center gap-3 bg-[color:var(--surface-2)] px-4 py-3">
           <span className={cn(
@@ -97,17 +111,19 @@ function Pipeline({ ready }: { readonly ready: boolean }) {
 }
 
 function ToolGrid() {
+  const { t } = useLocale();
+  const tools = buildTools(t);
   return (
     <section aria-labelledby="analysis-tools-title">
       <div className="mb-3 flex items-end justify-between gap-4">
         <div>
-          <p className="type-data text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">Ferramentas</p>
-          <h3 id="analysis-tools-title" className="mt-1 font-[family-name:var(--font-display)] text-lg font-semibold text-[color:var(--text)]">Kit analítico disponível</h3>
+          <p className="type-data text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">{t('analytics.workbench.toolGrid.eyebrow')}</p>
+          <h3 id="analysis-tools-title" className="mt-1 font-[family-name:var(--font-display)] text-lg font-semibold text-[color:var(--text)]">{t('analytics.workbench.toolGrid.title')}</h3>
         </div>
-        <span className="text-xs text-[color:var(--muted)]">6 ferramentas locais</span>
+        <span className="text-xs text-[color:var(--muted)]">{t('analytics.workbench.toolGrid.count', { count: tools.length })}</span>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {TOOLS.map(({ icon: Icon, title, detail }) => (
+        {tools.map(({ icon: Icon, title, detail }) => (
           <div key={title} className="flex min-h-24 gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--border)] bg-[color:var(--surface-3)]">
               <Icon className="h-4 w-4 text-[color:var(--accent)]" strokeWidth={1.75} />
@@ -140,6 +156,7 @@ function EmptyWorkbench({
   readonly onBrowse: () => void;
   readonly onSample: () => void;
 }) {
+  const { t } = useLocale();
   return (
     <div className="space-y-5">
       <div
@@ -158,23 +175,23 @@ function EmptyWorkbench({
           <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-[var(--radius-md)] border border-[color:var(--border-strong)] bg-[color:var(--surface-3)]">
             {loading ? <RefreshCw className="h-6 w-6 animate-spin text-[color:var(--accent)]" /> : <UploadCloud className="h-6 w-6 text-[color:var(--accent)]" />}
           </span>
-          <h2 className="mt-5 font-[family-name:var(--font-display)] text-2xl font-semibold text-[color:var(--text)]">Carregue uma base para iniciar</h2>
+          <h2 className="mt-5 font-[family-name:var(--font-display)] text-2xl font-semibold text-[color:var(--text)]">{t('analytics.workbench.empty.title')}</h2>
           <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[color:var(--muted)]">
-            CSV, TSV ou JSON até 15 MB. O arquivo é analisado localmente no navegador e não é enviado ao servidor.
+            {t('analytics.workbench.empty.description')}
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button variant="primary" onClick={onBrowse} disabled={loading}>
-              <UploadCloud className="h-4 w-4" /> Selecionar arquivo
+              <UploadCloud className="h-4 w-4" /> {t('analytics.workbench.empty.browse')}
             </Button>
             <Button variant="secondary" onClick={onSample} disabled={loading}>
-              <FlaskConical className="h-4 w-4" /> Usar dados de demonstração
+              <FlaskConical className="h-4 w-4" /> {t('analytics.workbench.empty.sample')}
             </Button>
           </div>
           {error ? <p className="mt-4 text-sm font-medium text-[color:var(--danger)]" role="alert">{error}</p> : null}
           <div className="mt-6 flex flex-wrap justify-center gap-4 text-xs text-[color:var(--muted)]">
-            <span className="inline-flex items-center gap-1.5"><FileSpreadsheet className="h-3.5 w-3.5" /> CSV / TSV</span>
-            <span className="inline-flex items-center gap-1.5"><FileJson className="h-3.5 w-3.5" /> JSON</span>
-            <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Processamento local</span>
+            <span className="inline-flex items-center gap-1.5"><FileSpreadsheet className="h-3.5 w-3.5" /> {t('analytics.workbench.empty.csvTsv')}</span>
+            <span className="inline-flex items-center gap-1.5"><FileJson className="h-3.5 w-3.5" /> {t('analytics.workbench.empty.json')}</span>
+            <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> {t('analytics.workbench.empty.localProcessing')}</span>
           </div>
         </div>
       </div>
@@ -195,19 +212,20 @@ function Metric({ label, value, detail }: { readonly label: string; readonly val
 }
 
 function AgentRail({ dataset }: { readonly dataset: DatasetAnalysis }) {
+  const { t, locale } = useLocale();
   const agents = [
-    { icon: Database, name: 'Agente de ingestão', result: `${dataset.rows.length.toLocaleString('pt-BR')} linhas normalizadas` },
-    { icon: Binary, name: 'Agente de schema', result: `${dataset.numericColumns} variáveis numéricas detectadas` },
-    { icon: ShieldCheck, name: 'Agente de qualidade', result: `${dataset.completeness.toFixed(1)}% de completude` },
-    { icon: ScanSearch, name: 'Agente estatístico', result: `${dataset.anomalyCount} anomalias sinalizadas` },
-    { icon: Sparkles, name: 'Agente de síntese', result: `${dataset.insights.length} conclusões rastreáveis` },
+    { icon: Database, name: t('analytics.workbench.agents.ingestion.name'), result: t('analytics.workbench.agents.ingestion.result', { count: dataset.rows.length.toLocaleString(locale) }) },
+    { icon: Binary, name: t('analytics.workbench.agents.schema.name'), result: t('analytics.workbench.agents.schema.result', { count: dataset.numericColumns }) },
+    { icon: ShieldCheck, name: t('analytics.workbench.agents.quality.name'), result: t('analytics.workbench.agents.quality.result', { percent: dataset.completeness.toFixed(1) }) },
+    { icon: ScanSearch, name: t('analytics.workbench.agents.statistical.name'), result: t('analytics.workbench.agents.statistical.result', { count: dataset.anomalyCount }) },
+    { icon: Sparkles, name: t('analytics.workbench.agents.synthesis.name'), result: t('analytics.workbench.agents.synthesis.result', { count: dataset.insights.length }) },
   ];
   return (
     <aside className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-4" aria-labelledby="analysis-agents-title">
       <div className="flex items-center justify-between gap-3 border-b border-[color:var(--border)] pb-4">
         <div>
-          <p className="type-data text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">Orquestração</p>
-          <h3 id="analysis-agents-title" className="mt-1 font-semibold text-[color:var(--text)]">Agentes da análise</h3>
+          <p className="type-data text-xs uppercase tracking-[0.18em] text-[color:var(--accent)]">{t('analytics.workbench.agents.eyebrow')}</p>
+          <h3 id="analysis-agents-title" className="mt-1 font-semibold text-[color:var(--text)]">{t('analytics.workbench.agents.title')}</h3>
         </div>
         <Bot className="h-5 w-5 text-[color:var(--accent)]" />
       </div>
@@ -217,20 +235,21 @@ function AgentRail({ dataset }: { readonly dataset: DatasetAnalysis }) {
             <div className="flex items-center gap-2">
               <Icon className="h-3.5 w-3.5 text-[color:var(--accent)]" />
               <p className="text-xs font-semibold text-[color:var(--text)]">{name}</p>
-              <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[color:var(--success)]" aria-label="Concluído" />
+              <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[color:var(--success)]" aria-label={t('analytics.workbench.agents.done')} />
             </div>
             <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">{result}</p>
           </div>
         ))}
       </div>
       <p className="mt-3 text-xs leading-5 text-[color:var(--muted)]">
-        Cada resultado é calculado a partir da base carregada; nenhuma conclusão é inventada.
+        {t('analytics.workbench.agents.footer')}
       </p>
     </aside>
   );
 }
 
 export function DataAnalysisWorkbench() {
+  const { t, locale } = useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dataset, setDataset] = useState<DatasetAnalysis | null>(null);
   const [view, setView] = useState<WorkbenchView>('overview');
@@ -249,15 +268,15 @@ export function DataAnalysisWorkbench() {
       const rightValue = right[sortColumn];
       const result = typeof leftValue === 'number' && typeof rightValue === 'number'
         ? leftValue - rightValue
-        : String(leftValue ?? '').localeCompare(String(rightValue ?? ''), 'pt-BR');
+        : String(leftValue ?? '').localeCompare(String(rightValue ?? ''), locale);
       return sortDirection === 'ascending' ? result : -result;
     }).slice(0, 100);
-  }, [dataset, sortColumn, sortDirection]);
+  }, [dataset, sortColumn, sortDirection, locale]);
 
   async function loadFile(file: File) {
     setError(null);
     if (file.size > MAX_FILE_BYTES) {
-      setError('O arquivo excede 15 MB. Reduza o recorte ou divida a base antes de continuar.');
+      setError(t('analytics.workbench.errors.fileTooLarge'));
       return;
     }
     setLoading(true);
@@ -266,7 +285,7 @@ export function DataAnalysisWorkbench() {
       setDataset(analyzeDataset(file.name, rows, file.size));
       setView('overview');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível interpretar o arquivo.');
+      setError(reason instanceof Error ? reason.message : t('analytics.workbench.errors.parseFailed'));
     } finally {
       setLoading(false);
       setDragging(false);
@@ -310,10 +329,10 @@ export function DataAnalysisWorkbench() {
   }
 
   const tabs: readonly { id: WorkbenchView; label: string }[] = [
-    { id: 'overview', label: 'Visão geral' },
-    { id: 'columns', label: 'Colunas' },
-    { id: 'correlations', label: 'Correlações' },
-    { id: 'data', label: 'Dados' },
+    { id: 'overview', label: t('analytics.workbench.tabs.overview') },
+    { id: 'columns', label: t('analytics.workbench.tabs.columns') },
+    { id: 'correlations', label: t('analytics.workbench.tabs.correlations') },
+    { id: 'data', label: t('analytics.workbench.tabs.data') },
   ];
 
   return (
@@ -324,25 +343,25 @@ export function DataAnalysisWorkbench() {
           <div className="p-6 sm:p-8">
             <div className="flex flex-wrap items-center gap-3">
               <span className="type-data inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--accent)]">
-                <CircleDot className="h-3.5 w-3.5" /> Sala de análise 01
+                <CircleDot className="h-3.5 w-3.5" /> {t('analytics.workbench.header.roomLabel')}
               </span>
-              <span className="rounded-[var(--radius-sm)] border border-[color:var(--border)] px-2 py-1 text-xs text-[color:var(--muted)]">Processamento local</span>
+              <span className="rounded-[var(--radius-sm)] border border-[color:var(--border)] px-2 py-1 text-xs text-[color:var(--muted)]">{t('analytics.workbench.empty.localProcessing')}</span>
             </div>
             <h1 id="data-workbench-title" className="mt-4 max-w-3xl font-[family-name:var(--font-display)] text-3xl font-semibold tracking-[-0.035em] text-[color:var(--text)] sm:text-4xl">
-              Da base bruta à decisão, em um fluxo auditável.
+              {t('analytics.workbench.header.title')}
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
-              Carregue dados, valide a qualidade, investigue relações e exporte um relatório reproduzível. Cada agente mostra exatamente o que calculou.
+              {t('analytics.workbench.header.description')}
             </p>
           </div>
           <div className="flex flex-col justify-between border-t border-[color:var(--border)] bg-[color:var(--surface)] p-6 lg:border-l lg:border-t-0">
             <div>
-              <p className="type-data text-xs uppercase tracking-[0.16em] text-[color:var(--muted)]">Privacidade</p>
-              <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">Seus dados não saem do navegador.</p>
-              <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">Análise local, sem upload silencioso ou persistência automática.</p>
+              <p className="type-data text-xs uppercase tracking-[0.16em] text-[color:var(--muted)]">{t('analytics.workbench.header.privacyEyebrow')}</p>
+              <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{t('analytics.workbench.header.privacyTitle')}</p>
+              <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">{t('analytics.workbench.header.privacyDetail')}</p>
             </div>
             <Button variant="primary" className="mt-5 w-full" onClick={() => inputRef.current?.click()}>
-              <UploadCloud className="h-4 w-4" /> {dataset ? 'Substituir base' : 'Carregar dados'}
+              <UploadCloud className="h-4 w-4" /> {dataset ? t('analytics.workbench.replaceDataset') : t('analytics.workbench.loadDataset')}
             </Button>
           </div>
         </div>
@@ -363,29 +382,29 @@ export function DataAnalysisWorkbench() {
           <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface)] p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-[color:var(--text)]">{dataset.name}</p>
-              <p className="mt-1 text-xs text-[color:var(--muted)]">{fileSize(dataset.bytes)} · análise concluída no navegador</p>
+              <p className="mt-1 text-xs text-[color:var(--muted)]">{fileSize(t, dataset.bytes)} · {t('analytics.workbench.analyzedInBrowser')}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => downloadBlob(datasetToCsv(dataset), `${dataset.name.replace(/\.[^.]+$/, '')}-normalized.csv`, 'text/csv;charset=utf-8')}>
-                <Download className="h-4 w-4" /> CSV normalizado
+                <Download className="h-4 w-4" /> {t('analytics.workbench.exportCsv')}
               </Button>
               <Button variant="primary" onClick={exportReport}>
-                <Download className="h-4 w-4" /> Relatório JSON
+                <Download className="h-4 w-4" /> {t('analytics.workbench.exportJson')}
               </Button>
             </div>
           </div>
           <Pipeline ready />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <Metric label="Linhas" value={dataset.rows.length.toLocaleString('pt-BR')} detail="Registros analisados" />
-            <Metric label="Colunas" value={String(dataset.columns.length)} detail={`${dataset.numericColumns} numéricas`} />
-            <Metric label="Completude" value={`${dataset.completeness.toFixed(1)}%`} detail="Células preenchidas" />
-            <Metric label="Duplicatas" value={dataset.duplicateRows.toLocaleString('pt-BR')} detail="Linhas idênticas" />
-            <Metric label="Anomalias" value={dataset.anomalyCount.toLocaleString('pt-BR')} detail="Acima de 3σ" />
+            <Metric label={t('analytics.workbench.metric.rows')} value={dataset.rows.length.toLocaleString(locale)} detail={t('analytics.workbench.metric.rowsDetail')} />
+            <Metric label={t('analytics.workbench.metric.columns')} value={String(dataset.columns.length)} detail={t('analytics.workbench.metric.columnsDetail', { count: dataset.numericColumns })} />
+            <Metric label={t('analytics.workbench.metric.completeness')} value={`${dataset.completeness.toFixed(1)}%`} detail={t('analytics.workbench.metric.completenessDetail')} />
+            <Metric label={t('analytics.workbench.metric.duplicates')} value={dataset.duplicateRows.toLocaleString(locale)} detail={t('analytics.workbench.metric.duplicatesDetail')} />
+            <Metric label={t('analytics.workbench.metric.anomalies')} value={dataset.anomalyCount.toLocaleString(locale)} detail={t('analytics.workbench.metric.anomaliesDetail')} />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
             <Card className="min-w-0 overflow-hidden p-0">
-              <div className="flex overflow-x-auto border-b border-[color:var(--border)] p-2" role="tablist" aria-label="Visões da análise">
+              <div className="flex overflow-x-auto border-b border-[color:var(--border)] p-2" role="tablist" aria-label={t('analytics.workbench.viewsAria')}>
                 {tabs.map((tab) => (
                   <button key={tab.id} type="button" role="tab" aria-selected={view === tab.id} onClick={() => setView(tab.id)}
                     className={cn('focus-ring min-h-11 shrink-0 rounded-[var(--radius-sm)] px-4 text-sm font-medium transition-colors',
@@ -398,7 +417,7 @@ export function DataAnalysisWorkbench() {
               {view === 'overview' ? (
                 <div className="grid gap-5 p-5 lg:grid-cols-[1.1fr_0.9fr]">
                   <div>
-                    <p className="type-data text-xs uppercase tracking-[0.16em] text-[color:var(--accent)]">Conclusões rastreáveis</p>
+                    <p className="type-data text-xs uppercase tracking-[0.16em] text-[color:var(--accent)]">{t('analytics.workbench.overview.insights')}</p>
                     <div className="mt-3 space-y-2">
                       {dataset.insights.map((insight, index) => (
                         <div key={insight} className="flex gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-3">
@@ -409,7 +428,7 @@ export function DataAnalysisWorkbench() {
                     </div>
                   </div>
                   <div>
-                    <p className="type-data text-xs uppercase tracking-[0.16em] text-[color:var(--accent)]">Qualidade por coluna</p>
+                    <p className="type-data text-xs uppercase tracking-[0.16em] text-[color:var(--accent)]">{t('analytics.workbench.overview.qualityByColumn')}</p>
                     <div className="mt-3 space-y-3">
                       {dataset.profiles.slice(0, 8).map((profile) => (
                         <div key={profile.name}>
@@ -431,7 +450,11 @@ export function DataAnalysisWorkbench() {
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[760px] border-collapse text-left text-xs">
                     <thead><tr className="border-b border-[color:var(--border)] bg-[color:var(--surface-2)] text-[color:var(--muted)]">
-                      {['Coluna', 'Tipo', 'Completude', 'Distintos', 'Ausentes', 'Mínimo', 'Média', 'Máximo'].map((label) => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}
+                      {[
+                        t('analytics.workbench.columns.name'), t('analytics.workbench.columns.type'), t('analytics.workbench.columns.completeness'),
+                        t('analytics.workbench.columns.distinct'), t('analytics.workbench.columns.missing'), t('analytics.workbench.columns.minimum'),
+                        t('analytics.workbench.columns.mean'), t('analytics.workbench.columns.maximum'),
+                      ].map((label) => <th key={label} className="px-4 py-3 font-semibold">{label}</th>)}
                     </tr></thead>
                     <tbody>{dataset.profiles.map((profile) => (
                       <tr key={profile.name} className="border-b border-[color:var(--border)] last:border-0 hover:bg-[color:var(--surface-2)]">
@@ -440,9 +463,9 @@ export function DataAnalysisWorkbench() {
                         <td className="px-4 py-3 font-mono text-[color:var(--text)]">{profile.completeness.toFixed(1)}%</td>
                         <td className="px-4 py-3 font-mono text-[color:var(--text)]">{profile.distinct}</td>
                         <td className="px-4 py-3 font-mono text-[color:var(--text)]">{profile.missing}</td>
-                        <td className="px-4 py-3 font-mono text-[color:var(--text)]">{profile.minimum === null ? '—' : NUMBER_FORMAT.format(profile.minimum)}</td>
-                        <td className="px-4 py-3 font-mono text-[color:var(--text)]">{profile.mean === null ? '—' : NUMBER_FORMAT.format(profile.mean)}</td>
-                        <td className="px-4 py-3 font-mono text-[color:var(--text)]">{profile.maximum === null ? '—' : NUMBER_FORMAT.format(profile.maximum)}</td>
+                        <td className="px-4 py-3 font-mono text-[color:var(--text)]">{profile.minimum === null ? '—' : numberFormat(locale).format(profile.minimum)}</td>
+                        <td className="px-4 py-3 font-mono text-[color:var(--text)]">{profile.mean === null ? '—' : numberFormat(locale).format(profile.mean)}</td>
+                        <td className="px-4 py-3 font-mono text-[color:var(--text)]">{profile.maximum === null ? '—' : numberFormat(locale).format(profile.maximum)}</td>
                       </tr>
                     ))}</tbody>
                   </table>
@@ -457,7 +480,7 @@ export function DataAnalysisWorkbench() {
                         <div key={`${pair.left}-${pair.right}`} className="grid gap-2 rounded-[var(--radius-md)] border border-[color:var(--border)] p-3 sm:grid-cols-[minmax(0,1fr)_8rem] sm:items-center">
                           <div>
                             <p className="text-sm font-medium text-[color:var(--text)]">{pair.left} × {pair.right}</p>
-                            <p className="mt-1 text-xs text-[color:var(--muted)]">{pair.samples} observações pareadas</p>
+                            <p className="mt-1 text-xs text-[color:var(--muted)]">{t('analytics.workbench.correlations.pairedObservations', { count: pair.samples })}</p>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="h-2 flex-1 overflow-hidden rounded-full bg-[color:var(--surface-3)]">
@@ -468,13 +491,13 @@ export function DataAnalysisWorkbench() {
                         </div>
                       ))}
                     </div>
-                  ) : <p className="rounded-[var(--radius-md)] border border-dashed border-[color:var(--border)] p-6 text-sm text-[color:var(--muted)]">São necessárias pelo menos duas colunas numéricas com três observações pareadas.</p>}
+                  ) : <p className="rounded-[var(--radius-md)] border border-dashed border-[color:var(--border)] p-6 text-sm text-[color:var(--muted)]">{t('analytics.workbench.correlations.empty')}</p>}
                 </div>
               ) : null}
 
               {view === 'data' ? (
                 <div>
-                  <div className="border-b border-[color:var(--border)] px-5 py-3 text-xs text-[color:var(--muted)]">Prévia das primeiras 100 linhas; ordenação considera até 500.</div>
+                  <div className="border-b border-[color:var(--border)] px-5 py-3 text-xs text-[color:var(--muted)]">{t('analytics.workbench.data.previewHint')}</div>
                   <div className="max-h-[34rem] overflow-auto">
                     <table className="min-w-full border-collapse text-left text-xs">
                       <thead className="sticky top-0 z-10 bg-[color:var(--surface-2)]"><tr>
@@ -488,7 +511,7 @@ export function DataAnalysisWorkbench() {
                       </tr></thead>
                       <tbody>{previewRows.map((row, rowIndex) => (
                         <tr key={rowIndex} className="border-b border-[color:var(--border)] hover:bg-[color:var(--surface-2)]">
-                          {dataset.columns.map((column) => <td key={column} className="max-w-72 truncate border-r border-[color:var(--border)] px-3 py-2.5 font-mono text-[color:var(--text)] last:border-r-0" title={formatCell(row[column] ?? null)}>{formatCell(row[column] ?? null)}</td>)}
+                          {dataset.columns.map((column) => <td key={column} className="max-w-72 truncate border-r border-[color:var(--border)] px-3 py-2.5 font-mono text-[color:var(--text)] last:border-r-0" title={formatCell(locale, row[column] ?? null)}>{formatCell(locale, row[column] ?? null)}</td>)}
                         </tr>
                       ))}</tbody>
                     </table>

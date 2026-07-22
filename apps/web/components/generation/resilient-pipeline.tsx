@@ -24,11 +24,15 @@ import type { GenerationArtifact, GenerationExecutionEvent, GenerationStageStatu
 // job actually has is driven by job.stageStatuses (set server-side from the job's
 // own spec.delivery_type, see generation_job_engine.steps_for) -- render only the
 // ones present for THIS job (see visibleStages below), not this whole list.
-const STAGES = [
-  ['contracts', 'Contratos'], ['database', 'Banco'], ['backend', 'Backend'],
-  ['frontend', 'Frontend'], ['mobile', 'Mobile'], ['security', 'Segurança'], ['tests', 'Testes'],
-  ['docs', 'Documentação'], ['build', 'Build'], ['package', 'Pacote'],
-] as const;
+type Translator = (key: string, values?: Record<string, string | number>) => string;
+
+function buildStages(t: Translator) {
+  return [
+    ['contracts', t('pipeline.stages.contracts')], ['database', t('pipeline.stages.database')], ['backend', t('pipeline.stages.backend')],
+    ['frontend', t('pipeline.stages.frontend')], ['mobile', t('pipeline.stages.mobile')], ['security', t('pipeline.stages.security')], ['tests', t('pipeline.stages.tests')],
+    ['docs', t('pipeline.stages.docs')], ['build', t('pipeline.stages.build')], ['package', t('pipeline.stages.package')],
+  ] as const;
+}
 
 const TERMINAL = new Set(['READY', 'FAILED', 'PAUSED', 'NEEDS_USER_ACTION', 'STALLED']);
 
@@ -57,7 +61,8 @@ function StageIcon({ status }: { readonly status: GenerationStageStatus }) {
 }
 
 export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelineProps) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const STAGES = useMemo(() => buildStages(t), [t]);
   const [job, setJob] = useState<ResilientGenerationJob | null>(null);
   const [events, setEvents] = useState<readonly GenerationExecutionEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +188,7 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
   // possible STAGES list, so the grid never shows a phantom stage card.
   const visibleStages = useMemo(
     () => (job ? STAGES.filter(([key]) => key in job.stageStatuses) : STAGES),
-    [job],
+    [job, STAGES],
   );
 
   if (loading) {
@@ -235,12 +240,12 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
             <p className="mt-1 font-mono text-xs text-muted-foreground">{job.id}</p>
           </div>
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-3">
-            <Meta label="Provider" value={job.providerLabel} />
-            <Meta label="Modelo" value={job.model ?? '—'} />
-            <Meta label="Blueprint" value={`v${job.blueprintVersion}`} />
-            <Meta label="Etapa" value={job.currentStage} />
-            <Meta label="Progresso" value={`${job.progress}%`} />
-            <Meta label="Retries" value={String(job.retryCount)} />
+            <Meta label={t('pipeline.meta.provider')} value={job.providerLabel} />
+            <Meta label={t('pipeline.meta.model')} value={job.model ?? '—'} />
+            <Meta label={t('pipeline.meta.blueprint')} value={`v${job.blueprintVersion}`} />
+            <Meta label={t('pipeline.meta.stage')} value={job.currentStage} />
+            <Meta label={t('pipeline.meta.progress')} value={`${job.progress}%`} />
+            <Meta label={t('pipeline.meta.retries')} value={String(job.retryCount)} />
           </div>
         </div>
         <div className="h-1.5 bg-background/50"><div className="h-full bg-[color:var(--accent)] transition-[width] duration-500" style={{ width: `${job.progress}%` }} /></div>
@@ -340,7 +345,7 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
           </div>
           <div className="mt-4 max-h-[420px] space-y-2 overflow-auto pr-1">
             {filteredLogs.map((entry) => <div key={entry.id} className="grid grid-cols-[auto_1fr] gap-3 rounded-lg border border-border/50 bg-background/35 p-3 text-xs">
-              <span className="font-mono text-muted-foreground">{new Date(entry.timestamp).toLocaleTimeString('pt-BR')}</span><div><p className={entry.level === 'error' ? 'text-[color:var(--danger)]' : 'text-foreground'}>{entry.message}</p>{entry.detail ? <p className="mt-1 text-muted-foreground">{entry.detail}</p> : null}<p className="mt-1 font-mono text-xs text-muted-foreground">{entry.stage}</p></div>
+              <span className="font-mono text-muted-foreground">{new Date(entry.timestamp).toLocaleTimeString(locale)}</span><div><p className={entry.level === 'error' ? 'text-[color:var(--danger)]' : 'text-foreground'}>{entry.message}</p>{entry.detail ? <p className="mt-1 text-muted-foreground">{entry.detail}</p> : null}<p className="mt-1 font-mono text-xs text-muted-foreground">{entry.stage}</p></div>
             </div>)}
             {filteredLogs.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">{t('pipeline.log.empty')}</p> : null}
           </div>
@@ -408,6 +413,7 @@ function BuildSkippedPanel({ job, action, retryBuild, continuePipeline, exportPa
   readonly continuePipeline: () => void;
   readonly exportPartial: () => void;
 }) {
+  const { t } = useLocale();
   const [guideOpen, setGuideOpen] = useState(false);
   const guide = job.manualBuildFixGuide;
   const retryLimitReached = job.manualBuildRetryCount >= 3;
@@ -417,13 +423,13 @@ function BuildSkippedPanel({ job, action, retryBuild, continuePipeline, exportPa
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[color:var(--warning)]" aria-hidden />
         <div className="min-w-0">
-          <Badge tone="warning">SKIPPED_AFTER_FAILURE</Badge>
-          <h2 className="mt-3 font-semibold">Build interrompido após 2 tentativas automáticas</h2>
+          <Badge tone="warning">{t('pipeline.buildSkip.status')}</Badge>
+          <h2 className="mt-3 font-semibold">{t('pipeline.buildSkip.title')}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {guide?.original_error ?? 'O build continuou falhando após a política limitada de recuperação.'}
+            {guide?.original_error ?? t('pipeline.buildSkip.defaultError')}
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
-            <strong>Motivo do skip:</strong> {guide?.root_cause ?? 'O limite seguro de auto-recuperação foi atingido.'}
+            <strong>{t('pipeline.buildSkip.skipReasonLabel')}</strong> {guide?.root_cause ?? t('pipeline.buildSkip.defaultRootCause')}
           </p>
         </div>
       </div>
@@ -431,7 +437,7 @@ function BuildSkippedPanel({ job, action, retryBuild, continuePipeline, exportPa
       <div className="mt-5 flex flex-wrap gap-2">
         <Button variant="secondary" onClick={() => setGuideOpen((current) => !current)} aria-expanded={guideOpen}>
           <FileCode2 className="h-4 w-4" aria-hidden />
-          {guideOpen ? 'Ocultar guia de correção' : 'Ver guia de correção'}
+          {guideOpen ? t('pipeline.buildSkip.hideGuide') : t('pipeline.buildSkip.showGuide')}
         </Button>
         <Button
           variant="primary"
@@ -440,7 +446,7 @@ function BuildSkippedPanel({ job, action, retryBuild, continuePipeline, exportPa
           onClick={retryBuild}
         >
           <RefreshCcw className="h-4 w-4" aria-hidden />
-          {retryLimitReached ? 'Limite de reexecuções atingido' : 'Reexecutar build manualmente'}
+          {retryLimitReached ? t('pipeline.buildSkip.retryLimitReached') : t('pipeline.buildSkip.retryManually')}
         </Button>
         <Button
           loading={action === 'continue-build-skip'}
@@ -448,26 +454,26 @@ function BuildSkippedPanel({ job, action, retryBuild, continuePipeline, exportPa
           onClick={continuePipeline}
         >
           <Play className="h-4 w-4" aria-hidden />
-          {job.buildSkipAcknowledged ? 'Continuidade confirmada' : 'Continuar pipeline mesmo assim'}
+          {job.buildSkipAcknowledged ? t('pipeline.buildSkip.continuityConfirmed') : t('pipeline.buildSkip.continueAnyway')}
         </Button>
         {job.generatedProjectId ? (
           <Button loading={action === 'download-partial'} onClick={exportPartial}>
-            <Download className="h-4 w-4" aria-hidden /> Exportar código parcial
+            <Download className="h-4 w-4" aria-hidden /> {t('pipeline.buildSkip.exportPartial')}
           </Button>
         ) : null}
       </div>
 
       {guideOpen && guide ? (
         <div className="mt-5 grid gap-4 rounded-xl border border-border/60 bg-background/45 p-4 text-sm">
-          <GuideList title="Arquivos afetados" items={guide.affected_files} />
-          <GuideList title="Dependências problemáticas" items={guide.problematic_dependencies} />
+          <GuideList title={t('pipeline.guide.affectedFiles')} items={guide.affected_files} />
+          <GuideList title={t('pipeline.guide.problematicDeps')} items={guide.problematic_dependencies} />
           {Object.keys(guide.suggested_versions).length ? (
-            <div><h3 className="font-semibold">Versões sugeridas</h3><ul className="mt-2 space-y-1 font-mono text-xs">{Object.entries(guide.suggested_versions).map(([name, version]) => <li key={name}>{name}: {version}</li>)}</ul></div>
+            <div><h3 className="font-semibold">{t('pipeline.guide.suggestedVersions')}</h3><ul className="mt-2 space-y-1 font-mono text-xs">{Object.entries(guide.suggested_versions).map(([name, version]) => <li key={name}>{name}: {version}</li>)}</ul></div>
           ) : null}
-          <GuideList title="Patches aplicados" items={guide.patches_applied} />
-          <GuideList title="Passo a passo" items={guide.steps} ordered />
-          <div><h3 className="font-semibold">Comandos de correção</h3><pre className="mt-2 overflow-x-auto rounded-lg bg-black/35 p-3 text-xs"><code>{guide.commands.join('\n')}</code></pre></div>
-          <details><summary className="cursor-pointer font-semibold">Logs completos</summary><pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/35 p-3 text-xs">{guide.full_logs}</pre></details>
+          <GuideList title={t('pipeline.guide.patchesApplied')} items={guide.patches_applied} />
+          <GuideList title={t('pipeline.guide.stepByStep')} items={guide.steps} ordered />
+          <div><h3 className="font-semibold">{t('pipeline.guide.fixCommands')}</h3><pre className="mt-2 overflow-x-auto rounded-lg bg-black/35 p-3 text-xs"><code>{guide.commands.join('\n')}</code></pre></div>
+          <details><summary className="cursor-pointer font-semibold">{t('pipeline.guide.fullLogs')}</summary><pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/35 p-3 text-xs">{guide.full_logs}</pre></details>
         </div>
       ) : null}
     </section>
@@ -482,13 +488,13 @@ function GuideList({ title, items, ordered = false }: { readonly title: string; 
 
 function ArtifactRow({ artifact, jobId }: { readonly artifact: GenerationArtifact; readonly jobId: string }) {
   const { t } = useLocale();
-  return <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-background/35 p-3"><FileCode2 className="h-4 w-4 shrink-0 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-medium" title={artifact.name}>{artifact.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{artifact.stage} · {`${Math.ceil(artifact.size_bytes / 1024)} KB`} · {artifact.valid ? t('pipeline.artifact.valid') : artifact.kind}{artifact.warnings.length ? ` · ${artifact.warnings.length} warning(s)` : ''}</p></div>{artifact.kind === 'raw_response' ? <button className="text-xs text-[color:var(--accent)] hover:underline" onClick={() => void metaFactoryClient.downloadRawArtifact(jobId, artifact.id, artifact.name.split('/').at(-1) ?? 'raw.txt')}>{t('pipeline.artifact.open')}</button> : null}</div>;
+  return <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-background/35 p-3"><FileCode2 className="h-4 w-4 shrink-0 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-medium" title={artifact.name}>{artifact.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{artifact.stage} · {`${Math.ceil(artifact.size_bytes / 1024)} KB`} · {artifact.valid ? t('pipeline.artifact.valid') : artifact.kind}{artifact.warnings.length ? ` · ${t('pipeline.artifact.warningsCount', { count: artifact.warnings.length })}` : ''}</p></div>{artifact.kind === 'raw_response' ? <button className="text-xs text-[color:var(--accent)] hover:underline" onClick={() => void metaFactoryClient.downloadRawArtifact(jobId, artifact.id, artifact.name.split('/').at(-1) ?? 'raw.txt')}>{t('pipeline.artifact.open')}</button> : null}</div>;
 }
 
 // Build Auto-Repair timeline: renders the repair_* execution events streamed by
 // the build pipeline (detect -> patch -> re-run) so the user watches the loop live.
 function RepairTimeline({ events }: { readonly events: readonly GenerationExecutionEvent[] }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const repairs = events.filter((event) => event.type === 'repair_started' || event.type === 'repair_applied' || event.type === 'repair_failed');
   if (!repairs.length) return null;
   return (
@@ -501,7 +507,7 @@ function RepairTimeline({ events }: { readonly events: readonly GenerationExecut
       <ol className="mt-4 space-y-2">
         {repairs.slice(-12).map((event) => (
           <li key={event.id} className="grid grid-cols-[auto_auto_1fr] items-start gap-3 rounded-lg border border-border/50 bg-background/35 p-3 text-xs">
-            <span className="font-mono text-muted-foreground">{new Date(event.timestamp).toLocaleTimeString('pt-BR')}</span>
+            <span className="font-mono text-muted-foreground">{new Date(event.timestamp).toLocaleTimeString(locale)}</span>
             {event.type === 'repair_started'
               ? <Loader2 className="mt-0.5 h-3.5 w-3.5 text-[color:var(--accent)]" />
               : event.type === 'repair_applied'
@@ -534,16 +540,16 @@ function FailurePanel({ job, action, retry, rawArtifact, resume, continueWithWar
     </div>
 
     <div className="mt-4 grid gap-2 rounded-xl border border-[color-mix(in_srgb,var(--accent)_24%,transparent)] bg-background/35 p-4 text-xs sm:grid-cols-2 lg:grid-cols-5">
-      <Meta label="Arquivos gerados" value={String(generated.length)} />
-      <Meta label="Arquivos válidos" value={String(validCount)} />
-      <Meta label="Warnings" value={String(failure.warning_count)} />
-      <Meta label="Bloqueantes" value={String(failure.blocking_count)} />
-      <Meta label="Próximo passo" value={failure.next_expected_transition ?? '—'} />
+      <Meta label={t('pipeline.failure.meta.generatedFiles')} value={String(generated.length)} />
+      <Meta label={t('pipeline.failure.meta.validFiles')} value={String(validCount)} />
+      <Meta label={t('pipeline.failure.meta.warnings')} value={String(failure.warning_count)} />
+      <Meta label={t('pipeline.failure.meta.blocking')} value={String(failure.blocking_count)} />
+      <Meta label={t('pipeline.failure.meta.nextStep')} value={failure.next_expected_transition ?? '—'} />
     </div>
 
     <dl className="mt-3 grid gap-3 rounded-xl border border-border/60 bg-background/35 p-4 text-xs sm:grid-cols-3 lg:grid-cols-6">
-      <Meta label="Job" value={job.id} /><Meta label="Projeto" value={job.projectId} /><Meta label="Etapa" value={failure.stage} /><Meta label="Agente" value={failure.agent} /><Meta label="Validator" value={failure.validator ?? '—'} /><Meta label="Tentativa" value={String(failure.attempt)} />
-      <Meta label="Provider" value={failure.provider ?? 'Nenhum'} /><Meta label="Modelo" value={failure.model ?? '—'} /><Meta label="Tempo decorrido" value={`${failure.elapsed_seconds}s${failure.timeout_seconds ? ` / ${failure.timeout_seconds}s` : ''}`} /><Meta label="Erros" value={String(failure.error_count)} /><Meta label="Último checkpoint" value={failure.last_successful_checkpoint ?? '—'} /><Meta label="Último artefato" value={failure.last_generated_artifact ?? '—'} />
+      <Meta label={t('pipeline.failure.meta.job')} value={job.id} /><Meta label={t('pipeline.failure.meta.project')} value={job.projectId} /><Meta label={t('pipeline.meta.stage')} value={failure.stage} /><Meta label={t('pipeline.failure.meta.agent')} value={failure.agent} /><Meta label={t('pipeline.failure.meta.validator')} value={failure.validator ?? '—'} /><Meta label={t('pipeline.failure.meta.attempt')} value={String(failure.attempt)} />
+      <Meta label={t('pipeline.meta.provider')} value={failure.provider ?? t('pipeline.failure.meta.none')} /><Meta label={t('pipeline.meta.model')} value={failure.model ?? '—'} /><Meta label={t('pipeline.failure.meta.elapsedTime')} value={`${failure.elapsed_seconds}s${failure.timeout_seconds ? ` / ${failure.timeout_seconds}s` : ''}`} /><Meta label={t('pipeline.failure.meta.errors')} value={String(failure.error_count)} /><Meta label={t('pipeline.failure.meta.lastCheckpoint')} value={failure.last_successful_checkpoint ?? '—'} /><Meta label={t('pipeline.failure.meta.lastArtifact')} value={failure.last_generated_artifact ?? '—'} />
     </dl>
     {failure.last_log ? <p className="mt-3 rounded-lg border border-border/50 bg-background/35 p-3 font-mono text-xs text-muted-foreground"><strong>{t('pipeline.failure.lastLog')}</strong> {failure.last_log}</p> : null}
     <p className="mt-4 text-sm"><strong>{t('pipeline.failure.recommended')}</strong> {failure.recommended_action}</p>

@@ -6,9 +6,9 @@ O MLTagente não vende tokens de IA nem revende LLM. O usuário é responsável 
 
 ## Provedores e adaptadores
 
-Provider Adapter Pattern: `AIProvider` (interface) → `OpenAIProvider`, `ClaudeProvider`, `GeminiProvider`, `GroqProvider`, `OpenRouterProvider`, `OllamaProvider`, `LMStudioProvider`, além de um adaptador genérico para qualquer endpoint compatível com a API OpenAI. Novo provedor = novo adaptador; nenhuma mudança no núcleo nem nos agentes.
+Provider Adapter Pattern: um contrato `LLMAdapter` comum implementado exclusivamente por `OpenAIAdapter`, `AnthropicAdapter`, `GoogleAdapter`, `DeepSeekAdapter` e `GroqAdapter` no MVP.
 
-Fluxo de execução: `Agente → AIExecutionService → ProviderFactory → Provider Adapter → chave do usuário → LLM`.
+Fluxo de execução: `Agente → LLMRouter → Provider Adapter → vault criptografado do usuário → LLM`.
 
 ## Cadastro de chaves
 
@@ -42,4 +42,4 @@ Antes de qualquer agente ser executado, o sistema confirma: existe chave para o 
 
 ## Modo MLTagente AI Cloud (futuro)
 
-Não implementado agora. A arquitetura já prevê essa extensão: o AIKeyManager pode, no futuro, resolver uma chave da própria plataforma como mais uma fonte de chave — ao lado das chaves do usuário — sem exigir refatoração do Provider Adapter, do ProviderFactory ou dos agentes. Até lá, o MVP roda com custo de LLM praticamente zero para o MLTagente.
+Não implementado agora. Qualquer ampliação futura do catálogo exige decisão arquitetural e de produto explícita. O MVP suporta somente OpenAI, Anthropic, Google, DeepSeek e Groq com chaves do usuário.

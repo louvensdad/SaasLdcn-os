@@ -143,8 +143,6 @@ def test_frontend_does_not_depend_on_planned_501_extensions():
         "/api/contracts/upload-pdf",
         "/api/contracts/analyze",
         "/api/contracts/{contract_id}/report",
-        "/api/user-ai-keys/status",
-        "/api/user-ai-keys/session",
     }
 
     consumed_paths = {path for _, path in FRONTEND_OPERATIONS}

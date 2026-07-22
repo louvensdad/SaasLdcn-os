@@ -15,11 +15,15 @@ import { aiKeyVaultClient } from '@/lib/api/ai-key-vault';
 import type { ArchitectureBlueprint, BlueprintDecision } from '@contracts/architecture-blueprint.contract';
 import type { BlueprintVersion, ProjectRoom } from '@contracts/project-room.contract';
 
-const STEPS = [
-  'Conectando ao provider', 'Enviando PromptMaster', 'Recebendo resposta',
-  'Analisando requisitos', 'Calculando trade-offs', 'Revisando arquitetura',
-  'Validando segurança', 'Finalizando Blueprint',
-];
+type Translator = (key: string, values?: Record<string, string | number>) => string;
+
+function buildSteps(t: Translator) {
+  return [
+    t('architectWorkflow.steps.connecting'), t('architectWorkflow.steps.sending'), t('architectWorkflow.steps.receiving'),
+    t('architectWorkflow.steps.analyzing'), t('architectWorkflow.steps.tradeoffs'), t('architectWorkflow.steps.reviewingArchitecture'),
+    t('architectWorkflow.steps.validatingSecurity'), t('architectWorkflow.steps.finalizing'),
+  ];
+}
 
 type Phase = 'confirm' | 'processing' | 'comparison' | 'complete' | 'error';
 
@@ -42,6 +46,7 @@ export function ArchitectWorkflowModal({ room, open, onClose, onRoom }: {
   const abortRef = useRef<AbortController | null>(null);
   const onRoomRef = useRef(onRoom);
   const before = room.architecture_blueprint;
+  const STEPS = useMemo(() => buildSteps(t), [t]);
 
   useEffect(() => { onRoomRef.current = onRoom; }, [onRoom]);
 
@@ -70,17 +75,21 @@ export function ArchitectWorkflowModal({ room, open, onClose, onRoom }: {
         if (updated.status === 'BLUEPRINT_READY') {
           setResult(updated);
           setStreamed(updated.architecture_blueprint?.decisions ?? []);
-          setEvents((current) => [...current, { type: 'progress', stage: 'complete', label: 'Blueprint recuperado', progress: 100 }]);
+          setEvents((current) => [...current, { type: 'progress', stage: 'complete', label: t('architectWorkflow.events.blueprintRecovered'), progress: 100 }]);
           setPhase('comparison');
           window.clearInterval(poll);
         } else if (updated.status === 'FAILED') {
-          setError(updated.last_failure?.backend_message ?? 'A execução falhou no servidor.');
+          setError(updated.last_failure?.backend_message ?? t('architectWorkflow.errors.serverFailed'));
           setPhase('error');
           window.clearInterval(poll);
         }
       }).catch(() => undefined);
     }, 1500);
     return () => { active = false; window.clearInterval(poll); };
+    // `t` from useLocale() is intentionally excluded here for the same reason
+    // as the effect above: depending on it would tear down and restart the
+    // polling loop on every locale change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, room.room_id, room.status]);
 
   useEffect(() => {
@@ -111,9 +120,9 @@ export function ArchitectWorkflowModal({ room, open, onClose, onRoom }: {
       setPhase('comparison');
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') {
-        setError('Geração cancelada. O Blueprint anterior foi preservado.');
+        setError(t('architectWorkflow.errors.cancelledPreserved'));
       } else {
-        setError(caught instanceof Error ? caught.message : 'Falha ao gerar o Blueprint.');
+        setError(caught instanceof Error ? caught.message : t('architectWorkflow.errors.generateFailed'));
       }
       setPhase('error');
     } finally {
@@ -126,7 +135,7 @@ export function ArchitectWorkflowModal({ room, open, onClose, onRoom }: {
       await projectRoomsClient.cancelBlueprint(room.room_id);
     } finally {
       abortRef.current?.abort();
-      setError('Geração cancelada. A versão anterior foi preservada.');
+      setError(t('architectWorkflow.errors.cancelledVersionPreserved'));
       setPhase('error');
     }
   }
@@ -154,7 +163,7 @@ export function ArchitectWorkflowModal({ room, open, onClose, onRoom }: {
                 {providers.length > 1 ? (
                   <label className="block text-sm font-medium text-[color:var(--text)]">{t('architectWorkflow.providerForRun')}
                     <select className="mt-2 w-full rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-2" value={provider ?? ''} onChange={(event) => setProvider(event.target.value)}>
-                      {providers.map((item) => <option key={item} value={item}>{item === llm.provider ? `${llm.providerLabel} · padrão global` : item}</option>)}
+                      {providers.map((item) => <option key={item} value={item}>{item === llm.provider ? `${llm.providerLabel} · ${t('architectWorkflow.globalDefault')}` : item}</option>)}
                     </select>
                   </label>
                 ) : null}
@@ -166,14 +175,14 @@ export function ArchitectWorkflowModal({ room, open, onClose, onRoom }: {
                 <div className="flex flex-wrap gap-3"><Button variant="primary" onClick={() => llm.openProviderSettings()}>{t('architectWorkflow.connectAi')}</Button><Button variant="secondary" onClick={() => void generate('deterministic')}>{t('architectWorkflow.continueOffline')}</Button><Button variant="ghost" onClick={onClose}>{t('architectWorkflow.cancel')}</Button></div>
               </Card>
             )}
-            <Card className="p-6"><p className="t-overline">{t('architectWorkflow.willDo')}</p><ul className="mt-4 space-y-3 text-sm text-[color:var(--muted)]">{['Reanalisar o PromptMaster', 'Revisar a arquitetura', 'Calcular trade-offs', 'Revisar riscos', 'Criar uma nova versão sem substituir a atual'].map((item) => <li key={item} className="flex items-center gap-2"><Check className="h-4 w-4 text-[color:var(--success)]" />{item}</li>)}</ul><p className="mt-5 ds-caption">{t('architectWorkflow.workspace')} <strong className="text-[color:var(--text)]">{room.workspace_id || 'Enterprise'}</strong></p></Card>
+            <Card className="p-6"><p className="t-overline">{t('architectWorkflow.willDo')}</p><ul className="mt-4 space-y-3 text-sm text-[color:var(--muted)]">{[t('architectWorkflow.willDoItem.reanalyze'), t('architectWorkflow.willDoItem.reviewArchitecture'), t('architectWorkflow.willDoItem.calculateTradeoffs'), t('architectWorkflow.willDoItem.reviewRisks'), t('architectWorkflow.willDoItem.newVersion')].map((item) => <li key={item} className="flex items-center gap-2"><Check className="h-4 w-4 text-[color:var(--success)]" />{item}</li>)}</ul><p className="mt-5 ds-caption">{t('architectWorkflow.workspace')} <strong className="text-[color:var(--text)]">{room.workspace_id || t('architectWorkflow.enterpriseFallback')}</strong></p></Card>
           </div>
         ) : null}
 
         {phase === 'processing' ? (
           <div className="grid gap-6 p-6 lg:grid-cols-[.72fr_1.28fr]">
             <div className="space-y-4">
-              <Card className="p-5"><div className="flex items-center justify-between"><span className="font-semibold">{t('architectWorkflow.architectAi')}</span><span className="t-mono text-sm">{elapsed}s</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-[color:var(--border)]"><div className="h-full bg-[image:var(--accent-gradient)] transition-all" style={{ width: `${progress}%` }} /></div><p className="mt-2 ds-caption">{progress}% · {llm.model ?? 'Motor determinístico'}</p></Card>
+              <Card className="p-5"><div className="flex items-center justify-between"><span className="font-semibold">{t('architectWorkflow.architectAi')}</span><span className="t-mono text-sm">{elapsed}s</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-[color:var(--border)]"><div className="h-full bg-[image:var(--accent-gradient)] transition-all" style={{ width: `${progress}%` }} /></div><p className="mt-2 ds-caption">{progress}% · {llm.model ?? t('architectWorkflow.deterministicEngine')}</p></Card>
               <ol className="space-y-2">{STEPS.map((step, index) => { const threshold = [8,18,24,38,54,70,94,100][index]; const done = progress >= threshold; const active = !done && (index === 0 || progress >= [0,8,18,24,38,54,70,94][index]); return <li key={step} className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[color:var(--border)] px-3 py-2 text-sm">{done ? <CheckCircle2 className="h-4 w-4 text-[color:var(--success)]" /> : active ? <Loader2 className="h-4 w-4 animate-spin text-[color:var(--accent)]" /> : <span className="h-4 w-4 rounded-full border border-[color:var(--border)]" />}{step}</li>; })}</ol>
               <Button variant="ghost" onClick={() => void cancelGeneration()}>{t('architectWorkflow.cancelRun')}</Button>
             </div>
@@ -195,17 +204,17 @@ export function BlueprintComparison({ before, after }: { readonly before: Archit
     const old = new Map((before?.decisions ?? []).map((item) => [item.area, item]));
     return after.decisions.map((item) => ({ before: old.get(item.area), after: item, changed: old.get(item.area)?.choice !== item.choice }));
   }, [after, before]);
-  return <div className="space-y-4"><div className="flex items-center justify-between"><div><p className="t-overline">{t('architectWorkflow.compare.eyebrow')}</p><h3 className="mt-1 ds-section">{t('architectWorkflow.compare.changes', { count: rows.filter((row) => row.changed).length })}</h3></div><GitCompare className="h-7 w-7 text-[color:var(--accent)]" /></div><div className="space-y-3">{rows.map((row) => <Card key={row.after.area} className="p-5"><div className="flex items-center justify-between"><p className="t-overline">{row.after.area}</p><Badge tone={row.changed ? 'accent' : 'neutral'}>{row.changed ? t('architectWorkflow.compare.changed') : t('architectWorkflow.compare.kept')}</Badge></div><div className="mt-3 grid gap-3 md:grid-cols-2"><Diff label="Antes" value={row.before?.choice ?? 'Não definido'} /><Diff label="Depois" value={row.after.choice} /></div><dl className="mt-4 grid gap-3 text-sm md:grid-cols-2"><div><dt className="font-semibold">{t('architectWorkflow.compare.why')}</dt><dd className="mt-1 text-[color:var(--muted)]">{row.after.justification}</dd></div><div><dt className="font-semibold">{t('architectWorkflow.compare.impact')}</dt><dd className="mt-1 text-[color:var(--muted)]">{row.after.impact || 'Impacto contido na área.'}</dd></div><div><dt className="font-semibold">{t('architectWorkflow.compare.benefit')}</dt><dd className="mt-1 text-[color:var(--muted)]">{row.after.maintainability_impact || row.after.scalability_impact || 'Decisão alinhada aos requisitos.'}</dd></div><div><dt className="font-semibold">{t('architectWorkflow.compare.tradeoff')}</dt><dd className="mt-1 text-[color:var(--muted)]">{row.after.tradeoffs?.join(' · ') || 'Nenhum trade-off adicional declarado.'}</dd></div></dl></Card>)}</div></div>;
+  return <div className="space-y-4"><div className="flex items-center justify-between"><div><p className="t-overline">{t('architectWorkflow.compare.eyebrow')}</p><h3 className="mt-1 ds-section">{t('architectWorkflow.compare.changes', { count: rows.filter((row) => row.changed).length })}</h3></div><GitCompare className="h-7 w-7 text-[color:var(--accent)]" /></div><div className="space-y-3">{rows.map((row) => <Card key={row.after.area} className="p-5"><div className="flex items-center justify-between"><p className="t-overline">{row.after.area}</p><Badge tone={row.changed ? 'accent' : 'neutral'}>{row.changed ? t('architectWorkflow.compare.changed') : t('architectWorkflow.compare.kept')}</Badge></div><div className="mt-3 grid gap-3 md:grid-cols-2"><Diff label={t('architectWorkflow.diff.before')} value={row.before?.choice ?? t('architectWorkflow.diff.undefined')} /><Diff label={t('architectWorkflow.diff.after')} value={row.after.choice} /></div><dl className="mt-4 grid gap-3 text-sm md:grid-cols-2"><div><dt className="font-semibold">{t('architectWorkflow.compare.why')}</dt><dd className="mt-1 text-[color:var(--muted)]">{row.after.justification}</dd></div><div><dt className="font-semibold">{t('architectWorkflow.compare.impact')}</dt><dd className="mt-1 text-[color:var(--muted)]">{row.after.impact || t('architectWorkflow.diff.impactFallback')}</dd></div><div><dt className="font-semibold">{t('architectWorkflow.compare.benefit')}</dt><dd className="mt-1 text-[color:var(--muted)]">{row.after.maintainability_impact || row.after.scalability_impact || t('architectWorkflow.diff.benefitFallback')}</dd></div><div><dt className="font-semibold">{t('architectWorkflow.compare.tradeoff')}</dt><dd className="mt-1 text-[color:var(--muted)]">{row.after.tradeoffs?.join(' · ') || t('architectWorkflow.diff.tradeoffFallback')}</dd></div></dl></Card>)}</div></div>;
 }
 
 function Diff({ label, value }: { readonly label: string; readonly value: string }) { return <div className="rounded-[var(--radius-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-3"><p className="t-overline">{label}</p><p className="mt-1 font-semibold text-[color:var(--text)]">{value}</p></div>; }
 
 function Completion({ room, blueprint, elapsed, onClose }: { readonly room: ProjectRoom; readonly blueprint: ArchitectureBlueprint; readonly elapsed: number; readonly onClose: () => void }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const version = room.active_blueprint_version ?? room.blueprint_versions.at(-1)?.version ?? 1;
   const risks = blueprint.decisions.reduce((sum, item) => sum + (item.risks?.length ?? 0), 0);
   const download = () => { const url = URL.createObjectURL(new Blob([JSON.stringify(blueprint, null, 2)], { type: 'application/json' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${room.title}-blueprint-v${version}.json`; anchor.click(); URL.revokeObjectURL(url); };
-  return <div className="p-6"><Card surface="primary" className="p-7"><CheckCircle2 className="h-9 w-9 text-[color:var(--success)]" /><h3 className="mt-4 ds-section">{t('architectWorkflow.done.title')}</h3><p className="mt-1 ds-body ds-text-muted">{t('architectWorkflow.done.version', { version })}</p><div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">{[['Provider', blueprint.providerLabel], ['Tempo', `${Math.max(elapsed, Math.round(blueprint.latencyMs / 1000))}s`], ['Tokens', blueprint.tokensUsed.toLocaleString()], ['Score', `${Math.round(blueprint.confidence * 100)}%`], ['Decisões', String(blueprint.decisions.length)], ['Riscos', String(risks)]].map(([label,value]) => <Diff key={label} label={label} value={value} />)}</div><div className="mt-7 flex flex-wrap gap-3"><Button variant="secondary" onClick={onClose}>{t('architectWorkflow.done.edit')}</Button><Link href={`/engineering-review?projectId=${room.room_id}`}><Button variant="primary">{t('architectWorkflow.done.openReview')}</Button></Link><Button variant="secondary" onClick={download}><Download className="h-4 w-4" />{t('architectWorkflow.done.export')}</Button><Button variant="ghost" onClick={() => window.print()}>{t('architectWorkflow.done.pdf')}</Button></div></Card></div>;
+  return <div className="p-6"><Card surface="primary" className="p-7"><CheckCircle2 className="h-9 w-9 text-[color:var(--success)]" /><h3 className="mt-4 ds-section">{t('architectWorkflow.done.title')}</h3><p className="mt-1 ds-body ds-text-muted">{t('architectWorkflow.done.version', { version })}</p><div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">{[[t('pipeline.meta.provider'), blueprint.providerLabel], [t('architectWorkflow.stats.time'), `${Math.max(elapsed, Math.round(blueprint.latencyMs / 1000))}s`], [t('analytics.workbench.costs.tokensLabel'), blueprint.tokensUsed.toLocaleString(locale)], [t('architectWorkflow.stats.score'), `${Math.round(blueprint.confidence * 100)}%`], [t('architect.tabs.decisions'), String(blueprint.decisions.length)], [t('architect.decision.risks'), String(risks)]].map(([label,value]) => <Diff key={label} label={label} value={value} />)}</div><div className="mt-7 flex flex-wrap gap-3"><Button variant="secondary" onClick={onClose}>{t('architectWorkflow.done.edit')}</Button><Link href={`/engineering-review?projectId=${room.room_id}`}><Button variant="primary">{t('architectWorkflow.done.openReview')}</Button></Link><Button variant="secondary" onClick={download}><Download className="h-4 w-4" />{t('architectWorkflow.done.export')}</Button><Button variant="ghost" onClick={() => window.print()}>{t('architectWorkflow.done.pdf')}</Button></div></Card></div>;
 }
 
 export function BlueprintVersionHistory({ room, onRoom }: { readonly room: ProjectRoom; readonly onRoom: (room: ProjectRoom) => void }) {
@@ -220,20 +229,20 @@ export function BlueprintVersionHistory({ room, onRoom }: { readonly room: Proje
     const base = item.version === active.version ? versions.find((candidate) => candidate.version === item.base_version) ?? versions[1] : item;
     if (base && active) setComparison({ before: base.blueprint, after: active.blueprint });
   }
-  return <Card className="p-6"><div className="flex items-center gap-2"><History className="h-5 w-5 text-[color:var(--accent)]" /><h2 className="ds-subsection">{t('architectWorkflow.history.title')}</h2></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[780px] text-left text-sm"><thead className="border-b border-[color:var(--border)] text-[color:var(--muted-2)]"><tr>{['Versão','Provider / modelo','Data','Tempo','Tokens','Score','Hash','Ações'].map((item) => <th key={item} className="px-3 py-2 font-medium">{item}</th>)}</tr></thead><tbody>{versions.map((item) => <VersionRow key={item.id} item={item} active={item.version === room.active_blueprint_version} busy={busy === item.version} onAction={mutate} onCompare={compare} canDelete={versions.length > 1} />)}</tbody></table></div>{comparison ? <div className="mt-8 border-t border-[color:var(--border)] pt-6"><BlueprintComparison before={comparison.before} after={comparison.after} /></div> : null}</Card>;
+  return <Card className="p-6"><div className="flex items-center gap-2"><History className="h-5 w-5 text-[color:var(--accent)]" /><h2 className="ds-subsection">{t('architectWorkflow.history.title')}</h2></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[780px] text-left text-sm"><thead className="border-b border-[color:var(--border)] text-[color:var(--muted-2)]"><tr>{[t('architectWorkflow.table.version'), t('architectWorkflow.table.providerModel'), t('architectWorkflow.table.date'), t('architectWorkflow.stats.time'), t('analytics.workbench.costs.tokensLabel'), t('architectWorkflow.stats.score'), t('architectWorkflow.table.hash'), t('architectWorkflow.table.actions')].map((item) => <th key={item} className="px-3 py-2 font-medium">{item}</th>)}</tr></thead><tbody>{versions.map((item) => <VersionRow key={item.id} item={item} active={item.version === room.active_blueprint_version} busy={busy === item.version} onAction={mutate} onCompare={compare} canDelete={versions.length > 1} />)}</tbody></table></div>{comparison ? <div className="mt-8 border-t border-[color:var(--border)] pt-6"><BlueprintComparison before={comparison.before} after={comparison.after} /></div> : null}</Card>;
 }
 
 export function WorkflowTimeline({ room }: { readonly room: ProjectRoom }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const entries = [...(room.operational_log ?? [])].slice(-12).reverse();
   if (!entries.length) return null;
-  return <Card className="p-6"><div className="flex items-center gap-2"><ClockIcon /><h2 className="ds-subsection">{t('architectWorkflow.timeline.title')}</h2></div><ol className="mt-5 space-y-0">{entries.map((entry, index) => <li key={entry.id} className="grid grid-cols-[64px_20px_1fr] gap-2"><time className="pt-0.5 font-mono text-xs text-[color:var(--muted-2)]">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time><div className="flex flex-col items-center"><span className={`mt-1 h-2.5 w-2.5 rounded-full ${entry.status === 'failed' ? 'bg-[color:var(--danger)]' : entry.status === 'running' ? 'bg-[color:var(--accent)]' : 'bg-[color:var(--success)]'}`} />{index < entries.length - 1 ? <span className="min-h-8 w-px flex-1 bg-[color:var(--border)]" /> : null}</div><div className="pb-4"><p className="text-sm font-semibold text-[color:var(--text)]">{entry.message}</p>{entry.detail ? <p className="ds-caption">{entry.detail}</p> : null}</div></li>)}</ol></Card>;
+  return <Card className="p-6"><div className="flex items-center gap-2"><ClockIcon /><h2 className="ds-subsection">{t('architectWorkflow.timeline.title')}</h2></div><ol className="mt-5 space-y-0">{entries.map((entry, index) => <li key={entry.id} className="grid grid-cols-[64px_20px_1fr] gap-2"><time className="pt-0.5 font-mono text-xs text-[color:var(--muted-2)]">{new Date(entry.timestamp).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}</time><div className="flex flex-col items-center"><span className={`mt-1 h-2.5 w-2.5 rounded-full ${entry.status === 'failed' ? 'bg-[color:var(--danger)]' : entry.status === 'running' ? 'bg-[color:var(--accent)]' : 'bg-[color:var(--success)]'}`} />{index < entries.length - 1 ? <span className="min-h-8 w-px flex-1 bg-[color:var(--border)]" /> : null}</div><div className="pb-4"><p className="text-sm font-semibold text-[color:var(--text)]">{entry.message}</p>{entry.detail ? <p className="ds-caption">{entry.detail}</p> : null}</div></li>)}</ol></Card>;
 }
 
 function ClockIcon() { return <span className="grid h-7 w-7 place-items-center rounded-full border border-[color:var(--border)] text-xs text-[color:var(--accent)]">●</span>; }
 
 function VersionRow({ item, active, busy, onAction, onCompare, canDelete }: { readonly item: BlueprintVersion; readonly active: boolean; readonly busy: boolean; readonly onAction: (version: number, action: 'restore' | 'duplicate' | 'delete') => void; readonly onCompare: (item: BlueprintVersion) => void; readonly canDelete: boolean }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const total = Object.values(item.tokens).reduce((sum, value) => sum + value, 0);
-  return <tr className="border-b border-[color:var(--border)] last:border-0"><td className="px-3 py-3"><span className="font-semibold">v{item.version}</span>{active ? <Badge tone="success" className="ml-2">{t('architectWorkflow.row.current')}</Badge> : null}</td><td className="px-3 py-3"><p>{item.providerLabel}</p><p className="ds-caption">{item.model || 'offline'}</p></td><td className="px-3 py-3">{new Date(item.generated_at).toLocaleString()}</td><td className="px-3 py-3">{Math.round(item.generation_time_ms / 1000)}s</td><td className="px-3 py-3">{total.toLocaleString()}</td><td className="px-3 py-3">{item.score}%</td><td className="px-3 py-3 font-mono text-xs" title={item.hash}>{item.hash.slice(0, 10)}</td><td className="px-3 py-3"><div className="flex gap-1">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Button variant="ghost" className="h-8 px-2" disabled={active && !item.base_version} onClick={() => onCompare(item)}><GitCompare className="h-3.5 w-3.5" />{t('architectWorkflow.row.compare')}</Button><Button variant="ghost" className="h-8 px-2" disabled={active} onClick={() => onAction(item.version, 'restore')}><RotateCcw className="h-3.5 w-3.5" />{t('architectWorkflow.row.restore')}</Button><Button variant="ghost" className="h-8 px-2" onClick={() => onAction(item.version, 'duplicate')}><Copy className="h-3.5 w-3.5" />{t('architectWorkflow.row.duplicate')}</Button><Button variant="ghost" className="h-8 px-2" disabled={!canDelete} onClick={() => onAction(item.version, 'delete')}><Trash2 className="h-3.5 w-3.5" /></Button></>}</div></td></tr>;
+  return <tr className="border-b border-[color:var(--border)] last:border-0"><td className="px-3 py-3"><span className="font-semibold">v{item.version}</span>{active ? <Badge tone="success" className="ml-2">{t('architectWorkflow.row.current')}</Badge> : null}</td><td className="px-3 py-3"><p>{item.providerLabel}</p><p className="ds-caption">{item.model || t('architectWorkflow.offlineModel')}</p></td><td className="px-3 py-3">{new Date(item.generated_at).toLocaleString(locale)}</td><td className="px-3 py-3">{Math.round(item.generation_time_ms / 1000)}s</td><td className="px-3 py-3">{total.toLocaleString(locale)}</td><td className="px-3 py-3">{item.score}%</td><td className="px-3 py-3 font-mono text-xs" title={item.hash}>{item.hash.slice(0, 10)}</td><td className="px-3 py-3"><div className="flex gap-1">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Button variant="ghost" className="h-8 px-2" disabled={active && !item.base_version} onClick={() => onCompare(item)}><GitCompare className="h-3.5 w-3.5" />{t('architectWorkflow.row.compare')}</Button><Button variant="ghost" className="h-8 px-2" disabled={active} onClick={() => onAction(item.version, 'restore')}><RotateCcw className="h-3.5 w-3.5" />{t('architectWorkflow.row.restore')}</Button><Button variant="ghost" className="h-8 px-2" onClick={() => onAction(item.version, 'duplicate')}><Copy className="h-3.5 w-3.5" />{t('architectWorkflow.row.duplicate')}</Button><Button variant="ghost" className="h-8 px-2" disabled={!canDelete} onClick={() => onAction(item.version, 'delete')}><Trash2 className="h-3.5 w-3.5" /></Button></>}</div></td></tr>;
 }

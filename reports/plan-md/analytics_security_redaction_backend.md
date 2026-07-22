@@ -7,7 +7,7 @@
 
 1. **Source data is already redacted.** Project Room specs/messages/handoffs are stored through `redact_value` (`app/repositories/redaction.py`), so secrets in user input never reach SQLite in the clear.
 2. **Audit log carries no secrets.** `AuditLogRepository` stores only `user_id`, an allow-listed `event_code`, and `created_at` — never values, tokens, or keys.
-3. **Active provider exposes a label only.** `llm_settings_service.active()` returns `providerLabel`/`model`/`status`; the API key stays in the TTL vault (`user_key_session`) and is never read by the analytics service.
+3. **Active provider exposes a label only.** `llm_settings_service.active()` returns `providerLabel`/`model`/`status`; the API key stays in the persistent encrypted, owner-scoped vault and is never read by the analytics service.
 4. **Service-level redaction net.** Before leaving `AnalyticsService.overview()`:
    - `redact_section()` runs `redact_value` over every drill-down record (recursive: masks `secret|token|password|api_key|private_key|credential` keys and inline `key: value` secrets).
    - `redact_metric()` runs `redact_text` over every metric label.

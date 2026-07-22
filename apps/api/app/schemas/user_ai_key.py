@@ -6,7 +6,7 @@ from pydantic import Field
 
 from app.schemas.common import ApiModel
 
-KeyProvider = Literal["anthropic", "openai", "google", "openrouter", "deepseek", "groq", "ollama", "lmstudio", "custom"]
+KeyProvider = Literal["openai", "anthropic", "google", "deepseek", "groq"]
 
 
 class CreateAiKeyRequest(ApiModel):
@@ -33,7 +33,7 @@ class AiKeyView(ApiModel):
     apelido: str | None = None
     masked: str
     modelo_padrao: str | None = None
-    status: Literal["untested", "valid", "invalid"]
+    status: Literal["untested", "valid", "invalid", "unavailable"]
     ativo: bool
     is_default: bool
     created_at: str
@@ -56,3 +56,5 @@ class TestKeyResponse(ApiModel):
     model: str | None = None
     http_status: int
     message: str
+    latency_ms: int | None = None
+    validated_at: str | None = None

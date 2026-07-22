@@ -17,6 +17,15 @@ def _fake_response(status_code: int, text: str = "ok"):
     return SimpleNamespace(status_code=status_code, text=text)
 
 
+@pytest.fixture(autouse=True)
+def _public_test_destination(monkeypatch):
+    monkeypatch.setattr(
+        automation_engine,
+        "resolve_public_http_target",
+        lambda url, *, resolve_dns: SimpleNamespace(url=url, hostname="x", port=443, addresses=("93.184.216.34",)),
+    )
+
+
 # --------------------------------------------------------------- placeholder resolution + masking
 
 def test_resolve_action_config_substitutes_credential_placeholders():
@@ -37,7 +46,7 @@ def test_mask_request_never_leaks_the_real_credential_value():
 # --------------------------------------------------------------- execute_http_action
 
 def test_execute_http_action_succeeds_on_first_try(monkeypatch):
-    monkeypatch.setattr(automation_engine.httpx, "request", lambda *a, **k: _fake_response(200, "hello"))
+    monkeypatch.setattr(automation_engine, "_send_request", lambda *a, **k: _fake_response(200, "hello"))
     status_code, text, error, attempts = automation_engine.execute_http_action({"method": "GET", "url": "https://x"}, {})
     assert (status_code, text, error, attempts) == (200, "hello", None, 1)
 
@@ -49,14 +58,14 @@ def test_execute_http_action_retries_on_5xx_then_succeeds(monkeypatch):
         calls["n"] += 1
         return _fake_response(500) if calls["n"] < 3 else _fake_response(200, "recovered")
 
-    monkeypatch.setattr(automation_engine.httpx, "request", _flaky)
+    monkeypatch.setattr(automation_engine, "_send_request", _flaky)
     monkeypatch.setattr(automation_engine.time, "sleep", lambda _: None)
     status_code, text, error, attempts = automation_engine.execute_http_action({"method": "GET", "url": "https://x"}, {})
     assert (status_code, text, attempts) == (200, "recovered", 3)
 
 
 def test_execute_http_action_gives_up_after_max_attempts(monkeypatch):
-    monkeypatch.setattr(automation_engine.httpx, "request", lambda *a, **k: _fake_response(503))
+    monkeypatch.setattr(automation_engine, "_send_request", lambda *a, **k: _fake_response(503))
     monkeypatch.setattr(automation_engine.time, "sleep", lambda _: None)
     status_code, text, error, attempts = automation_engine.execute_http_action({"method": "GET", "url": "https://x"}, {})
     assert status_code == 503
@@ -69,7 +78,7 @@ def test_execute_http_action_handles_transport_errors(monkeypatch):
     def _boom(*a, **k):
         raise httpx_module.ConnectError("connection refused")
 
-    monkeypatch.setattr(automation_engine.httpx, "request", _boom)
+    monkeypatch.setattr(automation_engine, "_send_request", _boom)
     monkeypatch.setattr(automation_engine.time, "sleep", lambda _: None)
     status_code, text, error, attempts = automation_engine.execute_http_action({"method": "GET", "url": "https://x"}, {})
     assert status_code is None
@@ -80,7 +89,7 @@ def test_execute_http_action_handles_transport_errors(monkeypatch):
 # --------------------------------------------------------------- run_automation orchestration
 
 def test_run_automation_records_a_succeeded_run_and_never_persists_the_real_secret(client, monkeypatch):
-    monkeypatch.setattr(automation_engine.httpx, "request", lambda *a, **k: _fake_response(200, "pong"))
+    monkeypatch.setattr(automation_engine, "_send_request", lambda *a, **k: _fake_response(200, "pong"))
     repo = _repo()
     automation = repo.create(
         owner_user_id="user-1", title="Ping", action_config={"method": "GET", "url": "https://x/{{credential:token}}"},
@@ -102,7 +111,7 @@ def test_run_automation_masks_a_credential_value_echoed_back_in_the_response(cli
     its response body (e.g. an error message quoting the bad Authorization
     header) -- this is what mask_request/_mask on the response actually
     guards against, unlike the request template (see test above)."""
-    monkeypatch.setattr(automation_engine.httpx, "request", lambda *a, **k: _fake_response(200, "your token was sk-secret, rejected"))
+    monkeypatch.setattr(automation_engine, "_send_request", lambda *a, **k: _fake_response(200, "your token was sk-secret, rejected"))
     repo = _repo()
     automation = repo.create(owner_user_id="user-1", title="Echo", action_config={"method": "GET", "url": "https://x/{{credential:token}}"})
     repo.set_credential(automation["id"], "user-1", "token", "sk-secret")
@@ -113,7 +122,7 @@ def test_run_automation_masks_a_credential_value_echoed_back_in_the_response(cli
 
 
 def test_run_automation_records_a_failed_run_on_client_error(client, monkeypatch):
-    monkeypatch.setattr(automation_engine.httpx, "request", lambda *a, **k: _fake_response(404, "not found"))
+    monkeypatch.setattr(automation_engine, "_send_request", lambda *a, **k: _fake_response(404, "not found"))
     repo = _repo()
     automation = repo.create(owner_user_id="user-1", title="Broken", action_config={"method": "GET", "url": "https://x"})
 

@@ -220,7 +220,7 @@ def collect_llm_metrics(ctx: "_Context") -> AnalyticsSection:
     failures = counts.get("LLM_PROVIDER_FAILED", 0)
     confirmations = counts.get("LLM_PROVIDER_CONFIRMED", 0)
 
-    # Active provider LABEL only — the key never leaves the TTL vault.
+    # Active provider label only; raw key material never leaves the encrypted vault.
     provider_label = active.providerLabel or "Nenhum"
 
     # Real, measured token consumption from persisted generation jobs (audit B4/AI2):

@@ -50,7 +50,7 @@ export function useActiveLlm() {
     isFetching: query.isFetching,
     error: query.error,
     isReady: status === 'ready' && query.data?.mode === 'llm',
-    isFailed: status === 'invalid' || status === 'expired' || status === 'unavailable',
+    isFailed: status === 'auth_error' || status === 'unavailable',
     isNotConfigured: status === 'not_configured' || !query.data?.hasKey,
     requiresConfirmation: query.data?.requiresConfirmation ?? true,
     confirmUse,
@@ -62,10 +62,9 @@ export function useActiveLlm() {
 
 /** Canonical provider list for the "not configured" quick-config buttons. */
 export const LLM_PROVIDER_OPTIONS: ReadonlyArray<{ id: LlmProviderId; label: string }> = [
-  { id: 'anthropic', label: 'Claude' },
   { id: 'openai', label: 'GPT / OpenAI' },
+  { id: 'anthropic', label: 'Claude' },
   { id: 'google', label: 'Gemini' },
   { id: 'deepseek', label: 'DeepSeek' },
-  { id: 'openrouter', label: 'OpenRouter' },
-  { id: 'ollama', label: 'Ollama (local)' },
+  { id: 'groq', label: 'Groq' },
 ];

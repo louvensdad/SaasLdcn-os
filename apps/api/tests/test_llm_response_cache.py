@@ -30,15 +30,15 @@ class _CountingAdapter(LLMAdapter):
 
 def test_make_key_is_deterministic_for_identical_requests():
     req = LLMRequest(system="sys", user="same content")
-    assert LLMResponseCache.make_key("deepseek-chat", req) == LLMResponseCache.make_key("deepseek-chat", req)
+    assert LLMResponseCache.make_key("deepseek-v4-flash", req) == LLMResponseCache.make_key("deepseek-v4-flash", req)
 
 
 def test_make_key_differs_when_content_or_model_differs():
     base = LLMRequest(system="sys", user="content A")
     other_content = LLMRequest(system="sys", user="content B")
-    key_a = LLMResponseCache.make_key("deepseek-chat", base)
-    key_b = LLMResponseCache.make_key("deepseek-chat", other_content)
-    key_diff_model = LLMResponseCache.make_key("deepseek-reasoner", base)
+    key_a = LLMResponseCache.make_key("deepseek-v4-flash", base)
+    key_b = LLMResponseCache.make_key("deepseek-v4-flash", other_content)
+    key_diff_model = LLMResponseCache.make_key("deepseek-v4-pro", base)
     assert key_a != key_b
     assert key_a != key_diff_model
 
@@ -46,9 +46,9 @@ def test_make_key_differs_when_content_or_model_differs():
 def test_cache_get_set_round_trip():
     cache = LLMResponseCache()
     req = LLMRequest(system="sys", user="content")
-    key = cache.make_key("deepseek-chat", req)
+    key = cache.make_key("deepseek-v4-flash", req)
     assert cache.get(key) is None
-    response = LLMResponse(provider=Provider.deepseek, model="deepseek-chat", text="hi")
+    response = LLMResponse(provider=Provider.deepseek, model="deepseek-v4-flash", text="hi")
     cache.set(key, response)
     assert cache.get(key) is response
 
@@ -73,8 +73,8 @@ def test_route_never_caches_by_default():
     router = LLMRouter(adapters={"deepseek": adapter})
     req = LLMRequest(system="sys", user="identical content")
 
-    first = router.route(req, user_choice="deepseek-chat")
-    second = router.route(req, user_choice="deepseek-chat")
+    first = router.route(req, user_choice="deepseek-v4-flash")
+    second = router.route(req, user_choice="deepseek-v4-flash")
 
     assert adapter.calls == 2
     assert first.served_by_cache is False
@@ -86,8 +86,8 @@ def test_router_caches_identical_requests_and_skips_the_second_provider_call_whe
     router = LLMRouter(adapters={"deepseek": adapter})
     req = LLMRequest(system="sys", user="identical content")
 
-    first = router.route(req, user_choice="deepseek-chat", allow_cache=True)
-    second = router.route(req, user_choice="deepseek-chat", allow_cache=True)
+    first = router.route(req, user_choice="deepseek-v4-flash", allow_cache=True)
+    second = router.route(req, user_choice="deepseek-v4-flash", allow_cache=True)
 
     assert adapter.calls == 1
     assert first.served_by_cache is False
@@ -102,8 +102,8 @@ def test_router_does_not_cache_a_request_with_a_user_owned_key_even_when_opted_i
     router = LLMRouter(adapters={"deepseek": adapter})
     req = LLMRequest(system="sys", user="byok content")
 
-    first = router.route(req, user_choice="deepseek-chat", api_key="sk-test-key", allow_cache=True)
-    second = router.route(req, user_choice="deepseek-chat", api_key="sk-test-key", allow_cache=True)
+    first = router.route(req, user_choice="deepseek-v4-flash", api_key="sk-test-key", allow_cache=True)
+    second = router.route(req, user_choice="deepseek-v4-flash", api_key="sk-test-key", allow_cache=True)
 
     assert adapter.calls == 2
     assert first.served_by_cache is False
@@ -114,8 +114,8 @@ def test_router_differentiates_requests_that_differ_only_in_content():
     adapter = _CountingAdapter()
     router = LLMRouter(adapters={"deepseek": adapter})
 
-    router.route(LLMRequest(system="sys", user="content A"), user_choice="deepseek-chat", allow_cache=True)
-    router.route(LLMRequest(system="sys", user="content B"), user_choice="deepseek-chat", allow_cache=True)
+    router.route(LLMRequest(system="sys", user="content A"), user_choice="deepseek-v4-flash", allow_cache=True)
+    router.route(LLMRequest(system="sys", user="content B"), user_choice="deepseek-v4-flash", allow_cache=True)
 
     assert adapter.calls == 2
 

@@ -1,14 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 
 from app.core.config import get_settings
 
 # Detects whether a REAL LLM provider is configured server-side, so the platform
-# can default to AI instead of the deterministic fallback — and tell the user which
-# mode they are in (honest "Modo IA Real" vs "Preview Determinístico").
+# can default to AI instead of the deterministic fallback â€” and tell the user which
+# mode they are in (honest "Modo IA Real" vs "Preview DeterminÃ­stico").
 #
-# Ollama's default localhost URL is intentionally excluded: its mere presence in
 # config does not mean a local server is actually running, so counting it would
 # produce a false "AI active".
 
@@ -16,8 +15,8 @@ _CLOUD_KEY_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
     "google": "GOOGLE_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
+    "groq": "GROQ_API_KEY",
 }
 
 
@@ -26,8 +25,6 @@ def available_providers() -> list[str]:
     if get_settings().force_mock:
         return []
     providers = [name for name, env in _CLOUD_KEY_ENV.items() if os.environ.get(env, "").strip()]
-    if get_settings().custom_base_url.strip():
-        providers.append("custom")
     return providers
 
 

@@ -8,7 +8,7 @@ Idiomas oficiais: `pt-BR` (padrão), `en-US`, `es-ES` e `fr-FR`. Todo texto exib
 
 ## Modelo comercial (BYOK)
 
-O MLTagente não vende tokens de IA nem revende LLM. Toda chamada a OpenAI, Claude, Gemini, Groq, OpenRouter, Ollama, LM Studio ou qualquer outro provedor usa a API Key própria do usuário, cadastrada em Configurações → Inteligência Artificial. A assinatura paga exclusivamente pela utilização da plataforma (Dashboard, Projetos, Workspaces, Blueprint, Prompt.md, Memória, Versionamento, Agentes, Build, Preview, Deploy, Marketplace, Templates, Organização, Colaboração, Atualizações) — nunca por créditos de IA, tokens ou chamadas a provedores de LLM. Não existe, e não está planejado, nenhum entitlement de "créditos de IA" fornecidos pela plataforma. Ver detalhes de arquitetura e segurança de chaves em [[Gestão de Chaves de IA (BYOK)]].
+O MLTagente não vende tokens de IA nem revende LLM. Toda chamada a OpenAI, Claude, Gemini, DeepSeek ou Groq usa a API Key própria do usuário, cadastrada em Configurações → Inteligência Artificial. A assinatura paga exclusivamente pela utilização da plataforma (Dashboard, Projetos, Workspaces, Blueprint, Prompt.md, Memória, Versionamento, Agentes, Build, Preview, Deploy, Marketplace, Templates, Organização, Colaboração, Atualizações) — nunca por créditos de IA, tokens ou chamadas a provedores de LLM. Não existe, e não está planejado, nenhum entitlement de "créditos de IA" fornecidos pela plataforma. Ver detalhes de arquitetura e segurança de chaves em [[Gestão de Chaves de IA (BYOK)]].
 
 ## Catálogo comercial
 

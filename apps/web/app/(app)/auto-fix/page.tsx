@@ -146,7 +146,7 @@ function AutoFixInner() {
           await loadReport(proj.project_id);
         }
       } catch (caught) {
-        if (active) setError(caught instanceof Error ? caught.message : 'error');
+        if (active) setError(caught instanceof Error ? caught.message : t('autoFix.errors.generic'));
       } finally {
         if (active) setLoading(false);
       }
@@ -154,6 +154,10 @@ function AutoFixInner() {
     return () => {
       active = false;
     };
+    // `t` from useLocale() is intentionally excluded: re-running this fetch
+    // whenever the locale changes would be wasteful, not necessary for the
+    // error-message fallback it's used for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectParam, loadReport]);
 
   async function deleteAnalysis() {
@@ -177,7 +181,7 @@ function AutoFixInner() {
       setPlan(res.plan);
       setSummary({ ...summary, has_report: true });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'error');
+      setError(caught instanceof Error ? caught.message : t('autoFix.errors.generic'));
     } finally {
       setBusy(null);
     }
@@ -231,7 +235,7 @@ function AutoFixInner() {
       setRevalidation(await modernizeClient.revalidate(summary.project_id));
       setDiff(await modernizeClient.diff(summary.project_id));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'error');
+      setError(caught instanceof Error ? caught.message : t('autoFix.errors.generic'));
     } finally {
       setBusy(null);
     }
@@ -477,7 +481,7 @@ function ProjectHeader({
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Badge tone="accent">
-              <Wrench className="h-3.5 w-3.5" /> Auto-Fix
+              <Wrench className="h-3.5 w-3.5" /> {t('autoFix.title')}
             </Badge>
             <Badge tone="success">{t('autoFix.header.analyzed')}</Badge>
             <DeleteResourceButton
@@ -498,7 +502,7 @@ function ProjectHeader({
           </div>
           <p className="ds-caption">
             {summary.file_count.toLocaleString()} {t('autoFix.header.files')}
-            {findings !== null ? <> · {findings} Findings</> : null}
+            {findings !== null ? <> · {findings} {t('autoFix.header.findings')}</> : null}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">

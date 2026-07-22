@@ -6,7 +6,7 @@ import re
 from app.engines.llm.base import (
     LLMAdapter,
     LLMError,
-    is_transient_provider_error,
+    normalize_provider_error,
     timeout_seconds,
 )
 from app.schemas.llm import LLMRequest, LLMResponse, Provider
@@ -110,10 +110,7 @@ class AnthropicAdapter(LLMAdapter):
         try:
             resp = create(**params)
         except Exception as exc:  # surface, do not swallow
-            raise LLMError(
-                f"Anthropic request failed for {model}: {exc}",
-                transient=is_transient_provider_error(exc),
-            ) from exc
+            raise normalize_provider_error("Anthropic", model, exc) from exc
 
         # Check stop_reason BEFORE reading content — a refusal has empty content.
         stop_reason = getattr(resp, "stop_reason", "") or ""

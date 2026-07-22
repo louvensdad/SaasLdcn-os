@@ -11,6 +11,7 @@ import {
   EngineeringMetadata,
   EngineeringParagraph,
 } from '@/components/engineering/ds';
+import { useLocale } from '@/hooks/use-locale';
 
 /**
  * "Visualizar resposta da IA" (Phase 8): shows what the provider actually
@@ -22,16 +23,17 @@ import {
  * no legacy scale — every text token comes from the shared components.
  */
 export function BlueprintResponseViewer({ diagnostics }: { readonly diagnostics: BlueprintResponseDiagnostics }) {
+  const { t } = useLocale();
   const raw = diagnostics.raw_record?.raw_excerpt || diagnostics.raw_excerpt || '—';
   return (
     <div className="space-y-5">
       <EngineeringChips>
         {diagnostics.partial ? (
-          <EngineeringBadge tone="warning" icon={AlertTriangle}>Blueprint parcialmente gerado</EngineeringBadge>
+          <EngineeringBadge tone="warning" icon={AlertTriangle}>{t('blueprintResponse.partial')}</EngineeringBadge>
         ) : (
-          <EngineeringBadge tone="success" icon={CheckCircle2}>Blueprint completo</EngineeringBadge>
+          <EngineeringBadge tone="success" icon={CheckCircle2}>{t('blueprintResponse.complete')}</EngineeringBadge>
         )}
-        {diagnostics.recovered ? <EngineeringBadge tone="accent">Recuperado</EngineeringBadge> : null}
+        {diagnostics.recovered ? <EngineeringBadge tone="accent">{t('blueprintResponse.recovered')}</EngineeringBadge> : null}
         {diagnostics.raw_record?.provider ? (
           <EngineeringBadge>
             {diagnostics.raw_record.provider}
@@ -44,16 +46,16 @@ export function BlueprintResponseViewer({ diagnostics }: { readonly diagnostics:
 
       <EngineeringMetadata
         items={[
-          { label: 'Extractor', value: diagnostics.extractor_used },
-          { label: 'Normalizer', value: diagnostics.normalizer_used },
-          { label: 'Parser', value: diagnostics.parser_used },
-          { label: 'Decisões', value: diagnostics.decisions_found },
+          { label: t('blueprintResponse.extractor'), value: diagnostics.extractor_used },
+          { label: t('blueprintResponse.normalizer'), value: diagnostics.normalizer_used },
+          { label: t('blueprintResponse.parser'), value: diagnostics.parser_used },
+          { label: t('blueprintResponse.decisions'), value: diagnostics.decisions_found },
         ]}
       />
 
       {diagnostics.areas_present.length > 0 ? (
         <div className="space-y-1.5">
-          <EngineeringLabel>Áreas presentes</EngineeringLabel>
+          <EngineeringLabel>{t('blueprintResponse.areasPresent')}</EngineeringLabel>
           <EngineeringChips>
             {diagnostics.areas_present.map((a) => <EngineeringBadge key={a} tone="success">{a}</EngineeringBadge>)}
           </EngineeringChips>
@@ -62,7 +64,7 @@ export function BlueprintResponseViewer({ diagnostics }: { readonly diagnostics:
 
       {diagnostics.areas_missing.length > 0 ? (
         <div className="space-y-1.5">
-          <EngineeringLabel>Áreas ausentes (completadas/pendentes)</EngineeringLabel>
+          <EngineeringLabel>{t('blueprintResponse.areasMissing')}</EngineeringLabel>
           <EngineeringChips>
             {diagnostics.areas_missing.map((a) => <EngineeringBadge key={a} tone="neutral">{a}</EngineeringBadge>)}
           </EngineeringChips>
@@ -70,11 +72,11 @@ export function BlueprintResponseViewer({ diagnostics }: { readonly diagnostics:
       ) : null}
 
       {diagnostics.repaired_fields.length > 0 ? (
-        <p className="ds-caption">Campos auto-reparados: {diagnostics.repaired_fields.join(', ')}</p>
+        <p className="ds-caption">{t('blueprintResponse.repairedFields', { fields: diagnostics.repaired_fields.join(', ') })}</p>
       ) : null}
 
       <div className="space-y-1.5">
-        <EngineeringLabel>Resposta bruta da IA (redigida)</EngineeringLabel>
+        <EngineeringLabel>{t('blueprintResponse.rawResponse')}</EngineeringLabel>
         <EngineeringCode code={raw} language="raw" collapsible />
       </div>
     </div>

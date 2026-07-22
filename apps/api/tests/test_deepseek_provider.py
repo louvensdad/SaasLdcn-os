@@ -45,22 +45,22 @@ class _Completions:
 
 
 class _FakeClient:
-    def __init__(self, content="hi", model="deepseek-chat"):
+    def __init__(self, content="hi", model="deepseek-v4-flash"):
         self.chat = type("Chat", (), {"completions": _Completions(content, model)})()
 
 
 def test_registry_has_deepseek_models_on_deepseek_provider():
-    assert MODEL_REGISTRY["deepseek-chat"]["provider"] == "deepseek"
-    assert MODEL_REGISTRY["deepseek-reasoner"]["provider"] == "deepseek"
+    assert MODEL_REGISTRY["deepseek-v4-flash"]["provider"] == "deepseek"
+    assert MODEL_REGISTRY["deepseek-v4-pro"]["provider"] == "deepseek"
     # An explicit DeepSeek choice is honored by the resolver.
-    assert resolve_model(user_choice="deepseek-chat") == "deepseek-chat"
+    assert resolve_model(user_choice="deepseek-v4-flash") == "deepseek-v4-flash"
 
 
 def test_deepseek_builds_openai_style_params_and_parses_json():
     client = _FakeClient(content='{"ok": true}')
     adapter = DeepSeekAdapter(client=client)
     resp = adapter.complete(
-        "deepseek-chat",
+        "deepseek-v4-flash",
         LLMRequest(system="s", user="u", json_schema={"type": "object"}, max_output_tokens=2048),
     )
     sent = client.chat.completions.seen
@@ -74,7 +74,7 @@ def test_deepseek_without_any_key_raises_actionable_error(monkeypatch):
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     adapter = DeepSeekAdapter()
     with pytest.raises(LLMError) as exc:
-        adapter.complete("deepseek-chat", LLMRequest(system="s", user="u"))
+        adapter.complete("deepseek-v4-flash", LLMRequest(system="s", user="u"))
     assert "DeepSeek key" in str(exc.value)
 
 
@@ -88,10 +88,10 @@ def test_router_dispatches_deepseek_with_user_key():
             return LLMResponse(provider=Provider.deepseek, model=model, text="ok")
 
     router = LLMRouter(adapters={"deepseek": _Stub()})
-    out = router.route(LLMRequest(system="s", user="u"), user_choice="deepseek-chat", api_key="sk-deepseek-xyz")
+    out = router.route(LLMRequest(system="s", user="u"), user_choice="deepseek-v4-flash", api_key="sk-deepseek-xyz")
     assert out.text == "ok"
     assert captured["api_key"] == "sk-deepseek-xyz"  # user key forwarded to the adapter
-    assert captured["model"] == "deepseek-chat"
+    assert captured["model"] == "deepseek-v4-flash"
 
 
 def test_user_key_vault_accepts_deepseek_provider(client):

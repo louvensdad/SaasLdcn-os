@@ -19,7 +19,7 @@ from app.models.sandbox_policy_exception import SandboxPolicyException
 from app.models.workspace_permission_override import WorkspacePermissionOverride
 from app.models.llm_usage import LlmUsageRecord
 from app.models.platform_runtime_config import PlatformRuntimeConfig
-from app.models.user import AuditLog, RefreshToken, User, UserSession
+from app.models.user import AuditLog, OAuthAccount, RefreshToken, User, UserSession
 from app.models.activity_event import ActivityEvent
 from app.models.user_preferences import LlmActiveSelection, UserPreferences
 from app.models.tenant import Organization, OrganizationMembership, Workspace, WorkspaceMembership
@@ -48,6 +48,7 @@ __all__ = [
     "ModernizeJob",
     "Organization",
     "OrganizationMembership",
+    "OAuthAccount",
     "PlatformRuntimeConfig",
     "Project",
     "ProjectRoom",

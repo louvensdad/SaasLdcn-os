@@ -5,20 +5,24 @@ import { Check, Circle, Cpu, GitBranch, ShieldCheck } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { useActiveLlm } from '@/hooks/use-active-llm';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 import type { ProjectRoom } from '@contracts/project-room.contract';
 
-const STAGES = [
-  ['Project Room', 'DRAFT', '/project-rooms'],
-  ['PromptMaster', 'PROMPT_READY', '/project-rooms'],
-  ['Architect AI', 'BLUEPRINT_READY', '/architect'],
-  ['Engineering Review', 'ENGINEERING_REVIEW', '/engineering-review'],
-  ['Approval', 'ENGINEERING_APPROVED', '/engineering-review'],
-  ['Meta Factory', 'WAITING_META_FACTORY', '/meta-factory'],
-  ['Generation', 'GENERATING', '/meta-factory'],
-  ['Validation', 'VALIDATING', '/meta-factory'],
-  ['Ready', 'READY', '/projects'],
-] as const;
+function useStages() {
+  const { t } = useLocale();
+  return [
+    [t('workflow.stages.projectRoom'), 'DRAFT', '/project-rooms'],
+    [t('workflow.stages.promptMaster'), 'PROMPT_READY', '/project-rooms'],
+    [t('workflow.stages.architectAi'), 'BLUEPRINT_READY', '/architect'],
+    [t('navigation.engineeringReview.label'), 'ENGINEERING_REVIEW', '/engineering-review'],
+    [t('workflow.stages.approval'), 'ENGINEERING_APPROVED', '/engineering-review'],
+    [t('navigation.metaFactory.label'), 'WAITING_META_FACTORY', '/meta-factory'],
+    [t('workflow.stages.generation'), 'GENERATING', '/meta-factory'],
+    [t('workflow.stages.validation'), 'VALIDATING', '/meta-factory'],
+    [t('workflow.stages.ready'), 'READY', '/projects'],
+  ] as const;
+}
 
 const STATUS_RANK: Record<string, number> = {
   DRAFT: 0, UNDER_REVIEW: 0, PROMPT_READY: 1, PROMPT_APPROVED: 2,
@@ -28,27 +32,29 @@ const STATUS_RANK: Record<string, number> = {
 };
 
 export function WorkflowContextHeader({ room, stage }: { readonly room: ProjectRoom; readonly stage: string }) {
+  const { t } = useLocale();
   const llm = useActiveLlm();
+  const stages = useStages();
   const activeRank = STATUS_RANK[room.status] ?? 0;
   const version = room.active_blueprint_version ?? room.blueprint_versions?.at(-1)?.version ?? (room.architecture_blueprint ? 1 : 0);
   const provider = room.architecture_blueprint?.degraded
-    ? 'Modo Offline'
-    : room.architecture_blueprint?.providerLabel || llm.providerLabel || 'Não configurado';
+    ? t('workflow.provider.offline')
+    : room.architecture_blueprint?.providerLabel || llm.providerLabel || t('workflow.provider.notConfigured');
   const score = room.engineering_review?.score?.overall ?? Math.round((room.architecture_blueprint?.confidence ?? room.confidence) * 100);
 
   return (
-    <section className="workflow-context overflow-hidden rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--accent)_24%,var(--border))] bg-[color:var(--surface-2)] shadow-[var(--shadow-soft)]" aria-label="Workflow do projeto">
+    <section className="workflow-context overflow-hidden rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--accent)_24%,var(--border))] bg-[color:var(--surface-2)] shadow-[var(--shadow-soft)]" aria-label={t('workflow.header.ariaLabel')}>
       <div className="grid divide-y divide-[color:var(--border)] md:grid-cols-3 md:divide-x md:divide-y-0 xl:grid-cols-6">
-        <Metric label="Projeto" value={room.title} />
-        <Metric label="Provider ativo" value={provider} icon={<Cpu className="h-3.5 w-3.5" />} />
-        <Metric label="Blueprint" value={version ? `v${version}` : 'Pendente'} icon={<GitBranch className="h-3.5 w-3.5" />} />
-        <Metric label="Status atual" value={stage} accent />
-        <Metric label="Readiness" value={`${score}%`} icon={<ShieldCheck className="h-3.5 w-3.5" />} />
-        <Metric label="Workspace" value={room.workspace_id || 'Enterprise'} />
+        <Metric label={t('workflow.metrics.project')} value={room.title} />
+        <Metric label={t('workflow.metrics.activeProvider')} value={provider} icon={<Cpu className="h-3.5 w-3.5" />} />
+        <Metric label={t('workflow.metrics.blueprint')} value={version ? `v${version}` : t('workflow.blueprint.pending')} icon={<GitBranch className="h-3.5 w-3.5" />} />
+        <Metric label={t('workflow.metrics.currentStatus')} value={stage} accent />
+        <Metric label={t('workflow.metrics.readiness')} value={`${score}%`} icon={<ShieldCheck className="h-3.5 w-3.5" />} />
+        <Metric label={t('workflow.metrics.workspace')} value={room.workspace_id || t('workflow.workspace.enterprise')} />
       </div>
-      <nav className="overflow-x-auto border-t border-[color:var(--border)] px-4 py-3" aria-label="Pipeline de engenharia">
+      <nav className="overflow-x-auto border-t border-[color:var(--border)] px-4 py-3" aria-label={t('workflow.header.pipelineAria')}>
         <ol className="flex min-w-max items-center">
-          {STAGES.map(([label, , href], index) => {
+          {stages.map(([label, , href], index) => {
             const done = index < activeRank;
             const active = index === activeRank;
             const target = `${href}?projectId=${room.room_id}`;
@@ -60,7 +66,7 @@ export function WorkflowContextHeader({ room, stage }: { readonly room: ProjectR
                   </span>
                   {label}
                 </Link>
-                {index < STAGES.length - 1 ? <span className={cn('mx-1 h-px w-5', index < activeRank ? 'bg-[color:var(--success)]' : 'bg-[color:var(--border)]')} /> : null}
+                {index < stages.length - 1 ? <span className={cn('mx-1 h-px w-5', index < activeRank ? 'bg-[color:var(--success)]' : 'bg-[color:var(--border)]')} /> : null}
               </li>
             );
           })}

@@ -54,9 +54,9 @@ function planShortDescription(t: (key: string) => string, code: string): string 
   return label === key ? '' : label;
 }
 
-function formatPrice(t: (key: string) => string, priceCents: number | null, currency: string): string {
+function formatPrice(t: (key: string) => string, locale: string, priceCents: number | null, currency: string): string {
   if (priceCents === null) return t('pricing.plan.priceUndefined');
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(priceCents / 100);
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(priceCents / 100);
 }
 
 function formatLimitValue(code: string, value: number | null, configurableLabel: string): string {
@@ -66,7 +66,7 @@ function formatLimitValue(code: string, value: number | null, configurableLabel:
 }
 
 export default function PricingPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const router = useRouter();
   const setTopbarConfig = useShellStore((state) => state.setTopbarConfig);
   const addToast = useUiStore((state) => state.addToast);
@@ -303,7 +303,7 @@ export default function PricingPage() {
                     <p className="ds-caption text-[color:var(--muted)]">{plan.audience}</p>
                     <h3 className="mt-1 text-lg font-semibold text-[color:var(--text)]">{plan.name}</h3>
                     <p className="mt-1.5 text-xl font-bold text-[color:var(--text)]">
-                      {formatPrice(t, plan.price_cents, plan.currency)}
+                      {formatPrice(t, locale, plan.price_cents, plan.currency)}
                       {plan.price_cents !== null ? <span className="text-xs font-normal text-[color:var(--muted)]"> {t('pricing.perMonth')}</span> : null}
                     </p>
                     {shortDescription ? <p className="mt-1 text-xs text-[color:var(--muted)]">{shortDescription}</p> : null}

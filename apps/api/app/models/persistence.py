@@ -75,6 +75,42 @@ class ProjectRoom(Base):
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class MissionInstance(Base):
+    __tablename__ = "mission_instances"
+    __table_args__ = (
+        Index("idx_mission_instances_owner", "owner_user_id"),
+        Index("idx_mission_instances_type", "mission_type"),
+    )
+
+    mission_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    mission_type: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active", server_default="active", index=True)
+    mode: Mapped[str] = mapped_column(String, nullable=False, default="guided", server_default="guided")
+    experience_level: Mapped[str] = mapped_column(String, nullable=False, default="intermediate", server_default="intermediate")
+    degraded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # "stepId.fieldId" -> value, the field-level answers captured across the
+    # mission's genome-defined steps (see apps/web/modules/mission-workspace).
+    answers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    inputs_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    journey_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    decisions_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    rejections_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    derived_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    gaps_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    risks_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    inconsistencies_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    artifacts_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    history_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    operational_log_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    last_failure_json: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class ChangeRequest(Base):
     __tablename__ = "change_requests"
     __table_args__ = (

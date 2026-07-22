@@ -41,7 +41,7 @@ const PHASE_DOT: Record<Phase, string> = {
 };
 
 export default function ProjectRoomsPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [rooms, setRooms] = useState<ProjectRoomSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +133,7 @@ export default function ProjectRoomsPage() {
                 <Link href={`/project-rooms/${room.room_id}`} className="min-w-0 flex-1">
                   <p className="truncate text-base font-medium text-[color:var(--text)]">{room.title}</p>
                   <p className="mt-1 text-xs text-[color:var(--muted)]">
-                    {new Date(room.updated_at).toLocaleString()}
+                    {new Date(room.updated_at).toLocaleString(locale)}
                   </p>
                 </Link>
                 <div className="flex shrink-0 items-center gap-3">

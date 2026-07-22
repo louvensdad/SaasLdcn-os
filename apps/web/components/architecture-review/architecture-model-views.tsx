@@ -4,6 +4,7 @@ import { ArrowRight, Boxes, Database, GitBranch, Server, ShieldCheck, Workflow, 
 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import type {
   ArchitectureModel,
   DisasterRecovery,
@@ -22,8 +23,9 @@ function Empty({ children }: { readonly children: React.ReactNode }) {
 
 /** Context diagram: actors → layers → stores, as a connected flow of chips. */
 export function ContextDiagramView({ model }: { readonly model: ArchitectureModel }) {
+  const { t } = useLocale();
   const nodes = model.context_diagram.nodes;
-  if (!nodes.length) return <Empty>Sem evidências suficientes para o diagrama de contexto.</Empty>;
+  if (!nodes.length) return <Empty>{t('architectureReview.model.contextEmpty')}</Empty>;
   return (
     <div className="flex flex-wrap items-center gap-2">
       {nodes.map((node, index) => {
@@ -43,7 +45,8 @@ export function ContextDiagramView({ model }: { readonly model: ArchitectureMode
 }
 
 export function BoundedContextsView({ model }: { readonly model: ArchitectureModel }) {
-  if (!model.bounded_contexts.length) return <Empty>Sem contextos delimitados detectáveis na spec.</Empty>;
+  const { t } = useLocale();
+  if (!model.bounded_contexts.length) return <Empty>{t('architectureReview.model.boundedContextsEmpty')}</Empty>;
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {model.bounded_contexts.map((ctx) => (
@@ -57,9 +60,9 @@ export function BoundedContextsView({ model }: { readonly model: ArchitectureMod
             <div className="flex flex-wrap gap-1">{ctx.entities.map((e) => <Badge key={e} tone="neutral">{e}</Badge>)}</div>
           ) : null}
           {ctx.relationships.length ? (
-            <p className="ds-caption"><span className="font-semibold text-[color:var(--text)]">Relações:</span> {ctx.relationships.join(', ')}</p>
+            <p className="ds-caption"><span className="font-semibold text-[color:var(--text)]">{t('architectureReview.model.relationsLabel')}</span> {ctx.relationships.join(', ')}</p>
           ) : null}
-          {ctx.evidence ? <p className="ds-caption text-[color:var(--muted-2)]">Evidência: {ctx.evidence}</p> : null}
+          {ctx.evidence ? <p className="ds-caption text-[color:var(--muted-2)]">{t('architectureReview.model.evidenceLabel')} {ctx.evidence}</p> : null}
         </Card>
       ))}
     </div>
@@ -67,7 +70,8 @@ export function BoundedContextsView({ model }: { readonly model: ArchitectureMod
 }
 
 export function FlowView({ steps, title, icon: Icon }: { readonly steps: FlowStep[]; readonly title: string; readonly icon: LucideIcon }) {
-  if (!steps.length) return <Empty>{title}: sem evidências suficientes.</Empty>;
+  const { t } = useLocale();
+  if (!steps.length) return <Empty>{t('architectureReview.model.flowEmpty', { title })}</Empty>;
   return (
     <div className="space-y-2">
       <p className="t-overline flex items-center gap-2"><Icon className="h-3.5 w-3.5" aria-hidden /> {title}</p>
@@ -87,7 +91,8 @@ export function FlowView({ steps, title, icon: Icon }: { readonly steps: FlowSte
 }
 
 export function DependenciesView({ deps }: { readonly deps: ModuleDependency[] }) {
-  if (!deps.length) return <Empty>Sem dependências declaradas entre módulos.</Empty>;
+  const { t } = useLocale();
+  if (!deps.length) return <Empty>{t('architectureReview.model.dependenciesEmpty')}</Empty>;
   return (
     <div className="space-y-2">
       {deps.map((d) => (
@@ -102,11 +107,12 @@ export function DependenciesView({ deps }: { readonly deps: ModuleDependency[] }
 }
 
 export function StrategyView({ strategy, title }: { readonly strategy: Strategy; readonly title: string }) {
+  const { t } = useLocale();
   return (
     <Card className="glass space-y-2 p-4">
       <div className="flex items-center justify-between gap-2">
         <h4 className="text-sm font-semibold text-[color:var(--text)]">{title}</h4>
-        <Badge tone={strategy.available ? 'success' : 'neutral'}>{strategy.available ? 'Definida' : 'Indisponível'}</Badge>
+        <Badge tone={strategy.available ? 'success' : 'neutral'}>{strategy.available ? t('architectureReview.model.strategyDefined') : t('architectureReview.model.strategyUnavailable')}</Badge>
       </div>
       <p className="ds-caption text-[color:var(--muted)]">{strategy.summary}</p>
       {strategy.items.length ? (
@@ -119,23 +125,24 @@ export function StrategyView({ strategy, title }: { readonly strategy: Strategy;
 }
 
 export function DisasterRecoveryView({ dr }: { readonly dr: DisasterRecovery }) {
+  const { t } = useLocale();
   if (!dr.available) {
     return (
       <Card className="glass space-y-1 p-4">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="text-sm font-semibold text-[color:var(--text)]">Disaster Recovery</h4>
-          <Badge tone="neutral">Indisponível</Badge>
+          <h4 className="text-sm font-semibold text-[color:var(--text)]">{t('architectureReview.model.disasterRecovery.title')}</h4>
+          <Badge tone="neutral">{t('architectureReview.model.strategyUnavailable')}</Badge>
         </div>
-        <Empty>Sem banco decidido — plano de recuperação não aplicável ainda.</Empty>
+        <Empty>{t('architectureReview.model.disasterRecovery.noDbEmpty')}</Empty>
       </Card>
     );
   }
   const rows: [string, string][] = [
-    ['Backup', dr.backup], ['Restore', dr.restore], ['RTO', dr.rto], ['RPO', dr.rpo], ['Replicação', dr.replication],
+    [t('architectureReview.model.dr.backup'), dr.backup], [t('architectureReview.model.dr.restore'), dr.restore], [t('architectureReview.model.dr.rto'), dr.rto], [t('architectureReview.model.dr.rpo'), dr.rpo], [t('architectureReview.model.dr.replication'), dr.replication],
   ];
   return (
     <Card className="glass space-y-2 p-4">
-      <h4 className="text-sm font-semibold text-[color:var(--text)]">Disaster Recovery</h4>
+      <h4 className="text-sm font-semibold text-[color:var(--text)]">{t('architectureReview.model.disasterRecovery.title')}</h4>
       <div className="grid gap-2 sm:grid-cols-2">
         {rows.map(([label, value]) => (
           <div key={label} className="rounded-[var(--radius-md)] border border-[color:var(--border)] p-3">
@@ -150,23 +157,24 @@ export function DisasterRecoveryView({ dr }: { readonly dr: DisasterRecovery }) 
 
 /** Convenience wrapper: the two model tabs (Modelo + Estratégias). */
 export function ArchitectureModelTab({ model }: { readonly model: ArchitectureModel }) {
+  const { t } = useLocale();
   return (
     <div className="space-y-6">
       <Card className="glass noise space-y-3 p-6">
-        <h3 className="ds-subsection text-[color:var(--text)]">Context Diagram</h3>
+        <h3 className="ds-subsection text-[color:var(--text)]">{t('architectureReview.model.contextDiagramTitle')}</h3>
         <ContextDiagramView model={model} />
       </Card>
       <Card className="glass noise space-y-4 p-6">
-        <h3 className="ds-subsection text-[color:var(--text)]">Bounded Contexts</h3>
+        <h3 className="ds-subsection text-[color:var(--text)]">{t('architectureReview.model.boundedContextsTitle')}</h3>
         <BoundedContextsView model={model} />
       </Card>
       <Card className="glass noise space-y-4 p-6">
-        <h3 className="ds-subsection text-[color:var(--text)]">Fluxos</h3>
-        <FlowView steps={model.data_flow} title="Fluxo de dados" icon={Workflow} />
-        <FlowView steps={model.auth_flow} title="Fluxo de autenticação" icon={ShieldCheck} />
+        <h3 className="ds-subsection text-[color:var(--text)]">{t('architectureReview.model.flowsTitle')}</h3>
+        <FlowView steps={model.data_flow} title={t('architectureReview.model.dataFlowTitle')} icon={Workflow} />
+        <FlowView steps={model.auth_flow} title={t('architectureReview.model.authFlowTitle')} icon={ShieldCheck} />
       </Card>
       <Card className="glass noise space-y-4 p-6">
-        <h3 className="ds-subsection text-[color:var(--text)]">Dependências entre módulos</h3>
+        <h3 className="ds-subsection text-[color:var(--text)]">{t('architectureReview.model.dependenciesTitle')}</h3>
         <DependenciesView deps={model.dependencies} />
       </Card>
     </div>
@@ -174,11 +182,12 @@ export function ArchitectureModelTab({ model }: { readonly model: ArchitectureMo
 }
 
 export function ArchitectureStrategiesTab({ model }: { readonly model: ArchitectureModel }) {
+  const { t } = useLocale();
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <StrategyView strategy={model.deploy_strategy} title="Estratégia de Deploy" />
-      <StrategyView strategy={model.cache_strategy} title="Estratégia de Cache" />
-      <StrategyView strategy={model.events} title="Eventos" />
+      <StrategyView strategy={model.deploy_strategy} title={t('architectureReview.model.deployStrategyTitle')} />
+      <StrategyView strategy={model.cache_strategy} title={t('architectureReview.model.cacheStrategyTitle')} />
+      <StrategyView strategy={model.events} title={t('architectureReview.model.eventsTitle')} />
       <DisasterRecoveryView dr={model.disaster_recovery} />
     </div>
   );

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+
 
 def _create_automation(client, **overrides):
     body = {"title": "Ping API", "action_config": {"method": "GET", "url": "https://example.com"}}
@@ -35,6 +37,23 @@ def test_publish_from_an_owned_automation(client):
     assert item["price_cents"] == 0
     assert item["content"]["action_config"]["url"] == "https://example.com"
     assert len(item["content_hash"]) == 64
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Authorization": "Bearer literal-production-token"},
+        {"X-API-Key": "literal-production-key"},
+        {"X-Custom": "api_key=literal-production-key"},
+    ],
+)
+def test_publish_rejects_literal_sensitive_headers(client, headers):
+    automation = _create_automation(
+        client,
+        action_config={"method": "GET", "url": "https://example.com", "headers": headers},
+    )
+    response = _publish(client, automation["id"])
+    assert response.status_code == 422
 
 
 def test_publish_rejects_an_automation_you_do_not_own(client):
