@@ -35,6 +35,11 @@ jobs:
           cache: pip
           cache-dependency-path: apps/api/requirements-dev.lock
       - run: pip install --require-hashes --requirement requirements-dev.lock
+      # test_preview_inspector.py drives a real headless browser (PreviewInspector)
+      # -- the `playwright` pip package only ships the Python bindings, not the
+      # browser binary itself. Same requirement as the frontend job's
+      # `npx playwright install --with-deps chromium`, just via the Python CLI.
+      - run: python -m playwright install --with-deps chromium
       - run: python -m alembic upgrade head
       - run: python -m alembic check
       - run: python -m pytest -q -m "not slow and not enterprise and not integration" --cov=app --cov-report=xml --cov-fail-under=87 --basetemp /tmp/ldcn-pytest
