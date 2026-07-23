@@ -233,7 +233,7 @@ class Settings(BaseModel):
     # --- Agent execution pool (bounded, shared) ---
     # Blocking LLM-agent calls run on ONE process-wide, bounded thread pool instead
     # of a fresh ThreadPoolExecutor per pipeline stage. This caps total worker
-    # threads under concurrent generations (diagnosis B5) â€” each worker may hold a
+    # threads under concurrent generations (diagnosis B5) — each worker may hold a
     # multi-minute LLM call, so tune per host. Minimum enforced at 1.
     agent_worker_limit: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_AGENT_WORKERS", "8"))
@@ -280,7 +280,7 @@ class Settings(BaseModel):
     modernize_max_archive_uncompressed_bytes: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_MODERNIZE_MAX_ARCHIVE_UNCOMPRESSED_BYTES", str(1024 * 1024 * 1024)))
     )
-    # A scanned enrollment document (vault 56 - MonetizaÃ§Ã£o e Consumo/Planos,
+    # A scanned enrollment document (vault 56 - Monetização e Consumo/Planos,
     # assinaturas e controle de acesso.md, "Plano Estudante e elegibilidade").
     student_document_max_upload_bytes: int = Field(
         default_factory=lambda: int(os.environ.get("LDCN_STUDENT_DOCUMENT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))

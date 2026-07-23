@@ -7,11 +7,11 @@ from typing import Any
 #
 # Anthropic IDs and prices below are verified against the official Claude API
 # reference (claude-api skill, cached 2026-06-04). OpenAI / Google entries are
-# placeholders â€” CONFIRM exact model IDs and pricing in each provider's console
+# placeholders — CONFIRM exact model IDs and pricing in each provider's console
 # before enabling them in production.
 #
 # Key field: `supports_temperature`. Opus 4.8 / 4.7 and Fable 5 REJECT
-# temperature/top_p/top_k with HTTP 400 â€” the router must never forward them.
+# temperature/top_p/top_k with HTTP 400 — the router must never forward them.
 
 MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     # --- Anthropic (verified) ---

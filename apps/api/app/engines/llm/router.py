@@ -46,7 +46,7 @@ def _render_schema_hint(schema: dict) -> str:
     the custom OpenAI-compatible adapter only request generic "valid JSON" mode
     (response_format={"type": "json_object"}) because those providers don't
     reliably support strict schema enforcement. Without this, a model on one of
-    those four adapters has no explicit signal for the exact key names to emit â€”
+    those four adapters has no explicit signal for the exact key names to emit —
     confirmed live (2026-07-08): a 7-project audit on DeepSeek left
     ProjectSpec.entities empty in every single generation, even though sibling
     fields like business_rules/core_workflows were populated for the same
@@ -85,7 +85,7 @@ class LLMRouter:
 
     Graceful degrade (Prompt Mestre requirement #1): when the chosen provider is
     unavailable (no adapter / missing SDK / missing API key / missing capability),
-    the router falls back to the deterministic MockAdapter instead of failing â€” but
+    the router falls back to the deterministic MockAdapter instead of failing — but
     only when ``settings.mock_fallback_enabled``. The fallback is always signalled
     on the response (``served_by_fallback=True``), never disguised as a real run.
     """

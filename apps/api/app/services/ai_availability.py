@@ -5,8 +5,8 @@ import os
 from app.core.config import get_settings
 
 # Detects whether a REAL LLM provider is configured server-side, so the platform
-# can default to AI instead of the deterministic fallback â€” and tell the user which
-# mode they are in (honest "Modo IA Real" vs "Preview DeterminÃ­stico").
+# can default to AI instead of the deterministic fallback — and tell the user which
+# mode they are in (honest "Modo IA Real" vs "Preview Determinístico").
 #
 # config does not mean a local server is actually running, so counting it would
 # produce a false "AI active".

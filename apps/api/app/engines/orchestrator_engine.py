@@ -32,7 +32,7 @@ def _stringify_item(item: object) -> str:
             if isinstance(value, str) and value.strip():
                 return value.strip()
         parts = [str(v) for v in item.values() if isinstance(v, (str, int, float))]
-        return " â€” ".join(parts) if parts else json.dumps(item, ensure_ascii=False)
+        return " — ".join(parts) if parts else json.dumps(item, ensure_ascii=False)
     return str(item)
 
 
@@ -115,7 +115,7 @@ def _compose_user_turn(raw_intent: str, prior_answers: list[dict], preferred_lan
 
 def enforce_preferred_language(spec: ProjectSpec, preferred_language: str | None) -> ProjectSpec:
     """Deterministic guarantee that a language the USER explicitly chose is the one
-    the whole pipeline receives â€” the model is informed via prompt, but never
+    the whole pipeline receives — the model is informed via prompt, but never
     trusted with this decision (it used to silently pick its own stack).
 
     When the model already suggested the chosen language, its framework choice is
@@ -151,7 +151,7 @@ def run_orchestrator(
 
     If confidence is below the gate and clarify rounds remain, return the open
     questions for the UI. Otherwise the spec is ready to compile. Assumptions are
-    materialized by the model itself (no silent invention â€” error #1).
+    materialized by the model itself (no silent invention — error #1).
 
     The user's model choice wins here too: it decides the provider, which must
     match the provider of any user-supplied api_key (otherwise we'd hand, say, a
@@ -244,14 +244,14 @@ def _blueprint_block(blueprint: Any) -> str:
         decisions = blueprint.get("decisions")
     if not decisions:
         return ""
-    lines = ["## Architecture Blueprint (decisÃµes arquiteturais â€” respeite-as)"]
+    lines = ["## Architecture Blueprint (decisões arquiteturais — respeite-as)"]
     for decision in decisions:
         area = getattr(decision, "area", None) or (decision.get("area") if isinstance(decision, dict) else "")
         choice = getattr(decision, "choice", None) or (decision.get("choice") if isinstance(decision, dict) else "")
         justification = getattr(decision, "justification", None) or (
             decision.get("justification") if isinstance(decision, dict) else ""
         )
-        lines.append(f"- {area}: {choice} â€” {justification}")
+        lines.append(f"- {area}: {choice} — {justification}")
     return "\n".join(lines)
 
 
@@ -267,7 +267,7 @@ def localization_rules(locale: str) -> str:
         f"TRANSLATE 100% to {locale}: UI text, labels, error messages, toasts, "
         "documentation (README, OpenAPI/Swagger descriptions), code comments, and "
         "every user-facing string.\n"
-        "DO NOT TRANSLATE â€” keep in English, camelCase/snake_case: variable, function "
+        "DO NOT TRANSLATE — keep in English, camelCase/snake_case: variable, function "
         "and class names; file names; API endpoint paths; and JSON / i18n keys.\n"
         "The generated frontend MUST ship with an i18n library (next-intl or "
         f"react-i18next) and populated dictionaries (at least {locale}.json and "

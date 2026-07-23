@@ -35,7 +35,7 @@ class GroqAdapter(LLMAdapter):
 
     def _get_client(self, api_key: str | None):
         if not api_key:
-            raise LLMError("No Groq API key configured. Cadastre uma chave em ConfiguraÃ§Ãµes â†’ InteligÃªncia Artificial.")
+            raise LLMError("No Groq API key configured. Cadastre uma chave em Configurações → Inteligência Artificial.")
         if self._client is not None:
             return self._client
         self._client = self._import_sdk().OpenAI(base_url=_GROQ_BASE_URL, api_key=api_key)

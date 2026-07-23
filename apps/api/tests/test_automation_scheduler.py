@@ -27,12 +27,12 @@ def test_compute_next_run_at_respects_timezone():
 
 
 def test_poll_once_runs_a_due_automation_and_reschedules_it(client, monkeypatch):
-    monkeypatch.setattr(automation_engine.httpx, "request", lambda *a, **k: SimpleNamespace(status_code=200, text="ok"))
+    monkeypatch.setattr(automation_engine, "_send_request", lambda *a, **k: SimpleNamespace(status_code=200, text="ok"))
     repo = _repo()
     past = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(microsecond=0).isoformat()
     automation = repo.create(
         owner_user_id="user-1", title="Ping", trigger_type="scheduled",
-        trigger_config={"cron": "*/5 * * * *", "timezone": "UTC"}, action_config={"method": "GET", "url": "https://x"},
+        trigger_config={"cron": "*/5 * * * *", "timezone": "UTC"}, action_config={"method": "GET", "url": "https://1.1.1.1"},
     )
     repo.set_status(automation["id"], "user-1", "active")
     repo.set_next_run_at(automation["id"], past)
@@ -51,14 +51,14 @@ def test_poll_once_runs_a_due_automation_and_reschedules_it(client, monkeypatch)
 
 
 def test_poll_once_ignores_paused_and_manual_automations(client, monkeypatch):
-    monkeypatch.setattr(automation_engine.httpx, "request", lambda *a, **k: SimpleNamespace(status_code=200, text="ok"))
+    monkeypatch.setattr(automation_engine, "_send_request", lambda *a, **k: SimpleNamespace(status_code=200, text="ok"))
     repo = _repo()
     past = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(microsecond=0).isoformat()
 
-    paused = repo.create(owner_user_id="user-1", title="Paused", trigger_type="scheduled", trigger_config={"cron": "* * * * *"}, action_config={"method": "GET", "url": "https://x"})
+    paused = repo.create(owner_user_id="user-1", title="Paused", trigger_type="scheduled", trigger_config={"cron": "* * * * *"}, action_config={"method": "GET", "url": "https://1.1.1.1"})
     repo.set_next_run_at(paused["id"], past)  # never activated -- stays "draft"
 
-    manual = repo.create(owner_user_id="user-1", title="Manual", trigger_type="manual", action_config={"method": "GET", "url": "https://x"})
+    manual = repo.create(owner_user_id="user-1", title="Manual", trigger_type="manual", action_config={"method": "GET", "url": "https://1.1.1.1"})
     repo.set_status(manual["id"], "user-1", "active")
 
     scheduler = AutomationScheduler(repository=repo)
