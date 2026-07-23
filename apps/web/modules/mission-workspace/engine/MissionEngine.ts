@@ -1,5 +1,5 @@
 import { getMissionGenome } from '../registry';
-import { createEmptyMissionContext } from '../types';
+import { coerceToStringArray, createEmptyMissionContext } from '../types';
 import type {
   Gap, ImpactedStep, Inconsistency, JourneyState, JourneyStep, MissionContext,
   MissionFieldDefinition, MissionGenome, MissionInstance, MissionStepDefinition,
@@ -105,6 +105,21 @@ export class MissionEngine {
 
   static updateAnswer(context: MissionContext, stepId: string, fieldId: string, value: unknown): MissionContext {
     return { ...context, answers: { ...context.answers, [`${stepId}.${fieldId}`]: value } };
+  }
+
+  static resolveFieldDefinition(genome: MissionGenome, context: MissionContext, stepId: string, fieldId: string): MissionFieldDefinition | undefined {
+    return this.resolveActiveSteps(genome, context).find((step) => step.id === stepId)?.fields.find((field) => field.id === fieldId);
+  }
+
+  /** chips/multiselect fields must store `string[]` -- the manual chip UI
+   * already sends that, but AI suggestions are always LLM text, so an
+   * accepted suggestion for one of these fields needs the same coercion
+   * before it lands in `context.answers`, or every downstream rule that
+   * expects an array crashes the whole mission. */
+  static normalizeAnswerValue(genome: MissionGenome, context: MissionContext, stepId: string, fieldId: string, value: unknown): unknown {
+    const field = this.resolveFieldDefinition(genome, context, stepId, fieldId);
+    if (field?.type === 'chips' || field?.type === 'multiselect') return coerceToStringArray(value);
+    return value;
   }
 
   static fieldsDependentOn(genome: MissionGenome, context: MissionContext, fieldId: string): ImpactedStep[] {

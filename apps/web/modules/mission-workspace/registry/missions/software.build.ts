@@ -1,3 +1,4 @@
+import { coerceToStringArray } from '../../types';
 import type { ConditionalStepDefinition, GapRule, MissionGenome, MissionStepDefinition, RiskRule } from '../../types';
 
 const steps: MissionStepDefinition[] = [
@@ -308,7 +309,7 @@ const conditionalSteps: ConditionalStepDefinition[] = [
     title: 'Pagamentos e compliance financeiro',
     insertAfter: 'security',
     condition: (ctx) => {
-      const modules = (ctx.answers['architecture.modules'] as string[] | undefined) ?? [];
+      const modules = coerceToStringArray(ctx.answers['architecture.modules']);
       return modules.some((module) => module.toLowerCase().includes('pagamento') || module.toLowerCase().includes('financeiro'));
     },
   },
@@ -330,7 +331,7 @@ const gapRules: GapRule[] = [
     suggestedAction: 'Revise os módulos para incluir os componentes essenciais de um marketplace.',
     check: (ctx) => {
       if (ctx.answers['vision.system_type'] !== 'Marketplace') return false;
-      const modules = ((ctx.answers['architecture.modules'] as string[] | undefined) ?? []).map((m) => m.toLowerCase());
+      const modules = coerceToStringArray(ctx.answers['architecture.modules']).map((m) => m.toLowerCase());
       const required = ['vendedores', 'compradores', 'pedidos', 'pagamentos', 'comissões'];
       return required.some((keyword) => !modules.some((m) => m.includes(keyword)));
     },
@@ -347,7 +348,7 @@ const riskRules: RiskRule[] = [
       const arch = ctx.answers['architecture.architecture_style'];
       // No separate "derived complexity" bag in this build -- module count is
       // a reasonable, real proxy for project size instead.
-      const moduleCount = ((ctx.answers['architecture.modules'] as string[] | undefined) ?? []).length;
+      const moduleCount = coerceToStringArray(ctx.answers['architecture.modules']).length;
       return arch === 'Microserviços' && moduleCount > 0 && moduleCount < 4;
     },
   },

@@ -6,6 +6,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Menu, PanelRightClose, P
 import { LlmConfirmationGate } from '@/components/llm/llm-confirmation-gate';
 import { MissionEngine } from '../engine/MissionEngine';
 import { useMissionStore } from '../stores/missionStore';
+import { coerceToStringArray } from '../types';
 import type { MissionFieldDefinition, MissionStepDefinition } from '../types';
 
 export function MissionShell({ missionId }: { missionId: string }) {
@@ -50,10 +51,40 @@ function MissionField({ step, field, value }: { step: MissionStepDefinition; fie
   const key = `${step.id}.${field.id}`;
   const common = { id: key, value: typeof value === 'string' || typeof value === 'number' ? value : '', onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => updateAnswer(step.id, field.id, event.target.value), className: 'focus-ring w-full rounded-xl border border-[color:var(--border)] bg-white/5 px-3 py-2.5 text-sm text-[color:var(--text)]' };
   return <div><label htmlFor={key} className="mb-1.5 block text-sm font-medium text-[color:var(--text)]">{field.label}{field.required ? <span className="ml-1 text-red-400">*</span> : null}</label>{field.description ? <p className="mb-2 text-xs text-[color:var(--muted)]">{field.description}</p> : null}
-    {field.type === 'select' ? <select {...common}><option value="">Selecione…</option>{field.options?.map((option) => <option key={option}>{option}</option>)}</select> : field.type === 'toggle' ? <input id={key} type="checkbox" checked={value === true} onChange={(e) => updateAnswer(step.id, field.id, e.target.checked)}/> : <textarea {...common} rows={field.type === 'text' || field.type === 'number' ? 2 : field.type === 'code' ? 10 : 5} placeholder={field.placeholder}/>} 
+    {field.type === 'select' ? <select {...common}><option value="">Selecione…</option>{field.options?.map((option) => <option key={option}>{option}</option>)}</select>
+      : field.type === 'toggle' ? <input id={key} type="checkbox" checked={value === true} onChange={(e) => updateAnswer(step.id, field.id, e.target.checked)}/>
+      : field.type === 'chips' ? <ChipsInput id={key} value={coerceToStringArray(value)} onChange={(next) => updateAnswer(step.id, field.id, next)} placeholder={field.placeholder}/>
+      : field.type === 'multiselect' ? <MultiselectInput id={key} options={field.options ?? []} value={coerceToStringArray(value)} onChange={(next) => updateAnswer(step.id, field.id, next)}/>
+      : <textarea {...common} rows={field.type === 'text' || field.type === 'number' ? 2 : field.type === 'code' ? 10 : 5} placeholder={field.placeholder}/>}
     {field.aiActions.length ? <div className="mt-2 flex flex-wrap gap-2">{field.aiActions.map((action) => <button key={action.id} disabled={aiLoading[field.id]} onClick={() => setActionId(action.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border)] px-2.5 py-1.5 text-xs text-[color:var(--muted)] hover:text-[color:var(--text)]"><Sparkles className="h-3.5 w-3.5"/>{action.label}</button>)}</div> : null}
     {actionId ? <div className="mt-3"><LlmConfirmationGate capability="mission_field_action" usageLabel={field.aiActions.find((item) => item.id === actionId)?.label ?? 'Ação de IA'} compact onConfirmed={async ({ mode, model }) => { if (mode !== 'llm' || !model) return; const selected = actionId; setActionId(null); await executeFieldAction(step.id, field.id, selected, { useUserKey: true, userModelChoice: model, hasValidatedUserKey: true }); }}/></div> : null}
   </div>;
+}
+
+/** Tag-style input for `chips` fields -- stores `string[]`, never the raw
+ * text a plain textarea would produce (see coerceToStringArray callers:
+ * without this, "architecture.modules" ends up a string and every rule
+ * that does `.some()`/`.map()` on it crashes the mission). */
+function ChipsInput({ id, value, onChange, placeholder }: { id: string; value: readonly string[]; onChange: (next: string[]) => void; placeholder?: string }) {
+  const [draft, setDraft] = useState('');
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed && !value.includes(trimmed)) onChange([...value, trimmed]);
+    setDraft('');
+  };
+  return <div className="focus-within:ring-2 focus-within:ring-[color:var(--accent)] rounded-xl border border-[color:var(--border)] bg-white/5 px-3 py-2.5">
+    {value.length ? <div className="mb-2 flex flex-wrap gap-1.5">{value.map((chip) => <span key={chip} className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-xs text-[color:var(--text)]">{chip}<button type="button" onClick={() => onChange(value.filter((item) => item !== chip))} aria-label={`Remover ${chip}`} className="text-[color:var(--muted)] hover:text-[color:var(--text)]"><X className="h-3 w-3"/></button></span>)}</div> : null}
+    <input id={id} value={draft} onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commit(); } else if (e.key === 'Backspace' && !draft && value.length) { onChange(value.slice(0, -1)); } }}
+      onBlur={commit} placeholder={placeholder ?? 'Digite e pressione Enter'}
+      className="w-full bg-transparent text-sm text-[color:var(--text)] outline-none placeholder:text-[color:var(--muted)]"/>
+  </div>;
+}
+
+/** Checkbox-pill picker for `multiselect` fields -- same `string[]` storage
+ * as ChipsInput, but constrained to the field's declared options. */
+function MultiselectInput({ id, options, value, onChange }: { id: string; options: readonly string[]; value: readonly string[]; onChange: (next: string[]) => void }) {
+  return <div id={id} className="flex flex-wrap gap-2">{options.map((option) => { const checked = value.includes(option); return <label key={option} className={`cursor-pointer rounded-lg border px-3 py-1.5 text-xs ${checked ? 'border-[color:var(--accent)] bg-[color:var(--accent)]/10 text-[color:var(--text)]' : 'border-[color:var(--border)] text-[color:var(--muted)]'}`}><input type="checkbox" className="sr-only" checked={checked} onChange={() => onChange(checked ? value.filter((item) => item !== option) : [...value, option])}/>{option}</label>; })}</div>;
 }
 
 function ContextPanel({ collapsed = false }: { collapsed?: boolean }) {

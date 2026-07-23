@@ -118,12 +118,13 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   updateAnswer: (stepId, fieldId, value) => {
     const { activeMission, activeGenome } = get();
     if (!activeMission || !activeGenome) return;
-    const impact = ContextEngine.analyzeImpact(activeGenome, activeMission.context, stepId, fieldId, value);
+    const normalized = MissionEngine.normalizeAnswerValue(activeGenome, activeMission.context, stepId, fieldId, value);
+    const impact = ContextEngine.analyzeImpact(activeGenome, activeMission.context, stepId, fieldId, normalized);
     if (impact.hasImpact) {
-      set({ pendingImpact: { stepId, fieldId, value, analysis: impact } });
+      set({ pendingImpact: { stepId, fieldId, value: normalized, analysis: impact } });
       return;
     }
-    const updatedContext = MissionEngine.updateAnswer(activeMission.context, stepId, fieldId, value);
+    const updatedContext = MissionEngine.updateAnswer(activeMission.context, stepId, fieldId, normalized);
     const { context, journey } = recompute(activeGenome, updatedContext);
     set({ activeMission: { ...activeMission, context, journey } });
     scheduleAutosave(get, set);
@@ -170,7 +171,12 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     set({ aiLoading: { ...get().aiLoading, [fieldId]: true } });
     try {
       const result = await AICouncil.executeFieldAction(activeMission.id, step, fieldId, action, activeMission.context, auth);
-      const impact = ContextEngine.analyzeImpact(activeGenome, activeMission.context, stepId, fieldId, result.suggestion.proposed);
+      // The preview keeps `proposed` as the raw LLM string for the review
+      // modal (the user edits it as text even for a chips field); only the
+      // impact-analysis probe below needs the array-coerced shape so it
+      // doesn't crash evaluating conditional steps that expect an array.
+      const normalizedProposed = MissionEngine.normalizeAnswerValue(activeGenome, activeMission.context, stepId, fieldId, result.suggestion.proposed);
+      const impact = ContextEngine.analyzeImpact(activeGenome, activeMission.context, stepId, fieldId, normalizedProposed);
       set({ pendingSuggestion: { ...result.suggestion, impact: impact.hasImpact ? impact.message : result.suggestion.impact } });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Falha ao executar ação de IA.' });
@@ -182,9 +188,10 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   acceptSuggestion: () => {
     const { pendingSuggestion, activeMission, activeGenome } = get();
     if (!pendingSuggestion || !activeMission || !activeGenome) return;
-    const impact = ContextEngine.analyzeImpact(activeGenome, activeMission.context, pendingSuggestion.stepId, pendingSuggestion.fieldId, pendingSuggestion.proposed);
-    let context = MissionEngine.updateAnswer(activeMission.context, pendingSuggestion.stepId, pendingSuggestion.fieldId, pendingSuggestion.proposed);
-    context = ContextEngine.recordDecision(context, pendingSuggestion.stepId, pendingSuggestion.fieldId, pendingSuggestion.proposed, 'ai_accepted' as DecisionSource, pendingSuggestion.reason, impact.impactedSteps);
+    const normalized = MissionEngine.normalizeAnswerValue(activeGenome, activeMission.context, pendingSuggestion.stepId, pendingSuggestion.fieldId, pendingSuggestion.proposed);
+    const impact = ContextEngine.analyzeImpact(activeGenome, activeMission.context, pendingSuggestion.stepId, pendingSuggestion.fieldId, normalized);
+    let context = MissionEngine.updateAnswer(activeMission.context, pendingSuggestion.stepId, pendingSuggestion.fieldId, normalized);
+    context = ContextEngine.recordDecision(context, pendingSuggestion.stepId, pendingSuggestion.fieldId, normalized, 'ai_accepted' as DecisionSource, pendingSuggestion.reason, impact.impactedSteps);
     const computed = recompute(activeGenome, context);
     set({ activeMission: { ...activeMission, ...computed }, pendingSuggestion: null });
     scheduleAutosave(get, set);

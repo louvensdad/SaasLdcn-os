@@ -214,3 +214,13 @@ export interface UserAPIConfig { readonly provider: 'openai' | 'anthropic' | 'go
 export function createEmptyMissionContext(): MissionContext {
   return { inputs: { text: [], files: [], code: [], logs: [], urls: [], schemas: [] }, answers: {}, decisions: [], rejections: [], gaps: [], risks: [], inconsistencies: [], history: [], derived: {} };
 }
+
+/** Chips/multiselect answers must be `string[]`, but AI suggestions and any
+ * legacy free-text entry produce a plain string -- coerce either shape into
+ * a clean array instead of letting `.some()`/`.map()` callers crash on a
+ * string that was never validated as an array. */
+export function coerceToStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string');
+  if (typeof value === 'string') return value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+  return [];
+}
