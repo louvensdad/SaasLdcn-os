@@ -14,8 +14,8 @@
 services:
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: apps/api/Dockerfile.dev
     ports:
       - "8001:8000"
     # Loads whatever the developer already has in apps/api/.env (Google/GitHub

@@ -422,35 +422,6 @@ select option:checked {
   animation: operational-pulse 4.6s ease-in-out infinite;
 }
 
-.micro-graph {
-  position: relative;
-  height: 1.75rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background:
-    linear-gradient(to right, color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01));
-  background-size: 18px 100%, 100% 100%;
-}
-
-.micro-graph::before {
-  position: absolute;
-  inset: 50% 0 auto;
-  height: 1px;
-  content: "";
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 40%, transparent), transparent);
-}
-
-.micro-graph::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  background:
-    linear-gradient(135deg, transparent 0 28%, color-mix(in srgb, var(--accent) 48%, transparent) 29% 31%, transparent 32% 46%, color-mix(in srgb, var(--accent-2) 36%, transparent) 47% 49%, transparent 50%);
-  opacity: 0.62;
-  animation: micro-signal-drift 7s ease-in-out infinite;
-}
-
 .search-surface {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
@@ -573,19 +544,6 @@ select option:checked {
   100% {
     transform: translateX(110%);
     opacity: 0;
-  }
-}
-
-@keyframes micro-signal-drift {
-  0%,
-  100% {
-    transform: translateX(-4%);
-    opacity: 0.42;
-  }
-
-  50% {
-    transform: translateX(4%);
-    opacity: 0.72;
   }
 }
 

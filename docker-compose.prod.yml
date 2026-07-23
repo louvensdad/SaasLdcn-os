@@ -122,8 +122,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile.prod
+      context: .
+      dockerfile: apps/api/Dockerfile.prod
     restart: unless-stopped
     depends_on:
       postgres:

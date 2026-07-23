@@ -13,11 +13,17 @@ RUN groupadd --gid 10001 ldcn \
 # apps/web/Dockerfile already uses /workspace/apps/web. A flat /app collapses
 # that arithmetic (parents[1] doesn't exist) and crashes on import.
 WORKDIR /workspace/apps/api
-COPY requirements.lock ./
+COPY apps/api/requirements.lock ./
 RUN pip install --require-hashes --requirement requirements.lock
-COPY alembic.ini ./
-COPY alembic ./alembic
-COPY app ./app
+COPY apps/api/alembic.ini ./
+COPY apps/api/alembic ./alembic
+COPY apps/api/app ./app
+
+# TemplateRegistryEngine reads BASE_DIR.parents[1] / "templates" (i.e.
+# /workspace/templates) -- without this the image builds and boots fine but
+# every /api/templates request 404s with "Template registry root was not
+# found." (repo-root templates/ was simply never in the image).
+COPY templates /workspace/templates
 
 # The app creates generated-projects/ (repo-root-relative) and app/data/
 # subpaths (sqlite db, execution evidence, ...) at runtime -- without this,
