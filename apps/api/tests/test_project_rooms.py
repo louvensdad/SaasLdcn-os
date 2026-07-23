@@ -640,8 +640,13 @@ def test_engineering_review_uses_active_llm_blueprint_metadata(client: TestClien
     from app.engines.llm.router import LLMRouter
     from app.schemas.llm import LLMResponse, Provider
 
+    from app.services.ai_key_vault_service import ai_key_vault_service
+
     room_id = _approved_prompt_room(client)
     client.post("/api/user-ai-keys", json={"provider": "anthropic", "nome": "Minha chave", "api_key": "sk-test-blueprint-provider-1234"})
+    user_id = client.get("/api/auth/me").json()["user_id"]
+    key_row = ai_key_vault_service.get_default_for_provider(user_id, "anthropic")
+    ai_key_vault_service.mark_validated(user_id, key_row["id"], status="valid")
     response = LLMResponse(
         provider=Provider.anthropic,
         model="claude-sonnet-4",

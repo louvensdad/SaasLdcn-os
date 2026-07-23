@@ -116,7 +116,8 @@ class TestLlmActiveSelectionPersistence:
         from app.core.config import get_settings
 
         service_a = LlmSettingsService(LlmActiveSelectionRepository(get_settings().sqlite_path))
-        ai_key_vault_service.create("restart-user", "anthropic", "Test Key", "sk-test-restart-key")
+        key_row = ai_key_vault_service.create("restart-user", "anthropic", "Test Key", "sk-test-restart-key")
+        ai_key_vault_service.mark_validated("restart-user", key_row["id"], status="valid")
         service_a.select("restart-user", "anthropic")
 
         service_b = LlmSettingsService(LlmActiveSelectionRepository(get_settings().sqlite_path))
