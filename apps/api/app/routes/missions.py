@@ -9,10 +9,13 @@ from app.engines.llm.base import LLMError
 from app.registry.missions_registry import MissionSummary, list_mission_summaries
 from app.repositories.tenant_repository import TenantAccessError, TenantRepository, WORKSPACE_WRITE_ROLES
 from app.schemas.mission import (
+    ArtifactDraft,
     AutosaveMissionRequest,
+    ConfirmArtifactsRequest,
     CreateMissionRequest,
     ExecuteFieldActionRequest,
     FieldActionResult,
+    GenerateArtifactsPreviewResponse,
     GenerateArtifactsRequest,
     MissionInstance,
     MissionInstanceSummary,
@@ -124,12 +127,12 @@ def execute_mission_field_action(mission_id: str, payload: ExecuteFieldActionReq
     return FieldActionResult.model_validate(result)
 
 
-@router.post("/missions/{mission_id}/artifacts", response_model=MissionInstance)
-def generate_mission_artifacts(mission_id: str, payload: GenerateArtifactsRequest, user: CurrentUser) -> MissionInstance:
+@router.post("/missions/{mission_id}/artifacts/preview", response_model=GenerateArtifactsPreviewResponse)
+def preview_mission_artifacts(mission_id: str, payload: GenerateArtifactsRequest, user: CurrentUser) -> GenerateArtifactsPreviewResponse:
     _require(service.get_mission(mission_id, user["user_id"]))
     api_key = _resolve_api_key(user, use_user_key=payload.use_user_key, user_model_choice=payload.user_model_choice, capability="mission_artifact")
     try:
-        updated = service.generate_artifacts(
+        result = service.draft_artifacts(
             mission_id, user["user_id"],
             artifact_definitions=[d.model_dump(mode="json") for d in payload.artifact_definitions],
             step_titles=payload.step_titles,
@@ -137,6 +140,16 @@ def generate_mission_artifacts(mission_id: str, payload: GenerateArtifactsReques
         )
     except LLMError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Missão não encontrada.")
+    drafts, degraded = result
+    return GenerateArtifactsPreviewResponse(drafts=[ArtifactDraft.model_validate(d) for d in drafts], degraded=degraded)
+
+
+@router.post("/missions/{mission_id}/artifacts/confirm", response_model=MissionInstance)
+def confirm_mission_artifacts(mission_id: str, payload: ConfirmArtifactsRequest, user: CurrentUser) -> MissionInstance:
+    _require(service.get_mission(mission_id, user["user_id"]))
+    updated = service.confirm_artifacts(mission_id, user["user_id"], artifacts=[a.model_dump(mode="json") for a in payload.artifacts])
     return _to_model(_require(updated))
 
 

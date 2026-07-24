@@ -211,6 +211,14 @@ const steps: MissionStepDefinition[] = [
             prompt: 'Para um sistema {{system_type}} com os módulos "{{modules}}", quais integrações externas são tipicamente necessárias? (pagamentos, notificações, storage, auth, etc.)' },
         ],
       },
+      {
+        id: 'error_strategy', label: 'Estratégia de tratamento de erros', type: 'textarea',
+        description: 'Formato de resposta, códigos HTTP e como falhas são comunicadas ao cliente.',
+        aiActions: [
+          { id: 'generate', label: 'Gerar', insertMode: 'replace',
+            prompt: 'Para os endpoints "{{main_endpoints}}" de um sistema {{system_type}} {{api_style}}, defina uma estratégia de tratamento de erros: formato de resposta, códigos HTTP e mensagens ao cliente.' },
+        ],
+      },
     ],
   },
   {
@@ -232,6 +240,14 @@ const steps: MissionStepDefinition[] = [
         aiActions: [
           { id: 'analyze', label: 'Analisar riscos do projeto', insertMode: 'suggest',
             prompt: 'Para um sistema {{system_type}} com dados {{entities}}, integrações {{external_integrations}}, quais são os principais riscos de segurança (OWASP, LGPD, infraestrutura)? Liste de forma concisa.' },
+        ],
+      },
+      {
+        id: 'encryption_defined', label: 'Estratégia de criptografia', type: 'textarea',
+        description: 'Como dados sensíveis são protegidos em trânsito e em repouso.',
+        aiActions: [
+          { id: 'generate', label: 'Gerar', insertMode: 'replace',
+            prompt: 'Para um sistema {{system_type}} com as entidades "{{entities}}", defina uma estratégia de criptografia: dados em trânsito, dados em repouso e gestão de chaves.' },
         ],
       },
     ],

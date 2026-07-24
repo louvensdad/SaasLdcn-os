@@ -90,7 +90,7 @@ def test_record_decision_is_persisted(client: TestClient):
     assert decisions[0]["step_id"] == "technology"
 
 
-def test_generate_artifacts_requires_a_validated_user_key(client: TestClient):
+def test_preview_artifacts_requires_a_validated_user_key(client: TestClient):
     mission = _create(client, mission_type="error.diagnose")
     mission_id = mission["id"]
     client.patch(
@@ -99,7 +99,7 @@ def test_generate_artifacts_requires_a_validated_user_key(client: TestClient):
     )
 
     response = client.post(
-        f"/api/missions/{mission_id}/artifacts",
+        f"/api/missions/{mission_id}/artifacts/preview",
         json={
             "artifact_definitions": [{"type": "diagnosis", "title": "Relatório de Diagnóstico"}],
             "step_titles": {"observed_error": "Erro observado"},
@@ -108,6 +108,24 @@ def test_generate_artifacts_requires_a_validated_user_key(client: TestClient):
 
     assert response.status_code == 409, response.text
     assert "user API key" in response.json()["error"]["message"]
+
+
+def test_confirm_artifacts_persists_the_reviewed_draft_and_never_calls_an_llm(client: TestClient):
+    """Confirm only ever persists content the user already reviewed in the
+    preview step -- it must not require (or silently trigger) any LLM call."""
+    mission = _create(client)
+    mission_id = mission["id"]
+
+    response = client.post(
+        f"/api/missions/{mission_id}/artifacts/confirm",
+        json={"artifacts": [{"type": "blueprint", "title": "Blueprint", "content": "Conteúdo revisado pelo usuário.", "format": "markdown"}]},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["artifacts"]) == 1
+    assert body["artifacts"][0]["content"] == "Conteúdo revisado pelo usuário."
+    assert body["artifacts"][0]["title"] == "Blueprint"
 
 
 def test_delete_mission(client: TestClient):

@@ -3,7 +3,7 @@ import { getAccessToken, refreshAccessToken } from '@/lib/api/client';
 import { isRegisteredMissionType } from '../registry';
 import { createEmptyMissionContext } from '../types';
 import type {
-  ArtifactFormat, ArtifactType, Decision, ExecutionMode, ExperienceLevel, Gap, Inconsistency,
+  ArtifactDraft, ArtifactFormat, ArtifactType, Decision, ExecutionMode, ExperienceLevel, Gap, Inconsistency,
   JourneyState, MissionArtifact, MissionContext, MissionInstance, MissionInstanceSummary,
   MissionStatus, Rejection, Risk, SpecialistRole,
 } from '../types';
@@ -83,6 +83,13 @@ function artifact(value: unknown): MissionArtifact {
   const item = record(value);
   return { id: string(item.id), type: string(item.type, 'report') as ArtifactType, title: string(item.title), content: item.content, format: string(item.format, 'markdown') as ArtifactFormat, generatedAt: string(item.generated_at), canFeedMission: array(item.can_feed_mission).filter((id): id is string => typeof id === 'string') as MissionArtifact['canFeedMission'] };
 }
+function artifactDraft(value: unknown): ArtifactDraft {
+  const item = record(value);
+  return { type: string(item.type, 'report') as ArtifactType, title: string(item.title), content: string(item.content), format: string(item.format, 'markdown') as ArtifactFormat, canFeedMission: array(item.can_feed_mission).filter((id): id is string => typeof id === 'string') as ArtifactDraft['canFeedMission'], degraded: boolean(item.degraded) };
+}
+function artifactDraftPayload(value: ArtifactDraft): JsonRecord {
+  return { type: value.type, title: value.title, content: value.content, format: value.format, can_feed_mission: value.canFeedMission, degraded: value.degraded };
+}
 function mission(value: unknown): MissionInstance {
   const item = record(value);
   const type = string(item.type);
@@ -114,6 +121,7 @@ export interface AutosavePayload { title?: string; status?: MissionStatus; mode?
 export interface FieldActionPayload { step_id: string; field_id: string; action_id: string; specialist?: SpecialistRole | null; interpolated_prompt: string; insert_mode: 'replace' | 'append' | 'suggest'; user_model_choice: string; use_user_key: true; }
 export interface FieldActionResultDto { content: string; insert_mode: 'replace' | 'append' | 'suggest'; degraded: boolean; }
 export interface GenerateArtifactsPayload { artifact_definitions: { type: string; title: string; can_feed_mission?: string[] }[]; step_titles: Record<string, string>; user_model_choice: string; use_user_key: true; }
+export interface ArtifactsPreviewResultDto { drafts: ArtifactDraft[]; degraded: boolean; }
 
 export const missionClient = {
   registry: async () => array(await request('/api/missions/registry', undefined, THIRTY_SEC)).map(record),
@@ -122,7 +130,11 @@ export const missionClient = {
   create: async (payload: CreateMissionPayload) => mission(await request('/api/missions', { method: 'POST', body: JSON.stringify(payload) }, THIRTY_SEC)),
   autosave: async (id: string, payload: AutosavePayload) => mission(await request(`/api/missions/${id}`, { method: 'PATCH', body: JSON.stringify({ ...payload, context: payload.context ? contextPayload(payload.context) : undefined, journey: payload.journey ? journeyPayload(payload.journey) : undefined }) }, THIRTY_SEC)),
   executeFieldAction: async (id: string, payload: FieldActionPayload) => record(await request(`/api/missions/${id}/ai-action`, { method: 'POST', body: JSON.stringify(payload) }, FIVE_MIN)) as unknown as FieldActionResultDto,
-  generateArtifacts: async (id: string, payload: GenerateArtifactsPayload) => mission(await request(`/api/missions/${id}/artifacts`, { method: 'POST', body: JSON.stringify(payload) }, FIVE_MIN)),
+  previewArtifacts: async (id: string, payload: GenerateArtifactsPayload): Promise<ArtifactsPreviewResultDto> => {
+    const body = record(await request(`/api/missions/${id}/artifacts/preview`, { method: 'POST', body: JSON.stringify(payload) }, FIVE_MIN));
+    return { drafts: array(body.drafts).map(artifactDraft), degraded: boolean(body.degraded) };
+  },
+  confirmArtifacts: async (id: string, artifacts: ArtifactDraft[]) => mission(await request(`/api/missions/${id}/artifacts/confirm`, { method: 'POST', body: JSON.stringify({ artifacts: artifacts.map(artifactDraftPayload) }) }, FIVE_MIN)),
   archive: async (id: string) => mission(await request(`/api/missions/${id}/archive`, { method: 'POST' }, THIRTY_SEC)),
   remove: async (id: string) => { await request(`/api/missions/${id}`, { method: 'DELETE' }, THIRTY_SEC); },
 };

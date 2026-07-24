@@ -26,12 +26,13 @@ export function MissionShell({ missionId }: { missionId: string }) {
     {store.error ? <div role="alert" className="border-b border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">{store.error}</div> : null}
     <div className={`grid flex-1 ${store.leftPanelCollapsed && store.rightPanelCollapsed ? 'lg:grid-cols-[3.5rem_1fr_3.5rem]' : store.leftPanelCollapsed ? 'lg:grid-cols-[3.5rem_1fr_18rem]' : store.rightPanelCollapsed ? 'lg:grid-cols-[14rem_1fr_3.5rem]' : 'lg:grid-cols-[14rem_minmax(0,1fr)_18rem]'}`}>
       <aside className="hidden border-r border-[color:var(--border)] lg:block"><Journey steps={activeSteps} collapsed={store.leftPanelCollapsed}/></aside>
-      <main className="min-w-0 overflow-y-auto p-5 lg:p-8"><MissionStep step={step}/></main>
+      <main className="min-w-0 overflow-y-auto p-5 lg:p-8"><MissionStep step={step} isLastStep={activeSteps.at(-1)?.id === step.id}/></main>
       <aside className="hidden border-l border-[color:var(--border)] lg:block"><ContextPanel collapsed={store.rightPanelCollapsed}/></aside>
     </div>
     {mobilePanel ? <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setMobilePanel(null)}><aside role="dialog" aria-modal="true" className={`h-full w-[min(88vw,22rem)] bg-[color:var(--bg)] p-4 ${mobilePanel === 'context' ? 'ml-auto' : ''}`} onClick={(event) => event.stopPropagation()}><button className="mb-4 ml-auto block" onClick={() => setMobilePanel(null)} aria-label="Fechar"><X/></button>{mobilePanel === 'journey' ? <Journey steps={activeSteps}/> : <ContextPanel/>}</aside></div> : null}
     {store.pendingSuggestion ? <SuggestionModal/> : null}
     {store.pendingImpact ? <ImpactModal/> : null}
+    {store.pendingArtifacts ? <ArtifactsReviewModal/> : null}
   </div>;
 }
 
@@ -40,9 +41,21 @@ function Journey({ steps, collapsed = false }: { steps: readonly MissionStepDefi
   return <div className="p-3"><button onClick={toggleLeftPanel} className="mb-4 hidden w-full justify-end text-[color:var(--muted)] lg:flex" aria-label="Recolher jornada">{collapsed ? <ChevronRight/> : <ChevronLeft/>}</button>{!collapsed ? <><div className="mb-4 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full bg-[color:var(--accent)]" style={{ width: `${activeMission?.journey.progress ?? 0}%` }}/></div><ol className="space-y-1">{steps.map((step, index) => { const state = activeMission?.journey.steps.find((item) => item.definitionId === step.id); return <li key={step.id}><button onClick={() => goToStep(step.id)} className={`w-full rounded-lg px-3 py-2 text-left text-xs ${state?.status === 'active' ? 'bg-white/10 text-[color:var(--text)]' : 'text-[color:var(--muted)] hover:bg-white/5'}`}><span className="mr-2 opacity-60">{index + 1}</span>{step.title}</button></li>; })}</ol></> : <ol className="space-y-2">{steps.map((step, index) => <li key={step.id}><button title={step.title} onClick={() => goToStep(step.id)} className="h-8 w-8 rounded-lg border border-[color:var(--border)] text-xs">{index + 1}</button></li>)}</ol>}</div>;
 }
 
-function MissionStep({ step }: { step: MissionStepDefinition }) {
-  const { activeMission, advanceStep } = useMissionStore();
-  return <section className="mx-auto max-w-3xl"><div className="mb-7"><p className="ds-caption text-[color:var(--accent)]">ETAPA ATUAL</p><h2 className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{step.title}</h2><p className="mt-2 text-sm text-[color:var(--muted)]">{step.description}</p></div><div className="space-y-6">{step.fields.map((field) => <MissionField key={field.id} step={step} field={field} value={activeMission?.context.answers[`${step.id}.${field.id}`]}/>)}</div><button onClick={() => advanceStep()} className="mt-8 rounded-xl bg-[color:var(--accent)] px-5 py-2.5 text-sm font-semibold text-white">Validar e continuar</button></section>;
+function MissionStep({ step, isLastStep }: { step: MissionStepDefinition; isLastStep: boolean }) {
+  const { activeMission, advanceStep, previewArtifacts, loading } = useMissionStore();
+  const [showGate, setShowGate] = useState(false);
+  return <section className="mx-auto max-w-3xl"><div className="mb-7"><p className="ds-caption text-[color:var(--accent)]">ETAPA ATUAL</p><h2 className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{step.title}</h2><p className="mt-2 text-sm text-[color:var(--muted)]">{step.description}</p></div><div className="space-y-6">{step.fields.map((field) => <MissionField key={field.id} step={step} field={field} value={activeMission?.context.answers[`${step.id}.${field.id}`]}/>)}</div>
+    {isLastStep ? (
+      // There is no next step to advance to here -- advanceStep() would just
+      // recompute the journey onto the same step, which reads as "the button
+      // does nothing". The real action on the final step is generating the
+      // deliverables (same flow as the "Gerar entregáveis" button in the
+      // context panel) -- always as a draft the user reviews, never
+      // auto-saved (see ArtifactsReviewModal).
+      showGate ? <div className="mt-8"><LlmConfirmationGate capability="mission_report" usageLabel="Gerar entregáveis" compact onConfirmed={async ({ mode, model }) => { if (mode !== 'llm' || !model) return; setShowGate(false); await previewArtifacts({ useUserKey: true, userModelChoice: model, hasValidatedUserKey: true }); }}/></div>
+        : <button disabled={loading} onClick={() => setShowGate(true)} className="mt-8 rounded-xl bg-[color:var(--accent)] px-5 py-2.5 text-sm font-semibold text-white">Gerar entregáveis</button>
+    ) : <button onClick={() => advanceStep()} className="mt-8 rounded-xl bg-[color:var(--accent)] px-5 py-2.5 text-sm font-semibold text-white">Validar e continuar</button>}
+  </section>;
 }
 
 function MissionField({ step, field, value }: { step: MissionStepDefinition; field: MissionFieldDefinition; value: unknown }) {
@@ -88,10 +101,10 @@ function MultiselectInput({ id, options, value, onChange }: { id: string; option
 }
 
 function ContextPanel({ collapsed = false }: { collapsed?: boolean }) {
-  const { activeMission, activeGenome, toggleRightPanel, generateArtifacts, loading } = useMissionStore();
+  const { activeMission, activeGenome, toggleRightPanel, previewArtifacts, loading } = useMissionStore();
   const [showGate, setShowGate] = useState(false);
   if (collapsed) return <button onClick={toggleRightPanel} className="m-3" aria-label="Abrir contexto"><PanelRightOpen/></button>;
-  return <div className="space-y-5 p-4"><button onClick={toggleRightPanel} className="hidden w-full justify-start text-[color:var(--muted)] lg:flex" aria-label="Recolher contexto"><PanelRightClose/></button><section><h3 className="text-sm font-semibold text-[color:var(--text)]">Blueprint em tempo real</h3><dl className="mt-3 space-y-2 text-xs text-[color:var(--muted)]"><div className="flex justify-between"><dt>Respostas</dt><dd>{Object.keys(activeMission?.context.answers ?? {}).length}</dd></div><div className="flex justify-between"><dt>Riscos ativos</dt><dd>{activeMission?.context.risks.filter((risk) => !risk.dismissed).length}</dd></div><div className="flex justify-between"><dt>Lacunas abertas</dt><dd>{activeMission?.context.gaps.filter((gap) => gap.status === 'open').length}</dd></div></dl></section><section><h3 className="text-sm font-semibold text-[color:var(--text)]">Especialistas</h3><div className="mt-2 flex flex-wrap gap-1">{activeGenome?.specialists.map((role) => <span key={role} className="rounded-full bg-white/5 px-2 py-1 text-[10px] text-[color:var(--muted)]">{role.replaceAll('_', ' ')}</span>)}</div></section>{activeMission?.context.risks.filter((risk) => !risk.dismissed).map((risk) => <div key={risk.id} className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs"><ShieldAlert className="mb-2 h-4 w-4 text-amber-300"/><strong>{risk.title}</strong><p className="mt-1 text-[color:var(--muted)]">{risk.suggestedAction}</p></div>)}<section><h3 className="text-sm font-semibold">Conhecimento contextual</h3><ul className="mt-2 space-y-1 text-xs text-[color:var(--muted)]">{activeGenome?.knowledgeTopics.map((topic) => <li key={topic}>{topic.replaceAll('_', ' ')}</li>)}</ul></section>{showGate ? <LlmConfirmationGate capability="mission_report" usageLabel="Gerar artefatos" compact onConfirmed={async ({ mode, model }) => { if (mode !== 'llm' || !model) return; setShowGate(false); await generateArtifacts({ useUserKey: true, userModelChoice: model, hasValidatedUserKey: true }); }}/> : <button disabled={loading} onClick={() => setShowGate(true)} className="w-full rounded-xl border border-[color:var(--border)] px-3 py-2 text-xs">Gerar entregáveis</button>}</div>;
+  return <div className="space-y-5 p-4"><button onClick={toggleRightPanel} className="hidden w-full justify-start text-[color:var(--muted)] lg:flex" aria-label="Recolher contexto"><PanelRightClose/></button><section><h3 className="text-sm font-semibold text-[color:var(--text)]">Blueprint em tempo real</h3><dl className="mt-3 space-y-2 text-xs text-[color:var(--muted)]"><div className="flex justify-between"><dt>Respostas</dt><dd>{Object.keys(activeMission?.context.answers ?? {}).length}</dd></div><div className="flex justify-between"><dt>Riscos ativos</dt><dd>{activeMission?.context.risks.filter((risk) => !risk.dismissed).length}</dd></div><div className="flex justify-between"><dt>Lacunas abertas</dt><dd>{activeMission?.context.gaps.filter((gap) => gap.status === 'open').length}</dd></div></dl></section><section><h3 className="text-sm font-semibold text-[color:var(--text)]">Especialistas</h3><div className="mt-2 flex flex-wrap gap-1">{activeGenome?.specialists.map((role) => <span key={role} className="rounded-full bg-white/5 px-2 py-1 text-[10px] text-[color:var(--muted)]">{role.replaceAll('_', ' ')}</span>)}</div></section>{activeMission?.context.risks.filter((risk) => !risk.dismissed).map((risk) => <div key={risk.id} className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs"><ShieldAlert className="mb-2 h-4 w-4 text-amber-300"/><strong>{risk.title}</strong><p className="mt-1 text-[color:var(--muted)]">{risk.suggestedAction}</p></div>)}<section><h3 className="text-sm font-semibold">Conhecimento contextual</h3><ul className="mt-2 space-y-1 text-xs text-[color:var(--muted)]">{activeGenome?.knowledgeTopics.map((topic) => <li key={topic}>{topic.replaceAll('_', ' ')}</li>)}</ul></section>{showGate ? <LlmConfirmationGate capability="mission_report" usageLabel="Gerar artefatos" compact onConfirmed={async ({ mode, model }) => { if (mode !== 'llm' || !model) return; setShowGate(false); await previewArtifacts({ useUserKey: true, userModelChoice: model, hasValidatedUserKey: true }); }}/> : <button disabled={loading} onClick={() => setShowGate(true)} className="w-full rounded-xl border border-[color:var(--border)] px-3 py-2 text-xs">Gerar entregáveis</button>}</div>;
 }
 
 function SuggestionModal() {
@@ -100,6 +113,39 @@ function SuggestionModal() {
   const [reason, setReason] = useState('');
   if (!suggestion) return null;
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"><div role="dialog" aria-modal="true" aria-labelledby="suggestion-title" className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[color:var(--border)] bg-[color:var(--bg)] p-6"><h2 id="suggestion-title" className="text-lg font-semibold">Sugestão da IA · {suggestion.specialist.replaceAll('_', ' ')}</h2><div className="mt-5 grid gap-4 md:grid-cols-2"><div><p className="ds-caption mb-2 text-[color:var(--muted)]">ATUAL</p><pre className="min-h-28 whitespace-pre-wrap rounded-xl bg-white/5 p-3 text-xs">{String(suggestion.current ?? 'Vazio')}</pre></div><div><p className="ds-caption mb-2 text-[color:var(--muted)]">SUGESTÃO</p><textarea value={draft} onChange={(e) => { setDraft(e.target.value); modifySuggestion(e.target.value); }} rows={8} className="w-full rounded-xl border border-[color:var(--border)] bg-white/5 p-3 text-xs"/></div></div><div className="mt-4 rounded-xl bg-white/5 p-3 text-sm"><strong>Por quê:</strong> {suggestion.reason}<br/><strong>Impacto:</strong> {suggestion.impact}</div><label className="mt-4 block text-xs text-[color:var(--muted)]">Motivo da rejeição (opcional)<input value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 w-full rounded-lg border border-[color:var(--border)] bg-transparent p-2"/></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => rejectSuggestion(reason)} className="rounded-lg border border-[color:var(--border)] px-4 py-2 text-sm">Rejeitar</button><button onClick={acceptSuggestion} className="rounded-lg bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-white">Aceitar alteração</button></div></div></div>;
+}
+
+/** Every "Gerar entregáveis" click lands here first -- one staged LLM call
+ * per artifact (see mission_artifact_engine.py's draft_artifact), all using
+ * the mission's full answer context, complementing gaps explicitly marked
+ * as such. Nothing is written to the mission's real artifacts until the
+ * user reviews (and can edit) every draft and clicks "Aceitar e salvar" --
+ * confirmArtifacts() is the only thing that persists. */
+function ArtifactsReviewModal() {
+  const { pendingArtifacts, artifactsDegraded, loading, editPendingArtifact, confirmArtifacts, cancelArtifactsPreview } = useMissionStore();
+  const [activeIndex, setActiveIndex] = useState(0);
+  if (!pendingArtifacts || pendingArtifacts.length === 0) return null;
+  const active = pendingArtifacts[Math.min(activeIndex, pendingArtifacts.length - 1)];
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"><div role="dialog" aria-modal="true" aria-labelledby="artifacts-review-title" className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--bg)]">
+    <div className="border-b border-[color:var(--border)] p-6 pb-4">
+      <h2 id="artifacts-review-title" className="text-lg font-semibold text-[color:var(--text)]">Revisar entregáveis gerados</h2>
+      <p className="mt-1 text-sm text-[color:var(--muted)]">Nada foi salvo ainda. Revise (e edite se quiser) cada artefato antes de aceitar.</p>
+      {artifactsDegraded ? <p className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">Pelo menos um artefato foi gerado em modo degradado (nenhum LLM real respondeu) -- revise com atenção antes de aceitar.</p> : null}
+    </div>
+    <div className="flex flex-1 overflow-hidden">
+      <nav className="w-48 shrink-0 overflow-y-auto border-r border-[color:var(--border)] p-3">
+        <ul className="space-y-1">{pendingArtifacts.map((draft, index) => <li key={`${draft.type}_${index}`}><button onClick={() => setActiveIndex(index)} className={`w-full rounded-lg px-3 py-2 text-left text-xs ${index === activeIndex ? 'bg-white/10 text-[color:var(--text)]' : 'text-[color:var(--muted)] hover:bg-white/5'}`}>{draft.title}{draft.degraded ? <span className="ml-1.5 text-amber-300">●</span> : null}</button></li>)}</ul>
+      </nav>
+      <div className="flex-1 overflow-y-auto p-6">
+        <label htmlFor="artifact-draft-content" className="mb-2 block text-sm font-medium text-[color:var(--text)]">{active.title}</label>
+        <textarea id="artifact-draft-content" value={active.content} onChange={(event) => editPendingArtifact(pendingArtifacts.indexOf(active), event.target.value)} rows={18} className="focus-ring w-full rounded-xl border border-[color:var(--border)] bg-white/5 p-3 font-mono text-xs text-[color:var(--text)]"/>
+      </div>
+    </div>
+    <div className="flex justify-end gap-2 border-t border-[color:var(--border)] p-6 pt-4">
+      <button onClick={cancelArtifactsPreview} className="rounded-lg border border-[color:var(--border)] px-4 py-2 text-sm">Cancelar</button>
+      <button disabled={loading} onClick={() => void confirmArtifacts()} className="rounded-lg bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-white">Aceitar e salvar</button>
+    </div>
+  </div></div>;
 }
 
 function ImpactModal() {

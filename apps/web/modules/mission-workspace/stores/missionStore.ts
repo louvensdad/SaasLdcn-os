@@ -7,6 +7,7 @@ import { MissionEngine } from '../engine/MissionEngine';
 import { getMissionGenome } from '../registry';
 import type {
   AISuggestion,
+  ArtifactDraft,
   DecisionSource,
   ExecutionMode,
   ExperienceLevel,
@@ -33,6 +34,10 @@ interface MissionStoreState {
   readonly aiLoading: Record<string, boolean>;
   readonly pendingSuggestion: AISuggestion | null;
   readonly pendingImpact: PendingImpact | null;
+  /** Staged, per-artifact drafts awaiting explicit user review -- nothing
+   * here is saved until confirmArtifacts() is called. Never auto-accepted. */
+  readonly pendingArtifacts: readonly ArtifactDraft[] | null;
+  readonly artifactsDegraded: boolean;
   readonly loading: boolean;
   readonly error: string | null;
 
@@ -49,7 +54,10 @@ interface MissionStoreState {
   rejectSuggestion: (reason?: string) => void;
   decideGap: (gapId: string, action: 'addressed' | 'dismissed') => void;
   dismissRisk: (riskId: string) => void;
-  generateArtifacts: (auth: FieldActionAuth) => Promise<void>;
+  previewArtifacts: (auth: FieldActionAuth) => Promise<void>;
+  editPendingArtifact: (index: number, content: string) => void;
+  confirmArtifacts: () => Promise<void>;
+  cancelArtifactsPreview: () => void;
   flushAutosave: () => Promise<void>;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
@@ -83,6 +91,8 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   aiLoading: {},
   pendingSuggestion: null,
   pendingImpact: null,
+  pendingArtifacts: null,
+  artifactsDegraded: false,
   loading: false,
   error: null,
 
@@ -233,24 +243,44 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     scheduleAutosave(get, set);
   },
 
-  generateArtifacts: async (auth) => {
+  previewArtifacts: async (auth) => {
     const { activeMission, activeGenome } = get();
     if (!activeMission || !activeGenome) return;
     set({ loading: true, error: null });
     try {
       const activeSteps = MissionEngine.resolveActiveSteps(activeGenome, activeMission.context);
       const stepTitles = Object.fromEntries(activeSteps.map((step) => [step.id, step.title]));
-      const updated = await missionClient.generateArtifacts(activeMission.id, {
+      const result = await missionClient.previewArtifacts(activeMission.id, {
         artifact_definitions: activeGenome.artifacts.map((definition) => ({ type: definition.type, title: definition.title, can_feed_mission: [...(definition.canFeedMission ?? [])] })),
         step_titles: stepTitles,
         user_model_choice: auth.userModelChoice,
         use_user_key: auth.useUserKey,
       });
-      set({ activeMission: updated, loading: false });
+      set({ pendingArtifacts: result.drafts, artifactsDegraded: result.degraded, loading: false });
     } catch (error) {
-      set({ loading: false, error: error instanceof Error ? error.message : 'Falha ao gerar artefatos.' });
+      set({ loading: false, error: error instanceof Error ? error.message : 'Falha ao gerar rascunho dos artefatos.' });
     }
   },
+
+  editPendingArtifact: (index, content) => {
+    const { pendingArtifacts } = get();
+    if (!pendingArtifacts) return;
+    set({ pendingArtifacts: pendingArtifacts.map((draft, i) => (i === index ? { ...draft, content } : draft)) });
+  },
+
+  confirmArtifacts: async () => {
+    const { activeMission, pendingArtifacts } = get();
+    if (!activeMission || !pendingArtifacts) return;
+    set({ loading: true, error: null });
+    try {
+      const updated = await missionClient.confirmArtifacts(activeMission.id, [...pendingArtifacts]);
+      set({ activeMission: updated, pendingArtifacts: null, artifactsDegraded: false, loading: false });
+    } catch (error) {
+      set({ loading: false, error: error instanceof Error ? error.message : 'Falha ao salvar os artefatos.' });
+    }
+  },
+
+  cancelArtifactsPreview: () => set({ pendingArtifacts: null, artifactsDegraded: false }),
 
   flushAutosave: async () => {
     const { activeMission } = get();
@@ -269,6 +299,6 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
 
   reset: () => {
     if (autosaveTimer) clearTimeout(autosaveTimer);
-    set({ activeMission: null, activeGenome: null, pendingSuggestion: null, pendingImpact: null, saveStatus: 'idle', lastSavedAt: null, error: null });
+    set({ activeMission: null, activeGenome: null, pendingSuggestion: null, pendingImpact: null, pendingArtifacts: null, artifactsDegraded: false, saveStatus: 'idle', lastSavedAt: null, error: null });
   },
 }));

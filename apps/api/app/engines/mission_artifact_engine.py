@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
-from uuid import uuid4
 
 from app.engines.llm.router import LLMRouter
 from app.schemas.llm import LLMRequest, ReasoningLevel
 
-SUMMARY_SYSTEM_PROMPT = (
-    "Você é um redator técnico. Dado o conteúdo estruturado abaixo (dentro de "
-    "<artifact_body>) de um artefato \"{artifact_title}\" gerado pela missão "
-    "\"{mission_title}\", escreva um único parágrafo de resumo executivo (3 a 5 "
-    "frases), em português. Responda apenas com o parágrafo, sem título e sem markdown."
+DRAFT_SYSTEM_PROMPT = (
+    "Você é um engenheiro de software sênior redigindo o artefato \"{artifact_title}\" "
+    "(tipo {artifact_type}) da missão \"{mission_title}\". Em <mission_context> está "
+    "TUDO que o usuário respondeu na missão, organizado por etapa, mais as decisões já "
+    "tomadas -- é a fonte de verdade e nunca deve ser contradita.\n\n"
+    "Escreva o conteúdo completo e específico deste artefato em markdown, usando as "
+    "respostas do usuário como base real, não como um resumo delas. Onde uma "
+    "informação relevante para este artefato estiver ausente ou incompleta, "
+    "complemente com uma recomendação sensata e coloque esse complemento sob um "
+    "cabeçalho final \"## Complementado pela IA\", explicando o que foi assumido e "
+    "por quê -- nunca misture complementos com as respostas originais do usuário sem "
+    "essa marcação explícita. Responda apenas com o markdown do artefato, sem "
+    "comentários fora dele."
 )
 
 
@@ -45,7 +51,7 @@ def _compile_body(artifact_title: str, step_titles: dict[str, str], answers: dic
     return "\n".join(sections)
 
 
-def compile_artifact(
+def draft_artifact(
     *,
     artifact_type: str,
     artifact_title: str,
@@ -53,36 +59,33 @@ def compile_artifact(
     step_titles: dict[str, str],
     answers: dict[str, Any],
     decisions: list[dict[str, Any]],
-    can_feed_mission: list[str],
     router: LLMRouter | None = None,
     api_key: str | None = None,
     user_model_choice: str | None = None,
 ) -> tuple[dict[str, Any], bool]:
-    """Deterministic compiler (always produces a real artifact from captured
-    answers) plus an optional LLM executive-summary paragraph prepended at the
-    top. Returns (MissionArtifact-shaped dict, degraded)."""
-    body = _compile_body(artifact_title, step_titles, answers, decisions)
+    """One staged, substantive LLM call per artifact type -- each gets the
+    mission's FULL answer context (every step, not just the ones nominally
+    "about" this artifact) plus an explicit instruction to complement gaps,
+    clearly marked, never silently. Returns a draft (no id/generated_at --
+    those are assigned on confirm, once the user has actually reviewed and
+    accepted this content) and a degraded flag."""
+    context_body = _compile_body(artifact_title, step_titles, answers, decisions)
     router = router or LLMRouter()
     response = router.route(
         LLMRequest(
-            system=SUMMARY_SYSTEM_PROMPT.format(artifact_title=artifact_title, mission_title=mission_title),
-            user=f"<artifact_body>\n{body}\n</artifact_body>",
-            reasoning=ReasoningLevel.low,
-            max_output_tokens=600,
+            system=DRAFT_SYSTEM_PROMPT.format(artifact_title=artifact_title, mission_title=mission_title, artifact_type=artifact_type),
+            user=f"<mission_context>\n{context_body}\n</mission_context>",
+            reasoning=ReasoningLevel.medium,
+            max_output_tokens=4000,
         ),
         user_choice=user_model_choice,
-        agent_role="mission_artifact_summary",
+        agent_role="mission_artifact_draft",
         api_key=api_key,
     )
     degraded = response.served_by_fallback or not response.text.strip()
-    content = body if degraded else f"# {artifact_title}\n\n## Resumo executivo\n\n{response.text.strip()}\n\n" + "\n".join(body.splitlines()[2:])
-    artifact = {
-        "id": f"art_{uuid4().hex[:10]}",
-        "type": artifact_type,
-        "title": artifact_title,
-        "content": content,
-        "format": "markdown",
-        "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
-        "can_feed_mission": can_feed_mission,
-    }
-    return artifact, degraded
+    content = (
+        f"# {artifact_title}\n\n_Modo degradado: nenhum LLM real respondeu -- o "
+        "conteúdo abaixo é o registro bruto das respostas, sem elaboração ou "
+        f"complemento da IA._\n\n{context_body}" if degraded else response.text.strip()
+    )
+    return {"type": artifact_type, "title": artifact_title, "content": content, "format": "markdown"}, degraded

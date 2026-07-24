@@ -211,6 +211,16 @@ export interface AISuggestion {
   readonly degraded: boolean;
 }
 export interface UserAPIConfig { readonly provider: 'openai' | 'anthropic' | 'google' | 'deepseek' | 'groq' | 'custom'; readonly hasValidatedUserKey: boolean; readonly model: string; readonly baseUrl?: string; }
+/** A generated-but-not-yet-persisted artifact -- nothing here is saved to
+ * the mission until the user reviews it and calls confirmArtifacts. */
+export interface ArtifactDraft {
+  readonly type: ArtifactType;
+  readonly title: string;
+  readonly content: string;
+  readonly format: ArtifactFormat;
+  readonly canFeedMission: readonly MissionTypeId[];
+  readonly degraded: boolean;
+}
 export function createEmptyMissionContext(): MissionContext {
   return { inputs: { text: [], files: [], code: [], logs: [], urls: [], schemas: [] }, answers: {}, decisions: [], rejections: [], gaps: [], risks: [], inconsistencies: [], history: [], derived: {} };
 }

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from app.engines.mission_artifact_engine import compile_artifact
+from app.engines.mission_artifact_engine import draft_artifact
 from app.engines.mission_field_action_engine import execute_field_action
 from app.registry.missions_registry import UnknownMissionTypeError, resolve_mission_summary
 from app.repositories.mission_repository import MissionRepository
@@ -102,25 +102,44 @@ class MissionService:
         self._log(mission_id, owner_user_id, "POST", f"/api/missions/{mission_id}/ai-action", 200, "success", f"Ação de IA executada ({action_id})" + (" [Modo Degradado]" if degraded else ""))
         return {"content": content, "insert_mode": insert_mode, "degraded": degraded}
 
-    def generate_artifacts(self, mission_id: str, owner_user_id: str, *, artifact_definitions: list[dict[str, Any]], step_titles: dict[str, str], api_key: str | None = None, user_model_choice: str | None = None) -> dict[str, Any] | None:
+    def draft_artifacts(self, mission_id: str, owner_user_id: str, *, artifact_definitions: list[dict[str, Any]], step_titles: dict[str, str], api_key: str | None = None, user_model_choice: str | None = None) -> tuple[list[dict[str, Any]], bool] | None:
+        """Generates draft artifacts WITHOUT persisting them -- the mission is
+        only updated once the user reviews and calls confirm_artifacts (vault
+        ask: "sempre pergunta pro usuário se ele aceita")."""
         mission = self.repository.get_for_owner(mission_id, owner_user_id)
         if mission is None:
             return None
         answers = mission["context"].get("answers") or {}
         decisions = mission["context"].get("decisions") or []
+        drafts: list[dict[str, Any]] = []
         degraded_any = False
         for definition in artifact_definitions:
-            artifact, degraded = compile_artifact(
+            draft, degraded = draft_artifact(
                 artifact_type=definition["type"], artifact_title=definition["title"], mission_title=mission["title"],
                 step_titles=step_titles, answers=answers, decisions=decisions,
-                can_feed_mission=definition.get("can_feed_mission") or [],
                 api_key=api_key, user_model_choice=user_model_choice,
             )
             degraded_any = degraded_any or degraded
-            self.repository.append_artifact(mission_id, owner_user_id, artifact)
+            drafts.append({**draft, "can_feed_mission": definition.get("can_feed_mission") or [], "degraded": degraded})
+        self._log(mission_id, owner_user_id, "POST", f"/api/missions/{mission_id}/artifacts/preview", 200, "success", f"{len(artifact_definitions)} rascunho(s) de artefato gerado(s)" + (" [Modo Degradado]" if degraded_any else ""))
+        return drafts, degraded_any
+
+    def confirm_artifacts(self, mission_id: str, owner_user_id: str, *, artifacts: list[dict[str, Any]]) -> dict[str, Any] | None:
+        mission = self.repository.get_for_owner(mission_id, owner_user_id)
+        if mission is None:
+            return None
+        degraded_any = False
+        for draft in artifacts:
+            degraded_any = degraded_any or bool(draft.get("degraded"))
+            persisted = {
+                "id": f"art_{uuid4().hex[:10]}", "type": draft["type"], "title": draft["title"],
+                "content": draft["content"], "format": draft.get("format", "markdown"),
+                "generated_at": self._now(), "can_feed_mission": draft.get("can_feed_mission") or [],
+            }
+            self.repository.append_artifact(mission_id, owner_user_id, persisted)
         if degraded_any:
             self.repository.set_degraded(mission_id, owner_user_id, True)
-        self._log(mission_id, owner_user_id, "POST", f"/api/missions/{mission_id}/artifacts", 200, "success", f"{len(artifact_definitions)} artefato(s) gerado(s)" + (" [Modo Degradado]" if degraded_any else ""))
+        self._log(mission_id, owner_user_id, "POST", f"/api/missions/{mission_id}/artifacts/confirm", 200, "success", f"{len(artifacts)} artefato(s) confirmado(s) pelo usuário")
         return self.get_mission(mission_id, owner_user_id)
 
     def archive(self, mission_id: str, owner_user_id: str) -> dict[str, Any] | None:

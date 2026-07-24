@@ -221,3 +221,25 @@ class GenerateArtifactsRequest(ApiModel):
     step_titles: dict[str, str] = Field(default_factory=dict)  # stepId -> title, for section headers
     user_model_choice: str | None = None
     use_user_key: bool = False
+
+
+class ArtifactDraft(ApiModel):
+    """A generated-but-not-yet-persisted artifact. Nothing here is saved to
+    the mission until the user explicitly reviews and confirms it -- see
+    ConfirmArtifactsRequest."""
+
+    type: str
+    title: str
+    content: str
+    format: ArtifactFormat = "markdown"
+    can_feed_mission: list[str] = Field(default_factory=list)
+    degraded: bool = False
+
+
+class GenerateArtifactsPreviewResponse(ApiModel):
+    drafts: list[ArtifactDraft]
+    degraded: bool = False
+
+
+class ConfirmArtifactsRequest(ApiModel):
+    artifacts: list[ArtifactDraft] = Field(min_length=1)
