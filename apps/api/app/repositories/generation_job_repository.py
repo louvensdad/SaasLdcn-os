@@ -8,7 +8,7 @@ from typing import Any
 
 from collections.abc import Sequence
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import Integer, case, cast, delete, func, or_, select, update
 
 from app.core.config import get_settings
 from app.core.database import database_url_for, session_factory
@@ -267,10 +267,10 @@ class GenerationJobRepository:
                 .where(
                     GenerationJob.id == job_id,
                     GenerationJob.owner_user_id == owner_user_id,
-                    GenerationJob.input_tokens_total + GenerationJob.output_tokens_total
-                    + GenerationJob.reserved_tokens + requested <= GenerationJob.token_budget,
+                    func.coalesce(GenerationJob.input_tokens_total, 0) + func.coalesce(GenerationJob.output_tokens_total, 0)
+                    + func.coalesce(GenerationJob.reserved_tokens, 0) + requested <= func.coalesce(GenerationJob.token_budget, 0),
                 )
-                .values(reserved_tokens=GenerationJob.reserved_tokens + requested)
+                .values(reserved_tokens=func.coalesce(GenerationJob.reserved_tokens, 0) + requested)
             )
             return bool(result.rowcount)
 
@@ -282,13 +282,24 @@ class GenerationJobRepository:
         input_tokens = max(0, int(input_tokens or 0))
         output_tokens = max(0, int(output_tokens or 0))
         with self._sessions.begin() as session:
+            # PostgreSQL has no scalar two-argument MAX(a, b) (only the aggregate
+            # MAX(column) form -- func.max(x, y) crashed with UndefinedFunction in
+            # production). SQLite's MAX() happens to accept both forms, which is why
+            # that bug shipped unnoticed against the SQLite-backed dev/test default.
+            # A CASE expression is standard SQL and floors the release at zero on
+            # every dialect this app runs against, without a dialect-specific
+            # GREATEST() call (Postgres has one; SQLite as bundled here does not).
+            remaining_reserved = func.coalesce(GenerationJob.reserved_tokens, 0) - reserved
             result = session.execute(
                 update(GenerationJob)
                 .where(GenerationJob.id == job_id, GenerationJob.owner_user_id == owner_user_id)
                 .values(
-                    reserved_tokens=func.max(GenerationJob.reserved_tokens - reserved, 0),
-                    input_tokens_total=GenerationJob.input_tokens_total + input_tokens,
-                    output_tokens_total=GenerationJob.output_tokens_total + output_tokens,
+                    reserved_tokens=case(
+                        (remaining_reserved > 0, remaining_reserved),
+                        else_=cast(0, Integer),
+                    ),
+                    input_tokens_total=func.coalesce(GenerationJob.input_tokens_total, 0) + input_tokens,
+                    output_tokens_total=func.coalesce(GenerationJob.output_tokens_total, 0) + output_tokens,
                 )
             )
             if not result.rowcount:
@@ -307,8 +318,8 @@ class GenerationJobRepository:
                 update(GenerationJob)
                 .where(GenerationJob.id == job_id, self._writable_by(owner_user_id))
                 .values(
-                    input_tokens_total=GenerationJob.input_tokens_total + input_tokens,
-                    output_tokens_total=GenerationJob.output_tokens_total + output_tokens,
+                    input_tokens_total=func.coalesce(GenerationJob.input_tokens_total, 0) + input_tokens,
+                    output_tokens_total=func.coalesce(GenerationJob.output_tokens_total, 0) + output_tokens,
                 )
             )
             if not result.rowcount:
