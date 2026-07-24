@@ -132,8 +132,8 @@ test('refreshing mid-job restores state from the latest job instead of starting 
 
   // Landing on the final step alone (never clicking "Gerar entregáveis")
   // must restore the already-running job from /jobs/latest.
-  await expect(page.getByText('Preparando os entregáveis do projeto')).toBeVisible();
-  await expect(page.getByText('Blueprint do Sistema')).toBeVisible();
+  await expect(page.getByText('Preparando os entregáveis')).toBeVisible();
+  await expect(page.getByText('Blueprint do Sistema').first()).toBeVisible();
   expect(compileCalls).toBe(0);
 });
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -32,6 +32,14 @@ class ArtifactProgress(ApiModel):
     type: str
     title: str
     status: ArtifactProgressStatus = "pending"
+    # Populated once the artifact reaches "ready" -- the actual provider/model
+    # the router used and the actual token usage it reported, never invented.
+    provider: str | None = None
+    model: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    started_at: str | None = None
+    finished_at: str | None = None
 
 
 class MissionDeliverableJobEvent(ApiModel):
@@ -43,6 +51,7 @@ class MissionDeliverableJobEvent(ApiModel):
     level: Literal["info", "warning", "error"] = "info"
     message: str
     artifact_type: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class MissionDeliverableJobErrorDetail(ApiModel):
@@ -62,6 +71,11 @@ class MissionDeliverableJob(ApiModel):
     drafts: list[ArtifactDraft] = Field(default_factory=list)
     degraded: bool = False
     events: list[MissionDeliverableJobEvent] = Field(default_factory=list)
+    # Real, not estimated: the model the user actually picked when confirming
+    # the LLM gate (compile or retry) -- shown in "Atividade atual" while an
+    # artifact is still in flight, before its own real provider/model is known.
+    requested_model: str | None = None
+    retry_count: int = 0
     created_at: str
     updated_at: str
     completed_at: str | None = None

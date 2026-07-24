@@ -114,7 +114,7 @@ class MissionService:
         drafts: list[dict[str, Any]] = []
         degraded_any = False
         for definition in artifact_definitions:
-            draft, degraded = draft_artifact(
+            draft, degraded, _meta = draft_artifact(
                 artifact_type=definition["type"], artifact_title=definition["title"], mission_title=mission["title"],
                 step_titles=step_titles, answers=answers, decisions=decisions,
                 api_key=api_key, user_model_choice=user_model_choice,

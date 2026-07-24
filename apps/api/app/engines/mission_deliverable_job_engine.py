@@ -57,9 +57,12 @@ class MissionDeliverableJobEngine:
             return {
                 "id": f"mdjob_{uuid4().hex[:14]}", "mission_id": mission_id, "workspace_id": workspace_id,
                 "status": "QUEUED", "idempotency_key": idempotency_key, "error": None, "degraded": False,
-                "artifacts_progress": [{"type": d["type"], "title": d["title"], "status": "pending"} for d in artifact_definitions],
-                "drafts": [], "events": [], "created_at": now, "updated_at": now, "completed_at": None,
-                "heartbeat_at": now,
+                "artifacts_progress": [
+                    {"type": d["type"], "title": d["title"], "status": "pending", "provider": None, "model": None, "input_tokens": 0, "output_tokens": 0, "started_at": None, "finished_at": None}
+                    for d in artifact_definitions
+                ],
+                "drafts": [], "events": [], "requested_model": user_model_choice, "retry_count": 0,
+                "created_at": now, "updated_at": now, "completed_at": None, "heartbeat_at": now,
                 # working fields, not part of the public schema -- never persisted api_key.
                 "_artifact_definitions": artifact_definitions, "_step_titles": step_titles, "_cancel_requested": False,
             }
@@ -129,19 +132,20 @@ class MissionDeliverableJobEngine:
                 self._save(job, owner_user_id)
                 return
 
-            self._set_artifact_status(job, definition["type"], "drafting")
+            stage_started_at = self._now()
+            self._set_artifact_status(job, definition["type"], "drafting", started_at=stage_started_at)
             self._emit(job, "artifact_drafting_started", artifact_type=definition["type"], message=f"Gerando \"{definition['title']}\".")
             self._save(job, owner_user_id)
 
             try:
-                draft, degraded = draft_artifact(
+                draft, degraded, meta = draft_artifact(
                     artifact_type=definition["type"], artifact_title=definition["title"],
                     mission_title=mission["title"], step_titles=job["_step_titles"],
                     answers=answers, decisions=decisions,
                     api_key=api_key, user_model_choice=user_model_choice,
                 )
             except Exception as exc:  # real provider/parsing errors -- never swallowed
-                self._set_artifact_status(job, definition["type"], "failed")
+                self._set_artifact_status(job, definition["type"], "failed", finished_at=self._now())
                 job["error"] = {"kind": "llm_error", "message": str(exc), "artifact_type": definition["type"]}
                 job["status"] = "FAILED"
                 job["completed_at"] = self._now()
@@ -152,8 +156,15 @@ class MissionDeliverableJobEngine:
 
             job["drafts"].append({**draft, "can_feed_mission": definition.get("can_feed_mission") or [], "degraded": degraded})
             job["degraded"] = bool(job.get("degraded")) or degraded
-            self._set_artifact_status(job, definition["type"], "ready")
-            self._emit(job, "artifact_drafted", artifact_type=definition["type"], message=f"\"{definition['title']}\" gerado.")
+            self._set_artifact_status(
+                job, definition["type"], "ready", finished_at=self._now(),
+                provider=meta["provider"], model=meta["model"],
+                input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
+            )
+            self._emit(
+                job, "artifact_drafted", artifact_type=definition["type"], message=f"\"{definition['title']}\" gerado.",
+                metadata={"provider": meta["provider"], "model": meta["model"], "input_tokens": meta["input_tokens"], "output_tokens": meta["output_tokens"]},
+            )
             self._save(job, owner_user_id)
 
         job["status"] = "DRAFTS_READY"
@@ -161,10 +172,11 @@ class MissionDeliverableJobEngine:
         self._save(job, owner_user_id)
 
     @staticmethod
-    def _set_artifact_status(job: dict[str, Any], artifact_type: str, status: str) -> None:
+    def _set_artifact_status(job: dict[str, Any], artifact_type: str, status: str, **extra: Any) -> None:
         for progress in job["artifacts_progress"]:
             if progress["type"] == artifact_type:
                 progress["status"] = status
+                progress.update(extra)
                 return
 
     # ------------------------------------------------------------ confirm / retry / cancel
@@ -214,6 +226,8 @@ class MissionDeliverableJobEngine:
         job["status"] = "QUEUED"
         job["error"] = None
         job["_cancel_requested"] = False
+        job["retry_count"] = int(job.get("retry_count") or 0) + 1
+        job["requested_model"] = user_model_choice
         drafted_types = {draft["type"] for draft in job["drafts"]}
         for progress in job["artifacts_progress"]:
             if progress["type"] not in drafted_types:
@@ -266,12 +280,13 @@ class MissionDeliverableJobEngine:
     # ------------------------------------------------------------ internals
 
     def _emit(
-        self, job: dict[str, Any], event_type: str, *, message: str, level: str = "info", artifact_type: str | None = None,
+        self, job: dict[str, Any], event_type: str, *, message: str, level: str = "info",
+        artifact_type: str | None = None, metadata: dict[str, Any] | None = None,
     ) -> None:
         job.setdefault("events", []).append({
             "id": f"evt_{uuid4().hex[:12]}", "job_id": job["id"], "timestamp": self._now(),
             "stage": job.get("status", ""), "type": event_type, "level": level,
-            "message": message, "artifact_type": artifact_type,
+            "message": message, "artifact_type": artifact_type, "metadata": metadata or {},
         })
         job["events"] = job["events"][-2000:]
 

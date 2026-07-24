@@ -79,6 +79,8 @@ interface MissionStoreState {
   confirmDeliverableJob: () => Promise<void>;
   retryDeliverableJob: (auth: FieldActionAuth) => Promise<void>;
   cancelDeliverableJob: () => Promise<void>;
+  dismissDeliverableJob: () => void;
+  refreshDeliverableJob: () => Promise<void>;
   flushAutosave: () => Promise<void>;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
@@ -405,9 +407,12 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       // what must be persisted, not the job's original unedited drafts.
       const artifacts = pendingArtifacts && pendingArtifacts.length > 0 ? [...pendingArtifacts] : deliverableJob.drafts;
       const updated = await missionClient.confirmDeliverableJob(activeMission.id, deliverableJob.id, artifacts);
+      // Keep deliverableJob (now COMPLETED) instead of nulling it -- the
+      // completion summary reads real counts/timestamps off of it. Only an
+      // explicit dismissDeliverableJob() (or starting a fresh job) clears it.
       set({
         activeMission: updated, pendingArtifacts: null, artifactsDegraded: false, loading: false,
-        deliverableJob: null, deliverableJobPhase: 'COMPLETED', deliverableJobIdempotencyKey: null,
+        deliverableJob: { ...deliverableJob, status: 'COMPLETED' }, deliverableJobPhase: 'COMPLETED', deliverableJobIdempotencyKey: null,
       });
     } catch (error) {
       set({ deliverableJobPhase: 'DRAFTS_READY', loading: false, error: error instanceof Error ? error.message : 'Falha ao salvar os artefatos.' });
@@ -439,6 +444,27 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
       set({ deliverableJob: job, deliverableJobPhase: job.status });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Falha ao cancelar a geração.' });
+    }
+  },
+
+  dismissDeliverableJob: () => {
+    deliverableStreamController?.abort();
+    set({ deliverableJob: null, deliverableJobPhase: 'IDLE', deliverableJobEvents: [], deliverableJobIdempotencyKey: null });
+  },
+
+  /** One-off re-fetch used when the client suspects the SSE stream went
+   * stale (no event for 45s+) -- confirms real backend state rather than
+   * guessing, per "consultar o backend" before ever declaring a job stuck. */
+  refreshDeliverableJob: async () => {
+    const { activeMission, deliverableJob } = get();
+    if (!activeMission || !deliverableJob) return;
+    try {
+      const job = await missionClient.getDeliverableJob(activeMission.id, deliverableJob.id);
+      const patch: Partial<MissionStoreState> = { deliverableJob: job, deliverableJobPhase: job.status };
+      if (job.status === 'DRAFTS_READY' && !get().pendingArtifacts) Object.assign(patch, { pendingArtifacts: job.drafts, artifactsDegraded: job.degraded });
+      set(patch);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Falha ao verificar o estado da execução.' });
     }
   },
 

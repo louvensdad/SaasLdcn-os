@@ -286,3 +286,62 @@ def test_reconcile_startup_fails_out_stale_jobs(client: TestClient) -> None:
     job = engine.get(job_id, owner_user_id)
     assert job["status"] == "FAILED"
     assert job["error"]["kind"] == "worker_lease_expired"
+
+
+def test_artifact_progress_captures_real_provider_model_and_tokens(client: TestClient, monkeypatch) -> None:
+    """The execution panel's "Atividade atual"/artifact list must show the
+    provider/model/tokens the router actually reported -- never invented."""
+    mission = _create_mission(client)
+    _validated_key(client)
+    response = LLMResponse(
+        provider=Provider.anthropic, model="claude-sonnet-4-6", text="# Blueprint\n\nConteúdo.",
+        usage={"input_tokens": 123, "output_tokens": 456, "total_tokens": 579},
+    )
+    monkeypatch.setattr(LLMRouter, "route", lambda *args, **kwargs: response)
+
+    created = client.post(
+        f"/api/missions/{mission['id']}/deliverables/compile",
+        json=_compile_payload(artifact_types=["blueprint"]) | {"user_model_choice": "claude-sonnet-4-6"},
+    )
+    job_id = created.json()["id"]
+    assert created.json()["requested_model"] == "claude-sonnet-4-6"
+
+    ready = _wait_for_status(client, mission["id"], job_id, {"DRAFTS_READY"})
+    progress = ready["artifacts_progress"][0]
+    assert progress["status"] == "ready"
+    assert progress["provider"] == "anthropic"
+    assert progress["model"] == "claude-sonnet-4-6"
+    assert progress["input_tokens"] == 123
+    assert progress["output_tokens"] == 456
+    assert progress["started_at"] is not None
+    assert progress["finished_at"] is not None
+
+    drafted_event = next(event for event in ready["events"] if event["type"] == "artifact_drafted")
+    assert drafted_event["metadata"]["provider"] == "anthropic"
+    assert drafted_event["metadata"]["model"] == "claude-sonnet-4-6"
+    assert drafted_event["metadata"]["input_tokens"] == 123
+    assert drafted_event["metadata"]["output_tokens"] == 456
+
+
+def test_retry_increments_retry_count(client: TestClient, monkeypatch) -> None:
+    mission = _create_mission(client)
+    _validated_key(client)
+
+    def _raise(*args, **kwargs):
+        raise LLMError("provider indisponível")
+
+    monkeypatch.setattr(LLMRouter, "route", _raise)
+    created = client.post(f"/api/missions/{mission['id']}/deliverables/compile", json=_compile_payload(artifact_types=["blueprint"]))
+    job_id = created.json()["id"]
+    failed = _wait_for_status(client, mission["id"], job_id, {"FAILED"})
+    assert failed["retry_count"] == 0
+
+    response = LLMResponse(provider=Provider.anthropic, model="claude-sonnet-4-6", text="conteúdo", usage={})
+    monkeypatch.setattr(LLMRouter, "route", lambda *args, **kwargs: response)
+    retried = client.post(f"/api/missions/{mission['id']}/deliverables/jobs/{job_id}/retry", json={"user_model_choice": "claude-sonnet-4-6", "use_user_key": True})
+    assert retried.status_code == 202, retried.text
+    assert retried.json()["retry_count"] == 1
+
+    ready = _wait_for_status(client, mission["id"], job_id, {"DRAFTS_READY"})
+    assert ready["retry_count"] == 1
+    assert ready["requested_model"] == "claude-sonnet-4-6"

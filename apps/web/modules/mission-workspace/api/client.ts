@@ -117,23 +117,41 @@ function contextPayload(value: MissionContext): JsonRecord {
 function journeyPayload(value: JourneyState): JsonRecord { return { current_step_id: value.currentStepId, progress: value.progress, steps: value.steps.map((step) => ({ definition_id: step.definitionId, status: step.status, completed_at: step.completedAt, validation_status: step.validationStatus, alerts: step.alerts })) }; }
 
 export type DeliverableJobStatus = 'QUEUED' | 'ANSWERS_LOADING' | 'DRAFTING' | 'DRAFTS_READY' | 'PERSISTING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export interface ArtifactProgressDto { type: string; title: string; status: 'pending' | 'drafting' | 'ready' | 'failed'; }
-export interface DeliverableJobEventDto { id: string; jobId: string; timestamp: string; stage: string; type: string; level: 'info' | 'warning' | 'error'; message: string; artifactType: string | null; }
+export interface ArtifactProgressDto {
+  type: string; title: string; status: 'pending' | 'drafting' | 'ready' | 'failed';
+  // Real call metadata, populated once the artifact reaches "ready" -- never invented.
+  provider: string | null; model: string | null; inputTokens: number; outputTokens: number;
+  startedAt: string | null; finishedAt: string | null;
+}
+export interface DeliverableJobEventDto {
+  id: string; jobId: string; timestamp: string; stage: string; type: string; level: 'info' | 'warning' | 'error';
+  message: string; artifactType: string | null; metadata: Record<string, unknown>;
+}
 export interface DeliverableJobErrorDto { kind: string; message: string; artifactType: string | null; }
 export interface DeliverableJobDto {
   id: string; missionId: string; workspaceId: string | null; status: DeliverableJobStatus; idempotencyKey: string | null;
   error: DeliverableJobErrorDto | null; artifactsProgress: ArtifactProgressDto[]; drafts: ArtifactDraft[]; degraded: boolean;
+  requestedModel: string | null; retryCount: number;
   createdAt: string; updatedAt: string; completedAt: string | null; heartbeatAt: string | null;
 }
 const DELIVERABLE_JOB_TERMINAL_STATUSES: readonly DeliverableJobStatus[] = ['DRAFTS_READY', 'COMPLETED', 'FAILED', 'CANCELLED'];
 
 function artifactProgress(value: unknown): ArtifactProgressDto {
   const item = record(value);
-  return { type: string(item.type), title: string(item.title), status: string(item.status, 'pending') as ArtifactProgressDto['status'] };
+  return {
+    type: string(item.type), title: string(item.title), status: string(item.status, 'pending') as ArtifactProgressDto['status'],
+    provider: typeof item.provider === 'string' ? item.provider : null, model: typeof item.model === 'string' ? item.model : null,
+    inputTokens: number(item.input_tokens), outputTokens: number(item.output_tokens),
+    startedAt: typeof item.started_at === 'string' ? item.started_at : null, finishedAt: typeof item.finished_at === 'string' ? item.finished_at : null,
+  };
 }
 function deliverableJobEvent(value: unknown): DeliverableJobEventDto {
   const item = record(value);
-  return { id: string(item.id), jobId: string(item.job_id), timestamp: string(item.timestamp), stage: string(item.stage), type: string(item.type), level: string(item.level, 'info') as DeliverableJobEventDto['level'], message: string(item.message), artifactType: typeof item.artifact_type === 'string' ? item.artifact_type : null };
+  return {
+    id: string(item.id), jobId: string(item.job_id), timestamp: string(item.timestamp), stage: string(item.stage), type: string(item.type),
+    level: string(item.level, 'info') as DeliverableJobEventDto['level'], message: string(item.message),
+    artifactType: typeof item.artifact_type === 'string' ? item.artifact_type : null, metadata: record(item.metadata),
+  };
 }
 function deliverableJobError(value: unknown): DeliverableJobErrorDto | null {
   if (value === null || value === undefined) return null;
@@ -147,6 +165,7 @@ function deliverableJob(value: unknown): DeliverableJobDto {
     status: string(item.status, 'QUEUED') as DeliverableJobStatus, idempotencyKey: typeof item.idempotency_key === 'string' ? item.idempotency_key : null,
     error: deliverableJobError(item.error), artifactsProgress: array(item.artifacts_progress).map(artifactProgress),
     drafts: array(item.drafts).map(artifactDraft), degraded: boolean(item.degraded),
+    requestedModel: typeof item.requested_model === 'string' ? item.requested_model : null, retryCount: number(item.retry_count),
     createdAt: string(item.created_at), updatedAt: string(item.updated_at),
     completedAt: typeof item.completed_at === 'string' ? item.completed_at : null,
     heartbeatAt: typeof item.heartbeat_at === 'string' ? item.heartbeat_at : null,

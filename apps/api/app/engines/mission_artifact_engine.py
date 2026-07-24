@@ -62,13 +62,15 @@ def draft_artifact(
     router: LLMRouter | None = None,
     api_key: str | None = None,
     user_model_choice: str | None = None,
-) -> tuple[dict[str, Any], bool]:
+) -> tuple[dict[str, Any], bool, dict[str, Any]]:
     """One staged, substantive LLM call per artifact type -- each gets the
     mission's FULL answer context (every step, not just the ones nominally
     "about" this artifact) plus an explicit instruction to complement gaps,
     clearly marked, never silently. Returns a draft (no id/generated_at --
     those are assigned on confirm, once the user has actually reviewed and
-    accepted this content) and a degraded flag."""
+    accepted this content), a degraded flag, and real call metadata (provider/
+    model/token usage actually reported by the router -- used by callers that
+    want to show a live "current activity" panel without inventing anything)."""
     context_body = _compile_body(artifact_title, step_titles, answers, decisions)
     router = router or LLMRouter()
     response = router.route(
@@ -88,4 +90,10 @@ def draft_artifact(
         "conteúdo abaixo é o registro bruto das respostas, sem elaboração ou "
         f"complemento da IA._\n\n{context_body}" if degraded else response.text.strip()
     )
-    return {"type": artifact_type, "title": artifact_title, "content": content, "format": "markdown"}, degraded
+    meta = {
+        "provider": getattr(response.provider, "value", str(response.provider)),
+        "model": response.model,
+        "input_tokens": int(response.usage.get("input_tokens", 0) or 0),
+        "output_tokens": int(response.usage.get("output_tokens", 0) or 0),
+    }
+    return {"type": artifact_type, "title": artifact_title, "content": content, "format": "markdown"}, degraded, meta
