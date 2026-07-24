@@ -196,6 +196,36 @@ class GenerationJob(Base):
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class MissionDeliverableJob(Base):
+    """Async, SSE-tracked job that drafts a mission's final-step artifacts
+    (mission_artifact_engine.draft_artifact, one LLM call per artifact) in a
+    background thread instead of a single blocking request -- so the
+    "Gerar entregaveis" buttons in Mission Workspace get real progress instead
+    of a frozen-looking disabled button. Mirrors GenerationJob's "wide typed
+    row + data_json blob" pattern, but is its own table: generation_jobs'
+    columns/state vocabulary are code-generation-pipeline-specific."""
+
+    __tablename__ = "mission_deliverable_jobs"
+    __table_args__ = (
+        Index("idx_mission_deliverable_jobs_mission", "mission_id", "created_at"),
+        Index("idx_mission_deliverable_jobs_owner", "owner_user_id", "updated_at"),
+        Index("idx_mission_deliverable_jobs_idempotency", "mission_id", "idempotency_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    mission_id: Mapped[str] = mapped_column(ForeignKey("mission_instances.mission_id", ondelete="CASCADE"), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="QUEUED", server_default="QUEUED", index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String)
+    heartbeat_at: Mapped[str | None] = mapped_column(String)
+    error: Mapped[str | None] = mapped_column(Text)
+    data_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    completed_at: Mapped[str | None] = mapped_column(String)
+
+
 class BlueprintApproval(Base):
     __tablename__ = "blueprint_approvals"
     __table_args__ = (Index("idx_blueprint_approvals_project", "project_id", "blueprint_hash"),)

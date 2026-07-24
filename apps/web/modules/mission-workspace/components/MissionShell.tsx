@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Menu, PanelRightClose, PanelRightOpen, ShieldAlert, Sparkles, X } from 'lucide-react';
 import { LlmConfirmationGate } from '@/components/llm/llm-confirmation-gate';
+import { DeliverableJobTimeline } from './DeliverableJobTimeline';
 import { MissionEngine } from '../engine/MissionEngine';
 import { useMissionStore } from '../stores/missionStore';
 import { coerceToStringArray } from '../types';
@@ -42,8 +43,13 @@ function Journey({ steps, collapsed = false }: { steps: readonly MissionStepDefi
 }
 
 function MissionStep({ step, isLastStep }: { step: MissionStepDefinition; isLastStep: boolean }) {
-  const { activeMission, advanceStep, previewArtifacts, loading } = useMissionStore();
+  const { activeMission, advanceStep, startDeliverablesJob, deliverableJobPhase, restoreDeliverableJob } = useMissionStore();
   const [showGate, setShowGate] = useState(false);
+  // On refresh/new-login, restore whatever a still-running or already-drafted
+  // deliverables job is doing instead of showing a blank "Gerar entregáveis"
+  // button and silently losing an in-flight generation.
+  useEffect(() => { if (isLastStep) void restoreDeliverableJob(); }, [isLastStep, restoreDeliverableJob]);
+  const busy = deliverableJobPhase !== 'IDLE';
   return <section className="mx-auto max-w-3xl"><div className="mb-7"><p className="ds-caption text-[color:var(--accent)]">ETAPA ATUAL</p><h2 className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{step.title}</h2><p className="mt-2 text-sm text-[color:var(--muted)]">{step.description}</p></div><div className="space-y-6">{step.fields.map((field) => <MissionField key={field.id} step={step} field={field} value={activeMission?.context.answers[`${step.id}.${field.id}`]}/>)}</div>
     {isLastStep ? (
       // There is no next step to advance to here -- advanceStep() would just
@@ -51,9 +57,13 @@ function MissionStep({ step, isLastStep }: { step: MissionStepDefinition; isLast
       // does nothing". The real action on the final step is generating the
       // deliverables (same flow as the "Gerar entregáveis" button in the
       // context panel) -- always as a draft the user reviews, never
-      // auto-saved (see ArtifactsReviewModal).
-      showGate ? <div className="mt-8"><LlmConfirmationGate capability="mission_report" usageLabel="Gerar entregáveis" compact onConfirmed={async ({ mode, model }) => { if (mode !== 'llm' || !model) return; setShowGate(false); await previewArtifacts({ useUserKey: true, userModelChoice: model, hasValidatedUserKey: true }); }}/></div>
-        : <button disabled={loading} onClick={() => setShowGate(true)} className="mt-8 rounded-xl bg-[color:var(--accent)] px-5 py-2.5 text-sm font-semibold text-white">Gerar entregáveis</button>
+      // auto-saved (see ArtifactsReviewModal). startDeliverablesJob flips
+      // deliverableJobPhase off IDLE synchronously, so `busy` swaps the
+      // button for real progress (DeliverableJobTimeline) within the same
+      // tick -- no separate spinner-on-a-disabled-button state to build.
+      busy ? <DeliverableJobTimeline/>
+        : showGate ? <div className="mt-8"><LlmConfirmationGate capability="mission_report" usageLabel="Gerar entregáveis" compact onConfirmed={async ({ mode, model }) => { if (mode !== 'llm' || !model) return; setShowGate(false); await startDeliverablesJob({ useUserKey: true, userModelChoice: model, hasValidatedUserKey: true }); }}/></div>
+        : <button onClick={() => setShowGate(true)} className="mt-8 rounded-xl bg-[color:var(--accent)] px-5 py-2.5 text-sm font-semibold text-white">Gerar entregáveis</button>
     ) : <button onClick={() => advanceStep()} className="mt-8 rounded-xl bg-[color:var(--accent)] px-5 py-2.5 text-sm font-semibold text-white">Validar e continuar</button>}
   </section>;
 }
@@ -101,10 +111,10 @@ function MultiselectInput({ id, options, value, onChange }: { id: string; option
 }
 
 function ContextPanel({ collapsed = false }: { collapsed?: boolean }) {
-  const { activeMission, activeGenome, toggleRightPanel, previewArtifacts, loading } = useMissionStore();
+  const { activeMission, activeGenome, toggleRightPanel, startDeliverablesJob, deliverableJobPhase } = useMissionStore();
   const [showGate, setShowGate] = useState(false);
   if (collapsed) return <button onClick={toggleRightPanel} className="m-3" aria-label="Abrir contexto"><PanelRightOpen/></button>;
-  return <div className="space-y-5 p-4"><button onClick={toggleRightPanel} className="hidden w-full justify-start text-[color:var(--muted)] lg:flex" aria-label="Recolher contexto"><PanelRightClose/></button><section><h3 className="text-sm font-semibold text-[color:var(--text)]">Blueprint em tempo real</h3><dl className="mt-3 space-y-2 text-xs text-[color:var(--muted)]"><div className="flex justify-between"><dt>Respostas</dt><dd>{Object.keys(activeMission?.context.answers ?? {}).length}</dd></div><div className="flex justify-between"><dt>Riscos ativos</dt><dd>{activeMission?.context.risks.filter((risk) => !risk.dismissed).length}</dd></div><div className="flex justify-between"><dt>Lacunas abertas</dt><dd>{activeMission?.context.gaps.filter((gap) => gap.status === 'open').length}</dd></div></dl></section><section><h3 className="text-sm font-semibold text-[color:var(--text)]">Especialistas</h3><div className="mt-2 flex flex-wrap gap-1">{activeGenome?.specialists.map((role) => <span key={role} className="rounded-full bg-white/5 px-2 py-1 text-[10px] text-[color:var(--muted)]">{role.replaceAll('_', ' ')}</span>)}</div></section>{activeMission?.context.risks.filter((risk) => !risk.dismissed).map((risk) => <div key={risk.id} className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs"><ShieldAlert className="mb-2 h-4 w-4 text-amber-300"/><strong>{risk.title}</strong><p className="mt-1 text-[color:var(--muted)]">{risk.suggestedAction}</p></div>)}<section><h3 className="text-sm font-semibold">Conhecimento contextual</h3><ul className="mt-2 space-y-1 text-xs text-[color:var(--muted)]">{activeGenome?.knowledgeTopics.map((topic) => <li key={topic}>{topic.replaceAll('_', ' ')}</li>)}</ul></section>{showGate ? <LlmConfirmationGate capability="mission_report" usageLabel="Gerar artefatos" compact onConfirmed={async ({ mode, model }) => { if (mode !== 'llm' || !model) return; setShowGate(false); await previewArtifacts({ useUserKey: true, userModelChoice: model, hasValidatedUserKey: true }); }}/> : <button disabled={loading} onClick={() => setShowGate(true)} className="w-full rounded-xl border border-[color:var(--border)] px-3 py-2 text-xs">Gerar entregáveis</button>}</div>;
+  return <div className="space-y-5 p-4"><button onClick={toggleRightPanel} className="hidden w-full justify-start text-[color:var(--muted)] lg:flex" aria-label="Recolher contexto"><PanelRightClose/></button><section><h3 className="text-sm font-semibold text-[color:var(--text)]">Blueprint em tempo real</h3><dl className="mt-3 space-y-2 text-xs text-[color:var(--muted)]"><div className="flex justify-between"><dt>Respostas</dt><dd>{Object.keys(activeMission?.context.answers ?? {}).length}</dd></div><div className="flex justify-between"><dt>Riscos ativos</dt><dd>{activeMission?.context.risks.filter((risk) => !risk.dismissed).length}</dd></div><div className="flex justify-between"><dt>Lacunas abertas</dt><dd>{activeMission?.context.gaps.filter((gap) => gap.status === 'open').length}</dd></div></dl></section><section><h3 className="text-sm font-semibold text-[color:var(--text)]">Especialistas</h3><div className="mt-2 flex flex-wrap gap-1">{activeGenome?.specialists.map((role) => <span key={role} className="rounded-full bg-white/5 px-2 py-1 text-[10px] text-[color:var(--muted)]">{role.replaceAll('_', ' ')}</span>)}</div></section>{activeMission?.context.risks.filter((risk) => !risk.dismissed).map((risk) => <div key={risk.id} className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs"><ShieldAlert className="mb-2 h-4 w-4 text-amber-300"/><strong>{risk.title}</strong><p className="mt-1 text-[color:var(--muted)]">{risk.suggestedAction}</p></div>)}<section><h3 className="text-sm font-semibold">Conhecimento contextual</h3><ul className="mt-2 space-y-1 text-xs text-[color:var(--muted)]">{activeGenome?.knowledgeTopics.map((topic) => <li key={topic}>{topic.replaceAll('_', ' ')}</li>)}</ul></section>{deliverableJobPhase !== 'IDLE' ? <p className="rounded-xl border border-[color:var(--border)] px-3 py-2 text-center text-xs text-[color:var(--muted)]">Gerando entregáveis… acompanhe o progresso ao lado.</p> : showGate ? <LlmConfirmationGate capability="mission_report" usageLabel="Gerar artefatos" compact onConfirmed={async ({ mode, model }) => { if (mode !== 'llm' || !model) return; setShowGate(false); await startDeliverablesJob({ useUserKey: true, userModelChoice: model, hasValidatedUserKey: true }); }}/> : <button onClick={() => setShowGate(true)} className="w-full rounded-xl border border-[color:var(--border)] px-3 py-2 text-xs">Gerar entregáveis</button>}</div>;
 }
 
 function SuggestionModal() {

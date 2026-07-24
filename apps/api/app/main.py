@@ -54,6 +54,7 @@ from app.routes import (
     localization,
     meta_factory,
     missions,
+    mission_deliverable_jobs,
     modernize,
     observability,
     permissions,
@@ -94,6 +95,8 @@ async def lifespan(_: FastAPI):
             "Generation job recovery complete: stalled=%s resumed=%s",
             recovery["stalled"], recovery["resumed"],
         )
+        deliverable_recovery = mission_deliverable_jobs.engine.reconcile_startup()
+        logger.info("Mission deliverable job recovery complete: stalled=%s", deliverable_recovery["stalled"])
     # Automation scheduler (DEC-004): a real in-process background poller for
     # "scheduled" automations. Skipped in "test" so the full suite (hundreds
     # of app start/stops via the `client` fixture) never accumulates threads
@@ -192,6 +195,7 @@ def create_application() -> FastAPI:
     app.include_router(modernize.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(project_rooms.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(missions.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(mission_deliverable_jobs.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(change_requests.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(live_preview.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(staging.router, prefix=settings.api_prefix, dependencies=protected)

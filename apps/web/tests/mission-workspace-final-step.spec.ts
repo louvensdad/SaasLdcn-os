@@ -22,18 +22,31 @@ test('the last mission step drafts deliverables for review instead of looping on
     provider: 'openai', providerLabel: 'OpenAI', model: 'gpt-4.1-mini', mode: 'llm',
     reason: 'Confirmado no teste.', fallbackUsed: false, keyStatus: 'ready', requestedCapability: 'mission_report',
   } }));
-  await page.route(`**/api/missions/${mission.id}/artifacts/preview`, (route) => route.fulfill({ json: {
-    drafts: [
-      { type: 'blueprint', title: 'Blueprint do Sistema', content: 'Rascunho do blueprint gerado por etapas.', format: 'markdown', can_feed_mission: [], degraded: false },
-      { type: 'prompt_md', title: 'Prompt.md', content: 'Rascunho do prompt.md.', format: 'markdown', can_feed_mission: [], degraded: false },
-    ],
-    degraded: false,
-  } }));
+  const now = new Date().toISOString();
+  await page.route(`**/api/missions/${mission.id}/deliverables/jobs/latest`, (route) => route.fulfill({ json: null }));
+  let compileCalls = 0;
+  const jobId = 'mdjob_test1';
+  await page.route(`**/api/missions/${mission.id}/deliverables/compile`, (route) => {
+    compileCalls += 1;
+    return route.fulfill({ json: {
+      id: jobId, mission_id: mission.id, workspace_id: null, status: 'DRAFTS_READY', idempotency_key: 'idem-test-1',
+      error: null, degraded: false,
+      artifacts_progress: [
+        { type: 'blueprint', title: 'Blueprint do Sistema', status: 'ready' },
+        { type: 'prompt_md', title: 'Prompt.md', status: 'ready' },
+      ],
+      drafts: [
+        { type: 'blueprint', title: 'Blueprint do Sistema', content: 'Rascunho do blueprint gerado por etapas.', format: 'markdown', can_feed_mission: [], degraded: false },
+        { type: 'prompt_md', title: 'Prompt.md', content: 'Rascunho do prompt.md.', format: 'markdown', can_feed_mission: [], degraded: false },
+      ],
+      events: [], created_at: now, updated_at: now, completed_at: null, heartbeat_at: now,
+    } });
+  });
   let confirmedContent: string | null = null;
-  await page.route(`**/api/missions/${mission.id}/artifacts/confirm`, async (route) => {
+  await page.route(`**/api/missions/${mission.id}/deliverables/jobs/${jobId}/confirm`, async (route) => {
     const body = route.request().postDataJSON() as { artifacts: { title: string; content: string }[] };
     confirmedContent = body.artifacts[0]?.content ?? null;
-    await route.fulfill({ json: { ...mission, artifacts: body.artifacts.map((a, i) => ({ id: `a${i}`, ...a, generated_at: new Date().toISOString() })) } });
+    await route.fulfill({ json: { ...mission, artifacts: body.artifacts.map((a, i) => ({ id: `a${i}`, ...a, generated_at: now })) } });
   });
 
   await page.goto(`/wizard/${mission.id}`);
@@ -55,6 +68,7 @@ test('the last mission step drafts deliverables for review instead of looping on
   await expect(review.getByRole('button', { name: 'Blueprint do Sistema' })).toBeVisible();
   await expect(review.getByRole('button', { name: 'Prompt.md' })).toBeVisible();
   expect(confirmedContent).toBeNull();
+  expect(compileCalls).toBe(1);
 
   // The user can edit a draft before accepting.
   const textarea = review.getByLabel('Blueprint do Sistema');
@@ -83,12 +97,20 @@ test('cancelling the artifacts review discards the drafts without saving anythin
     provider: 'openai', providerLabel: 'OpenAI', model: 'gpt-4.1-mini', mode: 'llm',
     reason: 'Confirmado no teste.', fallbackUsed: false, keyStatus: 'ready', requestedCapability: 'mission_report',
   } }));
-  await page.route(`**/api/missions/${mission.id}/artifacts/preview`, (route) => route.fulfill({ json: {
+  const now = new Date().toISOString();
+  const jobId = 'mdjob_test2';
+  await page.route(`**/api/missions/${mission.id}/deliverables/jobs/latest`, (route) => route.fulfill({ json: null }));
+  await page.route(`**/api/missions/${mission.id}/deliverables/compile`, (route) => route.fulfill({ json: {
+    id: jobId, mission_id: mission.id, workspace_id: null, status: 'DRAFTS_READY', idempotency_key: 'idem-test-2',
+    error: null, degraded: false,
+    artifacts_progress: [{ type: 'blueprint', title: 'Blueprint do Sistema', status: 'ready' }],
     drafts: [{ type: 'blueprint', title: 'Blueprint do Sistema', content: 'Rascunho.', format: 'markdown', can_feed_mission: [], degraded: false }],
-    degraded: false,
+    events: [], created_at: now, updated_at: now, completed_at: null, heartbeat_at: now,
   } }));
   let confirmCalled = false;
-  await page.route(`**/api/missions/${mission.id}/artifacts/confirm`, (route) => { confirmCalled = true; return route.fulfill({ json: mission }); });
+  await page.route(`**/api/missions/${mission.id}/deliverables/jobs/${jobId}/confirm`, (route) => { confirmCalled = true; return route.fulfill({ json: mission }); });
+  let cancelCalled = false;
+  await page.route(`**/api/missions/${mission.id}/deliverables/jobs/${jobId}/cancel`, (route) => { cancelCalled = true; return route.fulfill({ json: {} }); });
 
   await page.goto(`/wizard/${mission.id}`);
   await page.getByRole('button', { name: /Blueprint final/ }).click();
@@ -101,6 +123,12 @@ test('cancelling the artifacts review discards the drafts without saving anythin
 
   await expect(review).toHaveCount(0);
   expect(confirmCalled).toBe(false);
+  // Drafts were already fully generated (DRAFTS_READY) when "Cancelar" was
+  // clicked -- there is nothing running server-side to cancel, so this must
+  // not call the cancel endpoint, and must reset straight back to the idle
+  // "Gerar entregáveis" button rather than leaving a dead timeline.
+  expect(cancelCalled).toBe(false);
+  await expect(page.getByRole('button', { name: 'Gerar entregáveis' }).last()).toBeVisible();
 });
 
 test('the error-handling gap in "APIs e integrações" is actually addressable', async ({ page, request }) => {

@@ -116,12 +116,51 @@ function contextPayload(value: MissionContext): JsonRecord {
 }
 function journeyPayload(value: JourneyState): JsonRecord { return { current_step_id: value.currentStepId, progress: value.progress, steps: value.steps.map((step) => ({ definition_id: step.definitionId, status: step.status, completed_at: step.completedAt, validation_status: step.validationStatus, alerts: step.alerts })) }; }
 
+export type DeliverableJobStatus = 'QUEUED' | 'ANSWERS_LOADING' | 'DRAFTING' | 'DRAFTS_READY' | 'PERSISTING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export interface ArtifactProgressDto { type: string; title: string; status: 'pending' | 'drafting' | 'ready' | 'failed'; }
+export interface DeliverableJobEventDto { id: string; jobId: string; timestamp: string; stage: string; type: string; level: 'info' | 'warning' | 'error'; message: string; artifactType: string | null; }
+export interface DeliverableJobErrorDto { kind: string; message: string; artifactType: string | null; }
+export interface DeliverableJobDto {
+  id: string; missionId: string; workspaceId: string | null; status: DeliverableJobStatus; idempotencyKey: string | null;
+  error: DeliverableJobErrorDto | null; artifactsProgress: ArtifactProgressDto[]; drafts: ArtifactDraft[]; degraded: boolean;
+  createdAt: string; updatedAt: string; completedAt: string | null; heartbeatAt: string | null;
+}
+const DELIVERABLE_JOB_TERMINAL_STATUSES: readonly DeliverableJobStatus[] = ['DRAFTS_READY', 'COMPLETED', 'FAILED', 'CANCELLED'];
+
+function artifactProgress(value: unknown): ArtifactProgressDto {
+  const item = record(value);
+  return { type: string(item.type), title: string(item.title), status: string(item.status, 'pending') as ArtifactProgressDto['status'] };
+}
+function deliverableJobEvent(value: unknown): DeliverableJobEventDto {
+  const item = record(value);
+  return { id: string(item.id), jobId: string(item.job_id), timestamp: string(item.timestamp), stage: string(item.stage), type: string(item.type), level: string(item.level, 'info') as DeliverableJobEventDto['level'], message: string(item.message), artifactType: typeof item.artifact_type === 'string' ? item.artifact_type : null };
+}
+function deliverableJobError(value: unknown): DeliverableJobErrorDto | null {
+  if (value === null || value === undefined) return null;
+  const item = record(value);
+  return { kind: string(item.kind), message: string(item.message), artifactType: typeof item.artifact_type === 'string' ? item.artifact_type : null };
+}
+function deliverableJob(value: unknown): DeliverableJobDto {
+  const item = record(value);
+  return {
+    id: string(item.id), missionId: string(item.mission_id), workspaceId: typeof item.workspace_id === 'string' ? item.workspace_id : null,
+    status: string(item.status, 'QUEUED') as DeliverableJobStatus, idempotencyKey: typeof item.idempotency_key === 'string' ? item.idempotency_key : null,
+    error: deliverableJobError(item.error), artifactsProgress: array(item.artifacts_progress).map(artifactProgress),
+    drafts: array(item.drafts).map(artifactDraft), degraded: boolean(item.degraded),
+    createdAt: string(item.created_at), updatedAt: string(item.updated_at),
+    completedAt: typeof item.completed_at === 'string' ? item.completed_at : null,
+    heartbeatAt: typeof item.heartbeat_at === 'string' ? item.heartbeat_at : null,
+  };
+}
+
 export interface CreateMissionPayload { mission_type: string; title?: string; mode?: ExecutionMode; experience_level?: ExperienceLevel; workspace_id?: string | null; }
 export interface AutosavePayload { title?: string; status?: MissionStatus; mode?: ExecutionMode; context?: MissionContext; journey?: JourneyState; version?: number; }
 export interface FieldActionPayload { step_id: string; field_id: string; action_id: string; specialist?: SpecialistRole | null; interpolated_prompt: string; insert_mode: 'replace' | 'append' | 'suggest'; user_model_choice: string; use_user_key: true; }
 export interface FieldActionResultDto { content: string; insert_mode: 'replace' | 'append' | 'suggest'; degraded: boolean; }
 export interface GenerateArtifactsPayload { artifact_definitions: { type: string; title: string; can_feed_mission?: string[] }[]; step_titles: Record<string, string>; user_model_choice: string; use_user_key: true; }
 export interface ArtifactsPreviewResultDto { drafts: ArtifactDraft[]; degraded: boolean; }
+export interface CompileDeliverablesPayload extends GenerateArtifactsPayload { idempotency_key: string; }
+export interface RetryDeliverablesPayload { user_model_choice: string; use_user_key: true; }
 
 export const missionClient = {
   registry: async () => array(await request('/api/missions/registry', undefined, THIRTY_SEC)).map(record),
@@ -137,4 +176,103 @@ export const missionClient = {
   confirmArtifacts: async (id: string, artifacts: ArtifactDraft[]) => mission(await request(`/api/missions/${id}/artifacts/confirm`, { method: 'POST', body: JSON.stringify({ artifacts: artifacts.map(artifactDraftPayload) }) }, FIVE_MIN)),
   archive: async (id: string) => mission(await request(`/api/missions/${id}/archive`, { method: 'POST' }, THIRTY_SEC)),
   remove: async (id: string) => { await request(`/api/missions/${id}`, { method: 'DELETE' }, THIRTY_SEC); },
+
+  // Async, SSE-tracked artifact drafting job (real progress for the
+  // "Gerar entregáveis" buttons, replacing a single blocking previewArtifacts
+  // call with zero visual feedback -- previewArtifacts/confirmArtifacts above
+  // stay available/untouched for any other caller).
+  compileDeliverables: async (missionId: string, payload: CompileDeliverablesPayload) =>
+    deliverableJob(await request(`/api/missions/${missionId}/deliverables/compile`, { method: 'POST', body: JSON.stringify(payload) }, THIRTY_SEC)),
+  getDeliverableJob: async (missionId: string, jobId: string) =>
+    deliverableJob(await request(`/api/missions/${missionId}/deliverables/jobs/${jobId}`, undefined, THIRTY_SEC)),
+  latestDeliverableJob: async (missionId: string): Promise<DeliverableJobDto | null> => {
+    const body = await request(`/api/missions/${missionId}/deliverables/jobs/latest`, undefined, THIRTY_SEC);
+    return body ? deliverableJob(body) : null;
+  },
+  confirmDeliverableJob: async (missionId: string, jobId: string, artifacts: ArtifactDraft[]) =>
+    mission(await request(`/api/missions/${missionId}/deliverables/jobs/${jobId}/confirm`, { method: 'POST', body: JSON.stringify({ artifacts: artifacts.map(artifactDraftPayload) }) }, FIVE_MIN)),
+  retryDeliverableJob: async (missionId: string, jobId: string, payload: RetryDeliverablesPayload) =>
+    deliverableJob(await request(`/api/missions/${missionId}/deliverables/jobs/${jobId}/retry`, { method: 'POST', body: JSON.stringify(payload) }, THIRTY_SEC)),
+  cancelDeliverableJob: async (missionId: string, jobId: string) =>
+    deliverableJob(await request(`/api/missions/${missionId}/deliverables/jobs/${jobId}/cancel`, { method: 'POST' }, THIRTY_SEC)),
+
+  /** Manual fetch + reader SSE consumer -- ported from streamJob() in
+   * apps/web/lib/api/meta-factory.ts (browser EventSource can't set an
+   * Authorization header). Reconnects with exponential backoff, resumes via
+   * Last-Event-ID, and loops until the job reaches a terminal status or the
+   * caller aborts `signal`. */
+  streamDeliverableJob: async (
+    missionId: string, jobId: string,
+    onJob: (job: DeliverableJobDto) => void,
+    signal?: AbortSignal,
+    onEvent?: (event: DeliverableJobEventDto) => void,
+  ): Promise<void> => {
+    let lastEventId: string | undefined;
+    let terminal = false;
+    let reconnectDelayMs = 500;
+
+    const waitForReconnect = (delayMs: number) => new Promise<void>((resolve) => {
+      if (signal?.aborted) { resolve(); return; }
+      const onAbort = () => { window.clearTimeout(timeout); resolve(); };
+      const timeout = window.setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, delayMs);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+
+    const run = async (allowRefresh: boolean): Promise<void> => {
+      const accessToken = getAccessToken();
+      const response = await fetch(`${API_BASE_URL}/api/missions/${missionId}/deliverables/jobs/${jobId}/events`, {
+        headers: {
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
+        },
+        credentials: 'include', cache: 'no-store', signal,
+      });
+      if (response.status === 401 && allowRefresh && await refreshAccessToken()) return run(false);
+      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const line = frame.split('\n').find((item) => item.startsWith('data: '));
+          if (line) {
+            const idLine = frame.split('\n').find((item) => item.startsWith('id: '));
+            const parsed = JSON.parse(line.slice(6)) as { type: string; job?: unknown; event?: unknown };
+            if (idLine) lastEventId = idLine.slice(4).trim() || lastEventId;
+            if (parsed.type === 'mission_deliverable_job' && parsed.job) {
+              const job = deliverableJob(parsed.job);
+              onJob(job);
+              terminal = DELIVERABLE_JOB_TERMINAL_STATUSES.includes(job.status);
+            } else if (parsed.type === 'mission_deliverable_job_event' && parsed.event) {
+              onEvent?.(deliverableJobEvent(parsed.event));
+            }
+          }
+          boundary = buffer.indexOf('\n\n');
+        }
+      }
+    };
+    while (!signal?.aborted && !terminal) {
+      try {
+        await run(true);
+        reconnectDelayMs = 500;
+      } catch (reason) {
+        if (signal?.aborted || (reason instanceof DOMException && reason.name === 'AbortError')) return;
+        const message = reason instanceof Error ? reason.message : '';
+        if (/^HTTP 4\d\d$/.test(message) && !/^HTTP (408|429)$/.test(message)) throw reason;
+      }
+      if (!terminal && !signal?.aborted) {
+        await waitForReconnect(reconnectDelayMs);
+        reconnectDelayMs = Math.min(5_000, reconnectDelayMs * 2);
+      }
+    }
+  },
 };

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { missionClient } from '../api/client';
+import type { DeliverableJobDto, DeliverableJobEventDto, DeliverableJobStatus } from '../api/client';
 import { AICouncil, type FieldActionAuth } from '../ai/AICouncil';
 import { ContextEngine } from '../engine/ContextEngine';
 import { MissionEngine } from '../engine/MissionEngine';
@@ -20,9 +21,17 @@ import type {
 
 const AUTOSAVE_DEBOUNCE_MS = 2000;
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+/** Aborts the in-flight SSE fetch (see missionClient.streamDeliverableJob) on
+ * a new job start / unmount, same module-level-controller pattern as the
+ * autosave timer above. */
+let deliverableStreamController: AbortController | null = null;
+const DELIVERABLE_JOB_NON_TERMINAL: readonly DeliverableJobStatus[] = ['QUEUED', 'ANSWERS_LOADING', 'DRAFTING', 'PERSISTING'];
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 export interface PendingImpact { readonly stepId: string; readonly fieldId: string; readonly value: unknown; readonly analysis: ImpactAnalysis; }
+/** IDLE/VALIDATING are frontend-only (no job exists yet); every other value
+ * is a real backend DeliverableJobStatus, never a fake/simulated stage. */
+export type DeliverableJobPhase = 'IDLE' | 'VALIDATING' | DeliverableJobStatus;
 
 interface MissionStoreState {
   readonly activeMission: MissionInstance | null;
@@ -41,6 +50,13 @@ interface MissionStoreState {
   readonly loading: boolean;
   readonly error: string | null;
 
+  /** Async, SSE-tracked artifact-drafting job backing the "Gerar
+   * entregáveis" buttons -- real progress instead of one blocking POST. */
+  readonly deliverableJob: DeliverableJobDto | null;
+  readonly deliverableJobPhase: DeliverableJobPhase;
+  readonly deliverableJobEvents: readonly DeliverableJobEventDto[];
+  readonly deliverableJobIdempotencyKey: string | null;
+
   startMission: (typeId: MissionTypeId, config?: { title?: string; mode?: ExecutionMode; experienceLevel?: ExperienceLevel }) => Promise<MissionInstance>;
   loadMission: (missionId: string) => Promise<void>;
   updateAnswer: (stepId: string, fieldId: string, value: unknown) => void;
@@ -58,6 +74,11 @@ interface MissionStoreState {
   editPendingArtifact: (index: number, content: string) => void;
   confirmArtifacts: () => Promise<void>;
   cancelArtifactsPreview: () => void;
+  startDeliverablesJob: (auth: FieldActionAuth) => Promise<void>;
+  restoreDeliverableJob: () => Promise<void>;
+  confirmDeliverableJob: () => Promise<void>;
+  retryDeliverableJob: (auth: FieldActionAuth) => Promise<void>;
+  cancelDeliverableJob: () => Promise<void>;
   flushAutosave: () => Promise<void>;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
@@ -81,6 +102,32 @@ function scheduleAutosave(get: () => MissionStoreState, set: (partial: Partial<M
   set({ saveStatus: 'idle' });
 }
 
+/** Opens (replacing any prior) SSE tracking for a deliverable job. Every UI
+ * signal here comes from a real persisted backend event -- never a
+ * setTimeout-simulated stage. Shared by startDeliverablesJob (fresh job),
+ * restoreDeliverableJob (refresh/new-login resume) and retryDeliverableJob. */
+function attachDeliverableStream(
+  get: () => MissionStoreState, set: (partial: Partial<MissionStoreState>) => void, missionId: string, jobId: string,
+) {
+  deliverableStreamController?.abort();
+  const controller = new AbortController();
+  deliverableStreamController = controller;
+  void missionClient.streamDeliverableJob(
+    missionId, jobId,
+    (job) => {
+      const patch: Partial<MissionStoreState> = { deliverableJob: job, deliverableJobPhase: job.status };
+      if (job.status === 'DRAFTS_READY') Object.assign(patch, { pendingArtifacts: job.drafts, artifactsDegraded: job.degraded });
+      if (job.status === 'FAILED' && job.error) Object.assign(patch, { error: job.error.message });
+      set(patch);
+    },
+    controller.signal,
+    (event) => set({ deliverableJobEvents: [...get().deliverableJobEvents, event].slice(-200) }),
+  ).catch((error) => {
+    if (controller.signal.aborted) return;
+    set({ error: error instanceof Error ? error.message : 'Falha ao acompanhar o progresso dos entregáveis.' });
+  });
+}
+
 export const useMissionStore = create<MissionStoreState>((set, get) => ({
   activeMission: null,
   activeGenome: null,
@@ -95,6 +142,10 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   artifactsDegraded: false,
   loading: false,
   error: null,
+  deliverableJob: null,
+  deliverableJobPhase: 'IDLE',
+  deliverableJobEvents: [],
+  deliverableJobIdempotencyKey: null,
 
   startMission: async (typeId, config) => {
     set({ loading: true, error: null });
@@ -269,6 +320,11 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
   },
 
   confirmArtifacts: async () => {
+    // pendingArtifacts is populated from a deliverable job's drafts once it
+    // reaches DRAFTS_READY (see attachDeliverableStream) -- when that's the
+    // source, confirming must go through the job so it gets marked COMPLETED
+    // and its persisted drafts are what actually get saved.
+    if (get().deliverableJob) { await get().confirmDeliverableJob(); return; }
     const { activeMission, pendingArtifacts } = get();
     if (!activeMission || !pendingArtifacts) return;
     set({ loading: true, error: null });
@@ -280,7 +336,111 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
     }
   },
 
-  cancelArtifactsPreview: () => set({ pendingArtifacts: null, artifactsDegraded: false }),
+  cancelArtifactsPreview: () => {
+    const { deliverableJob } = get();
+    if (deliverableJob && deliverableJob.status !== 'DRAFTS_READY') {
+      // Job is still actually running -- ask the backend to stop it
+      // cooperatively; deliverableJobPhase keeps tracking until CANCELLED.
+      void get().cancelDeliverableJob();
+    } else if (deliverableJob) {
+      // Drafts were already fully generated (DRAFTS_READY) -- there is
+      // nothing left to cancel server-side. Reset straight to IDLE so the
+      // "Gerar entregáveis" button reappears instead of leaving the
+      // timeline stuck showing a job that will never move again.
+      set({ deliverableJob: null, deliverableJobPhase: 'IDLE', deliverableJobIdempotencyKey: null });
+    }
+    set({ pendingArtifacts: null, artifactsDegraded: false });
+  },
+
+  startDeliverablesJob: async (auth) => {
+    // Synchronous, before any await: this is what makes the click register
+    // in under 300ms -- plain state, never gated on the network.
+    set({ deliverableJobPhase: 'VALIDATING', error: null });
+    const { activeMission, activeGenome } = get();
+    if (!activeMission || !activeGenome) { set({ deliverableJobPhase: 'IDLE' }); return; }
+    const idempotencyKey = get().deliverableJobIdempotencyKey ?? crypto.randomUUID();
+    set({ deliverableJobIdempotencyKey: idempotencyKey });
+    await get().flushAutosave();
+    set({ deliverableJobPhase: 'QUEUED' });
+    try {
+      const activeSteps = MissionEngine.resolveActiveSteps(activeGenome, activeMission.context);
+      const stepTitles = Object.fromEntries(activeSteps.map((step) => [step.id, step.title]));
+      const job = await missionClient.compileDeliverables(activeMission.id, {
+        artifact_definitions: activeGenome.artifacts.map((definition) => ({ type: definition.type, title: definition.title, can_feed_mission: [...(definition.canFeedMission ?? [])] })),
+        step_titles: stepTitles,
+        user_model_choice: auth.userModelChoice,
+        use_user_key: auth.useUserKey,
+        idempotency_key: idempotencyKey,
+      });
+      set({ deliverableJob: job, deliverableJobPhase: job.status, deliverableJobEvents: [] });
+      if (job.status === 'DRAFTS_READY') { set({ pendingArtifacts: job.drafts, artifactsDegraded: job.degraded }); return; }
+      if (DELIVERABLE_JOB_NON_TERMINAL.includes(job.status)) attachDeliverableStream(get, set, activeMission.id, job.id);
+    } catch (error) {
+      set({ deliverableJobPhase: 'IDLE', error: error instanceof Error ? error.message : 'Falha ao iniciar a geração de entregáveis.' });
+    }
+  },
+
+  restoreDeliverableJob: async () => {
+    const { activeMission } = get();
+    if (!activeMission) return;
+    try {
+      const job = await missionClient.latestDeliverableJob(activeMission.id);
+      if (!job) return;
+      set({ deliverableJob: job, deliverableJobPhase: job.status, deliverableJobIdempotencyKey: job.idempotencyKey ?? get().deliverableJobIdempotencyKey });
+      if (job.status === 'DRAFTS_READY') { set({ pendingArtifacts: job.drafts, artifactsDegraded: job.degraded }); return; }
+      if (DELIVERABLE_JOB_NON_TERMINAL.includes(job.status)) attachDeliverableStream(get, set, activeMission.id, job.id);
+    } catch {
+      // No job yet, or a transient fetch failure -- the final step just shows
+      // the idle button in that case, not an error banner on page load.
+    }
+  },
+
+  confirmDeliverableJob: async () => {
+    const { activeMission, deliverableJob, pendingArtifacts } = get();
+    if (!activeMission || !deliverableJob) return;
+    set({ deliverableJobPhase: 'PERSISTING', loading: true, error: null });
+    try {
+      // pendingArtifacts holds whatever the user reviewed (and possibly
+      // edited via editPendingArtifact) in ArtifactsReviewModal -- that is
+      // what must be persisted, not the job's original unedited drafts.
+      const artifacts = pendingArtifacts && pendingArtifacts.length > 0 ? [...pendingArtifacts] : deliverableJob.drafts;
+      const updated = await missionClient.confirmDeliverableJob(activeMission.id, deliverableJob.id, artifacts);
+      set({
+        activeMission: updated, pendingArtifacts: null, artifactsDegraded: false, loading: false,
+        deliverableJob: null, deliverableJobPhase: 'COMPLETED', deliverableJobIdempotencyKey: null,
+      });
+    } catch (error) {
+      set({ deliverableJobPhase: 'DRAFTS_READY', loading: false, error: error instanceof Error ? error.message : 'Falha ao salvar os artefatos.' });
+    }
+  },
+
+  retryDeliverableJob: async (auth) => {
+    const { activeMission, deliverableJob } = get();
+    if (!activeMission || !deliverableJob) return;
+    set({ deliverableJobPhase: 'QUEUED', error: null });
+    try {
+      const job = await missionClient.retryDeliverableJob(activeMission.id, deliverableJob.id, { user_model_choice: auth.userModelChoice, use_user_key: true });
+      set({ deliverableJob: job, deliverableJobPhase: job.status });
+      if (job.status === 'DRAFTS_READY') { set({ pendingArtifacts: job.drafts, artifactsDegraded: job.degraded }); return; }
+      if (DELIVERABLE_JOB_NON_TERMINAL.includes(job.status)) attachDeliverableStream(get, set, activeMission.id, job.id);
+    } catch (error) {
+      set({ deliverableJobPhase: 'FAILED', error: error instanceof Error ? error.message : 'Falha ao tentar novamente.' });
+    }
+  },
+
+  cancelDeliverableJob: async () => {
+    const { activeMission, deliverableJob } = get();
+    if (!activeMission || !deliverableJob) return;
+    try {
+      // Cooperative cancellation (checked between artifacts server-side) --
+      // the job keeps streaming until it actually reaches CANCELLED, so the
+      // stream is intentionally left attached here, not aborted.
+      const job = await missionClient.cancelDeliverableJob(activeMission.id, deliverableJob.id);
+      set({ deliverableJob: job, deliverableJobPhase: job.status });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Falha ao cancelar a geração.' });
+    }
+  },
 
   flushAutosave: async () => {
     const { activeMission } = get();
@@ -299,6 +459,12 @@ export const useMissionStore = create<MissionStoreState>((set, get) => ({
 
   reset: () => {
     if (autosaveTimer) clearTimeout(autosaveTimer);
-    set({ activeMission: null, activeGenome: null, pendingSuggestion: null, pendingImpact: null, pendingArtifacts: null, artifactsDegraded: false, saveStatus: 'idle', lastSavedAt: null, error: null });
+    deliverableStreamController?.abort();
+    deliverableStreamController = null;
+    set({
+      activeMission: null, activeGenome: null, pendingSuggestion: null, pendingImpact: null, pendingArtifacts: null,
+      artifactsDegraded: false, saveStatus: 'idle', lastSavedAt: null, error: null,
+      deliverableJob: null, deliverableJobPhase: 'IDLE', deliverableJobEvents: [], deliverableJobIdempotencyKey: null,
+    });
   },
 }));

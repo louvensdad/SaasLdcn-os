@@ -28,6 +28,7 @@ from app.repositories.feature_repository import FeatureRepository
 from app.repositories.marketplace_repository import MarketplaceRepository
 from app.repositories.staging_deployment_repository import StagingDeploymentRepository
 from app.repositories.mission_repository import MissionRepository
+from app.repositories.mission_deliverable_job_repository import MissionDeliverableJobRepository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
 from app.repositories.git_provider_repository import GitProviderRepository
@@ -36,6 +37,7 @@ from app.routes import downloads as downloads_route
 from app.routes import local_generation as local_generation_route
 from app.routes import meta_factory as meta_factory_route
 from app.routes import missions as missions_route
+from app.routes import mission_deliverable_jobs as mission_deliverable_jobs_route
 from app.routes import modernize as modernize_route
 from app.routes import project_rooms as project_rooms_route
 from app.routes import prompt_master as prompt_master_route
@@ -50,6 +52,7 @@ from app.services.git_provider_service import git_provider_service
 from app.services.ai_key_vault_service import ai_key_vault_service
 from app.services.llm_settings_service import llm_settings_service
 from app.services.platform_runtime_config_service import platform_runtime_config_service
+from app.services.mission_service import MissionService
 from app.services.project_service import ProjectService
 from app.services.user_preferences_service import user_preferences_service
 
@@ -99,6 +102,9 @@ def client() -> TestClient:
     # (Done before the app/lifespan starts so initialize() targets this DB.)
     project_rooms_route.service.repository = ProjectRoomRepository(database_path)
     missions_route.service.repository = MissionRepository(database_path)
+    mission_deliverable_jobs_route.engine.repository = MissionDeliverableJobRepository(database_path)
+    mission_deliverable_jobs_route.engine.mission_repository = MissionRepository(database_path)
+    mission_deliverable_jobs_route.engine.mission_service = MissionService(mission_deliverable_jobs_route.engine.mission_repository)
     change_requests_route.service.repository = ChangeRequestRepository(database_path)
     feature_service.repository = FeatureRepository(database_path)
     automation_service.repository = AutomationRepository(database_path)
