@@ -21,7 +21,9 @@ def upgrade():
     op.create_index("idx_mission_deliverable_jobs_mission", "mission_deliverable_jobs", ["mission_id", "created_at"])
     op.create_index("idx_mission_deliverable_jobs_owner", "mission_deliverable_jobs", ["owner_user_id", "updated_at"])
     op.create_index("idx_mission_deliverable_jobs_idempotency", "mission_deliverable_jobs", ["mission_id", "idempotency_key"])
+    op.create_index("ix_mission_deliverable_jobs_status", "mission_deliverable_jobs", ["status"])
 def downgrade():
+    op.drop_index("ix_mission_deliverable_jobs_status", table_name="mission_deliverable_jobs")
     op.drop_index("idx_mission_deliverable_jobs_idempotency", table_name="mission_deliverable_jobs")
     op.drop_index("idx_mission_deliverable_jobs_owner", table_name="mission_deliverable_jobs")
     op.drop_index("idx_mission_deliverable_jobs_mission", table_name="mission_deliverable_jobs")
