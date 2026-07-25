@@ -22,6 +22,12 @@ GenerationNotificationType = Literal[
     "REPAIR_STARTED", "REPAIR_COMPLETED", "REGRESSION_PASSED",
     "REGRESSION_FAILED", "PIPELINE_RESUMED", "PIPELINE_RECOVERED",
     "RECOVERY_FAILED",
+    # LDCN Multi-Agent Runtime, Phase 5: MissionDeliverableJobEngine lifecycle
+    # -- the first real second producer for this table (entity_type=
+    # "mission_deliverable_job"), proving the Phase 2 polymorphic schema.
+    "MISSION_JOB_QUEUED", "MISSION_DRAFTING_STARTED", "MISSION_ARTIFACT_DRAFTED",
+    "MISSION_DRAFTS_READY", "MISSION_JOB_RETRYING", "MISSION_JOB_CANCELLED",
+    "MISSION_JOB_FAILED", "MISSION_JOB_COMPLETED",
 ]
 
 GenerationNotificationSeverity = Literal["INFO", "SUCCESS", "WARNING", "ERROR", "ACTION_REQUIRED"]
@@ -32,13 +38,15 @@ class GenerationNotification(ApiModel):
     user_id: str
     workspace_id: str | None = None
     project_id: str | None = None
-    job_id: str
-    # LDCN Multi-Agent Runtime, Phase 2: polymorphic subject, additive.
-    # job_id above stays required so no existing consumer needs to change;
-    # entity_type/entity_id are the general mechanism a future non-GenerationJob
-    # producer would use. Plain `str`, not a Literal -- the set of producers
-    # isn't closed yet (same choice event_catalog.py's NamedEvent.category
-    # already made for the same reason).
+    # LDCN Multi-Agent Runtime, Phase 5: nullable -- only set for
+    # GenerationJob notifications now that a second producer
+    # (Mission Deliverable Jobs) exists without one. entity_type/entity_id
+    # (Phase 2) are the general, always-populated mechanism; job_id remains
+    # for the existing job-scoped SSE query and read-side filtering.
+    job_id: str | None = None
+    # Plain `str`, not a Literal -- the set of producers isn't closed yet
+    # (same choice event_catalog.py's NamedEvent.category already made for
+    # the same reason).
     entity_type: str | None = None
     entity_id: str | None = None
     type: GenerationNotificationType

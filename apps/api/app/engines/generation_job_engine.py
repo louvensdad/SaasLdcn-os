@@ -1881,14 +1881,15 @@ class GenerationJobEngine:
             attempt = int(job.get("retryCount", 0) or 0)
             idem_key = f"{notif_type}:{stage or ''}:{attempt}"
             generation_notification_repository.create_or_get_idempotent(
-                owner, job["id"], idem_key,
+                owner, "generation_job", job["id"], idem_key,
                 lambda: {
                     "id": f"gnotif_{uuid4().hex[:14]}", "user_id": owner,
                     "workspace_id": job.get("workspaceId"), "project_id": job.get("projectId"),
                     "job_id": job["id"],
-                    # LDCN Multi-Agent Runtime, Phase 2: redundant with job_id
-                    # on purpose -- the general (entity_type, entity_id) pair
-                    # a future non-GenerationJob producer would set instead.
+                    # LDCN Multi-Agent Runtime, Phase 2/5: (entity_type,
+                    # entity_id) is now the dedup key create_or_get_idempotent
+                    # actually looks up by -- job_id above is kept for the
+                    # job-scoped SSE query and read-side filtering only.
                     "entity_type": "generation_job", "entity_id": job["id"],
                     "type": notif_type, "severity": severity, "stage": stage,
                     "read": False, "action_url": action_url or f"/meta-factory?projectId={job.get('projectId')}",

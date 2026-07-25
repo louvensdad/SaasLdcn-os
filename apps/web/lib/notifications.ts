@@ -29,6 +29,14 @@ const TYPE_KEY: Record<GenerationNotificationType, string> = {
   TASK_PAUSED: 'taskPaused',
   TASK_COMPLETED: 'taskCompleted',
   BUILD_COMPLETED: 'buildCompleted',
+  MISSION_JOB_QUEUED: 'missionJobQueued',
+  MISSION_DRAFTING_STARTED: 'missionDraftingStarted',
+  MISSION_ARTIFACT_DRAFTED: 'missionArtifactDrafted',
+  MISSION_DRAFTS_READY: 'missionDraftsReady',
+  MISSION_JOB_RETRYING: 'missionJobRetrying',
+  MISSION_JOB_CANCELLED: 'missionJobCancelled',
+  MISSION_JOB_FAILED: 'missionJobFailed',
+  MISSION_JOB_COMPLETED: 'missionJobCompleted',
 };
 
 export function notificationTitleKey(type: GenerationNotificationType): string {

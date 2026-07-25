@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.engines.llm.base import LLMError
 from app.engines.llm.router import LLMRouter
+from app.repositories.generation_notification_repository import generation_notification_repository
 from app.schemas.llm import LLMResponse, Provider
 from app.services.ai_key_vault_service import ai_key_vault_service
 
@@ -345,3 +346,133 @@ def test_retry_increments_retry_count(client: TestClient, monkeypatch) -> None:
     ready = _wait_for_status(client, mission["id"], job_id, {"DRAFTS_READY"})
     assert ready["retry_count"] == 1
     assert ready["requested_model"] == "claude-sonnet-4-6"
+
+
+# --- LDCN Multi-Agent Runtime, Phase 5: notifications for a second producer - #
+
+def _mission_notification_types(client: TestClient, owner: str, job_id: str) -> list[str]:
+    items, _ = generation_notification_repository.list_for_user(owner, entity_type="mission_deliverable_job", limit=100)
+    return [item["type"] for item in items if item["entity_id"] == job_id]
+
+
+def test_compile_to_drafts_ready_emits_the_real_lifecycle_notifications(client: TestClient, monkeypatch) -> None:
+    """Proves the Phase 2 polymorphic schema for real: a second producer
+    (Mission Deliverable Jobs, entity_type="mission_deliverable_job", no
+    generation_jobs row to point job_id at) writes into the exact same
+    table/route GenerationJob notifications use."""
+    mission = _create_mission(client)
+    _validated_key(client)
+    owner = client.get("/api/auth/me").json()["user_id"]
+    response = LLMResponse(provider=Provider.anthropic, model="claude-sonnet-4", text="# Blueprint", usage={})
+    monkeypatch.setattr(LLMRouter, "route", lambda *args, **kwargs: response)
+
+    created = client.post(f"/api/missions/{mission['id']}/deliverables/compile", json=_compile_payload(artifact_types=["blueprint"]))
+    job_id = created.json()["id"]
+    _wait_for_status(client, mission["id"], job_id, {"DRAFTS_READY"})
+
+    # Set, not exact order: list_for_user sorts newest-first by
+    # (created_at, id), and created_at is truncated to whole seconds --
+    # several notifications from one fast in-process run can collide on the
+    # same second, making id-based tiebreak unrelated to real emission
+    # order (same reason test_generation_notifications.py's emission_order
+    # fixture exists instead of trusting storage-layer order there).
+    types = _mission_notification_types(client, owner, job_id)
+    assert set(types) == {"MISSION_JOB_QUEUED", "MISSION_DRAFTING_STARTED", "MISSION_ARTIFACT_DRAFTED", "MISSION_DRAFTS_READY"}
+    assert len(types) == 4
+
+
+def test_notifications_are_queryable_through_the_real_polymorphic_route(client: TestClient, monkeypatch) -> None:
+    """The same GET /api/notifications a GenerationJob uses, filtered by
+    entity_type -- no separate route was built for missions."""
+    mission = _create_mission(client)
+    _validated_key(client)
+    response = LLMResponse(provider=Provider.anthropic, model="claude-sonnet-4", text="conteúdo", usage={})
+    monkeypatch.setattr(LLMRouter, "route", lambda *args, **kwargs: response)
+
+    created = client.post(f"/api/missions/{mission['id']}/deliverables/compile", json=_compile_payload(artifact_types=["blueprint"]))
+    job_id = created.json()["id"]
+    _wait_for_status(client, mission["id"], job_id, {"DRAFTS_READY"})
+
+    response = client.get("/api/notifications", params={"entity_type": "mission_deliverable_job", "limit": 100})
+    assert response.status_code == 200, response.text
+    matching = [item for item in response.json()["items"] if item["entity_id"] == job_id]
+    assert len(matching) == 4
+    assert all(item["job_id"] is None for item in matching)  # no generation_jobs row to point at
+
+
+def test_confirm_emits_completed_and_a_failed_run_emits_failed(client: TestClient, monkeypatch) -> None:
+    mission = _create_mission(client)
+    _validated_key(client)
+    owner = client.get("/api/auth/me").json()["user_id"]
+    response = LLMResponse(provider=Provider.anthropic, model="claude-sonnet-4", text="# Conteúdo.", usage={})
+    monkeypatch.setattr(LLMRouter, "route", lambda *args, **kwargs: response)
+
+    created = client.post(f"/api/missions/{mission['id']}/deliverables/compile", json=_compile_payload(artifact_types=["blueprint"]))
+    job_id = created.json()["id"]
+    _wait_for_status(client, mission["id"], job_id, {"DRAFTS_READY"})
+    client.post(f"/api/missions/{mission['id']}/deliverables/jobs/{job_id}/confirm")
+
+    assert "MISSION_JOB_COMPLETED" in _mission_notification_types(client, owner, job_id)
+
+    def _raise(*args, **kwargs):
+        raise LLMError("provider indisponível")
+    monkeypatch.setattr(LLMRouter, "route", _raise)
+    failed_created = client.post(f"/api/missions/{mission['id']}/deliverables/compile", json=_compile_payload(artifact_types=["blueprint"]))
+    failed_job_id = failed_created.json()["id"]
+    _wait_for_status(client, mission["id"], failed_job_id, {"FAILED"})
+
+    assert "MISSION_JOB_FAILED" in _mission_notification_types(client, owner, failed_job_id)
+
+
+def test_retry_emits_a_fresh_retrying_notification(client: TestClient, monkeypatch) -> None:
+    mission = _create_mission(client)
+    _validated_key(client)
+    owner = client.get("/api/auth/me").json()["user_id"]
+
+    def _raise(*args, **kwargs):
+        raise LLMError("provider indisponível")
+    monkeypatch.setattr(LLMRouter, "route", _raise)
+    created = client.post(f"/api/missions/{mission['id']}/deliverables/compile", json=_compile_payload(artifact_types=["blueprint"]))
+    job_id = created.json()["id"]
+    _wait_for_status(client, mission["id"], job_id, {"FAILED"})
+
+    response = LLMResponse(provider=Provider.anthropic, model="claude-sonnet-4", text="conteúdo", usage={})
+    monkeypatch.setattr(LLMRouter, "route", lambda *args, **kwargs: response)
+    client.post(f"/api/missions/{mission['id']}/deliverables/jobs/{job_id}/retry", json={"user_model_choice": "claude-sonnet-4", "use_user_key": True})
+    _wait_for_status(client, mission["id"], job_id, {"DRAFTS_READY"})
+
+    assert "MISSION_JOB_RETRYING" in _mission_notification_types(client, owner, job_id)
+
+
+def test_cross_user_never_sees_another_users_mission_notifications(client: TestClient, monkeypatch) -> None:
+    mission = _create_mission(client)
+    _validated_key(client)
+    response = LLMResponse(provider=Provider.anthropic, model="claude-sonnet-4", text="conteúdo", usage={})
+    monkeypatch.setattr(LLMRouter, "route", lambda *args, **kwargs: response)
+
+    created = client.post(f"/api/missions/{mission['id']}/deliverables/compile", json=_compile_payload(artifact_types=["blueprint"]))
+    job_id = created.json()["id"]
+    _wait_for_status(client, mission["id"], job_id, {"DRAFTS_READY"})
+
+    other_token = _register_second_user(client)
+    other = client.get("/api/notifications", params={"entity_type": "mission_deliverable_job", "limit": 100}, headers={"Authorization": f"Bearer {other_token}"})
+    assert other.status_code == 200
+    assert not any(item["entity_id"] == job_id for item in other.json()["items"])
+
+
+def test_mission_job_sse_stream_carries_notification_frames(client: TestClient, monkeypatch) -> None:
+    mission = _create_mission(client)
+    _validated_key(client)
+    response = LLMResponse(provider=Provider.anthropic, model="claude-sonnet-4", text="conteúdo", usage={})
+    monkeypatch.setattr(LLMRouter, "route", lambda *args, **kwargs: response)
+
+    created = client.post(f"/api/missions/{mission['id']}/deliverables/compile", json=_compile_payload(artifact_types=["blueprint"]))
+    job_id = created.json()["id"]
+    _wait_for_status(client, mission["id"], job_id, {"DRAFTS_READY"})
+
+    with client.stream("GET", f"/api/missions/{mission['id']}/deliverables/jobs/{job_id}/events") as stream_response:
+        assert stream_response.status_code == 200
+        body = "".join(stream_response.iter_text())
+
+    assert '"type": "notification"' in body or '"type":"notification"' in body
+    assert "MISSION_DRAFTS_READY" in body

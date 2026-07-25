@@ -227,16 +227,18 @@ class MissionDeliverableJob(Base):
 
 
 class GenerationNotification(Base):
-    """Real, persisted, per-user notification for a GenerationJob lifecycle
-    transition (queued/started/stage started+completed/waiting-on-user/
-    retrying/stalled/failed/paused/completed). Title/message are deliberately
-    NEVER stored here -- only type/stage/metadata, rendered client-side via
-    i18n (notifications.generation.<type>.title/message) so a locale switch
-    or future copy edit never needs a data migration. Idempotency is a
-    serialized SELECT-then-INSERT on (job_id, user_id, idempotency_key) --
-    same pattern as MissionDeliverableJobRepository.create_or_get_idempotent,
-    not a DB partial-unique index (this repo's UserAiKey precedent: SQLite,
-    the dev/test default, can't express those reliably)."""
+    """Real, persisted, per-user notification for a lifecycle transition of
+    a GenerationJob or (Phase 5) a Mission Deliverable Job. Title/message are
+    deliberately NEVER stored here -- only type/stage/metadata, rendered
+    client-side via i18n (notifications.generation.<type>.title/message) so
+    a locale switch or future copy edit never needs a data migration.
+    Idempotency (as of Phase 5) is a serialized SELECT-then-INSERT on
+    (entity_type, entity_id, user_id, idempotency_key) -- job_id-based
+    dedup was retired when a second, non-GenerationJob producer arrived,
+    since not every subject has one. Same overall pattern as
+    MissionDeliverableJobRepository.create_or_get_idempotent, not a DB
+    partial-unique index (this repo's UserAiKey precedent: SQLite, the
+    dev/test default, can't express those reliably)."""
 
     __tablename__ = "generation_notifications"
     __table_args__ = (
@@ -244,20 +246,27 @@ class GenerationNotification(Base):
         Index("idx_generation_notifications_user_read", "user_id", "read"),
         Index("idx_generation_notifications_job_idem", "job_id", "user_id", "idempotency_key"),
         Index("idx_generation_notifications_entity", "entity_type", "entity_id"),
+        Index("idx_generation_notifications_entity_idem", "entity_type", "entity_id", "user_id", "idempotency_key"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     workspace_id: Mapped[str | None] = mapped_column(String)
     project_id: Mapped[str | None] = mapped_column(String)
-    job_id: Mapped[str] = mapped_column(ForeignKey("generation_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    # LDCN Multi-Agent Runtime, Phase 5: nullable as of
+    # 20260725_l1_generation_notifications_job_id_nullable -- a NULL job_id
+    # never needs to match a row in generation_jobs (standard FK semantics),
+    # so a second producer (Mission Deliverable Jobs, Phase 5) can use
+    # entity_type/entity_id below without one. Every existing GenerationJob
+    # notification still always sets it; nothing about that producer changed.
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("generation_jobs.id", ondelete="CASCADE"), index=True)
     # LDCN Multi-Agent Runtime, Phase 2: polymorphic subject, additive.
-    # `job_id` stays required and unchanged -- every existing consumer keeps
-    # working exactly as before. For GenerationJob notifications (the only
-    # real producer today) entity_type/entity_id are set redundantly equal
-    # to ("generation_job", job_id) by _notify() itself, so a future second
-    # producer (missions, marketplace, ...) can reuse this same table/route
-    # without ever needing a job_id.
+    # For GenerationJob notifications entity_type/entity_id are set
+    # redundantly equal to ("generation_job", job_id) by _notify() itself.
+    # As of Phase 5 this is the PRIMARY idempotency key (see
+    # GenerationNotificationRepository.create_or_get_idempotent) -- job_id
+    # is kept for the existing job-scoped SSE query and read-side filtering,
+    # never for dedup anymore.
     entity_type: Mapped[str | None] = mapped_column(String)
     entity_id: Mapped[str | None] = mapped_column(String)
     type: Mapped[str] = mapped_column(String, nullable=False)

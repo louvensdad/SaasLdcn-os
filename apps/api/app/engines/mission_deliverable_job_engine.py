@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 from app.engines.mission_artifact_engine import draft_artifact
+from app.repositories.generation_notification_repository import generation_notification_repository
 from app.repositories.mission_deliverable_job_repository import MissionDeliverableJobRepository
 from app.repositories.mission_repository import MissionRepository
 from app.services.mission_service import MissionService
+
+logger = logging.getLogger("ldcn.api.generation_notifications")
 
 STALE_HEARTBEAT_SECONDS = 120
 NON_TERMINAL_STATUSES = ("QUEUED", "ANSWERS_LOADING", "DRAFTING", "PERSISTING")
@@ -69,6 +73,7 @@ class MissionDeliverableJobEngine:
 
         job, created = self.repository.create_or_get_idempotent(owner_user_id, mission_id, idempotency_key, build_data)
         if created:
+            self._notify(job, owner_user_id, "MISSION_JOB_QUEUED", severity="INFO")
             self._start(job["id"], owner_user_id, api_key=api_key, user_model_choice=user_model_choice)
         else:
             self._ensure_running(job, owner_user_id, api_key=api_key, user_model_choice=user_model_choice)
@@ -111,11 +116,13 @@ class MissionDeliverableJobEngine:
             job["error"] = {"kind": "mission_not_found", "message": "Missão não encontrada ou removida.", "artifact_type": None}
             job["completed_at"] = self._now()
             self._emit(job, "job_failed", level="error", message="Missão não encontrada ou removida.")
+            self._notify(job, owner_user_id, "MISSION_JOB_FAILED", severity="ERROR")
             self._save(job, owner_user_id)
             return
 
         job["status"] = "DRAFTING"
         self._emit(job, "drafting_started", message="Gerando rascunhos dos artefatos.")
+        self._notify(job, owner_user_id, "MISSION_DRAFTING_STARTED", severity="INFO")
         self._save(job, owner_user_id)
 
         answers = mission["context"].get("answers") or {}
@@ -129,6 +136,7 @@ class MissionDeliverableJobEngine:
                 job["status"] = "CANCELLED"
                 job["completed_at"] = self._now()
                 self._emit(job, "job_cancelled", message="Geração cancelada pelo usuário.")
+                self._notify(job, owner_user_id, "MISSION_JOB_CANCELLED", severity="WARNING")
                 self._save(job, owner_user_id)
                 return
 
@@ -151,6 +159,7 @@ class MissionDeliverableJobEngine:
                 job["completed_at"] = self._now()
                 self._emit(job, "artifact_draft_failed", level="error", artifact_type=definition["type"], message=str(exc))
                 self._emit(job, "job_failed", level="error", message=f"Falha ao gerar \"{definition['title']}\": {exc}")
+                self._notify(job, owner_user_id, "MISSION_JOB_FAILED", severity="ERROR", stage=definition["type"])
                 self._save(job, owner_user_id)
                 return
 
@@ -165,10 +174,19 @@ class MissionDeliverableJobEngine:
                 job, "artifact_drafted", artifact_type=definition["type"], message=f"\"{definition['title']}\" gerado.",
                 metadata={"provider": meta["provider"], "model": meta["model"], "input_tokens": meta["input_tokens"], "output_tokens": meta["output_tokens"]},
             )
+            self._notify(
+                job, owner_user_id, "MISSION_ARTIFACT_DRAFTED", severity="INFO", stage=definition["type"],
+                metadata={"provider": meta["provider"], "model": meta["model"]},
+            )
             self._save(job, owner_user_id)
 
         job["status"] = "DRAFTS_READY"
         self._emit(job, "drafts_ready", message="Todos os rascunhos estão prontos para revisão.")
+        # ACTION_REQUIRED, not SUCCESS: drafts sitting ready still need the
+        # user's review/confirm in ArtifactsReviewModal -- mirrors
+        # GenerationJob's TASK_WAITING_USER severity choice for the same
+        # "needs a human decision to proceed" reason.
+        self._notify(job, owner_user_id, "MISSION_DRAFTS_READY", severity="ACTION_REQUIRED")
         self._save(job, owner_user_id)
 
     @staticmethod
@@ -213,6 +231,7 @@ class MissionDeliverableJobEngine:
         job["status"] = "COMPLETED"
         job["completed_at"] = self._now()
         self._emit(job, "persisted", message="Artefatos salvos na missão.")
+        self._notify(job, owner_user_id, "MISSION_JOB_COMPLETED", severity="SUCCESS")
         self._save(job, owner_user_id)
         return job, updated_mission
 
@@ -232,6 +251,7 @@ class MissionDeliverableJobEngine:
         for progress in job["artifacts_progress"]:
             if progress["type"] not in drafted_types:
                 progress["status"] = "pending"
+        self._notify(job, owner_user_id, "MISSION_JOB_RETRYING", severity="INFO")
         self._save(job, owner_user_id)
         self._start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice)
         return job
@@ -289,6 +309,35 @@ class MissionDeliverableJobEngine:
             "message": message, "artifact_type": artifact_type, "metadata": metadata or {},
         })
         job["events"] = job["events"][-2000:]
+
+    def _notify(
+        self, job: dict[str, Any], owner: str, notif_type: str, *, severity: str,
+        stage: str | None = None, metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """LDCN Multi-Agent Runtime, Phase 5: real, persisted, idempotent
+        notification for a Mission Deliverable Job lifecycle transition --
+        the first real second producer for generation_notifications
+        (entity_type="mission_deliverable_job", no job_id: this job type has
+        its own id namespace, not a generation_jobs row). Mirrors
+        GenerationJobEngine._notify exactly: fault-isolated, title/message
+        never built here, idempotency key includes retry_count so a retried
+        run gets fresh notifications instead of being deduped forever."""
+        try:
+            attempt = int(job.get("retry_count", 0) or 0)
+            idem_key = f"{notif_type}:{stage or ''}:{attempt}"
+            generation_notification_repository.create_or_get_idempotent(
+                owner, "mission_deliverable_job", job["id"], idem_key,
+                lambda: {
+                    "id": f"gnotif_{uuid4().hex[:14]}", "user_id": owner,
+                    "workspace_id": job.get("workspace_id"), "project_id": None,
+                    "entity_type": "mission_deliverable_job", "entity_id": job["id"],
+                    "type": notif_type, "severity": severity, "stage": stage,
+                    "read": False, "action_url": f"/wizard/{job['mission_id']}",
+                    "metadata": metadata or {}, "idempotency_key": idem_key, "created_at": self._now(),
+                },
+            )
+        except Exception:  # noqa: BLE001 -- notification failure must never mask/block the pipeline
+            logger.exception("mission deliverable job notification emission failed")
 
     def _save(self, job: dict[str, Any], owner_user_id: str) -> dict[str, Any]:
         now = self._now()

@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from app.core.deps import CurrentUser
 from app.engines.mission_deliverable_job_engine import MissionDeliverableJobEngine
+from app.repositories.generation_notification_repository import generation_notification_repository
 from app.routes.meta_factory_stream_helpers import _event_start_index, _sse
 from app.routes.missions import _resolve_api_key
 from app.schemas.mission import ConfirmArtifactsRequest, MissionInstance
@@ -74,6 +75,8 @@ def stream_mission_deliverable_job(
         last_revision = ""
         initial = engine.get(job_id, user["user_id"])
         last_event_index = _event_start_index((initial or {}).get("events", []), last_event_id)
+        last_notif_created_at: str | None = None
+        last_notif_id: str | None = None
         for tick in range(2400):
             if await request.is_disconnected():
                 return
@@ -95,6 +98,17 @@ def stream_mission_deliverable_job(
                 last_revision = revision
             elif tick % 10 == 0:
                 yield _sse({"type": "heartbeat", "jobId": job_id, "status": job["status"]})
+            # LDCN Multi-Agent Runtime, Phase 5: same live-feed pattern
+            # meta_factory.py's stream already uses for GenerationJob, now
+            # generalized via list_new_for_entity so a user watching this
+            # job's stream sees notifications instantly too.
+            new_notifications = generation_notification_repository.list_new_for_entity(
+                "mission_deliverable_job", job_id, user["user_id"],
+                since_created_at=last_notif_created_at, since_id=last_notif_id,
+            )
+            for notification in new_notifications:
+                yield _sse({"type": "notification", "notification": notification}, event_id=f"notif_{notification['id']}")
+                last_notif_created_at, last_notif_id = notification["created_at"], notification["id"]
             if job["status"] in TERMINAL_STREAM_STATUSES:
                 return
             await asyncio.sleep(0.75)

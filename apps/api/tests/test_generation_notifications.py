@@ -86,8 +86,8 @@ def emission_order(monkeypatch):
     order: list[tuple[str, str | None]] = []
     original = generation_notification_repository.create_or_get_idempotent
 
-    def _recording(owner, job_id, idem_key, build_data):  # noqa: ANN001
-        notif, created = original(owner, job_id, idem_key, build_data)
+    def _recording(owner, entity_type, entity_id, idem_key, build_data):  # noqa: ANN001
+        notif, created = original(owner, entity_type, entity_id, idem_key, build_data)
         if created:
             order.append((notif["type"], notif["stage"]))
         return notif, created
@@ -453,7 +453,7 @@ def test_backfilled_rows_from_before_phase_2_are_still_readable(client, client_s
     owner = _owner_id(client)
     job = _create(client_scoped_engine, owner, project_id="room-notif-legacy-row")
     generation_notification_repository.create_or_get_idempotent(
-        owner, job["id"], "LEGACY_TYPE:legacy:0",
+        owner, "generation_job", job["id"], "LEGACY_TYPE:legacy:0",
         lambda: {
             "id": "gnotif_legacy00000001", "user_id": owner, "workspace_id": None, "project_id": job.get("projectId"),
             "job_id": job["id"], "type": "TASK_STARTED", "severity": "INFO", "stage": None,

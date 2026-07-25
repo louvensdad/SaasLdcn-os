@@ -14,7 +14,18 @@ export type GenerationNotificationType =
   | 'TASK_FAILED'
   | 'TASK_PAUSED'
   | 'TASK_COMPLETED'
-  | 'BUILD_COMPLETED';
+  | 'BUILD_COMPLETED'
+  // LDCN Multi-Agent Runtime, Phase 5: MissionDeliverableJobEngine lifecycle
+  // -- the first real second producer for this table/route
+  // (entity_type="mission_deliverable_job").
+  | 'MISSION_JOB_QUEUED'
+  | 'MISSION_DRAFTING_STARTED'
+  | 'MISSION_ARTIFACT_DRAFTED'
+  | 'MISSION_DRAFTS_READY'
+  | 'MISSION_JOB_RETRYING'
+  | 'MISSION_JOB_CANCELLED'
+  | 'MISSION_JOB_FAILED'
+  | 'MISSION_JOB_COMPLETED';
 
 export type GenerationNotificationSeverity = 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'ACTION_REQUIRED';
 
@@ -23,12 +34,14 @@ export interface GenerationNotification {
   readonly user_id: string;
   readonly workspace_id: string | null;
   readonly project_id: string | null;
-  readonly job_id: string;
-  // LDCN Multi-Agent Runtime, Phase 2: polymorphic subject, additive.
-  // job_id above is unchanged and still required. For every notification
-  // today (all GenerationJob-produced) these are redundantly set to
-  // ('generation_job', job_id) -- the general mechanism a future
-  // non-GenerationJob producer would use instead of job_id.
+  // LDCN Multi-Agent Runtime, Phase 5: nullable -- only set for
+  // GenerationJob notifications now that a second producer (Mission
+  // Deliverable Jobs) exists without one.
+  readonly job_id: string | null;
+  // LDCN Multi-Agent Runtime, Phase 2: polymorphic subject, additive. For
+  // GenerationJob notifications these are redundantly set to
+  // ('generation_job', job_id); Mission Deliverable Job notifications use
+  // ('mission_deliverable_job', <mdjob id>) instead, with no job_id at all.
   readonly entity_type: string | null;
   readonly entity_id: string | null;
   readonly type: GenerationNotificationType;

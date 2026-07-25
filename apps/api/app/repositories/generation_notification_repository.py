@@ -31,12 +31,17 @@ class GenerationNotificationRepository:
         self._sessions = session_factory(self.database_url)
 
     def create_or_get_idempotent(
-        self, user_id: str, job_id: str, idempotency_key: str, build_data: Callable[[], dict[str, Any]]
+        self, user_id: str, entity_type: str, entity_id: str, idempotency_key: str,
+        build_data: Callable[[], dict[str, Any]],
     ) -> tuple[dict[str, Any], bool]:
+        """LDCN Multi-Agent Runtime, Phase 5: dedup key is (entity_type,
+        entity_id, user_id, idempotency_key), not job_id -- not every subject
+        this table serves has one (see MissionDeliverableJobEngine)."""
         with self._sessions.begin() as session:
             row = session.scalar(
                 select(GenerationNotification).where(
-                    GenerationNotification.job_id == job_id,
+                    GenerationNotification.entity_type == entity_type,
+                    GenerationNotification.entity_id == entity_id,
                     GenerationNotification.user_id == user_id,
                     GenerationNotification.idempotency_key == idempotency_key,
                 )
@@ -125,11 +130,38 @@ class GenerationNotificationRepository:
             rows = session.scalars(stmt).all()
             return [self._row(row) for row in rows]
 
+    def list_new_for_entity(
+        self, entity_type: str, entity_id: str, user_id: str, *,
+        since_created_at: str | None, since_id: str | None, limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Generalization of list_new_for_job (Phase 5): the same live-feed
+        query for any entity_type, not only GenerationJob. list_new_for_job
+        is kept as-is for its one existing caller rather than rewritten on
+        top of this, so nothing about the working GenerationJob SSE route
+        changes shape."""
+        with self._sessions() as session:
+            stmt = select(GenerationNotification).where(
+                GenerationNotification.entity_type == entity_type,
+                GenerationNotification.entity_id == entity_id,
+                GenerationNotification.user_id == user_id,
+            )
+            if since_created_at is not None:
+                if since_id is not None:
+                    stmt = stmt.where(
+                        (GenerationNotification.created_at > since_created_at)
+                        | ((GenerationNotification.created_at == since_created_at) & (GenerationNotification.id > since_id))
+                    )
+                else:
+                    stmt = stmt.where(GenerationNotification.created_at >= since_created_at)
+            stmt = stmt.order_by(GenerationNotification.created_at.asc(), GenerationNotification.id.asc()).limit(limit)
+            rows = session.scalars(stmt).all()
+            return [self._row(row) for row in rows]
+
     @classmethod
     def _to_row(cls, data: dict[str, Any]) -> GenerationNotification:
         return GenerationNotification(
             id=data["id"], user_id=data["user_id"], workspace_id=data.get("workspace_id"),
-            project_id=data.get("project_id"), job_id=data["job_id"],
+            project_id=data.get("project_id"), job_id=data.get("job_id"),
             entity_type=data.get("entity_type"), entity_id=data.get("entity_id"),
             type=data["type"], severity=data.get("severity", "INFO"), stage=data.get("stage"),
             read=bool(data.get("read", False)), action_url=data.get("action_url"),
