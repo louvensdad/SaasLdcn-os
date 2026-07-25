@@ -226,6 +226,40 @@ class MissionDeliverableJob(Base):
     completed_at: Mapped[str | None] = mapped_column(String)
 
 
+class GenerationNotification(Base):
+    """Real, persisted, per-user notification for a GenerationJob lifecycle
+    transition (queued/started/stage started+completed/waiting-on-user/
+    retrying/stalled/failed/paused/completed). Title/message are deliberately
+    NEVER stored here -- only type/stage/metadata, rendered client-side via
+    i18n (notifications.generation.<type>.title/message) so a locale switch
+    or future copy edit never needs a data migration. Idempotency is a
+    serialized SELECT-then-INSERT on (job_id, user_id, idempotency_key) --
+    same pattern as MissionDeliverableJobRepository.create_or_get_idempotent,
+    not a DB partial-unique index (this repo's UserAiKey precedent: SQLite,
+    the dev/test default, can't express those reliably)."""
+
+    __tablename__ = "generation_notifications"
+    __table_args__ = (
+        Index("idx_generation_notifications_user", "user_id", "created_at"),
+        Index("idx_generation_notifications_user_read", "user_id", "read"),
+        Index("idx_generation_notifications_job_idem", "job_id", "user_id", "idempotency_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    project_id: Mapped[str | None] = mapped_column(String)
+    job_id: Mapped[str] = mapped_column(ForeignKey("generation_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    severity: Mapped[str] = mapped_column(String, nullable=False, default="INFO", server_default="INFO")
+    stage: Mapped[str | None] = mapped_column(String)
+    read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0", index=True)
+    action_url: Mapped[str | None] = mapped_column(String)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class BlueprintApproval(Base):
     __tablename__ = "blueprint_approvals"
     __table_args__ = (Index("idx_blueprint_approvals_project", "project_id", "blueprint_hash"),)

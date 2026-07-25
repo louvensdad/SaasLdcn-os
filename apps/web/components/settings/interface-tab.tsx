@@ -5,6 +5,7 @@ import { Check, Eye, LayoutDashboard, Monitor, Moon, Sparkles, Sun } from 'lucid
 import { Card } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { SettingsToggleRow } from '@/components/settings/settings-toggle-row';
+import { useBrowserNotificationPermission } from '@/hooks/use-browser-notification-permission';
 import { useLocale } from '@/hooks/use-locale';
 import { useShellStore } from '@/stores/use-shell-store';
 import type { InterfaceDensity } from '@/stores/use-shell-store';
@@ -28,6 +29,16 @@ export function InterfaceTab({ density, onDensityChange }: InterfaceTabProps) {
   const themeId = useShellStore((state) => state.themeId);
   const setThemeId = useShellStore((state) => state.setThemeId);
   const prefs = useInterfacePreferencesStore();
+  const { permission, requestPermission } = useBrowserNotificationPermission();
+
+  // Turning it on requires a real, granted OS permission -- request it right
+  // here (the only place with a user gesture) and never store the preference
+  // as "on" unless the browser actually granted it. Turning it off never
+  // touches the OS permission, only this app's own preference.
+  const handleBrowserNotificationsChange = (value: boolean) => {
+    if (!value) { prefs.setBrowserNotificationsEnabled(false); return; }
+    void requestPermission().then((result) => prefs.setBrowserNotificationsEnabled(result === 'granted'));
+  };
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
@@ -133,6 +144,13 @@ export function InterfaceTab({ density, onDensityChange }: InterfaceTabProps) {
             <SettingsToggleRow label={t('settings.interface.helpTips')} description={t('settings.interface.helpTipsHint')} checked={prefs.showHelpTips} onChange={prefs.setShowHelpTips} />
             <SettingsToggleRow label={t('settings.interface.sidebarCollapsed')} description={t('settings.interface.sidebarCollapsedHint')} checked={prefs.sidebarCollapsedDefault} onChange={prefs.setSidebarCollapsedDefault} />
             <SettingsToggleRow label={t('settings.interface.focusMode')} description={t('settings.interface.focusModeHint')} checked={prefs.focusMode} onChange={prefs.setFocusMode} />
+            <SettingsToggleRow
+              label={t('settings.interface.browserNotifications')}
+              description={permission === 'denied' ? t('settings.interface.browserNotificationsDenied') : t('settings.interface.browserNotificationsHint')}
+              checked={prefs.browserNotificationsEnabled}
+              onChange={handleBrowserNotificationsChange}
+              disabled={permission === 'unsupported'}
+            />
           </div>
         </Card>
       </div>

@@ -1,10 +1,6 @@
 import { create } from 'zustand';
 
-import {
-  FOUNDATION_NOTIFICATIONS,
-  type FoundationNotification,
-  type NotificationTone,
-} from '@/lib/notifications';
+import type { NotificationTone } from '@/lib/notifications';
 
 export type ToastTone = NotificationTone;
 export type ModalKind = 'confirmation' | 'information' | 'destructive';
@@ -25,7 +21,6 @@ export interface ToastMessage {
 
 interface UiState {
   readonly toasts: readonly ToastMessage[];
-  readonly notifications: readonly FoundationNotification[];
   readonly notificationCenterOpen: boolean;
   readonly modalOpen: boolean;
   readonly modalKind: ModalKind;
@@ -40,16 +35,17 @@ interface UiState {
   closeModal: () => void;
   openDrawer: (kind?: DrawerKind) => void;
   closeDrawer: () => void;
-  markNotificationsRead: () => void;
 }
 
 function createToastId() {
   return `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Real notification data (GenerationJob lifecycle) now lives in React Query
+// via useNotifications() (apps/web/hooks/use-notifications.ts) -- this store
+// only keeps the pure open/close UI state for the notification center panel.
 export const useUiStore = create<UiState>((set) => ({
   toasts: [],
-  notifications: FOUNDATION_NOTIFICATIONS,
   notificationCenterOpen: false,
   modalOpen: false,
   modalKind: 'information',
@@ -75,11 +71,4 @@ export const useUiStore = create<UiState>((set) => ({
   closeModal: () => set({ modalOpen: false }),
   openDrawer: (drawerKind = 'details') => set({ drawerKind, drawerOpen: true }),
   closeDrawer: () => set({ drawerOpen: false }),
-  markNotificationsRead: () =>
-    set((state) => ({
-      notifications: state.notifications.map((notification) => ({
-        ...notification,
-        unread: false,
-      })),
-    })),
 }));

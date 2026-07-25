@@ -36,6 +36,7 @@ from app.routes import (
     engineering_readiness,
     execution_profiles,
     generation_handoff,
+    generation_notifications,
     generated_project_quality,
     git_export,
     git_providers,
@@ -196,6 +197,7 @@ def create_application() -> FastAPI:
     app.include_router(project_rooms.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(missions.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(mission_deliverable_jobs.router, prefix=settings.api_prefix, dependencies=protected)
+    app.include_router(generation_notifications.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(change_requests.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(live_preview.router, prefix=settings.api_prefix, dependencies=protected)
     app.include_router(staging.router, prefix=settings.api_prefix, dependencies=protected)

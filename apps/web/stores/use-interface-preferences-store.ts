@@ -47,6 +47,11 @@ export interface InterfacePreferencesSnapshot {
   readonly sidebarCollapsedDefault: boolean;
   readonly showHelpTips: boolean;
   readonly focusMode: boolean;
+  // Opt-in only: this stores the user's *preference*, not the real OS-level
+  // Notification.permission grant (that's read live -- see
+  // use-browser-notification-permission.ts). Both must agree before a native
+  // notification is ever shown.
+  readonly browserNotificationsEnabled: boolean;
 }
 
 interface InterfacePreferencesState extends InterfacePreferencesSnapshot {
@@ -60,17 +65,18 @@ interface InterfacePreferencesState extends InterfacePreferencesSnapshot {
   setSidebarCollapsedDefault: (value: boolean) => void;
   setShowHelpTips: (value: boolean) => void;
   setFocusMode: (value: boolean) => void;
+  setBrowserNotificationsEnabled: (value: boolean) => void;
   importAll: (snapshot: Partial<InterfacePreferencesSnapshot>) => void;
 }
 
 export function interfacePreferencesSnapshot(state: InterfacePreferencesState): InterfacePreferencesSnapshot {
   const {
     accent, fontFamily, fontSize, radius, animations, reduceMotion,
-    showBreadcrumbs, sidebarCollapsedDefault, showHelpTips, focusMode,
+    showBreadcrumbs, sidebarCollapsedDefault, showHelpTips, focusMode, browserNotificationsEnabled,
   } = state;
   return {
     accent, fontFamily, fontSize, radius, animations, reduceMotion,
-    showBreadcrumbs, sidebarCollapsedDefault, showHelpTips, focusMode,
+    showBreadcrumbs, sidebarCollapsedDefault, showHelpTips, focusMode, browserNotificationsEnabled,
   };
 }
 
@@ -87,6 +93,7 @@ export const useInterfacePreferencesStore = create<InterfacePreferencesState>()(
       sidebarCollapsedDefault: false,
       showHelpTips: true,
       focusMode: false,
+      browserNotificationsEnabled: false,
       setAccent: (accent) => set({ accent }),
       setFontFamily: (fontFamily) => set({ fontFamily }),
       setFontSize: (fontSize) => set({ fontSize }),
@@ -97,6 +104,7 @@ export const useInterfacePreferencesStore = create<InterfacePreferencesState>()(
       setSidebarCollapsedDefault: (sidebarCollapsedDefault) => set({ sidebarCollapsedDefault }),
       setShowHelpTips: (showHelpTips) => set({ showHelpTips }),
       setFocusMode: (focusMode) => set({ focusMode }),
+      setBrowserNotificationsEnabled: (browserNotificationsEnabled) => set({ browserNotificationsEnabled }),
       importAll: (snapshot) => set((state) => ({ ...state, ...snapshot })),
     }),
     { name: 'ldcn-interface-preferences-v1' },

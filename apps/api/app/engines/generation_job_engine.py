@@ -3,6 +3,7 @@ from __future__ import annotations
 import concurrent.futures as cf
 import hashlib
 import json
+import logging
 import re
 import threading
 import time
@@ -43,6 +44,7 @@ from app.engines.orchestrator_engine import compile_mega_prompt
 from app.engines.warning_policy import classify as classify_warnings
 from app.repositories.download_repository import DownloadRepository
 from app.repositories.generation_job_repository import GenerationJobRepository
+from app.repositories.generation_notification_repository import generation_notification_repository
 from app.registry.execution_profiles_registry import resolve_execution_profile
 from app.repositories.redaction import redact_value
 from app.schemas.execution_profile import ExecutionProfile
@@ -54,7 +56,9 @@ from app.services.file_protocol import EmittedFile
 from app.services.download_service import DownloadService
 from app.services.generated_project_service import GeneratedProjectService
 from app.services import import_graph_engine
-from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
+from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter, ProjectWriteError
+from app.engines.pipeline_recovery_orchestrator import pipeline_recovery_orchestrator
+from app.engines.architecture_consolidation_gate import architecture_consolidation_gate
 from app.services.stack_compatibility import STACK_LOCK_FILE, StackLock, stack_compatibility_engine
 
 
@@ -64,6 +68,8 @@ from app.services.stack_compatibility import STACK_LOCK_FILE, StackLock, stack_c
 # hang (an adapter ignoring its own timeout, a never-resolving await, a wedged
 # socket) and is converted into a STALLED job instead of a forever-"running" one.
 STAGE_TIMEOUT_SECONDS = 1500  # 25 min — bounds any single step; never infinite
+
+logger = logging.getLogger("ldcn.api.generation_notifications")
 
 # Statuses that no longer occupy an agent worker: a job in one of these is done,
 # awaiting the user, or parked. Everything else (QUEUED + the *_RUNNING/*_GENERATING
@@ -165,6 +171,7 @@ class GenerationJobEngine:
         self.repository.create(owner_user_id, data, redact_value(spec.model_dump(mode="json")), redact_value(blueprint))
         self._log(data, "QUEUED", "info", "GenerationJob criado e persistido.")
         self._save(data, owner_user_id)
+        self._notify(data, owner_user_id, "TASK_QUEUED", severity="INFO")
         return data
 
     def start(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None, start_index: int = 0, mode: str = "normal") -> dict[str, Any] | None:
@@ -215,6 +222,13 @@ class GenerationJobEngine:
         except Exception:
             self.repository.release_lease(job_id, self.worker_id, attempt_id)
             raise
+        # start_index==0 alone isn't enough: a retry that happens to land back
+        # on the very first stage (e.g. retrying "contracts") also calls
+        # start(start_index=0) -- retryCount==0 is what actually distinguishes
+        # "this job has genuinely never run before" from that retry case
+        # (which already gets its own TASK_RETRYING notification below).
+        if start_index == 0 and int(job.get("retryCount", 0) or 0) == 0:
+            self._notify(job, owner_user_id, "TASK_STARTED", severity="INFO")
         try:
             for index in range(start_index, len(steps)):
                 if not self.repository.heartbeat(
@@ -356,6 +370,27 @@ class GenerationJobEngine:
             message=f"PIPELINE_COMPLETE ({outcome}): {message}",
         )
         self._save(job, owner)
+        if outcome == "SUCCESS":
+            self._notify(job, owner, "TASK_COMPLETED", severity="SUCCESS", stage="READY")
+            if job.get("buildStatus") == "PASSED":
+                self._notify(job, owner, "BUILD_COMPLETED", severity="SUCCESS", stage="BUILD_RUNNING")
+        elif outcome == "NEEDS_USER_ACTION":
+            can_continue = bool((job.get("error") or {}).get("can_continue_with_warnings"))
+            self._notify(
+                job, owner, "TASK_WAITING_USER", severity="WARNING" if can_continue else "ACTION_REQUIRED",
+                stage=job.get("currentStage"),
+            )
+        elif outcome == "STALLED":
+            self._notify(
+                job, owner, "TASK_STALLED", severity="WARNING", stage=job.get("currentStage"),
+                metadata={"timeout_seconds": (job.get("error") or {}).get("timeout_seconds")},
+            )
+        elif outcome == "FAILED":
+            self._notify(job, owner, "TASK_FAILED", severity="ERROR", stage=job.get("currentStage"))
+        # DEGRADED_CONTINUATION (build skipped after the auto-repair limit) is
+        # deliberately NOT notified here: it's a partial completion, not a
+        # clean success, and none of the canonical notification types honestly
+        # represent it -- a real gap, not silently misrepresented as either.
         # Evolution Engine: every terminal outcome (not just success) feeds the
         # cross-generation signal store -- fault-isolated inside record_signal.
         if spec is not None:
@@ -406,6 +441,7 @@ class GenerationJobEngine:
         job["stageStatuses"][steps[index].logical] = "retrying"
         self._log(job, steps[index].state, "warning", f"Reexecucao solicitada em modo {mode}; checkpoints anteriores preservados.")
         self._save(job, owner_user_id)
+        self._notify(job, owner_user_id, "TASK_RETRYING", severity="INFO", stage=steps[index].logical, metadata={"mode": mode})
         self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=index, mode=mode)
         return self.repository.get(job_id, owner_user_id)
 
@@ -481,7 +517,12 @@ class GenerationJobEngine:
             return None
         job["status"] = "PAUSED"
         self._log(job, job["currentStage"], "warning", "Geracao pausada pelo usuario; checkpoints preservados.")
-        return self._save(job, owner_user_id)
+        saved = self._save(job, owner_user_id)
+        # PAUSED, never TASK_CANCELLED: pause() is resumable (a real resume()
+        # action/button exists) -- labeling it "cancelled" would misrepresent
+        # a resumable state as terminal.
+        self._notify(job, owner_user_id, "TASK_PAUSED", severity="WARNING", stage=job.get("currentStage"))
+        return saved
 
     def get(self, job_id: str, owner_user_id: str) -> dict[str, Any] | None:
         return self.repository.get(job_id, owner_user_id)
@@ -1290,7 +1331,43 @@ class GenerationJobEngine:
         files = [EmittedFile(path=name, content=content) for name, content in latest.items()]
         if not files:
             raise StageFailure("Nenhum arquivo valido para build.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", "Nenhum arquivo valido para build."))
-        result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner, workspace_id=job.get("workspaceId"))
+
+        files, architecture_manifest = architecture_consolidation_gate.consolidate(files)
+        if architecture_manifest.conflictsResolved:
+            self._emit(
+                job, owner, "info", stage="BUILD_RUNNING", level="warning",
+                message=(
+                    f"Architecture Consolidation Gate: {len(architecture_manifest.rejectedAlternatives)} "
+                    f"arquivo(s) duplicado(s) removido(s), estrutura canonica: {architecture_manifest.canonicalRoot or 'n/d'}."
+                ),
+            )
+        if architecture_manifest.blocked:
+            self._emit(
+                job, owner, "info", stage="BUILD_RUNNING", level="warning",
+                message=f"Architecture Consolidation Gate: conflito nao resolvido automaticamente -- {architecture_manifest.blockReason}",
+            )
+        self._write_json_artifact(
+            job, owner, PipelineStep("BUILD_RUNNING", "build", "build"),
+            "architecture-manifest.json", architecture_manifest.model_dump(mode="json"), "architecture_manifest",
+        )
+
+        try:
+            result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner, workspace_id=job.get("workspaceId"))
+        except ProjectWriteError as exc:
+            # Previously: any ArtifactSecurityError/ProjectWriteError here fell
+            # straight into run()'s generic `except Exception` -> hard FAILED,
+            # bypassing the Quality Gate / Auto-Repair / LLM-Repair chain
+            # entirely (confirmed: ProjectWriteError is a bare RuntimeError,
+            # not a StageFailure). PipelineRecoveryOrchestrator investigates,
+            # validates and -- only when safe without human approval --
+            # repairs the exact file(s) that triggered the block, then this
+            # retries the write once. Anything not safely auto-repairable
+            # still raises StageFailure -> NEEDS_USER_ACTION, never a silent
+            # bypass of the scanner.
+            files = self._attempt_pipeline_recovery(job, owner, files, exc)
+            result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner, workspace_id=job.get("workspaceId"))
+            self._emit(job, owner, "repair_applied", stage="BUILD_RUNNING", level="info", message="Escrita final concluida apos recuperacao automatica da pipeline.")
+            self._notify(job, owner, "PIPELINE_RESUMED", severity="SUCCESS", stage="BUILD_RUNNING")
         job["generatedProjectId"] = result.project_id
         job["resultPath"] = str(result.root_path)
         job["buildStatus"] = "RUNNING"
@@ -1365,6 +1442,57 @@ class GenerationJobEngine:
         job["manualBuildFixGuide"] = None
         job["valid"] = True
 
+    def _attempt_pipeline_recovery(
+        self, job: dict[str, Any], owner: str, files: list[EmittedFile], exc: ProjectWriteError,
+    ) -> list[EmittedFile]:
+        """Real integration point for PipelineRecoveryOrchestrator (PARTE 12 of
+        the request): a ProjectWriteError just blocked the final write. Diagnose
+        it for real (RootCauseInvestigator -> CauseValidator -> RepairEngineer),
+        persist the full RecoveryRun as a job artifact, forward every state
+        transition through the existing live-console/notification machinery,
+        and either return a repaired file set for the caller to retry once, or
+        raise StageFailure (-> NEEDS_USER_ACTION, never a silent bypass)."""
+        job["error"] = self._diagnostic(job, "BUILD_RUNNING", "build", str(exc))
+        content_by_path = {file.path.replace("\\", "/").strip("/"): file.content for file in files}
+
+        run, repaired_files = pipeline_recovery_orchestrator.run_recovery(
+            job, owner, files=files,
+            read_artifact=lambda path: content_by_path.get(path.replace("\\", "/").strip("/")),
+            now=self._now,
+        )
+
+        event_type_by_state = {"REPAIRING": "repair_started", "RECOVERED": "repair_applied", "RECOVERY_FAILED": "repair_failed"}
+        for event in run.events:
+            self._emit(
+                job, owner, event_type_by_state.get(event.state, "info"), stage="BUILD_RUNNING",
+                level=event.level, message=f"[recovery:{run.id}] {event.message}",
+            )
+            notif_type = event.detail.get("notification_type")
+            if not notif_type:
+                continue
+            if notif_type == "PIPELINE_RECOVERED":
+                severity = "SUCCESS"
+            elif notif_type in {"RECOVERY_FAILED", "REGRESSION_FAILED"}:
+                severity = "ERROR"
+            else:
+                severity = "WARNING" if event.level == "warning" else "INFO"
+            self._notify(
+                job, owner, notif_type, severity=severity, stage="BUILD_RUNNING",
+                metadata={"recoveryId": run.id, "state": event.state},
+            )
+
+        self._write_json_artifact(
+            job, owner, PipelineStep("BUILD_RUNNING", "build", "build"),
+            f"recovery/{run.id}.json", run.model_dump(mode="json"), "recovery_run",
+        )
+
+        if run.outcome != "RECOVERED":
+            message = (
+                f"Recuperacao automatica da pipeline nao concluida (estado final: {run.state}). "
+                f"{run.outcomeMessage} Diagnostico completo em recovery/{run.id}.json."
+            )
+            raise StageFailure(message, diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", message))
+        return repaired_files
 
     def _package(self, job: dict[str, Any], owner: str) -> None:
         degraded = job.get("buildStatus") == "SKIPPED_AFTER_FAILURE"
@@ -1411,6 +1539,11 @@ class GenerationJobEngine:
         job["stageStatuses"][step.logical] = "running"
         self._log(job, step.state, "info", f"Etapa iniciada: {step.logical}{'.' + step.chunk if step.chunk else ''}.")
         self._emit(job, owner, "stage_started", stage=step.state, message=f"Etapa iniciada: {step.logical}{'.' + step.chunk if step.chunk else ''}.")
+        # One STAGE_STARTED per *logical* stage, not per granular sub-status
+        # (contracts/database/... each have PLANNING/GENERATING/VALIDATING
+        # sub-steps) -- only notify on the first sub-step of this logical stage.
+        if not any(prev_step.logical == step.logical for prev_step in steps[:index]):
+            self._notify(job, owner, "STAGE_STARTED", severity="INFO", stage=step.logical)
         self._save(job, owner)
 
     def _finish_step(self, job: dict[str, Any], owner: str, step: PipelineStep, index: int, steps: list[PipelineStep] | None = None) -> None:
@@ -1422,15 +1555,20 @@ class GenerationJobEngine:
         ) or self._checkpoint(job, step, 0, 0)
         checkpoint["status"] = "skipped" if build_was_skipped else "success"
         checkpoint["finished_at"] = self._now()
+        is_last_substep = not any(next_step.logical == step.logical for next_step in steps[index + 1:])
         if build_was_skipped:
             job["stageStatuses"][step.logical] = "skipped"
-        elif not any(next_step.logical == step.logical for next_step in steps[index + 1:]):
+        elif is_last_substep:
             job["stageStatuses"][step.logical] = "success"
         job["progress"] = max(int(job.get("progress", 0)), min(98, round((index + 1) / len(steps) * 100)))
         level = "warning" if build_was_skipped else "info"
         message = f"Checkpoint salvo como skipped: {step.state}." if build_was_skipped else f"Checkpoint salvo: {step.state}."
         self._log(job, step.state, level, message)
         self._emit(job, owner, "stage_finished", stage=step.state, level=level, message=message)
+        # One STAGE_COMPLETED per logical stage, mirroring _begin_step's
+        # once-per-logical-stage STAGE_STARTED above.
+        if is_last_substep:
+            self._notify(job, owner, "STAGE_COMPLETED", severity="SUCCESS", stage=step.logical)
         activity_feed_service.record(
             user_id=owner, category="generation", action=step.logical,
             status="warning" if build_was_skipped else "success",
@@ -1591,6 +1729,34 @@ class GenerationJobEngine:
     def _log(self, job: dict[str, Any], stage: str, level: str, message: str, detail: str | None = None) -> None:
         job["logs"].append({"id": f"log_{uuid4().hex[:10]}", "timestamp": self._now(), "stage": stage, "level": level, "message": message, "detail": detail})
         job["logs"] = job["logs"][-1000:]
+
+    def _notify(
+        self, job: dict[str, Any], owner: str, notif_type: str, *, severity: str,
+        stage: str | None = None, action_url: str | None = None, metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Real, persisted, idempotent notification for a GenerationJob
+        lifecycle transition. Title/message are never built here -- only
+        type/stage/metadata are stored; the frontend renders localized copy
+        via i18n. Fault-isolated (mirrors _record_known_problem): a
+        notification failure must never block or fail the pipeline.
+        Idempotency key = (job_id, user_id, type:stage:attempt) -- retryCount
+        at call time stands in for "attempt" so a retried stage/outcome gets
+        a fresh notification instead of being silently deduped forever."""
+        try:
+            attempt = int(job.get("retryCount", 0) or 0)
+            idem_key = f"{notif_type}:{stage or ''}:{attempt}"
+            generation_notification_repository.create_or_get_idempotent(
+                owner, job["id"], idem_key,
+                lambda: {
+                    "id": f"gnotif_{uuid4().hex[:14]}", "user_id": owner,
+                    "workspace_id": job.get("workspaceId"), "project_id": job.get("projectId"),
+                    "job_id": job["id"], "type": notif_type, "severity": severity, "stage": stage,
+                    "read": False, "action_url": action_url or f"/meta-factory?projectId={job.get('projectId')}",
+                    "metadata": metadata or {}, "idempotency_key": idem_key, "created_at": self._now(),
+                },
+            )
+        except Exception:  # noqa: BLE001 -- notification failure must never mask/block the pipeline
+            logger.exception("generation notification emission failed")
 
     def _emit(
         self, job: dict[str, Any], owner: str, event_type: str, *, message: str,

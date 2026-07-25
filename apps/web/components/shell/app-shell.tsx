@@ -12,6 +12,7 @@ import { Sidebar } from '@/components/shell/sidebar';
 import { Topbar } from '@/components/shell/topbar';
 import { cn } from '@/lib/cn';
 import { useApplyInterfacePreferences } from '@/hooks/use-apply-interface-preferences';
+import { useNotificationSideEffects } from '@/hooks/use-notification-side-effects';
 import { useSyncPreferencesToBackend } from '@/hooks/use-sync-preferences-to-backend';
 import { useLocale } from '@/hooks/use-locale';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
@@ -132,6 +133,7 @@ export function AppShell({ children, requireAuth = true }: AppShellProps) {
   const retryAuth = useAuthStore((state) => state.retry);
   const [authTimedOut, setAuthTimedOut] = useState(false);
   useSyncPreferencesToBackend(authStatus === 'authenticated');
+  useNotificationSideEffects(authStatus === 'authenticated');
 
   useEffect(() => {
     void initializeAuth();

@@ -29,6 +29,7 @@ from app.repositories.marketplace_repository import MarketplaceRepository
 from app.repositories.staging_deployment_repository import StagingDeploymentRepository
 from app.repositories.mission_repository import MissionRepository
 from app.repositories.mission_deliverable_job_repository import MissionDeliverableJobRepository
+from app.repositories.generation_notification_repository import generation_notification_repository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
 from app.repositories.git_provider_repository import GitProviderRepository
@@ -105,6 +106,7 @@ def client() -> TestClient:
     mission_deliverable_jobs_route.engine.repository = MissionDeliverableJobRepository(database_path)
     mission_deliverable_jobs_route.engine.mission_repository = MissionRepository(database_path)
     mission_deliverable_jobs_route.engine.mission_service = MissionService(mission_deliverable_jobs_route.engine.mission_repository)
+    generation_notification_repository.rebind(database_path)
     change_requests_route.service.repository = ChangeRequestRepository(database_path)
     feature_service.repository = FeatureRepository(database_path)
     automation_service.repository = AutomationRepository(database_path)

@@ -6,10 +6,22 @@ import {
 } from '@/lib/api/client';
 import type { GenerationValidationReport } from '@contracts/generation-validation.contract';
 import type { GenerationExecutionEvent, GenerationJobSummary, ResilientGenerationJob } from '@contracts/generation-job.contract';
+import type { GenerationNotification } from '@contracts/generation-notification.contract';
 import type { TerminalCommandRecord, TerminalHistoryResponse, TerminalStreamEvent } from '@contracts/execution-terminal.contract';
 import type { DeliveryDecision, DeliveryMode } from '@contracts/delivery.contract';
+import { TERMINAL_JOB_STATUSES } from '@/lib/generation/status-presenter';
 
-export const TERMINAL_JOB_STATUSES = new Set(['READY', 'FAILED', 'PAUSED', 'NEEDS_USER_ACTION', 'STALLED']);
+export { TERMINAL_JOB_STATUSES };
+
+// Real backend liveness/timeout signals -- the SSE route already emits these
+// (apps/api/app/routes/meta_factory.py's stream_generation_job), but until
+// now streamJob() parsed them off the wire and silently dropped them, so a
+// live heartbeat never reset a client-side staleness clock and an explicit
+// backend timeout triggered no reaction at all.
+export type StreamSignalFrame =
+  | { readonly type: 'heartbeat'; readonly jobId: string; readonly stage: string }
+  | { readonly type: 'stream_timeout'; readonly jobId: string; readonly message: string }
+  | { readonly type: 'error'; readonly detail: string };
 
 // Self-contained client for the meta-factory feature. It does NOT reuse the
 // global apiRequest because that has a 5s timeout — the generate call runs 6 LLM
@@ -325,6 +337,8 @@ export const metaFactoryClient = {
     onJob: (job: ResilientGenerationJob) => void,
     signal?: AbortSignal,
     onEvent?: (event: GenerationExecutionEvent) => void,
+    onSignal?: (frame: StreamSignalFrame) => void,
+    onNotification?: (notification: GenerationNotification) => void,
   ) => {
     let lastEventId: string | undefined;
     let terminal = false;
@@ -375,6 +389,11 @@ export const metaFactoryClient = {
               type: string;
               job?: ResilientGenerationJob;
               event?: GenerationExecutionEvent;
+              jobId?: string;
+              stage?: string;
+              message?: string;
+              detail?: string;
+              notification?: GenerationNotification;
             };
             if (idLine) lastEventId = idLine.slice(4).trim() || lastEventId;
             if (event.type === 'generation_job' && event.job) {
@@ -382,6 +401,10 @@ export const metaFactoryClient = {
               terminal = TERMINAL_JOB_STATUSES.has(event.job.status);
             }
             else if (event.type === 'execution_event' && event.event) onEvent?.(event.event);
+            else if (event.type === 'heartbeat') onSignal?.({ type: 'heartbeat', jobId: event.jobId ?? jobId, stage: event.stage ?? '' });
+            else if (event.type === 'stream_timeout') onSignal?.({ type: 'stream_timeout', jobId: event.jobId ?? jobId, message: event.message ?? '' });
+            else if (event.type === 'error' && event.detail) onSignal?.({ type: 'error', detail: event.detail });
+            else if (event.type === 'notification' && event.notification) onNotification?.(event.notification);
           }
           boundary = buffer.indexOf('\n\n');
         }

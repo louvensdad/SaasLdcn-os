@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Archive, ArchiveRestore, Download, ExternalLink, History } from 'lucide-react';
 
-import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
@@ -15,16 +15,10 @@ import { useGenerationJobs, useSetJobArchived, useDeleteJob } from '@/hooks/use-
 import { useLocale } from '@/hooks/use-locale';
 import { getApiErrorMessage } from '@/lib/api/errors';
 import { metaFactoryClient, TERMINAL_JOB_STATUSES } from '@/lib/api/meta-factory';
+import { coarseJobState, canonicalStateLabel, canonicalStateTone } from '@/lib/generation/status-presenter';
 import type { GenerationJobSummary } from '@contracts/generation-job.contract';
 
 type Tab = 'active' | 'archived';
-
-function statusTone(status: GenerationJobSummary['status']): BadgeTone {
-  if (status === 'READY') return 'success';
-  if (status === 'FAILED' || status === 'STALLED') return 'danger';
-  if (status === 'NEEDS_USER_ACTION' || status === 'PAUSED') return 'warning';
-  return 'accent';
-}
 
 function formatDate(value: string, locale: string) {
   try {
@@ -124,7 +118,7 @@ export default function GenerationJobsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="truncate text-sm font-semibold text-[color:var(--text)]">{job.projectName}</p>
-                    <Badge tone={statusTone(job.status)}>{job.status}</Badge>
+                    <Badge tone={canonicalStateTone(coarseJobState(job.status, job.retryCount))}>{canonicalStateLabel(t, coarseJobState(job.status, job.retryCount), job.retryCount)}</Badge>
                     {job.model ? <span className="t-mono text-xs text-[color:var(--muted-2)]">{job.providerLabel} · {job.model}</span> : null}
                   </div>
                   <p className="mt-1 text-xs text-[color:var(--muted)]">

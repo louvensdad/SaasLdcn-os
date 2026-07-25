@@ -41,6 +41,7 @@ from app.engines.context_pack_builder import build_agent_context, summarize_cont
 from app.engines.factory_pipeline import PIPELINE_ORDER, iter_factory_pipeline, iter_single_agent, run_factory_pipeline
 from app.engines.generation_validation_engine import generation_validation_engine
 from app.engines.generation_job_engine import generation_job_engine
+from app.repositories.generation_notification_repository import generation_notification_repository
 from app.engines.ground_truth_engine import ground_truth_engine
 from app.engines.generated_project_quality_engine import GeneratedProjectQualityEngine
 from app.engines.verification_engine import iter_verification
@@ -377,6 +378,8 @@ def stream_generation_job(
             (initial or {}).get("events", []),
             last_event_id,
         )
+        last_notif_created_at: str | None = None
+        last_notif_id: str | None = None
         terminal = {"READY", "FAILED", "PAUSED", "NEEDS_USER_ACTION", "STALLED"}
         for tick in range(2400):
             if await request.is_disconnected():
@@ -395,6 +398,14 @@ def stream_generation_job(
                     event_id=str(event["id"]),
                 )
             last_event_index = len(job_events)
+            # A user already watching this job sees new lifecycle notifications
+            # over the connection that's already open -- no second channel.
+            new_notifications = generation_notification_repository.list_new_for_job(
+                job_id, user["user_id"], since_created_at=last_notif_created_at, since_id=last_notif_id,
+            )
+            for notification in new_notifications:
+                yield _sse({"type": "notification", "notification": notification}, event_id=f"notif_{notification['id']}")
+                last_notif_created_at, last_notif_id = notification["created_at"], notification["id"]
             # The whole-job snapshot drives status/stage/progress/logs/artifacts only —
             # keyed on those fields (NOT updatedAt) so a streaming build doesn't refire
             # it on every stdout line. events are carried via the frames above.

@@ -176,6 +176,7 @@ export interface GenerationJobSummary {
   providerLabel: string;
   model?: string | null;
   progress: number;
+  retryCount: number;
   valid: boolean;
   packageReady: boolean;
   buildStatus: 'PENDING' | 'RUNNING' | 'PASSED' | 'SKIPPED_AFTER_FAILURE';

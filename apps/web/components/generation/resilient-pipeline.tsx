@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle, Archive, Check, Circle, Clock3, Download, FileCode2,
+  AlertTriangle, Archive, Check, Clock3, Download, FileCode2,
   Loader2, Pause, Play, RefreshCcw, Search, ServerCog, ShieldAlert, TerminalSquare, Wrench,
 } from 'lucide-react';
 
-import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DeleteResourceButton } from '@/components/ui/delete-resource-button';
 import { WorkflowContextHeader } from '@/components/project/workflow-context-header';
@@ -16,9 +17,14 @@ import { ExecutionTerminal } from '@/components/generation/execution-terminal';
 import { ExportPanel } from '@/components/generation/export-panel';
 import { LiveExecutionConsole } from '@/components/generation/live-execution-console';
 import { useLocale } from '@/hooks/use-locale';
-import { metaFactoryClient, type ProjectSpec } from '@/lib/api/meta-factory';
+import { mergeStreamedNotification } from '@/hooks/use-notifications';
+import { metaFactoryClient, type ProjectSpec, type StreamSignalFrame } from '@/lib/api/meta-factory';
+import {
+  TERMINAL_JOB_STATUSES, StageIcon, canonicalJobState, canonicalStateLabel, canonicalStateTone, isStalledJob, stageTone,
+} from '@/lib/generation/status-presenter';
 import type { ProjectRoom } from '@contracts/project-room.contract';
-import type { GenerationArtifact, GenerationExecutionEvent, GenerationStageStatus, ResilientGenerationJob } from '@contracts/generation-job.contract';
+import type { GenerationArtifact, GenerationExecutionEvent, ResilientGenerationJob } from '@contracts/generation-job.contract';
+import type { GenerationNotification } from '@contracts/generation-notification.contract';
 
 // The full possible stage set across every delivery_type. Which of these a given
 // job actually has is driven by job.stageStatuses (set server-side from the job's
@@ -34,34 +40,21 @@ function buildStages(t: Translator) {
   ] as const;
 }
 
-const TERMINAL = new Set(['READY', 'FAILED', 'PAUSED', 'NEEDS_USER_ACTION', 'STALLED']);
-
 interface ResilientPipelineProps {
   room: ProjectRoom;
   spec: ProjectSpec;
   blueprint: unknown;
 }
 
-function stageTone(status: GenerationStageStatus): BadgeTone {
-  if (status === 'success') return 'success';
-  if (status === 'failed') return 'danger';
-  if (status === 'stalled') return 'warning';
-  if (status === 'skipped') return 'warning';
-  if (status === 'running' || status === 'retrying') return 'accent';
-  return 'neutral';
-}
-
-function StageIcon({ status }: { readonly status: GenerationStageStatus }) {
-  if (status === 'success') return <Check className="h-4 w-4" />;
-  if (status === 'failed') return <AlertTriangle className="h-4 w-4" />;
-  if (status === 'stalled') return <Clock3 className="h-4 w-4" />;
-  if (status === 'skipped') return <AlertTriangle className="h-4 w-4" />;
-  if (status === 'running' || status === 'retrying') return <Loader2 className="h-4 w-4 animate-spin" />;
-  return <Circle className="h-3.5 w-3.5" />;
-}
+// 'soft'/'checking'/'still-running'/'not-found' only ever appear after the
+// 45s real-signal ladder (or an explicit backend stream_timeout) has already
+// triggered an automatic consult -- never a bare "try again" button shown on
+// a mere client-side guess.
+type SignalBanner = { kind: 'none' } | { kind: 'soft' } | { kind: 'checking' } | { kind: 'still-running' } | { kind: 'not-found' };
 
 export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelineProps) {
   const { t, locale } = useLocale();
+  const queryClient = useQueryClient();
   const STAGES = useMemo(() => buildStages(t), [t]);
   const [job, setJob] = useState<ResilientGenerationJob | null>(null);
   const [events, setEvents] = useState<readonly GenerationExecutionEvent[]>([]);
@@ -71,12 +64,16 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
   const [logQuery, setLogQuery] = useState('');
   const [logStage, setLogStage] = useState('all');
 
-  // UI fallback watchdog: timestamp of the last backend signal (snapshot or
-  // event). If the stream goes silent while the job looks active, the UI shows
-  // "Continuar manualmente" instead of freezing — the screen is NEVER locked.
-  // 0 = "no signal yet"; the mount-time refresh() stamps the first activity.
+  // Real-signal ladder (replaces the old client-only 45s guess): a real
+  // `heartbeat` SSE frame now resets this clock (previously silently
+  // dropped), so a genuinely live backend never looks stale. 0-15s idle:
+  // nothing shown. 15-45s: a soft, non-alarming note. >45s (or an explicit
+  // `stream_timeout` frame): AUTOMATICALLY consult the real backend state
+  // before showing anything -- never a bare "Continuar manualmente" button
+  // with no prior real check.
   const lastActivityRef = useRef(0);
-  const [stale, setStale] = useState(false);
+  const [signal, setSignal] = useState<SignalBanner>({ kind: 'none' });
+  const consultingRef = useRef(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
 
   // Hybrid AI + Terminal mode: when the bounded auto-repair gives up
@@ -89,10 +86,31 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
   const refresh = useCallback(async () => {
     const latest = await metaFactoryClient.latestJob(room.room_id);
     lastActivityRef.current = Date.now();
-    setStale(false);
+    setSignal({ kind: 'none' });
     setJob(latest);
     setEvents(latest?.events ?? []);
     return latest;
+  }, [room.room_id]);
+
+  // The auto-consult itself: fetches real current state and only then decides
+  // what to show -- still running, a real terminal status was reached, or the
+  // job is gone. Guarded by consultingRef so the 5s ladder tick and an
+  // incoming stream_timeout frame never fire two overlapping consults.
+  const consultBackend = useCallback(async () => {
+    if (consultingRef.current) return;
+    consultingRef.current = true;
+    setSignal({ kind: 'checking' });
+    try {
+      const latest = await metaFactoryClient.latestJob(room.room_id);
+      lastActivityRef.current = Date.now(); // the consult is itself a real backend signal
+      if (!latest) { setSignal({ kind: 'not-found' }); return; }
+      setJob(latest);
+      setSignal(TERMINAL_JOB_STATUSES.has(latest.status) ? { kind: 'none' } : { kind: 'still-running' });
+    } catch {
+      setSignal({ kind: 'not-found' });
+    } finally {
+      consultingRef.current = false;
+    }
   }, [room.room_id]);
 
   // Merge streamed execution events into the console history, deduped by id (the
@@ -107,9 +125,24 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
 
   const handleJobSnapshot = useCallback((next: ResilientGenerationJob) => {
     lastActivityRef.current = Date.now();
-    setStale(false);
+    setSignal({ kind: 'none' });
     setJob(next);
   }, []);
+
+  // A real heartbeat proves liveness without being "activity" to render (it's
+  // never mistaken for actual generation progress); an explicit backend
+  // stream_timeout is the backend itself confirming it gave up waiting for a
+  // terminal status, so it's handled exactly like the 45s ladder trigger.
+  const handleSignal = useCallback((frame: StreamSignalFrame) => {
+    if (frame.type === 'heartbeat') lastActivityRef.current = Date.now();
+    else if (frame.type === 'stream_timeout') void consultBackend();
+  }, [consultBackend]);
+
+  // Instant notification-center updates for whoever's actively watching this
+  // job's stream, instead of waiting for the notification hook's own poll.
+  const handleNotification = useCallback((notification: GenerationNotification) => {
+    mergeStreamedNotification(queryClient, notification);
+  }, [queryClient]);
 
   useEffect(() => {
     let active = true;
@@ -120,32 +153,31 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
   }, [refresh]);
 
   useEffect(() => {
-    if (!job || TERMINAL.has(job.status)) return;
+    if (!job || TERMINAL_JOB_STATUSES.has(job.status)) return;
     const controller = new AbortController();
-    metaFactoryClient.streamJob(job.id, handleJobSnapshot, controller.signal, appendEvent).catch((reason: unknown) => {
+    metaFactoryClient.streamJob(job.id, handleJobSnapshot, controller.signal, appendEvent, handleSignal, handleNotification).catch((reason: unknown) => {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Falha no streaming da pipeline.');
     });
     return () => controller.abort();
     // Depends on job?.id (not the whole `job` object) so a snapshot update
     // from the stream itself doesn't tear down and reconnect the SSE stream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [job?.id, appendEvent, handleJobSnapshot]);
+  }, [job?.id, appendEvent, handleJobSnapshot, handleSignal, handleNotification]);
 
-  // Staleness detector: an active job with no backend signal for 45s surfaces
-  // the manual-continuation fallback (never an infinite spinner).
   useEffect(() => {
-    if (!job || TERMINAL.has(job.status)) {
-      setStale(false);
-      return;
-    }
+    if (!job || TERMINAL_JOB_STATUSES.has(job.status)) { setSignal({ kind: 'none' }); return; }
     const timer = window.setInterval(() => {
-      setStale(lastActivityRef.current > 0 && Date.now() - lastActivityRef.current > 45_000);
+      if (consultingRef.current) return;
+      const idle = lastActivityRef.current > 0 ? Date.now() - lastActivityRef.current : 0;
+      if (idle < 15_000) { setSignal((prev) => (prev.kind === 'none' ? prev : { kind: 'none' })); return; }
+      if (idle < 45_000) { setSignal((prev) => (prev.kind === 'soft' ? prev : { kind: 'soft' })); return; }
+      void consultBackend();
     }, 5_000);
     return () => window.clearInterval(timer);
     // Depends on job?.id/job?.status (not the whole `job` object) so the
-    // watchdog interval doesn't reset on every unrelated job field update.
+    // ladder interval doesn't reset on every unrelated job field update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [job?.id, job?.status]);
+  }, [job?.id, job?.status, consultBackend]);
 
   const runAction = useCallback(async (name: string, operation: () => Promise<ResilientGenerationJob>) => {
     setAction(name);
@@ -221,9 +253,12 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
     );
   }
 
-  const active = !TERMINAL.has(job.status);
+  const active = !TERMINAL_JOB_STATUSES.has(job.status);
   const rawArtifact = job.artifacts.find((item) => item.kind === 'raw_response' && item.path === job.error?.raw_response_path)
     ?? job.artifacts.slice().reverse().find((item) => item.kind === 'raw_response');
+  const jobState = canonicalJobState({
+    status: job.status, retryCount: job.retryCount, errorKind: job.error?.kind, canContinueWithWarnings: job.error?.can_continue_with_warnings,
+  });
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6">
@@ -233,7 +268,7 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
         <div className="grid gap-4 border-b border-border/60 p-5 md:grid-cols-[1fr_auto]">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone={job.status === 'READY' ? 'success' : job.status === 'STALLED' ? 'warning' : job.status === 'NEEDS_USER_ACTION' || job.status === 'FAILED' ? 'danger' : 'accent'}>{job.status}</Badge>
+              <Badge tone={canonicalStateTone(jobState)}>{canonicalStateLabel(t, jobState, job.retryCount)}</Badge>
               {job.partial ? <Badge tone="warning">{t('pipeline.partial')}</Badge> : <Badge tone="success">{t('pipeline.validArtifact')}</Badge>}
             </div>
             <h1 className="mt-3 text-xl font-semibold tracking-tight">{t('pipeline.metaFactoryPrefix')} {job.projectName}</h1>
@@ -252,11 +287,9 @@ export function ResilientPipeline({ room, spec, blueprint }: ResilientPipelinePr
       </header>
 
       {error ? <ErrorBanner message={error} /> : null}
-      {stale && active ? (
-        <StalePipelineFallback
-          loading={action === 'manual-refresh'}
-          onContinue={() => void runAction('manual-refresh', async () => (await refresh()) ?? job)}
-        />
+      {signal.kind === 'soft' && active ? <SoftSignalNote /> : null}
+      {(signal.kind === 'checking' || signal.kind === 'still-running' || signal.kind === 'not-found') && active ? (
+        <StalePipelineFallback kind={signal.kind} loading={signal.kind === 'checking'} onContinue={() => void consultBackend()} />
       ) : null}
       {job.buildStatus === 'SKIPPED_AFTER_FAILURE' ? (
         <BuildSkippedPanel
@@ -387,21 +420,45 @@ function ErrorBanner({ message }: { readonly message: string }) {
   return <div className="m-5 flex items-start gap-3 rounded-xl border border-[color-mix(in_srgb,var(--danger)_35%,transparent)] bg-[color-mix(in_srgb,var(--danger)_9%,transparent)] p-4 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--danger)]" /><span>{message}</span></div>;
 }
 
-function StalePipelineFallback({ loading, onContinue }: {
+// A non-alarming inline note for the 15-45s idle tier: no button, no
+// takeover -- the job is very likely fine, this just says so honestly
+// instead of staying silent or jumping straight to an alarming banner.
+function SoftSignalNote() {
+  const { t } = useLocale();
+  return (
+    <p className="flex items-center gap-2 rounded-xl border border-border/50 bg-background/35 px-4 py-2.5 text-xs text-muted-foreground">
+      <Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden /> {t('pipeline.stale.soft')}
+    </p>
+  );
+}
+
+// Only ever rendered after the >45s ladder tier (or a real backend
+// stream_timeout frame) has already triggered an automatic consult -- the
+// copy always reflects what that real consult found, never a raw guess.
+function StalePipelineFallback({ kind, loading, onContinue }: {
+  readonly kind: 'checking' | 'still-running' | 'not-found';
   readonly loading: boolean;
   readonly onContinue: () => void;
 }) {
   const { t } = useLocale();
+  const title = kind === 'checking' ? t('pipeline.stale.checking')
+    : kind === 'still-running' ? t('pipeline.stale.stillRunning.title')
+      : t('pipeline.stale.notFound.title');
+  const desc = kind === 'still-running' ? t('pipeline.stale.stillRunning.desc')
+    : kind === 'not-found' ? t('pipeline.stale.notFound.desc')
+      : null;
   return (
     <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--warning)_40%,transparent)] bg-[color-mix(in_srgb,var(--warning)_8%,var(--surface-2))] p-4">
       <Clock3 className="h-5 w-5 shrink-0 text-[color:var(--warning)]" aria-hidden />
       <div className="mr-auto min-w-0">
-        <p className="text-sm font-semibold">{t('pipeline.stale.title')}</p>
-        <p className="text-xs text-muted-foreground">{t('pipeline.stale.desc')}</p>
+        <p className="text-sm font-semibold">{title}</p>
+        {desc ? <p className="text-xs text-muted-foreground">{desc}</p> : null}
       </div>
-      <Button variant="primary" loading={loading} onClick={onContinue}>
-        <RefreshCcw className="h-4 w-4" aria-hidden /> {t('pipeline.stale.continue')}
-      </Button>
+      {kind !== 'checking' ? (
+        <Button variant="primary" loading={loading} onClick={onContinue}>
+          <RefreshCcw className="h-4 w-4" aria-hidden /> {t('pipeline.stale.recheck')}
+        </Button>
+      ) : null}
     </section>
   );
 }
@@ -524,7 +581,7 @@ function RepairTimeline({ events }: { readonly events: readonly GenerationExecut
 function FailurePanel({ job, action, retry, rawArtifact, resume, continueWithWarnings }: { readonly job: ResilientGenerationJob; readonly action: string | null; readonly retry: (mode: 'normal' | 'partitioned' | 'deterministic') => Promise<void>; readonly rawArtifact?: GenerationArtifact; readonly resume: () => Promise<void>; readonly continueWithWarnings: () => Promise<void> }) {
   const { t } = useLocale();
   const failure = job.error!;
-  const stalled = failure.kind === 'stall' || job.status === 'STALLED';
+  const stalled = isStalledJob({ status: job.status, errorKind: failure.kind });
   const buildFailure = failure.stage === 'BUILD_RUNNING';
   const generated = job.artifacts.filter((item) => item.kind === 'generated');
   const validCount = generated.filter((item) => item.valid).length;

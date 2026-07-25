@@ -201,6 +201,7 @@ class GenerationJobSummary(ApiModel):
     providerLabel: str = "Nenhum"
     model: str | None = None
     progress: int = 0
+    retryCount: int = 0
     valid: bool = False
     packageReady: bool = False
     buildStatus: Literal["PENDING", "RUNNING", "PASSED", "SKIPPED_AFTER_FAILURE"] = "PENDING"
