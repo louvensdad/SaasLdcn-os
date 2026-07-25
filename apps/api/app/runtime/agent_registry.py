@@ -45,6 +45,14 @@ class AgentDefinition:
     implementation: str
     uses_llm: bool
     status: AgentStatus = "active"
+    # LDCN Multi-Agent Runtime, Phase 4: groups an agent into a named
+    # diagnose-(validate)-repair chain. Two chains exist today
+    # ("deep_verification" and "recovery") built independently by different
+    # authors for the same shape of problem -- this field is how a future
+    # contributor discovers the sibling chain BEFORE writing a third one.
+    # See docs/agents/validation-and-repair-chains.md for why they are
+    # deliberately not merged into one engine.
+    chain: str | None = None
 
 
 _AGENTS: tuple[AgentDefinition, ...] = (
@@ -340,6 +348,7 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         failure_criteria=("evaluation raises",),
         implementation="app.engines.quality_gate_engine:quality_gate_engine",
         uses_llm=False,
+        chain="deep_verification",
     ),
     AgentDefinition(
         id="auto_repair_agent",
@@ -357,6 +366,7 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         failure_criteria=("fixer raises, or issue still reproduces",),
         implementation="app.engines.auto_repair_engine:AutoRepairEngine.repair",
         uses_llm=False,
+        chain="deep_verification",
     ),
     AgentDefinition(
         id="llm_repair_agent",
@@ -374,6 +384,7 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         failure_criteria=("repair raises, or issue still reproduces after MAX attempts",),
         implementation="app.engines.llm_repair_engine:LlmRepairEngine.repairable_issues",
         uses_llm=True,
+        chain="deep_verification",
     ),
     AgentDefinition(
         id="visual_qa_agent",
@@ -466,6 +477,7 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         failure_criteria=("no hypothesis matches -- falls back to a low-confidence generic one, never silently empty",),
         implementation="app.engines.root_cause_investigator:root_cause_investigator",
         uses_llm=False,
+        chain="recovery",
     ),
     AgentDefinition(
         id="cause_validation_agent",
@@ -483,6 +495,7 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         failure_criteria=("classification stays UNKNOWN with no path to resolution",),
         implementation="app.engines.cause_validator:cause_validator",
         uses_llm=False,
+        chain="recovery",
     ),
     AgentDefinition(
         id="repair_engineer_agent",
@@ -490,7 +503,23 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         title="Repair Agent (recovery tier)",
         objective="Apply the one authorized repair for a validated, confirmed cause -- and refuse to act on anything else.",
         responsibilities=("Redact the exact offending line to a self-evidently-placeholder value", "Re-run the same check as its own regression test"),
-        limitations=("Raises RepairNotAuthorized unless the cause is `confirmed` and (not requiresApproval or explicitly approved)",),
+        limitations=(
+            "Raises RepairNotAuthorized unless the cause is `confirmed` and (not requiresApproval or explicitly approved)",
+            # Found during the Phase 3 audit (2026-07): CauseValidator can
+            # confirm classification=GENERATION_CONFLICT (competing/duplicate
+            # artifacts), but this engine has no repair path for it --
+            # repair_secret_block() only handles REAL_SECRET/UNSAFE_TEMPLATE/
+            # FALSE_POSITIVE and raises RepairNotAuthorized("No safe repair
+            # strategy defined...") for anything else. A GENERATION_CONFLICT
+            # always lands on NEEDS_USER_ACTION today, never auto-repaired,
+            # even though CauseValidation already computes canonicalArtifact/
+            # duplicateArtifacts for exactly this. Deliberately left
+            # unimplemented here: architecture_consolidation_gate.py and
+            # backend_ownership_registry.py are independently solving this
+            # same duplicate/competing-artifact problem at write-time as of
+            # this audit -- implementing a second, post-failure repair path
+            # for it here risked colliding with that in-flight work.
+        ),
         inputs=("CauseValidation", "files", "approved: bool"),
         outputs=("patched files", "RepairReport"),
         allowed_context=(),
@@ -500,6 +529,7 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         failure_criteria=("repair not authorized, or the regression check still fails after repair",),
         implementation="app.engines.repair_engineer:repair_engineer",
         uses_llm=False,
+        chain="recovery",
     ),
     AgentDefinition(
         id="resume_agent",
@@ -615,3 +645,22 @@ def active_agents() -> tuple[AgentDefinition, ...]:
 
 def planned_agents() -> tuple[AgentDefinition, ...]:
     return tuple(agent for agent in _AGENTS if agent.status == "planned")
+
+
+def by_chain(chain: str) -> tuple[AgentDefinition, ...]:
+    """Every agent belonging to a named diagnose-(validate)-repair chain, in
+    registry order (which matches real execution order within each chain).
+    Two chains exist today: "deep_verification" (QualityGateEngine ->
+    AutoRepairEngine -> LlmRepairEngine, reachable from the deep-verification
+    routes) and "recovery" (RootCauseInvestigator -> CauseValidator ->
+    RepairEngineer, wired into the automated pipeline's write-failure path).
+    See docs/agents/validation-and-repair-chains.md before adding a third."""
+    return tuple(agent for agent in _AGENTS if agent.chain == chain)
+
+
+def known_chains() -> tuple[str, ...]:
+    seen: dict[str, None] = {}
+    for agent in _AGENTS:
+        if agent.chain is not None:
+            seen.setdefault(agent.chain, None)
+    return tuple(seen)

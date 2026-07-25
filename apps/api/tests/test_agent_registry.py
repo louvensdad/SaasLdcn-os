@@ -64,3 +64,29 @@ def test_by_category_matches_all_agents():
     categories = {agent.category for agent in agent_registry.all_agents()}
     total = sum(len(agent_registry.by_category(category)) for category in categories)
     assert total == len(agent_registry.all_agents())
+
+
+# --- LDCN Multi-Agent Runtime, Phase 4: named diagnose-repair chains ------- #
+
+def test_known_chains_are_exactly_deep_verification_and_recovery():
+    assert set(agent_registry.known_chains()) == {"deep_verification", "recovery"}
+
+
+def test_deep_verification_chain_is_the_three_real_engines_in_execution_order():
+    chain = agent_registry.by_chain("deep_verification")
+    assert [agent.id for agent in chain] == ["deep_verification_gate_agent", "auto_repair_agent", "llm_repair_agent"]
+
+
+def test_recovery_chain_is_the_three_real_engines_in_execution_order():
+    chain = agent_registry.by_chain("recovery")
+    assert [agent.id for agent in chain] == ["root_cause_agent", "cause_validation_agent", "repair_engineer_agent"]
+
+
+def test_unknown_chain_returns_empty_not_an_error():
+    assert agent_registry.by_chain("not_a_real_chain") == ()
+
+
+def test_every_chained_agent_is_active_not_planned():
+    for chain in agent_registry.known_chains():
+        for agent in agent_registry.by_chain(chain):
+            assert agent.status == "active", f"{agent.id} is in chain {chain!r} but not active"
