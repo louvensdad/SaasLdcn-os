@@ -243,6 +243,7 @@ class GenerationNotification(Base):
         Index("idx_generation_notifications_user", "user_id", "created_at"),
         Index("idx_generation_notifications_user_read", "user_id", "read"),
         Index("idx_generation_notifications_job_idem", "job_id", "user_id", "idempotency_key"),
+        Index("idx_generation_notifications_entity", "entity_type", "entity_id"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -250,6 +251,15 @@ class GenerationNotification(Base):
     workspace_id: Mapped[str | None] = mapped_column(String)
     project_id: Mapped[str | None] = mapped_column(String)
     job_id: Mapped[str] = mapped_column(ForeignKey("generation_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    # LDCN Multi-Agent Runtime, Phase 2: polymorphic subject, additive.
+    # `job_id` stays required and unchanged -- every existing consumer keeps
+    # working exactly as before. For GenerationJob notifications (the only
+    # real producer today) entity_type/entity_id are set redundantly equal
+    # to ("generation_job", job_id) by _notify() itself, so a future second
+    # producer (missions, marketplace, ...) can reuse this same table/route
+    # without ever needing a job_id.
+    entity_type: Mapped[str | None] = mapped_column(String)
+    entity_id: Mapped[str | None] = mapped_column(String)
     type: Mapped[str] = mapped_column(String, nullable=False)
     severity: Mapped[str] = mapped_column(String, nullable=False, default="INFO", server_default="INFO")
     stage: Mapped[str | None] = mapped_column(String)

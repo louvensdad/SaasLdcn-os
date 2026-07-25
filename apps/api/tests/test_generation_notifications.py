@@ -403,3 +403,67 @@ def test_unmapped_notification_type_never_raises(client, client_scoped_engine):
         event["metadata"].get("job_id") == job["id"] and event["action"] == "not_a_real_type"
         for event in _activity_feed_generation_events(client, job["id"])
     )
+
+
+# --- LDCN Multi-Agent Runtime, Phase 2: polymorphic entity_type/entity_id --- #
+
+def test_notification_carries_entity_type_and_id_redundant_with_job_id(client, client_scoped_engine):
+    """Every GenerationJob notification sets entity_type/entity_id to the
+    same subject job_id already names -- proves the general mechanism is
+    live without needing a second producer to exist yet."""
+    owner = _owner_id(client)
+    job = _create(client_scoped_engine, owner, project_id="room-notif-entity")
+
+    notifications = _notifications_for_job(client, job["id"])
+    assert len(notifications) == 1
+    assert notifications[0]["entity_type"] == "generation_job"
+    assert notifications[0]["entity_id"] == job["id"]
+    assert notifications[0]["entity_id"] == notifications[0]["job_id"]
+
+
+def test_list_notifications_filters_by_entity_type(client, client_scoped_engine):
+    owner = _owner_id(client)
+    job = _create(client_scoped_engine, owner, project_id="room-notif-entity-filter")
+
+    matching = client.get("/api/notifications", params={"entity_type": "generation_job", "limit": 100})
+    assert matching.status_code == 200, matching.text
+    assert any(item["job_id"] == job["id"] for item in matching.json()["items"])
+
+    non_matching = client.get("/api/notifications", params={"entity_type": "mission", "limit": 100})
+    assert non_matching.status_code == 200, non_matching.text
+    assert not any(item["job_id"] == job["id"] for item in non_matching.json()["items"])
+
+
+def test_omitting_entity_type_returns_every_subject_unchanged(client, client_scoped_engine):
+    """The default (no entity_type param) behavior must be pixel-identical
+    to before Phase 2 -- this is the whole point of "additive"."""
+    owner = _owner_id(client)
+    job = _create(client_scoped_engine, owner, project_id="room-notif-entity-default")
+
+    response = client.get("/api/notifications", params={"limit": 100})
+    assert response.status_code == 200, response.text
+    assert any(item["job_id"] == job["id"] for item in response.json()["items"])
+
+
+def test_backfilled_rows_from_before_phase_2_are_still_readable(client, client_scoped_engine):
+    """A row inserted the OLD way (no entity_type/entity_id in build_data,
+    simulating a pre-migration row before the backfill UPDATE ran) must not
+    break reads -- the columns are nullable, and the repository/schema must
+    tolerate None."""
+    owner = _owner_id(client)
+    job = _create(client_scoped_engine, owner, project_id="room-notif-legacy-row")
+    generation_notification_repository.create_or_get_idempotent(
+        owner, job["id"], "LEGACY_TYPE:legacy:0",
+        lambda: {
+            "id": "gnotif_legacy00000001", "user_id": owner, "workspace_id": None, "project_id": job.get("projectId"),
+            "job_id": job["id"], "type": "TASK_STARTED", "severity": "INFO", "stage": None,
+            "read": False, "action_url": None, "metadata": {}, "idempotency_key": "LEGACY_TYPE:legacy:0",
+            "created_at": generation_notification_repository._now(),
+            # entity_type/entity_id deliberately omitted, like a pre-Phase-2 row
+        },
+    )
+    response = client.get("/api/notifications", params={"limit": 100})
+    assert response.status_code == 200, response.text
+    legacy = next(item for item in response.json()["items"] if item["id"] == "gnotif_legacy00000001")
+    assert legacy["entity_type"] is None
+    assert legacy["entity_id"] is None

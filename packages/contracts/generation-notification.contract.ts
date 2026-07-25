@@ -24,6 +24,13 @@ export interface GenerationNotification {
   readonly workspace_id: string | null;
   readonly project_id: string | null;
   readonly job_id: string;
+  // LDCN Multi-Agent Runtime, Phase 2: polymorphic subject, additive.
+  // job_id above is unchanged and still required. For every notification
+  // today (all GenerationJob-produced) these are redundantly set to
+  // ('generation_job', job_id) -- the general mechanism a future
+  // non-GenerationJob producer would use instead of job_id.
+  readonly entity_type: string | null;
+  readonly entity_id: string | null;
   readonly type: GenerationNotificationType;
   readonly severity: GenerationNotificationSeverity;
   readonly stage: string | null;

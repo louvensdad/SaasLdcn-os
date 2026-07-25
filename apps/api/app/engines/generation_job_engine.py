@@ -1751,7 +1751,12 @@ class GenerationJobEngine:
                 lambda: {
                     "id": f"gnotif_{uuid4().hex[:14]}", "user_id": owner,
                     "workspace_id": job.get("workspaceId"), "project_id": job.get("projectId"),
-                    "job_id": job["id"], "type": notif_type, "severity": severity, "stage": stage,
+                    "job_id": job["id"],
+                    # LDCN Multi-Agent Runtime, Phase 2: redundant with job_id
+                    # on purpose -- the general (entity_type, entity_id) pair
+                    # a future non-GenerationJob producer would set instead.
+                    "entity_type": "generation_job", "entity_id": job["id"],
+                    "type": notif_type, "severity": severity, "stage": stage,
                     "read": False, "action_url": action_url or f"/meta-factory?projectId={job.get('projectId')}",
                     "metadata": metadata or {}, "idempotency_key": idem_key, "created_at": self._now(),
                 },

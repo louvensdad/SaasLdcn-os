@@ -33,6 +33,14 @@ class GenerationNotification(ApiModel):
     workspace_id: str | None = None
     project_id: str | None = None
     job_id: str
+    # LDCN Multi-Agent Runtime, Phase 2: polymorphic subject, additive.
+    # job_id above stays required so no existing consumer needs to change;
+    # entity_type/entity_id are the general mechanism a future non-GenerationJob
+    # producer would use. Plain `str`, not a Literal -- the set of producers
+    # isn't closed yet (same choice event_catalog.py's NamedEvent.category
+    # already made for the same reason).
+    entity_type: str | None = None
+    entity_id: str | None = None
     type: GenerationNotificationType
     severity: GenerationNotificationSeverity = "INFO"
     stage: str | None = None

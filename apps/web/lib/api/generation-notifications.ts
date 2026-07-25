@@ -29,9 +29,12 @@ async function send<T>(path: string, init: RequestInit, allowRefresh = true): Pr
 }
 
 export const generationNotificationsClient = {
-  list: (params: { read?: boolean; cursor?: string; limit?: number } = {}) => {
+  list: (params: { read?: boolean; entityType?: string; cursor?: string; limit?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.read !== undefined) query.set('read', String(params.read));
+    // Phase 2: optional, additive -- omitted (the only caller today), the
+    // backend returns every subject type exactly as before this existed.
+    if (params.entityType) query.set('entity_type', params.entityType);
     if (params.cursor) query.set('cursor', params.cursor);
     if (params.limit) query.set('limit', String(params.limit));
     const suffix = query.toString();

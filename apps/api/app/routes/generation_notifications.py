@@ -26,11 +26,12 @@ def _encode_cursor(notification: dict) -> str:
 def list_notifications(
     user: CurrentUser,
     read: bool | None = Query(default=None),
+    entity_type: str | None = Query(default=None),
     cursor: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> GenerationNotificationListResponse:
     items, has_more = generation_notification_repository.list_for_user(
-        user["user_id"], read=read, before=_decode_cursor(cursor), limit=limit
+        user["user_id"], read=read, entity_type=entity_type, before=_decode_cursor(cursor), limit=limit
     )
     unread_count = generation_notification_repository.unread_count(user["user_id"])
     return GenerationNotificationListResponse(

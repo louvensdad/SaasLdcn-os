@@ -48,14 +48,19 @@ class GenerationNotificationRepository:
         return data, True
 
     def list_for_user(
-        self, user_id: str, *, read: bool | None = None, before: tuple[str, str] | None = None, limit: int = 20
+        self, user_id: str, *, read: bool | None = None, entity_type: str | None = None,
+        before: tuple[str, str] | None = None, limit: int = 20,
     ) -> tuple[list[dict[str, Any]], bool]:
         """Keyset-paginated, newest first. `before` is (created_at, id) of the
-        last row already seen; returns (items, has_more)."""
+        last row already seen; returns (items, has_more). `entity_type` is an
+        optional filter (Phase 2) -- omitted, it returns every subject type
+        for this user, matching today's GenerationJob-only behavior exactly."""
         with self._sessions() as session:
             stmt = select(GenerationNotification).where(GenerationNotification.user_id == user_id)
             if read is not None:
                 stmt = stmt.where(GenerationNotification.read == read)
+            if entity_type is not None:
+                stmt = stmt.where(GenerationNotification.entity_type == entity_type)
             if before is not None:
                 created_at, notif_id = before
                 stmt = stmt.where(
@@ -124,9 +129,11 @@ class GenerationNotificationRepository:
     def _to_row(cls, data: dict[str, Any]) -> GenerationNotification:
         return GenerationNotification(
             id=data["id"], user_id=data["user_id"], workspace_id=data.get("workspace_id"),
-            project_id=data.get("project_id"), job_id=data["job_id"], type=data["type"],
-            severity=data.get("severity", "INFO"), stage=data.get("stage"), read=bool(data.get("read", False)),
-            action_url=data.get("action_url"), idempotency_key=data["idempotency_key"],
+            project_id=data.get("project_id"), job_id=data["job_id"],
+            entity_type=data.get("entity_type"), entity_id=data.get("entity_id"),
+            type=data["type"], severity=data.get("severity", "INFO"), stage=data.get("stage"),
+            read=bool(data.get("read", False)), action_url=data.get("action_url"),
+            idempotency_key=data["idempotency_key"],
             metadata_json=cls._dump(data.get("metadata") or {}), created_at=data["created_at"],
         )
 
@@ -134,7 +141,8 @@ class GenerationNotificationRepository:
     def _row(cls, row: GenerationNotification) -> dict[str, Any]:
         return {
             "id": row.id, "user_id": row.user_id, "workspace_id": row.workspace_id, "project_id": row.project_id,
-            "job_id": row.job_id, "type": row.type, "severity": row.severity, "stage": row.stage, "read": bool(row.read),
+            "job_id": row.job_id, "entity_type": row.entity_type, "entity_id": row.entity_id,
+            "type": row.type, "severity": row.severity, "stage": row.stage, "read": bool(row.read),
             "action_url": row.action_url, "idempotency_key": row.idempotency_key,
             "metadata": json.loads(row.metadata_json or "{}"), "created_at": row.created_at,
         }
