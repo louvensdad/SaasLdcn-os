@@ -250,20 +250,50 @@ def classify_secret_content(relative_path: str, content: str | bytes) -> list[Se
     return classify_secret_findings(relative_path, text)
 
 
-_SECRET_ASSIGNMENT = re.compile(
-    r"(?im)^(\s*(?:api[_-]?key|secret|token|password|credential)\s*[:=]\s*)"
-    r"(['\"]?)(?!change-me\b|changeme\b|example\b|placeholder\b|your[_-]|<)"
-    r"[A-Za-z0-9_./+=-]{16,}(['\"]?)"
-)
+_QUOTED_SEGMENT_RE = re.compile(r'(["\']).*?\1')
 
 
-def sanitize_untrusted_source(content: str) -> str:
-    """Replace credential values while preserving source/config assignment syntax."""
-    sanitized = _SECRET_ASSIGNMENT.sub(r'\1"change-me"', content)
-    sanitized = re.sub(r"AKIA[0-9A-Z]{16}", "AWS_ACCESS_KEY_ID_REDACTED", sanitized)
-    sanitized = re.sub(r"\bgh[opusr]_[A-Za-z0-9_]{24,}\b", "GIT_TOKEN_REDACTED", sanitized)
-    sanitized = re.sub(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b", "LLM_KEY_REDACTED", sanitized)
-    return sanitized
+def _redact_finding_line(content: str, line_number: int) -> str:
+    lines = content.splitlines(keepends=True)
+    idx = line_number - 1
+    if not (0 <= idx < len(lines)):
+        return content
+    original = lines[idx]
+    # Check for a match directly rather than comparing before/after text: a
+    # line whose value is ALREADY "change-me" (e.g. two findings on the same
+    # line, the first already redacted it) produces an identical string on a
+    # genuine match too, which previously looked exactly like "no match" and
+    # fell through to the bare-value fallback, stripping the quotes back off.
+    if _QUOTED_SEGMENT_RE.search(original):
+        lines[idx] = _QUOTED_SEGMENT_RE.sub('"change-me"', original, count=1)
+    else:
+        # Bare/unquoted assignment (.env-style KEY=value, no quotes).
+        lines[idx] = re.sub(r"([:=]\s*)\S+", r"\1change-me", original, count=1)
+    return "".join(lines)
+
+
+def sanitize_untrusted_source(content: str, *, path: str = "") -> str:
+    """Replace credential values while preserving source/config assignment
+    syntax. Uses classify_secret_findings -- the SAME classifier
+    artifact_block_reason uses -- as the single source of truth for "what
+    counts as a secret". Previously used a separate, narrower regex with its
+    own hardcoded 16-char minimum, which let a short-but-real value (e.g. a
+    14-char hardcoded password) through unsanitized even though the write-time
+    gate (already using the fuller classifier) would still correctly block it
+    once the sanitized-but-still-flagged content reached ProjectWriter."""
+    findings = classify_secret_findings(path or "untrusted-source.txt", content)
+    for finding in findings:
+        if finding.blocking:
+            content = _redact_finding_line(content, finding.line)
+    # Defense in depth for a known-format literal appearing outside any
+    # `KEY=value` assignment shape (e.g. pasted in a comment or concatenated
+    # string) -- classify_secret_findings' _KNOWN_SECRET_FORMATS pass above
+    # already covers these too, but a plain substring replace here is a cheap,
+    # redundant-but-harmless second pass.
+    content = re.sub(r"AKIA[0-9A-Z]{16}", "AWS_ACCESS_KEY_ID_REDACTED", content)
+    content = re.sub(r"\bgh[opusr]_[A-Za-z0-9_]{24,}\b", "GIT_TOKEN_REDACTED", content)
+    content = re.sub(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b", "LLM_KEY_REDACTED", content)
+    return content
 
 
 def artifact_block_reason(relative_path: str, content: str | bytes | None = None) -> str:

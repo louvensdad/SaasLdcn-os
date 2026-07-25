@@ -149,7 +149,7 @@ def _materialize(ingest_id: str, project_name: str) -> object:
             content = abs_path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        files.append(EmittedFile(path=rel, content=sanitize_untrusted_source(content)))
+        files.append(EmittedFile(path=rel, content=sanitize_untrusted_source(content, path=rel)))
     return ProjectWriter().write(files, project_name=project_name, metadata={"source": "modernize", "ingest_id": ingest_id})
 
 

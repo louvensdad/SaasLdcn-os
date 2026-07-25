@@ -786,12 +786,21 @@ def test_security_completeness_is_100_for_a_clean_project(make_project):
 
 
 def test_security_completeness_drops_for_a_real_hardcoded_secret(make_project):
-    files = _good_java_project_files()
-    files.append((
-        "src/main/java/com/acme/app/Secrets.java",
+    project = make_project(_good_java_project_files(), name="security-secret-leak")
+    # Written directly to disk, bypassing ProjectWriter's artifact-security
+    # write-time gate on purpose: this test exercises
+    # GeneratedProjectQualityEngine's OWN independent post-write security scan
+    # (security_completeness), not the write-time gate. A real secret that
+    # reaches disk via any other path (manual edit, a bad merge, an import)
+    # must still be caught here as defense in depth -- the write-time gate
+    # blocking this exact content on a fresh write is itself now proven by
+    # apps/api/tests/test_artifact_security_classifier.py.
+    secret_path = Path(project["generated_project_path"]) / "src/main/java/com/acme/app/Secrets.java"
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    secret_path.write_text(
         "package com.acme.app;\npublic class Secrets {\n  String apiKey = \"sk_live_real_secret_value_12345\";\n}\n",
-    ))
-    project = make_project(files, name="security-secret-leak")
+        encoding="utf-8",
+    )
     engine = FunctionalCompletenessEngine()
     report = engine.evaluate(project)
     assert report.security_completeness is not None and report.security_completeness < 100
