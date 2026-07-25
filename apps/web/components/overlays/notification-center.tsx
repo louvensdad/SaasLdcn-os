@@ -94,7 +94,7 @@ export function NotificationCenter() {
       >
         <Bell className="h-4 w-4" />
         {unread ? (
-          <span className="absolute right-2 top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[color:var(--accent)] px-1 text-[10px] font-semibold leading-none text-white shadow-[0_0_14px_var(--glow)]">
+          <span className="ds-badge absolute right-2 top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[color:var(--accent)] px-1 leading-none text-white shadow-[0_0_14px_var(--glow)]">
             {unread > 9 ? '9+' : unread}
           </span>
         ) : null}
@@ -128,7 +128,7 @@ export function NotificationCenter() {
                   type="button"
                   onClick={() => setTab(item.id)}
                   className={cn(
-                    'rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors',
+                    'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
                     tab === item.id
                       ? 'bg-[color:var(--accent)] text-white'
                       : 'bg-white/5 text-[color:var(--muted)] hover:text-[color:var(--text)]',

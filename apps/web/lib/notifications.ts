@@ -65,6 +65,5 @@ export function maybeShowBrowserNotification(notification: GenerationNotificatio
   if (typeof document === 'undefined' || !document.hidden) return;
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
-  // eslint-disable-next-line no-new -- fire-and-forget native notification
   new Notification(title, { body, tag: notification.id });
 }
