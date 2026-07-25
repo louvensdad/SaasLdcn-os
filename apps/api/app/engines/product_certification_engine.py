@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.engines.quality_gate_engine import quality_gate_engine
+from app.schemas.authenticity import AuthenticityReport
 from app.schemas.functional_completeness import FunctionalCompletenessReport
 from app.schemas.functional_coverage import FunctionalCoverageReport
 from app.schemas.product_certification import ProductCertificationReport, ProductCertificationStatus
@@ -18,9 +19,12 @@ from app.schemas.product_certification import ProductCertificationReport, Produc
 class ProductCertificationEngine:
     def evaluate(
         self, project: dict[str, Any], completeness: FunctionalCompletenessReport,
-        coverage: FunctionalCoverageReport,
+        coverage: FunctionalCoverageReport, authenticity: AuthenticityReport | None = None,
     ) -> ProductCertificationReport:
-        quality_report = quality_gate_engine.evaluate(project, run_build=False)
+        # Pass our own `authenticity` straight through so QualityGateEngine
+        # doesn't re-run FrontendAuthenticityGate a second time over the same
+        # files.
+        quality_report = quality_gate_engine.evaluate(project, run_build=False, authenticity=authenticity)
 
         blocking_coverage = bool(
             (coverage.frontend is not None and coverage.frontend.blocking)
@@ -28,6 +32,11 @@ class ProductCertificationEngine:
         )
         app_scores = [app.score for app in (coverage.frontend, coverage.mobile) if app is not None]
         functional_coverage_score = round(sum(app_scores) / len(app_scores)) if app_scores else None
+        # Frontend Authenticity Review Gate (PARTE 7): optional -- callers that
+        # don't pass one (older jobs, or a project with no frontend) simply
+        # don't get an authenticity dimension, exactly like `coverage.frontend`
+        # already being None is handled above.
+        authenticity_blocking = bool(authenticity is not None and authenticity.blocking)
 
         # BLOCKED already means "a structural defect makes the project unsafe/
         # broken regardless of coverage" (functional_completeness.py's own
@@ -42,6 +51,7 @@ class ProductCertificationEngine:
             build_skipped=completeness.build_skipped,
             blocker_count=quality_report.blocker_count,
             coverage_blocking=blocking_coverage,
+            authenticity_blocking=authenticity_blocking,
         )
 
         category_scores = [
@@ -51,6 +61,7 @@ class ProductCertificationEngine:
             completeness.api_coverage_completeness, functional_coverage_score,
             completeness.ui_depth.score if completeness.ui_depth else None,
             architecture, build, completeness.integrations_completeness,
+            authenticity.score if authenticity is not None else None,
         ]
         present = [score for score in category_scores if score is not None]
         overall = round(sum(present) / len(present)) if present else 0
@@ -74,11 +85,14 @@ class ProductCertificationEngine:
             overall=overall,
             quality_gate_blocker_count=quality_report.blocker_count,
             functional_coverage_blocking=blocking_coverage,
+            authenticity=authenticity.score if authenticity is not None else None,
+            authenticity_blocking=authenticity_blocking,
             generated_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
         )
 
     def _status(
-        self, *, completeness_status: str, build_skipped: bool, blocker_count: int, coverage_blocking: bool,
+        self, *, completeness_status: str, build_skipped: bool, blocker_count: int,
+        coverage_blocking: bool, authenticity_blocking: bool = False,
     ) -> tuple[ProductCertificationStatus, str]:
         """Precedence chain, most severe first -- same style _compute_status()/
         compute_kernel_status() already use elsewhere in this codebase.
@@ -94,12 +108,14 @@ class ProductCertificationEngine:
             return "BLOCKED", "A structural defect makes the project unsafe/broken regardless of coverage."
         if build_skipped:
             return "FAILED_CERTIFICATION", "The build never actually passed; auto-repair exhausted its attempts."
-        if blocker_count > 0 or coverage_blocking:
+        if blocker_count > 0 or coverage_blocking or authenticity_blocking:
             reasons = []
             if blocker_count > 0:
                 reasons.append(f"{blocker_count} Quality Gate BLOCKER(s)")
             if coverage_blocking:
                 reasons.append("confirmed Functional Coverage error(s)")
+            if authenticity_blocking:
+                reasons.append("confirmed Authenticity Review error(s) (e.g. literal placeholder/template content)")
             return "NEEDS_REPAIR", f"Real, addressable problem(s) found: {', '.join(reasons)}."
         if completeness_status == "PARTIALLY_VERIFIED":
             return "PARTIALLY_CERTIFIED", "Build passed with no confirmed blockers, but resource/UI coverage is not yet complete."

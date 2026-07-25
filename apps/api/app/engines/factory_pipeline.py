@@ -77,6 +77,15 @@ _ROLE_EFFORT: dict[str, tuple[ReasoningLevel, int]] = {
     "devops": (ReasoningLevel.medium, 20_000),
     "docs": (ReasoningLevel.high, 20_000),
     "repair": (ReasoningLevel.max, 48_000),
+    # Frontend Team (PARTE 6): planning-only roles produce one JSON artifact,
+    # not application code -- high (not max) reasoning and a smaller output
+    # cap than "frontend" itself, which still owns the full code-generation
+    # budget above.
+    "frontend_ux_strategy": (ReasoningLevel.high, 12_000),
+    "frontend_visual_direction": (ReasoningLevel.high, 12_000),
+    "frontend_architecture_role": (ReasoningLevel.high, 16_000),
+    "frontend_interaction_design": (ReasoningLevel.high, 12_000),
+    "frontend_qa_review": (ReasoningLevel.high, 16_000),
 }
 
 

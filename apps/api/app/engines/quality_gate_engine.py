@@ -5,8 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from app.engines.external_integration_audit_engine import external_integration_audit_engine
+from app.engines.frontend_authenticity_gate import frontend_authenticity_gate
 from app.engines.generated_project_quality_engine import GeneratedProjectQualityEngine
 from app.engines.generation_validation_engine import generation_validation_engine
+from app.schemas.authenticity import AuthenticityReport
 from app.schemas.quality_gate import QualityGateReport, QualityIssue
 
 
@@ -63,7 +65,10 @@ class QualityGateEngine:
     def __init__(self) -> None:
         self._quality = GeneratedProjectQualityEngine()
 
-    def evaluate(self, project: dict[str, Any], *, run_build: bool = True) -> QualityGateReport:
+    def evaluate(
+        self, project: dict[str, Any], *, run_build: bool = True,
+        authenticity: AuthenticityReport | None = None,
+    ) -> QualityGateReport:
         if run_build:
             validation = generation_validation_engine.validate(project)
             quality = validation.quality if isinstance(validation.quality, dict) else {}
@@ -179,6 +184,22 @@ class QualityGateEngine:
         # when run_build=False -- it's pure file inspection, no build needed.
         issues.extend(external_integration_audit_engine.audit(project))
 
+        # 5c. Frontend Authenticity Review Gate (PARTE 7/8): a confirmed
+        # finding (lorem ipsum, generic template copy, mock data outside the
+        # mock layer) becomes a BLOCKER, not-auto-fixable QualityIssue -- this
+        # is deliberately the ONLY new-finding-type wired into this engine's
+        # issue list (not FunctionalCoverageReport, which stays on its own
+        # established path to ProductCertificationReport per
+        # functional_completeness_engine.py's own "coverage gate vs. quality/
+        # security gate" boundary) specifically so it flows through the
+        # EXISTING LlmRepairEngine dispatch (severity=="BLOCKER" and not
+        # auto_fixable) and revalidation loop with no new orchestrator needed.
+        # `authenticity` lets a caller that already computed one (e.g.
+        # ProductCertificationEngine, which needs it for its own score
+        # dimension) pass it straight through instead of this engine
+        # re-scanning the same files a second time.
+        issues.extend(self._authenticity_issues(project, authenticity))
+
         # 6. Quality warnings -> WARNING (non-blocking).
         for warning in quality.get("warnings") or []:
             issues.append(
@@ -276,6 +297,32 @@ class QualityGateEngine:
             issues=issues,
             generated_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
         )
+
+    def _authenticity_issues(self, project: dict[str, Any], precomputed: AuthenticityReport | None) -> list[QualityIssue]:
+        if precomputed is not None:
+            report = precomputed
+        else:
+            root = self._root(project)
+            if root is None:
+                return []
+            try:
+                report = frontend_authenticity_gate.evaluate(str(project.get("project_id") or ""), root)
+            except Exception:  # noqa: BLE001 -- a review bug must degrade to "no findings", never crash the gate
+                return []
+        return [
+            QualityIssue(
+                id=f"authenticity:{finding.id}",
+                title=finding.detail,
+                severity="BLOCKER" if finding.confidence == "confirmed_error" else "WARNING",
+                category="authenticity",
+                file=finding.file,
+                root_cause=finding.detail,
+                suggested_fix="Substituir por conteudo real e especifico do dominio do produto.",
+                auto_fixable=False,
+            )
+            for finding in report.findings
+            if finding.confidence in {"confirmed_error", "high_confidence"}
+        ]
 
     def _root(self, project: dict[str, Any]) -> Path | None:
         raw = project.get("generated_project_path")

@@ -32,7 +32,7 @@ from app.engines import evolution_engine
 from app.engines.ground_truth_engine import ground_truth_engine
 from app.engines.metering_engine import record_consumption
 from app.engines.generation_usage import usage_totals as _usage_totals
-from app.engines.generation_pipeline_policy import BACKEND_CHUNKS, MOBILE_CHUNKS, DELIVERY_TYPES_WITH_MOBILE, PipelineStep, STEPS, logical_stages_for, steps_for
+from app.engines.generation_pipeline_policy import BACKEND_CHUNKS, MOBILE_CHUNKS, DELIVERY_TYPES_WITH_MOBILE, FRONTEND_TEAM_START_MESSAGES, PipelineStep, STEPS, logical_stages_for, steps_for
 from app.engines.performance_review_engine import performance_review_engine
 from app.engines.project_manifest_engine import build_project_manifest
 from app.engines.quality_gate_engine import QualityGateEngine
@@ -60,6 +60,8 @@ from app.services import import_graph_engine
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter, ProjectWriteError
 from app.engines.pipeline_recovery_orchestrator import pipeline_recovery_orchestrator
 from app.engines.architecture_consolidation_gate import architecture_consolidation_gate
+from app.engines.backend_ownership_registry import CHUNK_SCOPE_DESCRIPTIONS, infer_owner_chunk
+from app.engines.frontend_authenticity_gate import frontend_authenticity_gate
 from app.services.stack_compatibility import STACK_LOCK_FILE, StackLock, stack_compatibility_engine
 
 
@@ -651,10 +653,14 @@ class GenerationJobEngine:
             role, mega, contract_summary=contract_summary, emitted_files=emitted, module_roots=module_roots,
         )
         if step.chunk:
+            scope = CHUNK_SCOPE_DESCRIPTIONS.get(step.chunk, "")
             context += (
                 f"\n\n<{step.logical}_chunk>{step.chunk}</{step.logical}_chunk>\n"
                 "Gere somente os arquivos deste chunk; nao repita arquivos de outros chunks."
+                + (f"\nEscopo deste chunk: {scope}" if scope else "")
             )
+        if step.logical == "frontend" and step.chunk in {"implementation", "qa_review"}:
+            context += self._frontend_team_context(job, step.chunk)
         if mode == "partitioned":
             context, compression = compress_to_budget(context, max(4_000, len(context) // 2))
             diagnostics.compressed = True
@@ -722,7 +728,11 @@ class GenerationJobEngine:
         checkpoint["attempt"] = max(1, len([item for item in parsed.attempts if item.get("attempt", 0) > 0]))
         checkpoint["artifact_ids"].append(raw_artifact["id"])
         for emitted_file in parsed.files:
-            artifact = self._write_text_artifact(job, owner, step, emitted_file.path, emitted_file.content, "generated", valid=True, warnings=list(parsed.warnings))
+            kind, semantic_warnings = self._semantic_merge_decision(job, step, emitted_file.path, emitted_file.content)
+            artifact = self._write_text_artifact(
+                job, owner, step, emitted_file.path, emitted_file.content, kind,
+                valid=(kind == "generated"), warnings=[*parsed.warnings, *semantic_warnings],
+            )
             checkpoint["artifact_ids"].append(artifact["id"])
         if not parsed.files:
             last = parsed.attempts[-1] if parsed.attempts else {}
@@ -1189,13 +1199,27 @@ class GenerationJobEngine:
                 )
             except Exception as exc:  # noqa: BLE001
                 self._log(job, "READY", "warning", "Functional Coverage failed to evaluate.", str(exc))
+            # Frontend Authenticity Review Gate (PARTE 7): independent try/except,
+            # same "never break the Functional Completeness Gate's own verdict"
+            # rule. None (not a zero-score report) when it fails, so
+            # ProductCertificationEngine treats it as "not evaluated" rather
+            # than "evaluated and failed".
+            authenticity_report = None
+            try:
+                authenticity_report = frontend_authenticity_gate.evaluate(project_id, root)
+                (root / "authenticity-report.json").write_text(
+                    json.dumps(authenticity_report.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8",
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._log(job, "READY", "warning", "Frontend Authenticity Review failed to evaluate.", str(exc))
             # Product Certification (Product Certification Engine P1, second
-            # slice): consolidates the two reports above + a fresh QualityGateReport
+            # slice): consolidates the reports above + a fresh QualityGateReport
             # into one status. Independent try/except, same "never break the
             # Functional Completeness Gate's own verdict" rule.
             try:
                 cert_report = product_certification_engine.evaluate(
                     {"project_id": project_id, "generated_project_path": result_path}, report, coverage_report,
+                    authenticity_report,
                 )
                 (root / "product-certification.json").write_text(
                     json.dumps(cert_report.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8",
@@ -1538,8 +1562,13 @@ class GenerationJobEngine:
         # Progress is monotonic: never dip below what a previous checkpoint reported.
         job["progress"] = max(int(job.get("progress", 0)), min(98, round(index / len(steps) * 100)))
         job["stageStatuses"][step.logical] = "running"
-        self._log(job, step.state, "info", f"Etapa iniciada: {step.logical}{'.' + step.chunk if step.chunk else ''}.")
-        self._emit(job, owner, "stage_started", stage=step.state, message=f"Etapa iniciada: {step.logical}{'.' + step.chunk if step.chunk else ''}.")
+        # PARTE 9: a friendly, real message for the exact operation that is
+        # actually starting now -- falls back to the generic stage/chunk
+        # label for every step that isn't one of the Frontend Team chunks.
+        friendly = FRONTEND_TEAM_START_MESSAGES.get(step.chunk or "") if step.logical == "frontend" else None
+        message = friendly or f"Etapa iniciada: {step.logical}{'.' + step.chunk if step.chunk else ''}."
+        self._log(job, step.state, "info", message)
+        self._emit(job, owner, "stage_started", stage=step.state, message=message)
         # One STAGE_STARTED per *logical* stage, not per granular sub-status
         # (contracts/database/... each have PLANNING/GENERATING/VALIDATING
         # sub-steps) -- only notify on the first sub-step of this logical stage.
@@ -1590,6 +1619,51 @@ class GenerationJobEngine:
         job["checkpoints"].append(checkpoint)
         return checkpoint
 
+    def _semantic_merge_decision(self, job: dict[str, Any], step: PipelineStep, path: str, content: str) -> tuple[str, list[str]]:
+        """Semantic merge check (PARTE 5 of the request), run before a chunk's
+        emitted file is persisted: does this exact path already exist (from a
+        DIFFERENT chunk, with different content)? If so, the first chunk to
+        legitimately claim that path wins -- reject the later, incompatible
+        overwrite rather than silently letting last-write-wins destroy the
+        first agent's work. Nothing is ever deleted: a rejected duplicate is
+        still persisted (kind="generated_rejected_duplicate") for inspection,
+        just excluded from the final build set (mirrors how _build() already
+        filters by kind == "generated").
+
+        Also flags (but does NOT reject) a heuristic scope mismatch -- e.g.
+        the "structure" chunk emitting a full domain entity that belongs to
+        "domain_entities" -- as an observational warning. Calibrated against
+        real job data (see backend_ownership_registry.py): the heuristic is
+        not precise enough to safely auto-drop content on its own, only to
+        make the mismatch visible."""
+        warnings: list[str] = []
+        normalized = path.replace("\\", "/").strip("/")
+        current_chunk_label = f"{step.logical}.{step.chunk}" if step.chunk else step.logical
+        existing = next(
+            (a for a in job["artifacts"] if a.get("kind") == "generated" and a.get("name", "").replace("\\", "/").strip("/") == normalized),
+            None,
+        )
+        if existing is not None and existing.get("stage") != current_chunk_label:
+            try:
+                existing_content = Path(existing["path"]).read_text(encoding="utf-8")
+            except OSError:
+                existing_content = None
+            if existing_content is not None and existing_content != content:
+                warnings.append(
+                    f"semantic_merge_rejected_duplicate: '{normalized}' ja foi gerado por '{existing['stage']}'; "
+                    f"versao gerada por '{current_chunk_label}' foi descartada para evitar implementacoes concorrentes."
+                )
+                return "generated_rejected_duplicate", warnings
+
+        if step.logical == "backend" and step.chunk:
+            inferred = infer_owner_chunk(normalized)
+            if inferred != step.chunk:
+                warnings.append(
+                    f"semantic_ownership_mismatch: '{normalized}' parece pertencer ao chunk '{inferred}', "
+                    f"mas foi gerado pelo chunk '{step.chunk}' (apenas observacional, nao bloqueado)."
+                )
+        return "generated", warnings
+
     def _write_json_artifact(self, job: dict[str, Any], owner: str, step: PipelineStep, name: str, value: Any, kind: str) -> dict[str, Any]:
         return self._write_text_artifact(job, owner, step, name, json.dumps(value, ensure_ascii=False, indent=2), kind, valid=True)
 
@@ -1600,7 +1674,16 @@ class GenerationJobEngine:
         if java_repaired:
             warnings = [*(warnings or []), "java_reserved_package_segment_repaired"]
         root = (self.checkpoint_root / job["id"]).resolve()
-        target = (root / step.logical / safe_name).resolve()
+        # Physical checkpoint path is scoped by chunk, not just logical stage:
+        # two chunks emitting the same logical relative path (name) must
+        # never share one physical file on disk, or a later chunk's write
+        # silently corrupts an earlier chunk's already-persisted artifact
+        # even when the semantic merge check (PARTE 5) correctly rejected the
+        # later one in job["artifacts"] metadata (confirmed by a real test:
+        # without this, the rejected duplicate's bytes still won on disk).
+        # `artifact["name"]` (the logical relative path used by _build()) is
+        # unaffected -- only where the checkpoint bytes physically live.
+        target = (root / step.logical / (step.chunk or "_root") / safe_name).resolve()
         if root not in target.parents:
             raise StageFailure("Artifact path invalido.", diagnostic=self._diagnostic(job, step.state, step.logical, name))
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1615,6 +1698,57 @@ class GenerationJobEngine:
     def _artifact_content(self, job: dict[str, Any], name: str) -> str:
         artifact = next((item for item in reversed(job["artifacts"]) if item["name"].lower().endswith(name.lower()) and item["valid"]), None)
         return Path(artifact["path"]).read_text(encoding="utf-8") if artifact else ""
+
+    # Frontend Team (PARTE 6): the JSON planning artifact each stage's own
+    # chunk name maps to. Kept 1:1 with generation_pipeline_policy.FRONTEND_TEAM_JSON_CHUNKS.
+    _FRONTEND_TEAM_ARTIFACT_NAMES: dict[str, str] = {
+        "ux_strategy": "ux-strategy.json",
+        "visual_direction": "visual-direction.json",
+        "frontend_architecture": "frontend-architecture.json",
+        "interaction_design": "interaction-spec.json",
+    }
+    _FRONTEND_TEAM_ARTIFACT_TAGS: dict[str, str] = {
+        "ux_strategy": "ux_strategy",
+        "visual_direction": "visual_direction",
+        "frontend_architecture": "frontend_architecture",
+        "interaction_design": "interaction_spec",
+    }
+
+    def _frontend_team_context(self, job: dict[str, Any], chunk: str) -> str:
+        """Injects the Frontend Team's prior planning artifacts (and, for
+        qa_review, a bounded sample of the actually-generated frontend code)
+        into a later chunk's context -- so "implementation" and "qa_review"
+        see the real decisions the earlier roles made, not just their chunk name."""
+        blocks: list[str] = []
+        for planning_chunk, name in self._FRONTEND_TEAM_ARTIFACT_NAMES.items():
+            content = self._artifact_content(job, name)
+            if not content:
+                continue
+            tag = self._FRONTEND_TEAM_ARTIFACT_TAGS[planning_chunk]
+            blocks.append(f"\n\n<{tag}>\n{content}\n</{tag}>")
+        if chunk == "qa_review":
+            sample = self._frontend_generated_sample(job)
+            if sample:
+                blocks.append(f"\n\n<generated_frontend_sample>\n{sample}\n</generated_frontend_sample>")
+        return "".join(blocks)
+
+    def _frontend_generated_sample(self, job: dict[str, Any], *, max_files: int = 10, max_chars: int = 2500) -> str:
+        """Bounded sample of the real frontend implementation output for the
+        QA Reviewer -- never the full app (token budget), but real content,
+        not a description of it."""
+        candidates = [
+            a for a in job["artifacts"]
+            if a.get("kind") == "generated" and a.get("stage") == "frontend.implementation"
+        ]
+        parts: list[str] = []
+        for artifact in candidates[:max_files]:
+            try:
+                content = Path(artifact["path"]).read_text(encoding="utf-8")
+            except OSError:
+                continue
+            snippet = content[:max_chars]
+            parts.append(f'<<<FILE path="{artifact["name"]}">>>\n{snippet}\n<<<END>>>')
+        return "\n\n".join(parts)
 
     def _database_schema(self, spec: ProjectSpec) -> str:
         lines = ["-- Generated from normalized domain model", "BEGIN;"]

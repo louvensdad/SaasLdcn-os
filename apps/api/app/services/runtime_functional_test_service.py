@@ -12,7 +12,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 from app.schemas.functional_coverage import FunctionalCoverageReport
-from app.schemas.runtime_functional_test import RouteCheck, RuntimeFunctionalTestReport
+from app.schemas.runtime_functional_test import (
+    AccessibilityFinding,
+    ResponsiveCheck,
+    RouteCheck,
+    RouteComparison,
+    RuntimeFunctionalTestComparison,
+    RuntimeFunctionalTestReport,
+)
 from app.services.execution_runtime import (
     ExecutionRequest,
     ExecutionResult,
@@ -52,6 +59,55 @@ _SAFE_ENV_NAMES = {
     "TEMP", "TMP", "LANG", "LC_ALL",
 }
 _LOGIN_PATH_HINT = ("login", "signin", "sign-in", "auth")
+
+# PARTE 8, item 11: real breakpoints, not a guess from the markup.
+_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
+    ("mobile", 375, 812), ("tablet", 768, 1024), ("desktop", 1440, 900),
+)
+
+# PARTE 8, item 12: baseline, deterministic DOM-level accessibility checks --
+# real queries against the real rendered page, not a third-party audit
+# library dependency and not a heuristic guess from source code.
+_A11Y_CHECK_JS = """
+() => {
+    const findings = [];
+    const imgsNoAlt = Array.from(document.querySelectorAll('img:not([alt])'));
+    if (imgsNoAlt.length) findings.push({rule: 'img_missing_alt', count: imgsNoAlt.length});
+
+    const inputs = Array.from(document.querySelectorAll('input, textarea, select'));
+    const inputsNoLabel = inputs.filter(el => {
+        if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby')) return false;
+        if (el.id && document.querySelector(`label[for="${el.id}"]`)) return false;
+        if (el.closest('label')) return false;
+        const type = (el.getAttribute('type') || '').toLowerCase();
+        if (['hidden', 'submit', 'button'].includes(type)) return false;
+        return true;
+    });
+    if (inputsNoLabel.length) findings.push({rule: 'input_missing_label', count: inputsNoLabel.length});
+
+    const clickable = Array.from(document.querySelectorAll('button, a'));
+    const noAccessibleName = clickable.filter(el => {
+        const text = (el.textContent || '').trim();
+        const ariaLabel = el.getAttribute('aria-label');
+        const title = el.getAttribute('title');
+        return !text && !ariaLabel && !title;
+    });
+    if (noAccessibleName.length) findings.push({rule: 'clickable_missing_accessible_name', count: noAccessibleName.length});
+
+    if (!document.documentElement.getAttribute('lang')) findings.push({rule: 'html_missing_lang', count: 1});
+    if (!document.title || !document.title.trim()) findings.push({rule: 'missing_page_title', count: 1});
+
+    return findings;
+}
+"""
+
+_A11Y_DETAIL: dict[str, str] = {
+    "img_missing_alt": "Image(s) without an alt attribute -- screen readers cannot describe them.",
+    "input_missing_label": "Form input(s) without an accessible label (no <label>, aria-label, or aria-labelledby).",
+    "clickable_missing_accessible_name": "Button/link(s) with no visible text, aria-label, or title -- unreadable by screen readers.",
+    "html_missing_lang": "<html> is missing a lang attribute.",
+    "missing_page_title": "Page has no <title>.",
+}
 
 
 def _now() -> str:
@@ -358,6 +414,8 @@ class RuntimeFunctionalTestService:
         http_status: int | None = None
         redirected_to: str | None = None
         screenshot_path: str | None = None
+        responsive: list[ResponsiveCheck] = []
+        accessibility: list[AccessibilityFinding] = []
         try:
             response = page.goto(f"http://127.0.0.1:{frontend_port}{route}", timeout=15_000, wait_until="networkidle")
             http_status = response.status if response else None
@@ -368,6 +426,8 @@ class RuntimeFunctionalTestService:
             target = evidence_dir / f"{slug}.png"
             page.screenshot(path=str(target), full_page=True)
             screenshot_path = str(target)
+            accessibility = self._check_accessibility(page)
+            responsive = self._check_responsive(page, route, evidence_dir)
         except Exception as exc:  # noqa: BLE001 -- a navigation failure is itself the finding
             detail = f"{type(exc).__name__}: {exc}"
         finally:
@@ -377,6 +437,71 @@ class RuntimeFunctionalTestService:
             path=route, ok=ok, http_status=http_status, redirected_to=redirected_to,
             console_errors=console_errors, network_failures=network_failures,
             screenshot_path=screenshot_path, detail=detail,
+            responsive=responsive, accessibility=accessibility,
+        )
+
+    def _check_responsive(self, page: Any, route: str, evidence_dir: Path) -> list[ResponsiveCheck]:
+        results: list[ResponsiveCheck] = []
+        slug = route.strip("/").replace("/", "_") or "root"
+        for name, width, height in _VIEWPORTS:
+            try:
+                page.set_viewport_size({"width": width, "height": height})
+                page.wait_for_timeout(150)  # let CSS reflow settle before measuring
+                overflow_px = page.evaluate(
+                    "document.documentElement.scrollWidth - document.documentElement.clientWidth"
+                )
+                target = evidence_dir / f"{slug}_{name}.png"
+                page.screenshot(path=str(target))
+                results.append(ResponsiveCheck(
+                    viewport=name, width=width, height=height,  # type: ignore[arg-type]
+                    horizontal_overflow=overflow_px > 0, overflow_px=max(0, int(overflow_px)),
+                    screenshot_path=str(target),
+                ))
+            except Exception:  # noqa: BLE001 -- one broken breakpoint must not drop the others
+                continue
+        return results
+
+    def _check_accessibility(self, page: Any) -> list[AccessibilityFinding]:
+        try:
+            raw = page.evaluate(_A11Y_CHECK_JS)
+        except Exception:  # noqa: BLE001 -- a11y check failure must degrade to "no findings", not crash the route check
+            return []
+        if not isinstance(raw, list):
+            return []
+        return [
+            AccessibilityFinding(
+                rule=str(item.get("rule")), severity="error", count=int(item.get("count", 1)),
+                detail=_A11Y_DETAIL.get(str(item.get("rule")), str(item.get("rule"))),
+            )
+            for item in raw if isinstance(item, dict) and item.get("rule")
+        ]
+
+    # ---------------------------------------------------------- comparison
+
+    def compare(self, before: RuntimeFunctionalTestReport, after: RuntimeFunctionalTestReport) -> RuntimeFunctionalTestComparison:
+        """PARTE 8: 'comparar evidencia anterior e nova' -- route-by-route
+        before/after diff across two real runs (pre- and post-repair)."""
+        before_by_path = {route.path: route for route in before.routes}
+        after_by_path = {route.path: route for route in after.routes}
+        comparisons: list[RouteComparison] = []
+        for path in sorted(set(before_by_path) | set(after_by_path)):
+            prior = before_by_path.get(path)
+            current = after_by_path.get(path)
+            previously_ok = bool(prior.ok) if prior else False
+            now_ok = bool(current.ok) if current else False
+            prior_errors = set(prior.console_errors) if prior else set()
+            current_errors = set(current.console_errors) if current else set()
+            comparisons.append(RouteComparison(
+                path=path, previously_ok=previously_ok, now_ok=now_ok,
+                regressed=previously_ok and not now_ok, recovered=(not previously_ok) and now_ok,
+                new_console_errors=sorted(current_errors - prior_errors),
+                resolved_console_errors=sorted(prior_errors - current_errors),
+            ))
+        return RuntimeFunctionalTestComparison(
+            project_id=after.project_id, routes=comparisons,
+            regressed_count=sum(1 for c in comparisons if c.regressed),
+            recovered_count=sum(1 for c in comparisons if c.recovered),
+            generated_at=_now(),
         )
 
     @staticmethod

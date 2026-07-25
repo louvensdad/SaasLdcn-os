@@ -40,4 +40,8 @@ class ProductCertificationReport(ApiModel):
     overall: int = 0
     quality_gate_blocker_count: int = 0
     functional_coverage_blocking: bool = False
+    # Frontend Authenticity Review Gate (PARTE 7): None when no frontend was
+    # evaluated, same optionality as `frontend`/`functional_coverage` above.
+    authenticity: int | None = None
+    authenticity_blocking: bool = False
     generated_at: str

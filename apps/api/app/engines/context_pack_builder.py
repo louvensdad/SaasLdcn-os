@@ -33,6 +33,15 @@ ROLE_BUDGET_CHARS: dict[str, int] = {
     "docs": 40_000,
     "security": 36_000,
     "repair": 52_000,
+    # Frontend Team (PARTE 6): planning-only roles need less than a full code
+    # generation call; qa_review's real signal comes from the generated
+    # artifacts injected separately (generation_job_engine.py), not from the
+    # mega-prompt, so it also stays below "frontend"'s own budget.
+    "frontend_ux_strategy": 32_000,
+    "frontend_visual_direction": 28_000,
+    "frontend_architecture_role": 40_000,
+    "frontend_interaction_design": 32_000,
+    "frontend_qa_review": 36_000,
 }
 DEFAULT_BUDGET_CHARS = 48_000
 
@@ -50,6 +59,11 @@ ROLE_SECTIONS: dict[str, set[str] | None] = {
     "devops": _ALWAYS | {"Non-functional"},
     "docs": None,
     "security": _ALWAYS | {"Non-functional", "Entities"},
+    "frontend_ux_strategy": _ALWAYS | {"Target users", "Core workflows"},
+    "frontend_visual_direction": _ALWAYS | {"Target users"},
+    "frontend_architecture_role": _ALWAYS | {"Target users", "Core workflows", "Entities"},
+    "frontend_interaction_design": _ALWAYS | {"Target users", "Core workflows"},
+    "frontend_qa_review": _ALWAYS | {"Core workflows", "Entities"},
 }
 
 # Blueprint decision areas each role owns (others are dropped to save payload).
@@ -62,6 +76,11 @@ ROLE_BLUEPRINT_AREAS: dict[str, set[str]] = {
     "devops": {"deploy", "observability"},
     "docs": {"frontend", "backend", "database", "apis", "auth", "deploy"},
     "security": {"auth", "authorization", "apis", "integrations", "database"},
+    "frontend_ux_strategy": {"frontend", "apis", "auth"},
+    "frontend_visual_direction": {"frontend", "apis", "auth"},
+    "frontend_architecture_role": {"frontend", "apis", "auth"},
+    "frontend_interaction_design": {"frontend", "apis", "auth"},
+    "frontend_qa_review": {"frontend", "apis", "auth"},
 }
 
 _BLUEPRINT_TITLE = "Architecture Blueprint"
@@ -382,7 +401,11 @@ def build_agent_context(
     selected, kept_titles = select_sections(mega_prompt, role)
 
     parts = [selected]
-    if contract_summary and role in {"backend", "frontend", "mobile", "qa", "devops", "docs", "security"}:
+    if contract_summary and role in {
+        "backend", "frontend", "mobile", "qa", "devops", "docs", "security",
+        "frontend_ux_strategy", "frontend_visual_direction", "frontend_architecture_role",
+        "frontend_interaction_design", "frontend_qa_review",
+    }:
         parts.append(contract_summary)
     if emitted_files and role in {"qa", "devops", "docs"}:
         shown = list(emitted_files)[:60]
