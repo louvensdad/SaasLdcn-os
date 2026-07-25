@@ -63,9 +63,9 @@ export function NotificationCenter() {
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
 
-  const items = data?.items ?? [];
+  const items = data?.items;
   const unread = data?.unread_count ?? 0;
-  const visible = useMemo(() => items.filter((item) => matchesTab(item, tab)), [items, tab]);
+  const visible = useMemo(() => (items ?? []).filter((item) => matchesTab(item, tab)), [items, tab]);
 
   const tabs: readonly { readonly id: FilterTab; readonly labelKey: string }[] = [
     { id: 'all', labelKey: 'notifications.tabs.all' },
