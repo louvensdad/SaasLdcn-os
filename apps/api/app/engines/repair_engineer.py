@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from app.engines import architecture_analysis
 from app.schemas.pipeline_recovery import CauseValidation, RepairChange, RepairReport
 from app.services.artifact_security import artifact_block_reason, classify_secret_findings
 from app.services.file_protocol import EmittedFile
@@ -119,6 +120,81 @@ class RepairEngineerEngine:
             testsPassed=tests_passed,
             testsFailed=tests_failed,
             remainingRisks=remaining_risks,
+        )
+        return repaired_files, report
+
+    def repair_generation_conflict(
+        self, validation: CauseValidation, files: list[EmittedFile], *, approved: bool,
+    ) -> tuple[list[EmittedFile], RepairReport]:
+        """LDCN Multi-Agent Runtime, Phase 3 (real gap closed): drops the
+        duplicate/competing artifacts CauseValidator already identified,
+        keeping only the canonical one. `canonicalArtifact`/`duplicateArtifacts`
+        are computed by CauseValidator via `architecture_analysis.pick_canonical`
+        -- the SAME function ArchitectureConsolidationGate uses for write-time
+        prevention, so this post-failure repair can never pick a different
+        "canonical" file than the preventive gate would have. Same
+        confirmed/requiresApproval authorization contract as
+        repair_secret_block; refuses identically otherwise."""
+        if not validation.confirmed:
+            raise RepairNotAuthorized("Cause was not confirmed by CauseValidator; refusing to repair.")
+        if validation.classification != "GENERATION_CONFLICT":
+            raise RepairNotAuthorized(
+                f"repair_generation_conflict only handles GENERATION_CONFLICT, got '{validation.classification}'."
+            )
+        if validation.requiresApproval and not approved:
+            raise RepairNotAuthorized("CauseValidation requires explicit approval before RepairEngineer may act.")
+
+        canonical = architecture_analysis.normalize(validation.canonicalArtifact).strip("/")
+        duplicates = {architecture_analysis.normalize(path).strip("/") for path in validation.duplicateArtifacts}
+
+        changes: list[RepairChange] = []
+        files_changed: list[str] = []
+        repaired_files: list[EmittedFile] = []
+        for file in files:
+            normalized = architecture_analysis.normalize(file.path).strip("/")
+            if normalized in duplicates:
+                changes.append(RepairChange(
+                    file=file.path, action="delete",
+                    reason=f"Duplicate of canonical artifact '{canonical}'; dropped to resolve the generation conflict.",
+                ))
+                files_changed.append(file.path)
+                continue
+            repaired_files.append(file)
+
+        if not files_changed:
+            raise RepairNotAuthorized(
+                f"None of the duplicate artifacts {sorted(duplicates)} were found in the file set to repair."
+            )
+
+        # Regression self-check: re-run the exact detector this repair exists
+        # to satisfy, over the REPAIRED set -- proves the conflict is
+        # actually gone rather than assuming dropping the files was enough
+        # (mirrors repair_secret_block's own artifact_block_reason re-check).
+        remaining_duplicates = architecture_analysis.duplicate_basenames([f.path for f in repaired_files])
+        canonical_basename = architecture_analysis.basename_of(canonical)
+        tests_executed = ["architecture_analysis.duplicate_basenames"]
+        tests_passed: list[str] = []
+        tests_failed: list[str] = []
+        if canonical_basename in remaining_duplicates:
+            tests_failed.append(
+                f"duplicate_basenames still reports '{canonical_basename}' as duplicated after repair: "
+                f"{remaining_duplicates[canonical_basename]}"
+            )
+        else:
+            tests_passed.append(f"duplicate_basenames no longer reports '{canonical_basename}' as duplicated")
+
+        report = RepairReport(
+            rootCause=validation.safeCorrectionStrategy,
+            changes=changes,
+            filesChanged=files_changed,
+            testsExecuted=tests_executed,
+            testsPassed=tests_passed,
+            testsFailed=tests_failed,
+            remainingRisks=[
+                "Dropped duplicate artifact(s) are permanently excluded from this write attempt. If the "
+                "canonical pick was wrong, the discarded implementation is not recoverable from this repair "
+                "alone (it remains visible in earlier job checkpoints, not in the final package).",
+            ],
         )
         return repaired_files, report
 

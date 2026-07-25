@@ -502,23 +502,21 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         category="recovery",
         title="Repair Agent (recovery tier)",
         objective="Apply the one authorized repair for a validated, confirmed cause -- and refuse to act on anything else.",
-        responsibilities=("Redact the exact offending line to a self-evidently-placeholder value", "Re-run the same check as its own regression test"),
+        responsibilities=(
+            "Redact the exact offending line to a self-evidently-placeholder value (repair_secret_block)",
+            # LDCN Multi-Agent Runtime, Phase 3 (real gap closed 2026-07):
+            # repair_generation_conflict drops the duplicate/competing
+            # artifacts CauseValidator already identified, keeping the
+            # canonical one -- chosen via the SAME architecture_analysis.
+            # pick_canonical ArchitectureConsolidationGate uses for
+            # write-time prevention, so the two can never disagree about
+            # which file is canonical.
+            "Drop duplicate/competing artifacts for a confirmed GENERATION_CONFLICT (repair_generation_conflict)",
+            "Re-run the same check as its own regression test",
+        ),
         limitations=(
             "Raises RepairNotAuthorized unless the cause is `confirmed` and (not requiresApproval or explicitly approved)",
-            # Found during the Phase 3 audit (2026-07): CauseValidator can
-            # confirm classification=GENERATION_CONFLICT (competing/duplicate
-            # artifacts), but this engine has no repair path for it --
-            # repair_secret_block() only handles REAL_SECRET/UNSAFE_TEMPLATE/
-            # FALSE_POSITIVE and raises RepairNotAuthorized("No safe repair
-            # strategy defined...") for anything else. A GENERATION_CONFLICT
-            # always lands on NEEDS_USER_ACTION today, never auto-repaired,
-            # even though CauseValidation already computes canonicalArtifact/
-            # duplicateArtifacts for exactly this. Deliberately left
-            # unimplemented here: architecture_consolidation_gate.py and
-            # backend_ownership_registry.py are independently solving this
-            # same duplicate/competing-artifact problem at write-time as of
-            # this audit -- implementing a second, post-failure repair path
-            # for it here risked colliding with that in-flight work.
+            "repair_generation_conflict refuses (RepairNotAuthorized) if none of the declared duplicates are actually present in the file set to repair",
         ),
         inputs=("CauseValidation", "files", "approved: bool"),
         outputs=("patched files", "RepairReport"),

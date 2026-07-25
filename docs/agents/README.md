@@ -1,12 +1,12 @@
 # Agent Specifications
 
-status: Phases 0, 1, 2, and 4 of the LDCN Multi-Agent Runtime proposal are live:
+status: Phases 0, 1, 2, 3, 4, and 5 of the LDCN Multi-Agent Runtime proposal are live:
 - Phase 0 — [agent-runtime-conventions.md](./agent-runtime-conventions.md), `apps/api/app/runtime/agent_registry.py`
 - Phase 1 — GenerationJob notifications also publish to the unified Event Bus (`app/core/event_catalog.py`)
 - Phase 2 — `generation_notifications` gained a polymorphic `entity_type`/`entity_id` subject, additive
+- Phase 3 — `RepairEngineer.repair_generation_conflict()` closes the `GENERATION_CONFLICT` repair gap Phase 4's audit surfaced (see [validation-and-repair-chains.md](./validation-and-repair-chains.md))
 - Phase 4 — [validation-and-repair-chains.md](./validation-and-repair-chains.md): the two independently-built diagnose-repair chains, formally cataloged via `agent_registry.by_chain()` so a third isn't built by accident
-
-Phase 3 (generalizing the Recovery Engine beyond `ProjectWriteError`) was investigated and intentionally deferred — see validation-and-repair-chains.md's "real gap" section for why, and what's needed before picking it up.
+- Phase 5 — Mission Deliverable Jobs became the first real second producer for `generation_notifications` (`entity_type="mission_deliverable_job"`), proving Phase 2's polymorphic schema; required making `job_id` nullable
 
 purpose: the catalog of every specialized agent already running in LDCN OS, plus the convention for adding one.
 

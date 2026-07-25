@@ -122,9 +122,19 @@ class PipelineRecoveryOrchestrator:
             notification_type="REPAIR_STARTED",
         )
         try:
-            repaired_files, repair_report = self.repair_engineer.repair_secret_block(
-                validation, files, approved=True,
-            )
+            # LDCN Multi-Agent Runtime, Phase 3 (real gap closed): dispatch
+            # by confirmed classification rather than assuming every
+            # confirmed cause is a secret block -- GENERATION_CONFLICT has
+            # had its own real repair path (drop the duplicates, keep the
+            # canonical) since repair_generation_conflict was added.
+            if validation.classification == "GENERATION_CONFLICT":
+                repaired_files, repair_report = self.repair_engineer.repair_generation_conflict(
+                    validation, files, approved=True,
+                )
+            else:
+                repaired_files, repair_report = self.repair_engineer.repair_secret_block(
+                    validation, files, approved=True,
+                )
         except RepairNotAuthorized as exc:
             self._transition(
                 run, "RECOVERY_FAILED", now(), level="error", message=f"Reparo nao autorizado: {exc}",
