@@ -19,6 +19,7 @@ from uuid import uuid4
 
 from app.core import runtime_overrides
 from app.core.config import get_settings
+from app.core.event_catalog import emit_named_event, named_event_for_generation_notification
 from app.engines.agent_executor import submit_agent
 from app.engines.context_pack_builder import build_agent_context, compress_to_budget, estimate_tokens, module_roots_from_emitted, summarize_contract
 from app.engines.factory_pipeline import _run_agent
@@ -1757,6 +1758,22 @@ class GenerationJobEngine:
             )
         except Exception:  # noqa: BLE001 -- notification failure must never mask/block the pipeline
             logger.exception("generation notification emission failed")
+        # LDCN Multi-Agent Runtime, Phase 1: also publish through the unified
+        # Event Bus (ActivityEventRepository, via the event_catalog). Kept as
+        # a second, independent try/except -- a failure here must never mask
+        # a successful notification write above, or vice versa. Only the
+        # already-deduplicated lifecycle-transition layer is wired this way;
+        # _emit()'s high-frequency console events are deliberately not (see
+        # the catalog's own comment on avoiding AgentFinished/AgentFailed-style noise).
+        try:
+            event_name = named_event_for_generation_notification(notif_type)
+            if event_name is not None:
+                emit_named_event(
+                    event_name, owner, workspace_id=job.get("workspaceId"), project_id=job.get("projectId"),
+                    metadata={"job_id": job["id"], "stage": stage, "severity": severity, **(metadata or {})},
+                )
+        except Exception:  # noqa: BLE001 -- activity feed failure must never mask/block the pipeline
+            logger.exception("generation activity event emission failed")
 
     def _emit(
         self, job: dict[str, Any], owner: str, event_type: str, *, message: str,

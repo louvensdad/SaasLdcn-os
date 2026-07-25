@@ -10,6 +10,7 @@ from app.engines.generation_job_engine import GenerationJobEngine
 from app.repositories.generation_job_repository import GenerationJobRepository
 from app.repositories.generation_notification_repository import generation_notification_repository
 from app.schemas.orchestrator import ProjectSpec
+from app.services.activity_feed_service import activity_feed_service
 from app.services.file_protocol import EmittedFile, ParsedAgentOutput
 
 
@@ -322,3 +323,83 @@ def test_generation_job_sse_streams_notification_frames_for_open_job(client, cli
     assert '"type": "notification"' in body or '"type":"notification"' in body
     assert "TASK_QUEUED" in body
     assert "TASK_PAUSED" in body
+
+
+# --- LDCN Multi-Agent Runtime, Phase 1: unified Event Bus dual-write ---------- #
+
+def _activity_feed_generation_events(client, job_id: str) -> list[dict]:
+    # Queries the service directly rather than GET /api/activity-feed: the
+    # route always resolves an unspecified workspace_id to the caller's
+    # *personal* workspace (see activity_feed.py:_workspace), which would
+    # silently exclude these jobs -- _create() intentionally creates them
+    # with workspace_id=None (see its own docstring) to bypass the
+    # WorkspaceMembership check, matching the rest of this file's tests.
+    owner = _owner_id(client)
+    result = activity_feed_service.list(owner, workspace_id=None, category="generation", limit=100)
+    return [item for item in result["items"] if item["metadata"].get("job_id") == job_id]
+
+
+def test_create_job_also_publishes_a_named_activity_event(client, client_scoped_engine):
+    """The notification and the activity-feed event are two independent
+    write paths off the same _notify() call -- this proves the SECOND one
+    (Phase 1's addition) actually lands, not just the first."""
+    owner = _owner_id(client)
+    job = _create(client_scoped_engine, owner, project_id="room-notif-activity")
+
+    events = _activity_feed_generation_events(client, job["id"])
+    assert len(events) == 1
+    assert events[0]["action"] == "task_queued"
+    assert events[0]["source"] == "event_catalog"
+    assert events[0]["metadata"]["severity"] == "INFO"
+
+
+def test_pause_publishes_task_paused_not_task_cancelled_on_the_activity_feed(client, client_scoped_engine):
+    """Regression guard for the same honest-deviation decision as the
+    notification itself: the activity feed must never call this
+    'cancelled' either."""
+    owner = _owner_id(client)
+    engine = client_scoped_engine
+    job = _create(engine, owner, project_id="room-notif-activity-pause")
+    engine.pause(job["id"], owner)
+
+    actions = {event["action"] for event in _activity_feed_generation_events(client, job["id"])}
+    assert "task_paused" in actions
+    assert "task_cancelled" not in actions
+
+
+def test_deterministic_run_activity_events_match_notification_types(client, client_scoped_engine):
+    """The activity feed and the notification center are fed by the SAME
+    _notify() call -- their action/type sets must always agree, or the two
+    "event bus" layers have silently drifted apart."""
+    owner = _owner_id(client)
+    engine = client_scoped_engine
+    job = _create(engine, owner, project_id="room-notif-activity-det")
+    engine.execute(job["id"], owner, api_key=None, user_model_choice=None, mode="deterministic")
+
+    notif_types = {n["type"] for n in _notifications_for_job(client, job["id"])}
+    activity_actions = {event["action"] for event in _activity_feed_generation_events(client, job["id"])}
+    # snake_case(action) must be the exact lowercase of each TYPE_UPPER_SNAKE.
+    assert activity_actions == {t.lower() for t in notif_types}
+
+
+def test_unmapped_notification_type_never_raises(client, client_scoped_engine):
+    """named_event_for_generation_notification() returning None for an
+    unmapped type must be a silent no-op, never an exception that could mask
+    the real notification write next to it."""
+    owner = _owner_id(client)
+    engine = client_scoped_engine
+    job = _create(engine, owner, project_id="room-notif-unmapped")
+    engine._notify(job, owner, "NOT_A_REAL_TYPE", severity="INFO")  # type: ignore[arg-type]
+
+    # The (still-real) notification write must have happened -- checked via
+    # the repository directly, since GenerationNotification's schema (by
+    # design) strictly validates `type` against the real Literal, and would
+    # reject this deliberately-fake row the same way GET /api/notifications
+    # correctly rejects any row that doesn't match a real notification type.
+    stored, _ = generation_notification_repository.list_for_user(owner, limit=100)
+    assert any(n["type"] == "NOT_A_REAL_TYPE" and n["job_id"] == job["id"] for n in stored)
+    # ...and no activity event was fabricated for a type the catalog doesn't know.
+    assert not any(
+        event["metadata"].get("job_id") == job["id"] and event["action"] == "not_a_real_type"
+        for event in _activity_feed_generation_events(client, job["id"])
+    )

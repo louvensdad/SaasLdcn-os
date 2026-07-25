@@ -254,7 +254,99 @@ EVENT_CATALOG: dict[str, NamedEvent] = {
         consumers=("activity feed",),
         wired=False,  # would fire once verification-expiry <-> subscription-downgrade is wired; real gap, not built this pass
     ),
+
+    # LDCN Multi-Agent Runtime, Phase 1 (Event Bus unification): the 11
+    # GenerationNotificationType values are the already-deduplicated,
+    # meaningful-lifecycle-transition layer for a GenerationJob (see
+    # generation_notification_repository.py) -- unlike the BuildStarted/
+    # BuildFinished entries above, these are NOT already covered elsewhere,
+    # because generation_notifications did not exist when those were
+    # written. Deliberately NOT wiring GenerationJobEngine._emit()'s raw
+    # per-command/per-stage console events here too -- that stream is
+    # throttled to every 400ms and would be exactly the high-volume noise
+    # AgentFinished/AgentFailed above were kept unwired to avoid.
+    "GenerationTaskQueued": NamedEvent(
+        category="generation", action="task_queued", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (TASK_QUEUED)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationTaskStarted": NamedEvent(
+        category="generation", action="task_started", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (TASK_STARTED)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationStageStarted": NamedEvent(
+        category="generation", action="stage_started", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (STAGE_STARTED)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationStageCompleted": NamedEvent(
+        category="generation", action="stage_completed", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (STAGE_COMPLETED)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationTaskWaitingUser": NamedEvent(
+        category="generation", action="task_waiting_user", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (TASK_WAITING_USER)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationTaskRetrying": NamedEvent(
+        category="generation", action="task_retrying", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (TASK_RETRYING)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationTaskStalled": NamedEvent(
+        category="generation", action="task_stalled", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (TASK_STALLED)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationTaskFailed": NamedEvent(
+        category="generation", action="task_failed", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (TASK_FAILED)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationTaskPaused": NamedEvent(
+        category="generation", action="task_paused", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (TASK_PAUSED)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationTaskCompleted": NamedEvent(
+        category="generation", action="task_completed", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (TASK_COMPLETED)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
+    "GenerationBuildCompleted": NamedEvent(
+        category="generation", action="build_completed", payload_version=1,
+        producer="generation_job_engine.py:GenerationJobEngine._notify (BUILD_COMPLETED)",
+        consumers=("activity feed", "Notification Center"), wired=True,
+    ),
 }
+
+# GenerationNotificationType (generation_notification_repository.py) -> the
+# catalog entry it publishes through. Centralized here, not in
+# generation_job_engine.py, so the mapping can never drift from the catalog
+# it maps into -- test_event_catalog.py checks every key resolves.
+_GENERATION_NOTIFICATION_EVENT_NAMES: dict[str, str] = {
+    "TASK_QUEUED": "GenerationTaskQueued",
+    "TASK_STARTED": "GenerationTaskStarted",
+    "STAGE_STARTED": "GenerationStageStarted",
+    "STAGE_COMPLETED": "GenerationStageCompleted",
+    "TASK_WAITING_USER": "GenerationTaskWaitingUser",
+    "TASK_RETRYING": "GenerationTaskRetrying",
+    "TASK_STALLED": "GenerationTaskStalled",
+    "TASK_FAILED": "GenerationTaskFailed",
+    "TASK_PAUSED": "GenerationTaskPaused",
+    "TASK_COMPLETED": "GenerationTaskCompleted",
+    "BUILD_COMPLETED": "GenerationBuildCompleted",
+}
+
+
+def named_event_for_generation_notification(notification_type: str) -> str | None:
+    """Maps a GenerationNotificationType to its catalog entry name, so
+    `_notify()` never hand-rolls category/action for the activity feed.
+    Returns None for a type this catalog doesn't (yet) know about -- callers
+    must treat that as "skip," never raise."""
+    return _GENERATION_NOTIFICATION_EVENT_NAMES.get(notification_type)
 
 
 def emit_named_event(event_name: str, user_id: str, *, workspace_id: str | None = None, project_id: str | None = None, metadata: dict | None = None) -> None:
