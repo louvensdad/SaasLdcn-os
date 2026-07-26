@@ -54,7 +54,15 @@ _CREDENTIAL_ASSIGNMENT = re.compile(
     r"(?P<key>[A-Za-z0-9_.]*"
     r"(?:secret|password|passwd|token|api[_-]?key|apikey|private[_-]?key|credential|access[_-]?key)"
     r"[A-Za-z0-9_.]*)"
-    r"\s*[:=]\s*(?P<rest>[^\r\n]*)$"
+    # [ \t] only, NOT \s -- \s matches \n too, which previously let a
+    # colon-terminated Python control-flow line whose header happens to
+    # contain "token"/"secret"/etc (`except jwt.InvalidTokenError:`,
+    # `class TokenValidator:`) swallow its entire NEXT line as "rest",
+    # misreading the body statement (e.g. `raise ValueError("Token invalido")`)
+    # as the value assigned to a nonexistent credential. Confirmed live: this
+    # is not a real assignment at all, just a block header followed by its
+    # body on the next line.
+    r"[ \t]*[:=][ \t]*(?P<rest>[^\r\n]*)$"
 )
 
 _ENV_STYLE_EXTENSIONS = {".env", ".properties", ".ini", ".cfg", ".conf", ".toml", ".yaml", ".yml"}
@@ -70,6 +78,12 @@ _QUOTED_VALUE = re.compile(r'"([^"\r\n]*)"|\'([^\'\r\n]*)\'')
 _PLACEHOLDER_TOKENS = re.compile(
     r"(?i)\b(change-?me|example|placeholder|your[_-][a-z0-9_-]*|dummy|sample|"
     r"insert[_-]your|replace[_-]?me|fake|test(?:[_-]?(?:key|secret|token|value))?|"
+    # "stub" is standard mock/placeholder terminology (StubAuthService-style
+    # generated code): real bug found live -- "stub-access-token",
+    # "stub-refresh-token", "new-stub-refresh-token" were flagged as
+    # UNSAFE_TEMPLATE/needing human approval on every single generation that
+    # produces a stub service, even though they're obviously not real.
+    r"(?:new-)?stub(?:[_-][a-z0-9_-]*)?|"
     r"x{3,}|todo|fixme|redacted)"
     r"|\.\.\.|<[^<>]{0,80}>|\$\{[^{}]{0,80}}|%[A-Za-z_]+%"
 )
@@ -88,6 +102,38 @@ def _extract_literal_value(rest: str) -> str:
         return quoted.group(1) if quoted.group(1) is not None else quoted.group(2)
     bare = re.match(r"[^\s#;,)]+", rest.strip())
     return bare.group(0) if bare else rest.strip()
+
+
+_PYDANTIC_FIELD_CALL = re.compile(r"=\s*Field\s*\(")
+_PYDANTIC_FIELD_DEFAULT_KWARG = re.compile(r"\bdefault\s*=\s*")
+
+
+def _pydantic_field_literal_value(rest: str) -> tuple[str, bool] | None:
+    """A Pydantic `Field(...)` call carries several string kwargs --
+    `description`, `title`, `examples`, `alias` -- that document the field but
+    never hold its actual value. `_extract_literal_value`'s "first quoted
+    string on the line" heuristic previously grabbed whichever of THOSE came
+    first (e.g. `refresh_token: str = Field(..., description="Token de
+    atualizacao (refresh token)")` classified the human-readable description
+    itself as a leaked "refresh_token" secret). Only `default=<literal>` is a
+    real value; a bare `Field(...)`/`Field(default_factory=...)` (no literal
+    default) means no secret is assigned here at all.
+
+    Returns None when `rest` isn't Field(...)-shaped at all (caller should use
+    its normal whole-line extraction). Returns `("", False)` when it IS
+    Field-shaped but carries no literal default (caller should treat that as
+    SAFE_REFERENCE, never falling back to scanning the rest of the line for an
+    unrelated quoted string like `description=`)."""
+    if not _PYDANTIC_FIELD_CALL.search(rest):
+        return None
+    match = _PYDANTIC_FIELD_DEFAULT_KWARG.search(rest)
+    if not match:
+        return "", False
+    tail = rest[match.end():]
+    quoted = _QUOTED_VALUE.search(tail)
+    if quoted:
+        return (quoted.group(1) if quoted.group(1) is not None else quoted.group(2)), True
+    return _extract_literal_value(tail), False
 
 # A literal reference into runtime config/env, not a hardcoded value -- exactly
 # the "fixed" shape a repair should produce (os.getenv("SECRET_KEY"), not a
@@ -151,7 +197,18 @@ def _looks_like_usable_credential(value: str, entropy: float, diversity: int) ->
         return True
     if _BASE64ISH_CHARSET.match(value) and diversity >= 3 and len(value) >= 24:
         return True
-    return entropy >= 3.8 and diversity >= 2 and len(value) >= 20
+    # 3.75, not a rounder 3.8: a real regression surfaced live when the
+    # write-time gate's classifier was reused by the post-build Quality Gate
+    # scanner (previously its own, cruder regex) -- a genuine hardcoded key
+    # like "sk_live_real_secret_value_12345" (entropy ~3.79 bits/char, mixed
+    # letters+digits, 31 chars) fell just under a 3.8 cutoff and was cleared
+    # as SAFE_REFERENCE. Real credentials with an English-word-ish body
+    # (common for hand-typed or provider-prefixed secrets, not just
+    # machine-random ones) must not be waved through by a threshold this
+    # close; the "not usable" default-safe branch above still protects
+    # genuinely low-diversity ordinary strings (e.g. diversity < 2 fails
+    # before entropy is even considered).
+    return entropy >= 3.75 and diversity >= 2 and len(value) >= 20
 
 
 def _classify_value(
@@ -162,8 +219,18 @@ def _classify_value(
         return "SAFE_REFERENCE", "empty value"
     if _ENV_REFERENCE.match(rhs):
         return "SAFE_REFERENCE", "value is a runtime env/config lookup, not a hardcoded literal"
-    was_quoted = bool(_QUOTED_VALUE.search(rest))
-    stripped = _extract_literal_value(rest).strip()
+    field_default = _pydantic_field_literal_value(rest)
+    if field_default is not None:
+        # Field(...)-shaped RHS: only `default=<literal>` is a real value --
+        # description/title/examples/alias kwargs are documentation, never
+        # the field's actual content, and must not be scanned as one.
+        field_value, was_quoted = field_default
+        if not field_value.strip():
+            return "SAFE_REFERENCE", "Field(...) declares no literal default; description/metadata kwargs are not the field's value"
+        stripped = field_value.strip()
+    else:
+        was_quoted = bool(_QUOTED_VALUE.search(rest))
+        stripped = _extract_literal_value(rest).strip()
     if not stripped:
         return "SAFE_REFERENCE", "empty value"
     for _, pattern in _KNOWN_SECRET_FORMATS:
@@ -195,7 +262,19 @@ def _classify_value(
         return "PLACEHOLDER", "low-entropy value inside an env template file"
     if usable:
         return "REAL_SECRET", f"usable-credential shape (entropy {entropy:.2f} bits/char, {len(stripped)} chars, charset diversity {diversity})"
-    return "SUSPICIOUS", f"ambiguous value (entropy {entropy:.2f}, length {len(stripped)} chars); cannot confirm placeholder or real secret from content alone"
+    # Real bug found live: this default (non-doc/non-test/non-env-template)
+    # branch previously fell through to SUSPICIOUS unconditionally whenever a
+    # quoted string >=12 chars wasn't recognized placeholder wording -- even
+    # though `_looks_like_usable_credential` (this function's own dedicated
+    # "would this actually work as a secret" check) had ALREADY said no. That
+    # made ordinary long string literals with no digits/uppercase -- a Zod
+    # validation message ("validation_required"), UI copy, a log message, a
+    # SQL fragment -- block on every single generation containing one, purely
+    # because they happened to sit on a "key: value"-shaped line whose key
+    # contained a credential-ish word (`password: z.string().min(1,
+    # 'validation_required')`). Trust the same signal doc/test paths already
+    # trust: not usable means not a secret, not merely "ambiguous".
+    return "SAFE_REFERENCE", f"value does not look like a usable credential (entropy {entropy:.2f} bits/char, {len(stripped)} chars, charset diversity {diversity})"
 
 
 def classify_secret_findings(relative_path: str, content: str) -> list[SecretFinding]:

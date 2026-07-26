@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "checked_packages": 49,
+  "manifests": [
+    "package.json"
+  ],
+  "findings": [],
+  "generated_at": "2026-07-26T13:13:25-0300",
+  "report_path": "C:\\ldcn-os\\generated-projects\\active\\craftforge-hub_ec9577274511\\dependency.validation.json"
+}

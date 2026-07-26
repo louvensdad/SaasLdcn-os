@@ -624,6 +624,28 @@ def test_fastapi_single_router_is_discovered_without_false_repository_warning(ma
     assert not any(i.id == "backend_no_repository_Ativos" for i in report.issues)
 
 
+def test_fastapi_bare_router_files_across_modules_are_not_falsely_merged(make_project):
+    # Real bug found live (CraftForge Hub generation): a hexagonal-style module
+    # layout writes each module's router to the SAME bare filename
+    # ("router.py") with a prefix-less `APIRouter()` call -- account/router.py,
+    # admin/router.py, auth/router.py, etc. The old fallback used the bare
+    # filename stem ("router") as the resource name for every one of them,
+    # collapsing 3 unrelated resources into a single fake "Router" resource
+    # with a false "3 separate controller implementations" BLOCKER.
+    files = [
+        ("app/account/router.py", "from fastapi import APIRouter\n\nrouter = APIRouter()\n\n@router.get('/')\ndef list_accounts(): ...\n"),
+        ("app/admin/router.py", "from fastapi import APIRouter\n\nrouter = APIRouter()\n\n@router.get('/')\ndef list_admins(): ...\n"),
+        ("app/auth/router.py", "from fastapi import APIRouter\n\nrouter = APIRouter()\n\n@router.post('/')\ndef login(): ...\n"),
+        ("package.json", "{\"name\": \"api\"}"),
+        ("README.md", "# App\nRun with npm start.\n" * 5),
+    ]
+    project = make_project(files, name="fastapi-bare-router-modules")
+    engine = FunctionalCompletenessEngine()
+    report = engine.evaluate(project)
+    assert not any(i.id.startswith("duplicate_resource_implementation_") for i in report.issues)
+    assert {r.resource for r in report.resources} == {"Account", "Admin", "Auth"}
+
+
 def test_fastapi_router_inside_a_virtualenv_is_never_discovered(make_project):
     files = [
         (".ldcn-venv/Lib/site-packages/fastapi/routing.py", _fastapi_router("internal", "GET")),

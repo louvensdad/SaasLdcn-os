@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "lock": {
+    "react": "^18.2.0",
+    "react_major": 18,
+    "react_native": null,
+    "expo": null,
+    "node": null,
+    "source_manifest": "pre_generation_default",
+    "captured_at": "2026-07-26T10:48:13-0300"
+  },
+  "findings": [],
+  "generated_at": "2026-07-26T13:13:25-0300",
+  "report_path": "C:\\ldcn-os\\generated-projects\\active\\craftforge-hub_ec9577274511\\stack.compatibility.json"
+}

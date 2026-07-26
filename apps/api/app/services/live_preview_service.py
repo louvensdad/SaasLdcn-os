@@ -5,12 +5,12 @@ import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 from uuid import uuid4
 
 from app.core.event_catalog import emit_named_event
 from app.schemas.live_preview import LivePreviewSession, LivePreviewStatus
-from app.services.execution_runtime import HostExecutionRuntime
+from app.services.execution_runtime import HostExecutionRuntime, redact
 from app.services.preview_inspector import PreviewInspector
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter
 from app.services.runtime_functional_test_service import (
@@ -62,7 +62,14 @@ class _Session:
         self.sandbox_id = sandbox_id
         self.backend_handle_id: str | None = None
         self.frontend_handle_id: str | None = None
+        self.backend_port: int | None = None
         self.frontend_port: int | None = None
+        # The ACTIVE log file for each process -- restart_frontend/restart_backend
+        # spawn a new process against a differently-named log file
+        # (frontend-restart.log, not frontend.log), so this must be tracked
+        # explicitly rather than reconstructed from a fixed naming convention.
+        self.backend_log_path: Path | None = None
+        self.frontend_log_path: Path | None = None
         self.inspector: PreviewInspector | None = None
         self.status: LivePreviewStatus = "starting"
         self.reason = ""
@@ -155,11 +162,13 @@ class LivePreviewService:
         work_root = Path(host_runtime._sessions[sandbox_id]["root"])  # noqa: SLF001 -- deliberate reuse, isolated copy
         venv_python = _venv_python(work_root / relative_backend / ".ldcn-venv")
         evidence_dir = host_runtime.evidence_root / "live-preview" / session_id
+        session.backend_log_path = evidence_dir / "backend.log"
+        session.frontend_log_path = evidence_dir / "frontend.log"
 
         session.backend_handle_id = host_runtime.start_background(
             sandbox_id,
             [str(venv_python), "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(backend_port)],
-            cwd=relative_backend, log_path=evidence_dir / "backend.log",
+            cwd=relative_backend, log_path=session.backend_log_path,
         )
         if not _wait_ready(f"http://127.0.0.1:{backend_port}/"):
             return self._fail(
@@ -171,7 +180,7 @@ class LivePreviewService:
         session.frontend_handle_id = host_runtime.start_background(
             sandbox_id,
             [npm, "run", "dev", "--", "--port", str(frontend_port), "--hostname", "127.0.0.1"],
-            cwd=relative_frontend, log_path=evidence_dir / "frontend.log",
+            cwd=relative_frontend, log_path=session.frontend_log_path,
             extra_env={"NEXT_PUBLIC_API_URL": f"http://127.0.0.1:{backend_port}"},
         )
         if not _wait_ready(f"http://127.0.0.1:{frontend_port}/"):
@@ -180,6 +189,7 @@ class LivePreviewService:
                 f"Frontend did not become ready within the startup budget.\n{host_runtime.tail_background(session.frontend_handle_id)}",
             )
 
+        session.backend_port = backend_port
         session.frontend_port = frontend_port
         session.status = "running"
         session.touch()
@@ -231,6 +241,23 @@ class LivePreviewService:
             return None
         return session
 
+    def process_log_path(self, session_id: str, owner_user_id: str, service: Literal["frontend", "backend"]) -> Path | None:
+        """Real stdout+stderr log file for the requested process, or None if
+        the session/service combination doesn't exist. stdout and stderr are
+        NOT separated on disk -- HostExecutionRuntime.start_background writes
+        both into the same file (a single real log FILE, never an unread
+        PIPE that could deadlock a chatty dev server) -- so "filter by
+        stream" is not something this can offer without changing that
+        primitive; "filter by service" (frontend vs backend) is real and
+        exact, since each process gets its own distinct file."""
+        session = self._authorized_session(session_id, owner_user_id)
+        if session is None:
+            return None
+        path = session.frontend_log_path if service == "frontend" else session.backend_log_path
+        if path is None or not path.is_file():
+            return None
+        return path
+
     def console_log(self, session_id: str, owner_user_id: str) -> list[dict[str, str]] | None:
         session = self._authorized_session(session_id, owner_user_id)
         if session is None or session.inspector is None:
@@ -261,6 +288,106 @@ class LivePreviewService:
         session.inspector.reload()
         session.touch()
         return True
+
+    def record_external_open(self, session_id: str, owner_user_id: str) -> bool:
+        """Durable record of a "Ver frontend no navegador" click -- the button
+        only ever appears once the session is already `running` with a real
+        preview_url, so this never opens/creates anything, only logs it."""
+        session = self._authorized_session(session_id, owner_user_id)
+        if session is None or session.status != "running":
+            return False
+        session.touch()
+        emit_named_event(
+            "ExternalPreviewOpened", owner_user_id,
+            project_id=session.project_id, metadata={"session_id": session_id},
+        )
+        return True
+
+    # --------------------------------------------------------------- restart
+    def restart_frontend(self, session_id: str, owner_user_id: str) -> LivePreviewSession | None:
+        """Stop and respawn only the frontend process -- the backend and its
+        sandbox stay untouched, matching the "reinicie so o que precisa"
+        requirement (a full stop()+start() would also tear down the backend
+        and any inspector state for no reason)."""
+        session = self._authorized_session(session_id, owner_user_id)
+        if session is None or session.status != "running":
+            return None
+        with self._lock:
+            session.status = "starting"
+        if session.frontend_handle_id:
+            session.host_runtime.stop_background(session.frontend_handle_id)
+        root = self._root(session.project_id)
+        if root is None:
+            return self._fail(session, "Generated project was not found.")
+        frontend_root = RuntimeFunctionalTestService._find_nextjs_frontend(root)  # noqa: SLF001
+        if frontend_root is None:
+            return self._fail(session, "Frontend directory disappeared from the workspace.")
+        relative_frontend = frontend_root.relative_to(root).as_posix() or "."
+        frontend_port = _free_port()
+        npm = "npm.cmd" if sys.platform == "win32" else "npm"
+        evidence_dir = session.host_runtime.evidence_root / "live-preview" / session_id
+        session.frontend_log_path = evidence_dir / "frontend-restart.log"
+        session.frontend_handle_id = session.host_runtime.start_background(
+            session.sandbox_id,
+            [npm, "run", "dev", "--", "--port", str(frontend_port), "--hostname", "127.0.0.1"],
+            cwd=relative_frontend, log_path=session.frontend_log_path,
+            # NEXT_PUBLIC_API_URL must still point at the same, still-running backend.
+            extra_env={"NEXT_PUBLIC_API_URL": f"http://127.0.0.1:{session.backend_port}"} if session.backend_port else None,
+        )
+        if not _wait_ready(f"http://127.0.0.1:{frontend_port}/"):
+            return self._fail(
+                session,
+                f"Frontend did not become ready within the startup budget.\n{session.host_runtime.tail_background(session.frontend_handle_id)}",
+            )
+        session.frontend_port = frontend_port
+        session.status = "running"
+        session.touch()
+        try:
+            if session.inspector is not None:
+                session.inspector.stop()
+            session.inspector = self._inspector_factory(f"http://127.0.0.1:{frontend_port}/")
+        except Exception:  # noqa: BLE001 -- inspector is a bonus layer, never fails the restart
+            session.inspector = None
+        emit_named_event("FrontendRestarted", owner_user_id, project_id=session.project_id, metadata={"session_id": session_id})
+        return self._to_model(session)
+
+    def restart_backend(self, session_id: str, owner_user_id: str) -> LivePreviewSession | None:
+        """Stop and respawn only the backend process. The frontend keeps
+        running against the SAME backend port/base URL (Next.js's dev server
+        doesn't need a restart just because its upstream API bounced)."""
+        session = self._authorized_session(session_id, owner_user_id)
+        if session is None or session.status != "running" or not session.backend_port:
+            return None
+        with self._lock:
+            session.status = "starting"
+        if session.backend_handle_id:
+            session.host_runtime.stop_background(session.backend_handle_id)
+        root = self._root(session.project_id)
+        if root is None:
+            return self._fail(session, "Generated project was not found.")
+        backend_root = RuntimeFunctionalTestService._find_python_backend(root)  # noqa: SLF001
+        if backend_root is None:
+            return self._fail(session, "Backend directory disappeared from the workspace.")
+        relative_backend = backend_root.relative_to(root).as_posix() or "."
+        backend_port = session.backend_port
+        work_root = Path(session.host_runtime._sessions[session.sandbox_id]["root"])  # noqa: SLF001
+        venv_python = _venv_python(work_root / relative_backend / ".ldcn-venv")
+        evidence_dir = session.host_runtime.evidence_root / "live-preview" / session_id
+        session.backend_log_path = evidence_dir / "backend-restart.log"
+        session.backend_handle_id = session.host_runtime.start_background(
+            session.sandbox_id,
+            [str(venv_python), "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(backend_port)],
+            cwd=relative_backend, log_path=session.backend_log_path,
+        )
+        if not _wait_ready(f"http://127.0.0.1:{backend_port}/"):
+            return self._fail(
+                session,
+                f"Backend did not become ready within the startup budget.\n{session.host_runtime.tail_background(session.backend_handle_id)}",
+            )
+        session.status = "running"
+        session.touch()
+        emit_named_event("BackendRestarted", owner_user_id, project_id=session.project_id, metadata={"session_id": session_id})
+        return self._to_model(session)
 
     # ------------------------------------------------------------------ stop
     def stop(self, session_id: str, owner_user_id: str) -> bool:

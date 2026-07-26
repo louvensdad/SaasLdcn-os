@@ -79,6 +79,11 @@ export const livePreviewClient = {
       TEN_MIN,
     ),
   get: (sessionId: string) => send<LivePreviewSession>(`/api/live-preview/${encodeURIComponent(sessionId)}`, { method: 'GET' }, FIVE_MIN),
+  // 404 (no active session for this project) is an expected, common outcome
+  // -- callers should catch it and fall back to the "not running" state, not
+  // surface it as an error.
+  getByProject: (projectId: string) =>
+    send<LivePreviewSession>(`/api/live-preview/by-project/${encodeURIComponent(projectId)}`, { method: 'GET' }, FIVE_MIN),
   stop: (sessionId: string) => send<null>(`/api/live-preview/${encodeURIComponent(sessionId)}/stop`, { method: 'POST' }, FIVE_MIN),
   console: (sessionId: string) =>
     send<ConsoleLogEntry[]>(`/api/live-preview/${encodeURIComponent(sessionId)}/console`, { method: 'GET' }, FIVE_MIN),
@@ -91,4 +96,13 @@ export const livePreviewClient = {
       FIVE_MIN,
     ),
   reload: (sessionId: string) => send<null>(`/api/live-preview/${encodeURIComponent(sessionId)}/reload`, { method: 'POST' }, FIVE_MIN),
+  // Fire-and-forget: durably records the "Ver frontend no navegador" click
+  // server-side (ExternalPreviewOpened). Callers should not block window.open()
+  // on this -- a slow/failed request must never delay opening the real tab.
+  recordExternalOpen: (sessionId: string) =>
+    send<null>(`/api/live-preview/${encodeURIComponent(sessionId)}/external-open`, { method: 'POST' }, FIVE_MIN),
+  restartFrontend: (sessionId: string) =>
+    send<LivePreviewSession>(`/api/live-preview/${encodeURIComponent(sessionId)}/restart-frontend`, { method: 'POST' }, TEN_MIN),
+  restartBackend: (sessionId: string) =>
+    send<LivePreviewSession>(`/api/live-preview/${encodeURIComponent(sessionId)}/restart-backend`, { method: 'POST' }, TEN_MIN),
 };

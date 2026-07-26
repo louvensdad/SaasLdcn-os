@@ -372,11 +372,19 @@ def test_build_and_package_are_last_and_contracts_are_first():
 def test_skipped_build_persists_guide_and_does_not_raise(isolated_engine, monkeypatch):
     engine, repository, root = isolated_engine
     job = _create(engine)
+    _prepare(engine, job, _spec())
     source = root / "source.ts"
     source.write_text("export const ok = true;", encoding="utf-8")
+    package = root / "package.json"
+    package.write_text('{"name":"backend"}', encoding="utf-8")
     job["artifacts"].append({
-        "id": "art_source", "stage": "frontend", "name": "src/source.ts",
+        "id": "art_source", "stage": "backend", "name": "backend/src/source.ts",
         "kind": "generated", "path": str(source), "size_bytes": source.stat().st_size,
+        "checksum": "x", "valid": True, "warnings": [], "created_at": engine._now(),
+    })
+    job["artifacts"].append({
+        "id": "art_package", "stage": "backend", "name": "backend/package.json",
+        "kind": "generated", "path": str(package), "size_bytes": package.stat().st_size,
         "checksum": "x", "valid": True, "warnings": [], "created_at": engine._now(),
     })
     generated_root = root / "generated"
@@ -428,6 +436,7 @@ def test_build_merges_package_json_from_different_stages_instead_of_dropping_one
     # TypeORM deps were completely absent from the final package.json).
     engine, repository, root = isolated_engine
     job = _create(engine)
+    _prepare(engine, job, _spec())
     backend_pkg = root / "backend_package.json"
     backend_pkg.write_text(
         json.dumps({"dependencies": {"@nestjs/common": "^10.0.0"}, "scripts": {"start": "nest start"}}),
@@ -440,8 +449,8 @@ def test_build_merges_package_json_from_different_stages_instead_of_dropping_one
     )
     now = engine._now()
     job["artifacts"].extend([
-        {"id": "art_be_pkg", "stage": "backend", "name": "package.json", "kind": "generated", "path": str(backend_pkg), "size_bytes": backend_pkg.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
-        {"id": "art_fe_pkg", "stage": "frontend", "name": "package.json", "kind": "generated", "path": str(frontend_pkg), "size_bytes": frontend_pkg.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
+        {"id": "art_be_pkg", "stage": "backend", "name": "backend/package.json", "kind": "generated", "path": str(backend_pkg), "size_bytes": backend_pkg.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
+        {"id": "art_fe_pkg", "stage": "frontend", "name": "backend/package.json", "kind": "generated", "path": str(frontend_pkg), "size_bytes": frontend_pkg.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
     ])
 
     class _FakeWriter:
@@ -470,7 +479,7 @@ def test_build_merges_package_json_from_different_stages_instead_of_dropping_one
 
     engine._build(job, "user-1")
 
-    merged = json.loads(fake_writer.captured_files["package.json"])
+    merged = json.loads(fake_writer.captured_files["backend/package.json"])
     assert merged["dependencies"] == {"@nestjs/common": "^10.0.0", "next": "^14.0.0"}
     assert merged["scripts"] == {"start": "nest start", "build": "next build"}
 
@@ -483,6 +492,7 @@ def test_build_merges_tsconfig_json_so_backend_decorators_are_not_silently_dropp
     # the whole shared src/ tree) hit the backend's controller files.
     engine, repository, root = isolated_engine
     job = _create(engine)
+    _prepare(engine, job, _spec())
     backend_tsconfig = root / "backend_tsconfig.json"
     backend_tsconfig.write_text(
         json.dumps({"compilerOptions": {"module": "commonjs", "experimentalDecorators": True, "emitDecoratorMetadata": True}}),
@@ -493,10 +503,13 @@ def test_build_merges_tsconfig_json_so_backend_decorators_are_not_silently_dropp
         json.dumps({"compilerOptions": {"jsx": "preserve", "module": "esnext"}}),
         encoding="utf-8",
     )
+    package = root / "tsconfig_package.json"
+    package.write_text('{"name":"backend"}', encoding="utf-8")
     now = engine._now()
     job["artifacts"].extend([
-        {"id": "art_be_ts", "stage": "backend", "name": "tsconfig.json", "kind": "generated", "path": str(backend_tsconfig), "size_bytes": backend_tsconfig.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
-        {"id": "art_fe_ts", "stage": "frontend", "name": "tsconfig.json", "kind": "generated", "path": str(frontend_tsconfig), "size_bytes": frontend_tsconfig.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
+        {"id": "art_be_ts", "stage": "backend", "name": "backend/tsconfig.json", "kind": "generated", "path": str(backend_tsconfig), "size_bytes": backend_tsconfig.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
+        {"id": "art_fe_ts", "stage": "frontend", "name": "backend/tsconfig.json", "kind": "generated", "path": str(frontend_tsconfig), "size_bytes": frontend_tsconfig.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
+        {"id": "art_ts_pkg", "stage": "backend", "name": "backend/package.json", "kind": "generated", "path": str(package), "size_bytes": package.stat().st_size, "checksum": "x", "valid": True, "warnings": [], "created_at": now},
     ])
 
     class _FakeWriter:
@@ -525,14 +538,14 @@ def test_build_merges_tsconfig_json_so_backend_decorators_are_not_silently_dropp
 
     engine._build(job, "user-1")
 
-    merged = json.loads(fake_writer.captured_files["tsconfig.json"])
+    merged = json.loads(fake_writer.captured_files["backend/tsconfig.json"])
     assert merged["compilerOptions"]["experimentalDecorators"] is True
     assert merged["compilerOptions"]["emitDecoratorMetadata"] is True
     assert merged["compilerOptions"]["jsx"] == "preserve"
     assert merged["compilerOptions"]["module"] == "esnext"  # later stage wins on an exact key collision
 
 
-def test_pipeline_continues_to_package_after_build_skip(isolated_engine, monkeypatch):
+def test_pipeline_never_completes_after_build_skip(isolated_engine, monkeypatch):
     engine, repository, _ = isolated_engine
     job = _create(engine)
     executed: list[str] = []
@@ -552,9 +565,9 @@ def test_pipeline_continues_to_package_after_build_skip(isolated_engine, monkeyp
 
     completed = repository.get(job["id"], "user-1")
     assert executed[-3:] == ["docs", "build", "package"]
-    assert completed["status"] == "READY"
+    assert completed["status"] == "FAILED"
     assert completed["stageStatuses"]["build"] == "skipped"
-    assert completed["stageStatuses"]["package"] == "success"
+    assert completed["packageReady"] is False
     assert completed["partial"] is True and completed["valid"] is False
 
     acknowledged = engine.acknowledge_build_skip(job["id"], "user-1")
@@ -802,7 +815,11 @@ def test_pipeline_advances_through_backend_to_frontend_and_completes(isolated_en
         return original_save(j, owner)
 
     monkeypatch.setattr("app.engines.generation_job_engine._run_agent", _fake_agent)
-    monkeypatch.setattr(engine, "_build", lambda job, owner: None)
+    monkeypatch.setattr(
+        engine,
+        "_build",
+        lambda job, owner: job.update(buildStatus="PASSED", partial=False, valid=True),
+    )
     monkeypatch.setattr(engine, "_package", lambda job, owner: None)
     monkeypatch.setattr(engine, "_save", _spy_save)
     engine.execute(job["id"], "user-1", api_key="secret", user_model_choice="m")
@@ -841,7 +858,11 @@ def test_mobile_delivery_type_pipeline_advances_through_mobile_stage_and_complet
         return None, parsed
 
     monkeypatch.setattr("app.engines.generation_job_engine._run_agent", _fake_agent)
-    monkeypatch.setattr(engine, "_build", lambda job, owner: None)
+    monkeypatch.setattr(
+        engine,
+        "_build",
+        lambda job, owner: job.update(buildStatus="PASSED", partial=False, valid=True),
+    )
     monkeypatch.setattr(engine, "_package", lambda job, owner: None)
     engine.execute(job["id"], "user-1", api_key="secret", user_model_choice="m")
 
@@ -887,7 +908,7 @@ def test_flutter_job_is_rejected_until_phase_5(isolated_engine):
         )
 
 
-def test_mobile_job_reaches_ready_and_packages_real_mobile_zip(isolated_engine, monkeypatch):
+def test_mobile_job_with_skipped_build_is_not_packaged(isolated_engine, monkeypatch):
     engine, repository, _ = isolated_engine
     job = _create_mobile(engine)
 
@@ -925,20 +946,11 @@ def test_mobile_job_reaches_ready_and_packages_real_mobile_zip(isolated_engine, 
     generated_root = Path(result["resultPath"]) if result.get("resultPath") else None
     zip_path = DOWNLOAD_DIR / f"{result.get('generatedProjectId')}.zip"
     try:
-        assert result["status"] == "READY", (result.get("error") or {}).get("message")
-        assert zip_path.is_file()
-        with zipfile.ZipFile(zip_path) as archive:
-            names = set(archive.namelist())
-        assert "apps/mobile/App.tsx" in names
-        assert "apps/mobile/package.json" in names
-        assert not any("node_modules" in name.split("/") for name in names)
-        revalidated = GeneratedProjectQualityEngine().quality_check(
-            {"project_id": result["generatedProjectId"], "generated_project_path": str(generated_root)}
-        )
-        assert any(
-            check["id"] == "zip_root_safe" and check["status"] == "passed"
-            for check in revalidated["checks"]
-        )
+        assert result["status"] == "NEEDS_USER_ACTION"
+        assert result["buildStatus"] == "SKIPPED_AFTER_FAILURE"
+        assert result["packageReady"] is False
+        assert not zip_path.is_file()
+        assert generated_root is not None and generated_root.is_dir()
     finally:
         if generated_root is not None:
             shutil.rmtree(generated_root, ignore_errors=True)
@@ -1323,6 +1335,54 @@ def test_preparing_context_fixes_stack_lock_before_any_llm_step_for_web_job(isol
     assert lock_artifact["kind"] == "generated"  # carried into the project root by ProjectWriter
     persisted = json.loads(Path(lock_artifact["path"]).read_text(encoding="utf-8"))
     assert persisted["react"] == DEFAULT_ANCHORS["react"]
+
+
+def test_preparing_context_plans_frontend_contract_before_first_frontend_agent(isolated_engine):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    _prepare(engine, job, _spec())
+
+    contract = job["frontendArtifactContract"]
+    assert contract["planned"] is True
+    assert contract["frontendRoot"] == "apps/web"
+    assert job["mandatoryGates"]["frontend_artifact_contract"] == "planned"
+    artifact = next(a for a in job["artifacts"] if a["name"] == "frontend-artifact-contract.json")
+    assert artifact["stage"] == "contracts"
+
+
+def test_frontend_contract_is_injected_before_frontend_agent_call(isolated_engine, monkeypatch):
+    engine, _, _ = isolated_engine
+    job = _create(engine)
+    spec = _spec()
+    _prepare(engine, job, spec)
+    injected = []
+
+    monkeypatch.setattr(
+        "app.engines.generation_job_engine.frontend_artifact_contract_planner.prompt_block",
+        lambda contract: injected.append(contract.frontendRoot) or "<frontend_artifact_contract />",
+    )
+    engine._run_llm_step(job, "user-1", _FRONTEND_GEN, spec, "", None, None, "deterministic")
+
+    assert injected == ["apps/web"]
+
+
+def test_preparing_context_persists_architecture_manifest_before_any_llm_step(isolated_engine):
+    engine, _, _ = isolated_engine
+    spec = _spec()
+    spec.suggested_stack.language = "Python"
+    spec.suggested_stack.framework = "FastAPI"
+    job = _create(engine)
+
+    _prepare(engine, job, spec)
+
+    manifest = job["architectureManifest"]
+    assert manifest["phase"] == "planned"
+    assert manifest["planned"] is True
+    assert manifest["canonicalRoot"] == "backend/app"
+    assert job["mandatoryGates"]["architecture_manifest"] == "planned"
+    artifact = next(a for a in job["artifacts"] if a["name"] == "architecture-manifest.json")
+    assert artifact["kind"] == "generated"
+    assert json.loads(Path(artifact["path"]).read_text(encoding="utf-8"))["planned"] is True
 
 
 def test_preparing_context_fixes_stack_lock_with_mobile_anchors_for_mobile_job(isolated_engine):

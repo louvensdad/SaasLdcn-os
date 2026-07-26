@@ -92,6 +92,24 @@ EVENT_CATALOG: dict[str, NamedEvent] = {
         consumers=("activity feed",),
         wired=True,
     ),
+    "ExternalPreviewOpened": NamedEvent(
+        category="preview", action="external_open", payload_version=1,
+        producer="live_preview_service.py:LivePreviewService.record_external_open",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "FrontendRestarted": NamedEvent(
+        category="preview", action="frontend_restarted", payload_version=1,
+        producer="live_preview_service.py:LivePreviewService.restart_frontend",
+        consumers=("activity feed",),
+        wired=True,
+    ),
+    "BackendRestarted": NamedEvent(
+        category="preview", action="backend_restarted", payload_version=1,
+        producer="live_preview_service.py:LivePreviewService.restart_backend",
+        consumers=("activity feed",),
+        wired=True,
+    ),
     "DeployStarted": NamedEvent(
         category="staging", action="deploy_started", payload_version=1,
         producer="staging_service.py:StagingService.deploy",

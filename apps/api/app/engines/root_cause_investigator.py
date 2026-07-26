@@ -78,10 +78,13 @@ class RootCauseInvestigatorEngine:
             recommended_inspection.append("Inspect the command log around the reported pid for a hang vs. a slow-but-progressing process")
 
         generated_paths = _generated_paths(artifacts)
+        # Keyed by module-relative residual path (see architecture_analysis.
+        # duplicate_basenames), not bare basename -- two different real
+        # per-module files never appear here just for sharing a filename.
         duplicates = architecture_analysis.duplicate_basenames(generated_paths)
         if duplicates:
-            for basename, paths in duplicates.items():
-                evidence.append(f"'{basename}' was generated at {len(paths)} different paths: {paths}")
+            for residual, paths in duplicates.items():
+                evidence.append(f"'{residual}' was generated at {len(paths)} different paths: {paths}")
             affected_artifacts.extend(sorted({p for paths in duplicates.values() for p in paths}))
             hypotheses.append(Hypothesis(
                 description=(
@@ -90,7 +93,7 @@ class RootCauseInvestigatorEngine:
                     "(no single canonical structure was enforced before the final write)."
                 ),
                 confidence=0.6 if not secret_match else 0.4,
-                evidence=[f"{basename}: {paths}" for basename, paths in duplicates.items()],
+                evidence=[f"{residual}: {paths}" for residual, paths in duplicates.items()],
             ))
             recommended_inspection.append("Run the architecture-conflict check across all generated backend artifacts before the next build")
 

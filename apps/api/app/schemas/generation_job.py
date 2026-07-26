@@ -141,6 +141,7 @@ class GenerationJob(ApiModel):
     projectId: str
     generatedProjectId: str | None = None
     workspaceId: str | None = None
+    sourceMissionId: str | None = None
     status: GenerationJobStatus
     currentStage: str
     provider: str | None = None

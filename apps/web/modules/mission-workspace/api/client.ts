@@ -172,6 +172,30 @@ function deliverableJob(value: unknown): DeliverableJobDto {
   };
 }
 
+export interface ExecutionHandoffDto {
+  handoffId: string; missionId: string; projectRoomId: string | null; roomStatus: string | null;
+  engineeringApproved: boolean; stackApproved: boolean; generationJobId: string | null; nextRoute: string;
+}
+function executionHandoff(value: unknown): ExecutionHandoffDto {
+  const item = record(value);
+  return {
+    handoffId: string(item.handoff_id), missionId: string(item.mission_id),
+    projectRoomId: typeof item.project_room_id === 'string' ? item.project_room_id : null,
+    roomStatus: typeof item.room_status === 'string' ? item.room_status : null,
+    engineeringApproved: boolean(item.engineering_approved), stackApproved: boolean(item.stack_approved),
+    generationJobId: typeof item.generation_job_id === 'string' ? item.generation_job_id : null,
+    nextRoute: string(item.next_route),
+  };
+}
+export interface StartGenerationResultDto { jobId: string; projectId: string; missionId: string; status: string; nextRoute: string; }
+function startGenerationResult(value: unknown): StartGenerationResultDto {
+  const item = record(value);
+  return {
+    jobId: string(item.job_id), projectId: string(item.project_id), missionId: string(item.mission_id),
+    status: string(item.status), nextRoute: string(item.next_route),
+  };
+}
+
 export interface CreateMissionPayload { mission_type: string; title?: string; mode?: ExecutionMode; experience_level?: ExperienceLevel; workspace_id?: string | null; }
 export interface AutosavePayload { title?: string; status?: MissionStatus; mode?: ExecutionMode; context?: MissionContext; journey?: JourneyState; version?: number; }
 export interface FieldActionPayload { step_id: string; field_id: string; action_id: string; specialist?: SpecialistRole | null; interpolated_prompt: string; insert_mode: 'replace' | 'append' | 'suggest'; user_model_choice: string; use_user_key: true; }
@@ -214,6 +238,23 @@ export const missionClient = {
     deliverableJob(await request(`/api/missions/${missionId}/deliverables/jobs/${jobId}/retry`, { method: 'POST', body: JSON.stringify(payload) }, THIRTY_SEC)),
   cancelDeliverableJob: async (missionId: string, jobId: string) =>
     deliverableJob(await request(`/api/missions/${missionId}/deliverables/jobs/${jobId}/cancel`, { method: 'POST' }, THIRTY_SEC)),
+
+  // Canonical bridge: Mission -> real ProjectRoom -> Engineering
+  // Review/Stack Approval (real, manual, on /engineering-review) -> real
+  // GenerationJob (see MissionExecutionHandoffService). Confirmed deliverables
+  // alone are never treated as technical/architecture sign-off.
+  prepareMissionProject: async (missionId: string) =>
+    executionHandoff(await request(`/api/missions/${missionId}/prepare-project`, { method: 'POST' }, FIVE_MIN)),
+  getMissionExecutionHandoff: async (missionId: string): Promise<ExecutionHandoffDto | null> => {
+    try {
+      return executionHandoff(await request(`/api/missions/${missionId}/execution-handoff`, undefined, THIRTY_SEC));
+    } catch (error) {
+      if (error instanceof MissionApiError && error.httpStatus === 404) return null;
+      throw error;
+    }
+  },
+  startMissionGeneration: async (missionId: string) =>
+    startGenerationResult(await request(`/api/missions/${missionId}/start-generation`, { method: 'POST' }, THIRTY_SEC)),
 
   /** Manual fetch + reader SSE consumer -- ported from streamJob() in
    * apps/web/lib/api/meta-factory.ts (browser EventSource can't set an

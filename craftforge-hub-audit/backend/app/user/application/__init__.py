@@ -1,0 +1,1 @@
+"""Pacote de casos de uso do módulo User."""

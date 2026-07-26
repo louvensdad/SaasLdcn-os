@@ -27,8 +27,11 @@ from app.repositories.change_request_repository import ChangeRequestRepository
 from app.repositories.feature_repository import FeatureRepository
 from app.repositories.marketplace_repository import MarketplaceRepository
 from app.repositories.staging_deployment_repository import StagingDeploymentRepository
+from app.engines.generation_job_engine import generation_job_engine
+from app.repositories.generation_job_repository import GenerationJobRepository
 from app.repositories.mission_repository import MissionRepository
 from app.repositories.mission_deliverable_job_repository import MissionDeliverableJobRepository
+from app.repositories.mission_execution_handoff_repository import MissionExecutionHandoffRepository
 from app.repositories.generation_notification_repository import generation_notification_repository
 from app.repositories.modernize_job_repository import ModernizeJobRepository
 from app.repositories.project_room_repository import ProjectRoomRepository
@@ -54,6 +57,7 @@ from app.services.ai_key_vault_service import ai_key_vault_service
 from app.services.llm_settings_service import llm_settings_service
 from app.services.platform_runtime_config_service import platform_runtime_config_service
 from app.services.mission_service import MissionService
+from app.services.mission_execution_handoff_service import mission_execution_handoff_service
 from app.services.project_service import ProjectService
 from app.services.user_preferences_service import user_preferences_service
 
@@ -106,6 +110,16 @@ def client() -> TestClient:
     mission_deliverable_jobs_route.engine.repository = MissionDeliverableJobRepository(database_path)
     mission_deliverable_jobs_route.engine.mission_repository = MissionRepository(database_path)
     mission_deliverable_jobs_route.engine.mission_service = MissionService(mission_deliverable_jobs_route.engine.mission_repository)
+    mission_execution_handoff_service.mission_repository = MissionRepository(database_path)
+    mission_execution_handoff_service.deliverable_repository = MissionDeliverableJobRepository(database_path)
+    mission_execution_handoff_service.handoff_repository = MissionExecutionHandoffRepository(database_path)
+    mission_execution_handoff_service.room_repository = ProjectRoomRepository(database_path)
+    # generation_job_engine (the plain module-level singleton, distinct from the
+    # route-test-only `client_scoped_engine` fixture in test_generation_job_pipeline.py)
+    # is used directly by MissionExecutionHandoffService/GenerationJobCreationService's
+    # default path -- repoint its repository the same way every other singleton
+    # above is repointed, so mission-bridge tests see the isolated per-test DB.
+    generation_job_engine.repository = GenerationJobRepository(database_path)
     generation_notification_repository.rebind(database_path)
     change_requests_route.service.repository = ChangeRequestRepository(database_path)
     feature_service.repository = FeatureRepository(database_path)

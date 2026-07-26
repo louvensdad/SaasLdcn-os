@@ -368,6 +368,144 @@ def test_stop_also_stops_the_inspector(make_project, monkeypatch):
     assert inspector.stopped is True
 
 
+# ------------------------------------------------------------------------ restart
+
+
+def test_restart_frontend_gets_a_new_handle_and_keeps_backend_untouched(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    started: list[str] = []
+    stopped: list[str] = []
+    fake = _fake_runtime(root, started=started, stopped=stopped)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+    monkeypatch.setattr(svc, "_free_port", lambda: 45600)
+
+    result = service.start(project["project_id"], "user_a")
+    original_backend_handle = service._sessions[result.session_id].backend_handle_id
+    original_frontend_handle = service._sessions[result.session_id].frontend_handle_id
+
+    restarted = service.restart_frontend(result.session_id, "user_a")
+
+    assert restarted is not None
+    assert restarted.status == "running"
+    assert restarted.preview_url == "http://127.0.0.1:45600/"
+    session = service._sessions[result.session_id]
+    assert session.backend_handle_id == original_backend_handle  # untouched
+    assert session.frontend_handle_id != original_frontend_handle  # respawned
+    assert original_frontend_handle in stopped
+    assert original_backend_handle not in stopped
+
+
+def test_restart_backend_gets_a_new_handle_and_keeps_frontend_untouched(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    started: list[str] = []
+    stopped: list[str] = []
+    fake = _fake_runtime(root, started=started, stopped=stopped)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+    monkeypatch.setattr(svc, "_free_port", lambda: 45700)
+
+    result = service.start(project["project_id"], "user_a")
+    original_backend_handle = service._sessions[result.session_id].backend_handle_id
+    original_frontend_handle = service._sessions[result.session_id].frontend_handle_id
+
+    restarted = service.restart_backend(result.session_id, "user_a")
+
+    assert restarted is not None
+    assert restarted.status == "running"
+    session = service._sessions[result.session_id]
+    assert session.frontend_handle_id == original_frontend_handle  # untouched
+    assert session.backend_handle_id != original_backend_handle  # respawned
+    assert original_backend_handle in stopped
+    assert original_frontend_handle not in stopped
+
+
+def test_restart_frontend_returns_none_for_unknown_session(make_project):
+    service = LivePreviewService(host_runtime_factory=lambda: SimpleNamespace())
+    assert service.restart_frontend("unknown", "user_a") is None
+
+
+def test_restart_backend_returns_none_for_wrong_owner(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    fake = _fake_runtime(root)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+
+    result = service.start(project["project_id"], "user_a")
+
+    assert service.restart_backend(result.session_id, "user_b") is None
+
+
+def test_restart_frontend_fails_cleanly_when_new_frontend_never_becomes_ready(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    fake = _fake_runtime(root)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    calls = {"n": 0}
+
+    def _wait_ready(url, **kw):
+        calls["n"] += 1
+        return calls["n"] <= 2  # backend + initial frontend succeed, restart's frontend check fails
+
+    monkeypatch.setattr(svc, "_wait_ready", _wait_ready)
+    result = service.start(project["project_id"], "user_a")
+
+    restarted = service.restart_frontend(result.session_id, "user_a")
+
+    assert restarted is not None
+    assert restarted.status == "failed"
+    assert "startup budget" in restarted.reason
+    assert service.get(result.session_id, "user_a") is None  # failed restart tears the session down
+
+
+# --------------------------------------------------------------- external open
+
+
+def test_record_external_open_returns_true_and_emits_event_when_running(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    fake = _fake_runtime(root)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+
+    result = service.start(project["project_id"], "user_a")
+
+    assert service.record_external_open(result.session_id, "user_a") is True
+
+
+def test_record_external_open_returns_false_for_unknown_session():
+    service = LivePreviewService(host_runtime_factory=lambda: SimpleNamespace())
+    assert service.record_external_open("unknown", "user_a") is False
+
+
+def test_record_external_open_returns_false_for_wrong_owner(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    fake = _fake_runtime(root)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+
+    result = service.start(project["project_id"], "user_a")
+
+    assert service.record_external_open(result.session_id, "user_b") is False
+
+
+def test_record_external_open_returns_false_when_not_running(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    fake = _fake_runtime(root)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: False)
+
+    result = service.start(project["project_id"], "user_a")
+    assert result.status == "failed"
+
+    assert service.record_external_open(result.session_id, "user_a") is False
+
+
 # --------------------------------------------------------------------------- routes
 
 
@@ -483,3 +621,162 @@ def test_route_reload_is_404_for_a_session_with_no_inspector(client, make_projec
 
     assert response.status_code == 404
     live_preview_route.live_preview_service._stop_internal(session_id)
+
+
+def test_route_external_open_succeeds_for_a_running_session(client, make_project, monkeypatch) -> None:
+    session_id, headers = _running_session_via_route(client, make_project, monkeypatch, None)
+
+    response = client.post(f"/api/live-preview/{session_id}/external-open", headers=headers)
+
+    assert response.status_code == 204, response.text
+    live_preview_route.live_preview_service._stop_internal(session_id)
+
+
+def test_route_external_open_is_404_for_other_owner(client, make_project, monkeypatch) -> None:
+    session_id, _ = _running_session_via_route(client, make_project, monkeypatch, None)
+    _, other_token = _register_and_login(client)
+
+    response = client.post(
+        f"/api/live-preview/{session_id}/external-open",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert response.status_code == 404
+    live_preview_route.live_preview_service._stop_internal(session_id)
+
+
+def test_route_restart_frontend_returns_a_running_session_with_a_new_preview_url(client, make_project, monkeypatch) -> None:
+    session_id, headers = _running_session_via_route(client, make_project, monkeypatch, None)
+    monkeypatch.setattr(svc, "_free_port", lambda: 45800)
+
+    response = client.post(f"/api/live-preview/{session_id}/restart-frontend", headers=headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "running"
+    assert body["preview_url"] == "http://127.0.0.1:45800/"
+    live_preview_route.live_preview_service._stop_internal(session_id)
+
+
+def test_route_restart_backend_returns_a_running_session(client, make_project, monkeypatch) -> None:
+    session_id, headers = _running_session_via_route(client, make_project, monkeypatch, None)
+
+    response = client.post(f"/api/live-preview/{session_id}/restart-backend", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "running"
+    live_preview_route.live_preview_service._stop_internal(session_id)
+
+
+def test_process_log_path_returns_the_real_active_log_file(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    fake = _fake_runtime(root)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+
+    result = service.start(project["project_id"], "user_a")
+    session = service._sessions[result.session_id]
+    session.frontend_log_path.parent.mkdir(parents=True, exist_ok=True)
+    session.frontend_log_path.write_text("hello from the fake frontend process\n", encoding="utf-8")
+
+    path = service.process_log_path(result.session_id, "user_a", "frontend")
+
+    assert path == session.frontend_log_path
+    assert path.read_text(encoding="utf-8") == "hello from the fake frontend process\n"
+    assert service.process_log_path(result.session_id, "user_b", "frontend") is None  # wrong owner
+    assert service.process_log_path("unknown", "user_a", "frontend") is None
+
+
+def test_process_log_path_is_none_before_the_file_exists(make_project, monkeypatch):
+    project = make_project(_FULL_STACK_FILES)
+    root = Path(project["generated_project_path"])
+    fake = _fake_runtime(root)
+    service = LivePreviewService(host_runtime_factory=lambda: fake, inspector_factory=_NO_INSPECTOR)
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+
+    result = service.start(project["project_id"], "user_a")
+
+    # _fake_runtime's start_background never actually writes the log file --
+    # a real HostExecutionRuntime always does, but this confirms the method
+    # fails closed (no phantom path) rather than assuming the file exists.
+    assert service.process_log_path(result.session_id, "user_a", "backend") is None
+
+
+def test_route_logs_stream_returns_real_lines_from_the_log_file(client, make_project, monkeypatch) -> None:
+    # Bound the poll loop to 1 tick so the (synchronous, fully-consumed-by-
+    # TestClient) stream terminates quickly instead of sleeping through
+    # _LOG_STREAM_MAX_TICKS real iterations for a session that never stops.
+    monkeypatch.setattr(live_preview_route, "_LOG_STREAM_MAX_TICKS", 1)
+    session_id, headers = _running_session_via_route(client, make_project, monkeypatch, None)
+    session = live_preview_route.live_preview_service._sessions[session_id]
+    session.frontend_log_path.parent.mkdir(parents=True, exist_ok=True)
+    session.frontend_log_path.write_text("line one\nline two\n", encoding="utf-8")
+
+    response = client.get(f"/api/live-preview/{session_id}/logs/frontend", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert '"text": "line one"' in response.text
+    assert '"text": "line two"' in response.text
+    assert '"service": "frontend"' in response.text
+    live_preview_route.live_preview_service._stop_internal(session_id)
+
+
+def test_route_logs_stream_is_404_for_unknown_session(client) -> None:
+    response = client.get("/api/live-preview/does-not-exist/logs/frontend")
+    assert response.status_code == 404
+
+
+def test_route_restart_frontend_is_404_for_unknown_session(client) -> None:
+    response = client.post("/api/live-preview/does-not-exist/restart-frontend")
+    assert response.status_code == 404
+
+
+def test_route_get_by_project_recovers_the_running_session_after_a_refresh(client, make_project, monkeypatch) -> None:
+    owner_id, token = _register_and_login(client)
+    project = make_project(_FULL_STACK_FILES, owner=owner_id)
+    root = Path(project["generated_project_path"])
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+    monkeypatch.setattr(live_preview_route.live_preview_service, "_host_runtime_factory", lambda: _fake_runtime(root))
+    monkeypatch.setattr(live_preview_route.live_preview_service, "_inspector_factory", _NO_INSPECTOR)
+    started = live_preview_route.live_preview_service.start(project["project_id"], owner_id)
+    assert started.status == "running"
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get(f"/api/live-preview/by-project/{project['project_id']}", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["session_id"] == started.session_id
+    live_preview_route.live_preview_service._stop_internal(started.session_id)
+
+
+def test_route_get_by_project_is_404_when_nothing_is_running(client, make_project) -> None:
+    owner_id, token = _register_and_login(client)
+    project = make_project(_FULL_STACK_FILES, owner=owner_id)
+
+    response = client.get(
+        f"/api/live-preview/by-project/{project['project_id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_route_get_by_project_is_404_for_other_owner(client, make_project, monkeypatch) -> None:
+    owner_id, token = _register_and_login(client)
+    project = make_project(_FULL_STACK_FILES, owner=owner_id)
+    root = Path(project["generated_project_path"])
+    monkeypatch.setattr(svc, "_wait_ready", lambda url, **kw: True)
+    monkeypatch.setattr(live_preview_route.live_preview_service, "_host_runtime_factory", lambda: _fake_runtime(root))
+    monkeypatch.setattr(live_preview_route.live_preview_service, "_inspector_factory", _NO_INSPECTOR)
+    started = live_preview_route.live_preview_service.start(project["project_id"], owner_id)
+    assert started.status == "running"
+    _, other_token = _register_and_login(client)
+
+    response = client.get(
+        f"/api/live-preview/by-project/{project['project_id']}",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert response.status_code == 404
+    live_preview_route.live_preview_service._stop_internal(started.session_id)

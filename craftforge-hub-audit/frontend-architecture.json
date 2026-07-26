@@ -1,0 +1,57 @@
+{
+  "routes": [
+    { "path": "/login", "purpose": "Tela de login (autenticação OAuth2)", "layout": "public", "protected": false },
+    { "path": "/register", "purpose": "Tela de cadastro de novo usuário", "layout": "public", "protected": false },
+    { "path": "/dashboard", "purpose": "Painel principal com resumo de instâncias e quick actions", "layout": "authenticated", "protected": true },
+    { "path": "/accounts", "purpose": "Listagem de contas de jogo com ação de adicionar", "layout": "authenticated", "protected": true },
+    { "path": "/accounts/:accountId", "purpose": "Detalhes e edição de conta; instâncias associadas", "layout": "authenticated", "protected": true },
+    { "path": "/instances", "purpose": "Visualização geral de todas as instâncias (opcional)", "layout": "authenticated", "protected": true },
+    { "path": "/instances/:instanceId", "purpose": "Detalhes da instância, status em tempo real, start/stop, consumo de recursos", "layout": "authenticated", "protected": true },
+    { "path": "/macros", "purpose": "Listagem de macros com criação e busca", "layout": "authenticated", "protected": true },
+    { "path": "/macros/:macroId", "purpose": "Edição de macro, associação a contas/instâncias, execução", "layout": "authenticated", "protected": true },
+    { "path": "/logs", "purpose": "Listagem de logs de execução com filtros", "layout": "authenticated", "protected": true },
+    { "path": "/logs/:logId", "purpose": "Detalhes do log de execução", "layout": "authenticated", "protected": true },
+    { "path": "/admin/users", "purpose": "Gerenciamento de usuários (admin only)", "layout": "authenticated", "protected": true },
+    { "path": "/admin/users/:userId", "purpose": "Edição de usuário e alteração de plano (admin only)", "layout": "authenticated", "protected": true }
+  ],
+  "layouts": [
+    {
+      "name": "public",
+      "shared_elements": ["Logo", "Footer", "Background animado (opcional)"]
+    },
+    {
+      "name": "authenticated",
+      "shared_elements": ["Sidebar com navegação", "Header com avatar do usuário e notificações", "Breadcrumb"]
+    }
+  ],
+  "state_strategy": {
+    "local": "Estado React local (useState/useReducer) para formulários, modais e toggles de UI.",
+    "global": "Zustand store para estado de autenticação (token, usuário logado) e status da conexão WebSocket.",
+    "server_cache": "React Query (TanStack Query) para caching e sincronização de dados REST (contas, instâncias, macros, logs). WebSocket atualiza o cache via queryClient.setQueryData para refletir status em tempo real."
+  },
+  "data_fetching": "Service layer (classes AccountService, InstanceService, MacroService, LogService) que encapsulam chamadas HTTP usando um ApiClient base. O ApiClient lida com renovação automática de token (interceptor 401) e padroniza erros. Para WebSocket, hook useWebSocketChannel gerencia conexão e despacha eventos para o React Query ou para um store local de instâncias ativas.",
+  "error_handling": "ErrorBoundary global para erros de renderização React. Erros de API são capturados no ApiClient, transformados em objetos ErrorResponse com código, mensagem e validações. Toast global (react-hot-toast) exibe notificações de erro. Validação de formulários feita com react-hook-form + Zod, exibindo mensagens inline nos campos.",
+  "authorization": "Rota protegida via componente <ProtectedRoute> que verifica se o usuário está autenticado no Zustand store; redireciona para /login se não estiver. Rotas admin adicionam verificação de role (user.role === 'admin') e redirecionam para /dashboard se não autorizado. O estado de autenticação persiste no sessionStorage (token) e é restaurado no carregamento.",
+  "component_organization": [
+    "src/features/auth/ – LoginPage, RegisterPage, AuthCallback",
+    "src/features/accounts/ – AccountsListPage, AccountDetailPage, AccountForm",
+    "src/features/instances/ – InstanceDashboard, InstanceCard, InstanceControls, InstanceStatusPannel",
+    "src/features/macros/ – MacrosListPage, MacroDetailPage, MacroEditor, MacroExecutionModal",
+    "src/features/logs/ – LogsListPage, LogDetailPage, LogFilterBar",
+    "src/features/admin/ – UsersListPage, UserDetailPage, UserForm",
+    "src/components/common/ – Button, Input, Select, Card, Modal, Toast, Spinner, ErrorFallback",
+    "src/components/layout/ – PublicLayout, AuthenticatedLayout, Sidebar, Header, Breadcrumb",
+    "src/hooks/ – useAuth, useWebSocket, useInstanceStatus, useMacroExecution",
+    "src/services/ – apiClient.ts, accountService.ts, instanceService.ts, macroService.ts, logService.ts",
+    "src/store/ – authStore.ts, webSocketStore.ts",
+    "src/i18n/ – pt-BR.json, en-US.json, react-i18next config"
+  ],
+  "performance_notes": [
+    "Code-splitting: cada página é lazy-loaded via React.lazy() e Suspense, com fallback <Spinner>.",
+    "Virtual scrolling (react-window) para listas de logs e contas quando houver mais de 100 itens.",
+    "WebSocket batching: servidor envia atualizações agregadas a cada 1s; cliente aplica lote ao React Query para evitar re-renderizações excessivas.",
+    "Campos de busca com debounce de 300ms para reduzir chamadas API.",
+    "Macros com código grande (>500KB) são carregados sob demanda apenas na tela de edição ou detalhes.",
+    "Otimização de imagens e assets via Vite (tree-shaking, code-splitting automático)."
+  ]
+}

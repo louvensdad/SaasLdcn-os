@@ -10,7 +10,7 @@ from app.schemas.common import ApiModel
 # which runs *before* the final write in GenerationJobEngine._build() -- a
 # preventive gate, not a post-failure repair. See PARTE 4 of the request.
 
-ConflictKind = Literal["duplicate_basename", "competing_root", "multiple_entrypoints"]
+ConflictKind = Literal["duplicate_basename", "competing_root", "multiple_entrypoints", "manifest_violation"]
 
 
 class RejectedAlternative(ApiModel):
@@ -27,12 +27,20 @@ class ConflictResolved(ApiModel):
 
 
 class ArchitectureManifest(ApiModel):
+    phase: Literal["planned", "observed"] = "observed"
+    planned: bool = False
     canonicalRoot: str = ""
     sourceRoot: str = ""
     entrypoint: str | None = None
     dependencyFile: str | None = None
     testRoot: str | None = None
     architectureStyle: str = "unknown"
+    backendLanguage: str = ""
+    backendFramework: str = ""
+    allowedRoots: list[str] = Field(default_factory=list)
+    forbiddenRoots: list[str] = Field(default_factory=list)
+    observedRoots: list[str] = Field(default_factory=list)
+    conformsToPlan: bool = True
     canonicalFiles: dict[str, str] = Field(default_factory=dict)
     rejectedAlternatives: list[RejectedAlternative] = Field(default_factory=list)
     conflictsResolved: list[ConflictResolved] = Field(default_factory=list)

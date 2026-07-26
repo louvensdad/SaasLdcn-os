@@ -171,17 +171,17 @@ class RepairEngineerEngine:
         # actually gone rather than assuming dropping the files was enough
         # (mirrors repair_secret_block's own artifact_block_reason re-check).
         remaining_duplicates = architecture_analysis.duplicate_basenames([f.path for f in repaired_files])
-        canonical_basename = architecture_analysis.basename_of(canonical)
+        canonical_residual = architecture_analysis.module_relative_path(canonical)
         tests_executed = ["architecture_analysis.duplicate_basenames"]
         tests_passed: list[str] = []
         tests_failed: list[str] = []
-        if canonical_basename in remaining_duplicates:
+        if canonical_residual in remaining_duplicates:
             tests_failed.append(
-                f"duplicate_basenames still reports '{canonical_basename}' as duplicated after repair: "
-                f"{remaining_duplicates[canonical_basename]}"
+                f"duplicate_basenames still reports '{canonical_residual}' as duplicated after repair: "
+                f"{remaining_duplicates[canonical_residual]}"
             )
         else:
-            tests_passed.append(f"duplicate_basenames no longer reports '{canonical_basename}' as duplicated")
+            tests_passed.append(f"duplicate_basenames no longer reports '{canonical_residual}' as duplicated")
 
         report = RepairReport(
             rootCause=validation.safeCorrectionStrategy,

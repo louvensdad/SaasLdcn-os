@@ -70,6 +70,7 @@ class ProjectRoomRepository:
         delivery_type: str = "web",
         preferred_language: str = "",
         execution_profile: str = "professional",
+        origin: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         now = self._now()
         room_id = f"room_{uuid4().hex[:12]}"
@@ -94,6 +95,7 @@ class ProjectRoomRepository:
             "blueprint_versions_json": "[]",
             "active_blueprint_version": None,
             "generation_handoff_json": None,
+            "origin_json": self._dumps(origin) if origin is not None else None,
             "history_json": "[]",
             "operational_log_json": "[]",
             "last_failure_json": None,
@@ -107,12 +109,12 @@ class ProjectRoomRepository:
                     room_id, owner_user_id, workspace_id, title, status, delivery_type, preferred_language, execution_profile, raw_intent, locale,
                     confidence, degraded, spec_json, messages_json, prompt_master_md,
                     prompt_master_versions_json, architecture_blueprint_json, blueprint_versions_json, active_blueprint_version,
-                    generation_handoff_json, history_json, operational_log_json, last_failure_json, created_at, updated_at
+                    generation_handoff_json, origin_json, history_json, operational_log_json, last_failure_json, created_at, updated_at
                 ) VALUES (
                     :room_id, :owner_user_id, :workspace_id, :title, :status, :delivery_type, :preferred_language, :execution_profile, :raw_intent, :locale,
                     :confidence, :degraded, :spec_json, :messages_json, :prompt_master_md,
                     :prompt_master_versions_json, :architecture_blueprint_json, :blueprint_versions_json, :active_blueprint_version,
-                    :generation_handoff_json, :history_json, :operational_log_json, :last_failure_json, :created_at, :updated_at
+                    :generation_handoff_json, :origin_json, :history_json, :operational_log_json, :last_failure_json, :created_at, :updated_at
                 )
                 """,
                 record,
@@ -359,6 +361,7 @@ class ProjectRoomRepository:
             "blueprint_versions": self._loads(row.get("blueprint_versions_json")) or [],
             "active_blueprint_version": row.get("active_blueprint_version"),
             "generation_handoff": self._loads(row.get("generation_handoff_json")) or None,
+            "origin": self._loads(row.get("origin_json")) or None,
             "history": self._loads(row.get("history_json")) or [],
             "operational_log": self._loads(row.get("operational_log_json")) or [],
             "last_failure": self._loads(row.get("last_failure_json")) or None,

@@ -1,0 +1,51 @@
+name: OpenAPI Contract Sync
+on:
+  pull_request:
+    paths:
+      - 'openapi.yaml'
+      - 'app/**'
+      - 'tests/test_openapi_contract.py'
+  push:
+    branches: [main]
+    paths:
+      - 'openapi.yaml'
+      - 'app/**'
+
+jobs:
+  validate-contract:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: test_multigamepainel
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run OpenAPI contract tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_multigamepainel
+          SECRET_KEY: test-secret
+          SWAGGER_ENABLED: false
+        run: |
+          pytest tests/test_openapi_contract.py -v --no-header -x

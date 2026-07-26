@@ -13,6 +13,7 @@ import {
   Code2,
   Database,
   Download,
+  ExternalLink,
   FileCode2,
   FileText,
   GitBranch,
@@ -625,7 +626,34 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
   const [consoleEntries, setConsoleEntries] = useState<ConsoleLogEntry[]>([]);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [screenshotBusy, setScreenshotBusy] = useState(false);
+  const [restartingFrontend, setRestartingFrontend] = useState(false);
+  const [restartingBackend, setRestartingBackend] = useState(false);
+  const [recovering, setRecovering] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // React state is always freshly null on mount -- without this, a page
+    // refresh (or navigating back to this tab) always showed "not running"
+    // even when the real session was still alive server-side, and clicking
+    // "start" again would tear down and restart a perfectly healthy runtime
+    // for no reason.
+    let cancelled = false;
+    livePreviewClient
+      .getByProject(projectId)
+      .then((existing) => {
+        if (!cancelled) setSession(existing);
+      })
+      .catch(() => {
+        // 404 (no active session for this project) is the expected,
+        // common outcome -- stay in the "not running" state.
+      })
+      .finally(() => {
+        if (!cancelled) setRecovering(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   useEffect(() => {
     if (!consoleOpen || session?.status !== 'running') return;
@@ -711,6 +739,46 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
     }
   }
 
+  function openExternal() {
+    if (!session || session.status !== 'running' || !session.preview_url) return;
+    // Fire-and-forget: the real navigation must never wait on (or be blocked
+    // by) this bookkeeping call -- popup blockers only allow window.open()
+    // synchronously within the click handler, so an awaited request here
+    // would silently turn every click into a blocked popup.
+    void livePreviewClient.recordExternalOpen(session.session_id).catch(() => {});
+    window.open(session.preview_url, '_blank', 'noopener,noreferrer');
+  }
+
+  async function restartFrontend() {
+    if (!session?.session_id || restartingFrontend) return;
+    setRestartingFrontend(true);
+    setError(null);
+    try {
+      const result = await livePreviewClient.restartFrontend(session.session_id);
+      setSession(result);
+      setRefreshNonce((value) => value + 1);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('livePreview.errors.restartFrontendFailed'));
+    } finally {
+      setRestartingFrontend(false);
+    }
+  }
+
+  async function restartBackend() {
+    if (!session?.session_id || restartingBackend) return;
+    setRestartingBackend(true);
+    setError(null);
+    try {
+      const result = await livePreviewClient.restartBackend(session.session_id);
+      setSession(result);
+      setRefreshNonce((value) => value + 1);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('livePreview.errors.restartBackendFailed'));
+    } finally {
+      setRestartingBackend(false);
+    }
+  }
+
   async function captureScreenshot() {
     if (!session?.session_id) return;
     setScreenshotBusy(true);
@@ -725,6 +793,15 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
     } finally {
       setScreenshotBusy(false);
     }
+  }
+
+  if (recovering) {
+    return (
+      <Card className="flex flex-col items-center gap-4 p-8 text-center">
+        <RefreshCw className="h-8 w-8 animate-spin text-[color:var(--muted)]" aria-hidden />
+        <p className="text-sm text-[color:var(--muted)]">{t('livePreview.recovering')}</p>
+      </Card>
+    );
   }
 
   if (!session) {
@@ -797,6 +874,41 @@ function LivePreviewPanel({ projectId }: { readonly projectId: string }) {
           </Button>
           <Button type="button" variant="ghost" className="px-2.5 py-2" title={t('livePreview.fullscreen')} onClick={toggleFullscreen}>
             {fullscreen ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="px-2.5 py-2"
+            title={t('livePreview.restartFrontend')}
+            loading={restartingFrontend}
+            disabled={session.status !== 'running'}
+            onClick={() => void restartFrontend()}
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="px-2.5 py-2"
+            title={t('livePreview.restartBackend')}
+            loading={restartingBackend}
+            disabled={session.status !== 'running'}
+            onClick={() => void restartBackend()}
+          >
+            <Server className="h-4 w-4" aria-hidden />
+          </Button>
+          {/* "Ver frontend no navegador": enabled ONLY once the backend has
+              already health-checked the session into "running" with a real
+              preview_url (see live_preview_service.py's _wait_ready gate) --
+              never enabled off the mere existence of a URL string. */}
+          <Button
+            type="button"
+            variant="soft"
+            title={session.status === 'running' ? undefined : t('livePreview.openExternalHintStarting')}
+            disabled={session.status !== 'running' || !session.preview_url}
+            onClick={openExternal}
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden />{t('livePreview.openExternal')}
           </Button>
           <Button type="button" variant="secondary" loading={busy} onClick={() => void stop()}><Square className="h-4 w-4" aria-hidden />{t('livePreview.stop')}</Button>
         </div>

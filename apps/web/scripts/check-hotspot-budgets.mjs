@@ -8,7 +8,11 @@ const budgets = {
   // (semantic-merge conflict detection, Frontend Authenticity Review Gate,
   // backend ownership registry integration) landed in the same window.
   // Revisit by actually splitting the module if this keeps creeping.
-  '../api/app/engines/generation_job_engine.py': 1999,
+  // Bumped 2026-07-26: real growth -- source_mission_id param/field on
+  // create_job for the Mission -> ProjectRoom -> GenerationJob canonical
+  // handoff (MissionExecutionHandoffService). Revisit by actually splitting
+  // the module if this keeps creeping.
+  '../api/app/engines/generation_job_engine.py': 2010,
   // Bumped 2026-07-21: commit 050b1e3 added a real PlanAccessEngine
   // entitlement check gating build creation (vault 56 enforcement), pushing
   // this 4 lines past the old 1475 budget -- not bloat, so raised rather

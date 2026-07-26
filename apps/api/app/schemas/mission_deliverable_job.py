@@ -93,3 +93,25 @@ class CompileDeliverablesRequest(ApiModel):
 class RetryDeliverablesRequest(ApiModel):
     user_model_choice: str | None = None
     use_user_key: bool = False
+
+
+class MissionExecutionHandoffStatus(ApiModel):
+    """What the Mission Workspace completion screen polls to decide which CTA
+    to show -- see MissionExecutionHandoffService.get_status/_status_payload."""
+
+    handoff_id: str
+    mission_id: str
+    project_room_id: str | None = None
+    room_status: str | None = None
+    engineering_approved: bool = False
+    stack_approved: bool = False
+    generation_job_id: str | None = None
+    next_route: str
+
+
+class StartGenerationResponse(ApiModel):
+    job_id: str
+    project_id: str
+    mission_id: str
+    status: str
+    next_route: str

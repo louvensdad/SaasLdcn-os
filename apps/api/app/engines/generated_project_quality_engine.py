@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 from app.core.config import BASE_DIR
 from app.data.foundation import CONTRACT_VERSION
 from app.data.language_agent_profiles import LANGUAGE_AGENT_PROFILES, resolve_language_id
+from app.services.artifact_security import classify_secret_findings
 from app.services.generated_project_service import DOWNLOAD_DIR
 
 TEXT_EXTENSIONS = {
@@ -31,20 +32,6 @@ SECRET_FILE_PATTERN = re.compile(r"(^|/)(\.env($|\.)|id_rsa|.*\.(pem|p12|pfx)$)"
 # exempt from the "real .env" critical finding — their CONTENT is still scanned for
 # real hardcoded secrets, so a template that ships a real value is still flagged.
 ENV_TEMPLATE_NAMES = {".env.example", ".env.sample", ".env.template", ".env.dist"}
-SECRET_ASSIGNMENT_PATTERN = re.compile(
-    r"\b(secret|token|password|api[_-]?key|private[_-]?key|credential|access[_-]?token)\b\s*[:=]\s*['\"]?([^'\"\s,;}{]{12,})",
-    re.IGNORECASE,
-)
-SAFE_PLACEHOLDERS = {
-    "change-me",
-    "change-me-local-only",
-    "local-preview-token",
-    "placeholder",
-    "example",
-    "local-only",
-    "password",
-    "user:password",
-}
 
 
 class GeneratedProjectQualityEngine:
@@ -352,7 +339,7 @@ class GeneratedProjectQualityEngine:
             ".env.example is empty.",
             [".env.example"],
         )
-        if SECRET_ASSIGNMENT_PATTERN.search(content) and not self._is_safe_env_example(content):
+        if not self._is_safe_env_example(content):
             warnings.append(".env.example contains secret-like keys; values must remain placeholders only.")
 
     def _blueprint_check(
@@ -477,22 +464,18 @@ class GeneratedProjectQualityEngine:
         content = path.read_text(encoding="utf-8", errors="ignore")
         if is_env_template and self._is_safe_env_example(content):
             return
-        for match in SECRET_ASSIGNMENT_PATTERN.finditer(content):
-            value = match.group(2).strip().strip("'\"")
-            if self._safe_placeholder_value(value):
-                continue
+        # Delegate to the canonical write-time classifier (app.services.artifact_security)
+        # instead of a second, cruder secret regex: two divergent implementations of
+        # "is this a real secret" is how this exact false-positive bug (flagging type
+        # annotations, mock literals, validation copy, etc. as hardcoded_secret) came
+        # back here after already being fixed once in the write-time gate.
+        if any(finding.blocking for finding in classify_secret_findings(relative_path, content)):
             self._finding(security_findings, "hardcoded_secret", "high", "Secret-like hardcoded value detected.", relative_path)
-            break
 
     def _is_safe_env_example(self, content: str) -> bool:
-        for match in SECRET_ASSIGNMENT_PATTERN.finditer(content):
-            if not self._safe_placeholder_value(match.group(2)):
-                return False
-        return True
-
-    def _safe_placeholder_value(self, value: str) -> bool:
-        lowered = value.lower()
-        return any(token in lowered for token in SAFE_PLACEHOLDERS)
+        return not any(
+            finding.blocking for finding in classify_secret_findings(".env.example", content)
+        )
 
     def _require_file(
         self,

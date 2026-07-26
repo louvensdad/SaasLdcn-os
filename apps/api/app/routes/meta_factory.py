@@ -13,8 +13,6 @@ from typing import Any
 from uuid import uuid4
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from app.core.authorization import PermissionDeniedError, require_permission
-from app.core.config import get_settings
 from app.core.deps import CurrentUser
 from app.engines.auto_repair_engine import auto_repair_engine
 from app.engines.delivery_decision_engine import compute_delivery_decision
@@ -25,12 +23,10 @@ from app.services.runtime_api_audit_service import runtime_api_audit_service
 from app.services.runtime_functional_test_service import runtime_functional_test_service
 from app.schemas.delivery import DeliveryDecision, RecordDeliveryDecisionRequest
 from app.schemas.engineering_kernel import AcknowledgeHumanReviewRequest, EngineeringKernelStatus
-from app.repositories.user_repository import AuditLogRepository
 from app.repositories.tenant_repository import TenantAccessError, TenantRepository, WORKSPACE_WRITE_ROLES
-from app.repositories.blueprint_approval_repository import BlueprintApprovalRepository, hash_blueprint
-from app.routes.project_rooms import service as project_room_service
+from app.routes.meta_factory_job_helpers import _audit, _generation_llm_context
 from app.services.activity_feed_service import activity_feed_service
-from app.services.project_room_service import ENGINEERING_APPROVED_STATUSES
+from app.services.generation_job_creation_service import generation_job_creation_service
 from app.schemas.auto_repair import ForceReleaseRequest, RepairResult, RevalidationResult
 from app.schemas.quality_gate import QualityGateReport
 from app.schemas.runtime_api_audit import RuntimeApiAuditReport
@@ -80,9 +76,9 @@ from app.schemas.execution_terminal import TerminalExecuteRequest, TerminalHisto
 from app.services.api_collection_service import api_collection_service
 from app.services.execution_terminal_service import ALLOWED_COMMANDS_DISPLAY, execution_terminal_service
 from app.services.download_service import DownloadService
+from app.services.delivery_eligibility_policy import DeliveryEligibilityError, delivery_eligibility_policy
 from app.services.generated_project_service import GeneratedProjectService
 from app.services.git_provider_service import git_provider_service
-from app.services.plan_access_engine import PlanAccessDeniedError, PlanAccessEngine
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter, ProjectWriteError
 router = APIRouter(tags=["meta-factory"])
 
@@ -120,14 +116,6 @@ CONSCIOUS_RELEASE_PHRASE = "LIBERAR COM RISCO"
 CONSCIOUS_HUMAN_REVIEW_PHRASE = "REVISADO PELO HUMANO"
 
 
-def _audit(user_id: str, event_code: str) -> None:
-    """Best-effort audit trail (never breaks the request if the log is unavailable)."""
-    try:
-        AuditLogRepository(get_settings().sqlite_path).record(user_id=user_id, event_code=event_code)
-    except Exception:  # noqa: BLE001 — audit must never block the user action
-        pass
-
-
 def _resolve_api_key(user: dict, *, use_user_key: bool, user_model_choice: str | None) -> str | None:
     context = llm_provider_resolver.resolve(
         workspace_id=None,
@@ -145,161 +133,18 @@ def _resolve_api_key(user: dict, *, use_user_key: bool, user_model_choice: str |
     return None
 
 
-def _generation_llm_context(
-    user: dict,
-    *,
-    workspace_id: str | None,
-    user_model_choice: str | None,
-    deterministic: bool = False,
-):
-    context = llm_provider_resolver.resolve(
-        workspace_id=workspace_id,
-        user_id=user["user_id"],
-        requested_capability="meta_factory_pipeline",
-        requested_model=user_model_choice,
-        deterministic=deterministic,
-    )
-    if not deterministic and context.resolution.mode != "llm":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "LLM_PROVIDER_REQUIRED",
-                "message": context.resolution.reason,
-                "recommendedAction": "Configure um provider global ou inicie explicitamente em modo deterministico.",
-            },
-        )
-    return context
-
-
-def _writable_workspace(user: dict, requested_workspace_id: str | None) -> dict:
-    repository = TenantRepository()
-    if requested_workspace_id:
-        # Permission engine is authoritative for execute_build and audits the decision.
-        try:
-            require_permission("execute_build", requested_workspace_id, user["user_id"], tenant_repo=repository)
-        except PermissionDeniedError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Workspace not found or insufficient permission.",
-            ) from exc
-        return repository.get_workspace_for_user(requested_workspace_id, user["user_id"])
-    workspace = repository.personal_workspace(user["user_id"])
-    return workspace or repository.ensure_personal_workspace(user["user_id"], user["full_name"])
 
 
 @router.post("/meta-factory/jobs", response_model=GenerationJob, status_code=status.HTTP_202_ACCEPTED)
 def create_generation_job(payload: CreateGenerationJobRequest, user: CurrentUser) -> GenerationJob:
-    """Create the durable pipeline record before any provider request is made."""
-    # Cap concurrent in-flight generations per user (audit MF3): each one holds
-    # agent-pool workers for multi-minute LLM calls, so an unbounded user could
-    # starve the shared pool for everyone. Recovery actions (retry/resume/continue)
-    # re-run existing jobs and are intentionally not counted here.
-    max_concurrent = get_settings().max_concurrent_generations_per_user
-    active = generation_job_engine.count_active_for_user(user["user_id"])
-    if active >= max_concurrent:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "code": "TOO_MANY_CONCURRENT_GENERATIONS",
-                "message": (
-                    f"Você já tem {active} geração(ões) em andamento (limite: {max_concurrent}). "
-                    "Aguarde uma concluir ou pause/cancele antes de iniciar outra."
-                ),
-                "activeCount": active,
-                "limit": max_concurrent,
-            },
-        )
-    workspace = _writable_workspace(user, payload.workspaceId)
-    try:
-        PlanAccessEngine().check_build_execute(user_id=user["user_id"], organization_id=workspace["organization_id"])
-    except PlanAccessDeniedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.to_detail()) from exc
-    # projectId is the Project Room id for the primary chat -> Meta Factory journey
-    # (the frontend enforces this gate client-side; this is the server-side backstop
-    # for any caller that skips straight to job creation). Callers whose projectId
-    # does not resolve to a room of theirs (ad-hoc/API usage) are not gated here.
-    room = project_room_service.get_room(payload.projectId, user["user_id"])
-    if room is not None and room["status"] not in ENGINEERING_APPROVED_STATUSES:
-        _audit(user["user_id"], "generation_job_blocked_by_gate")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "BLUEPRINT_GATE_BLOCKED",
-                "message": "Este projeto ainda nao teve o Engineering Review aprovado e nao pode iniciar a geracao.",
-            },
-        )
-    if room is not None:
-        # Stack Approval Gate (server-side backstop): generation can never start on
-        # a stack the user did not explicitly approve. The approved selections —
-        # not the model's internal choice — are enforced into the spec below.
-        stack_approval = ((room.get("architecture_blueprint") or {}).get("stack_approval") or {})
-        if stack_approval.get("status") != "APPROVED":
-            _audit(user["user_id"], "generation_job_blocked_by_stack_gate")
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "code": "STACK_APPROVAL_REQUIRED",
-                    "message": (
-                        "A stack de desenvolvimento ainda nao foi aprovada pelo usuario. "
-                        "Aprove (ou altere) a stack no Stack Approval Gate antes de gerar."
-                    ),
-                },
-            )
-        if stack_approval.get("selected_language"):
-            payload.spec.suggested_stack.language = str(stack_approval["selected_language"])
-        if stack_approval.get("selected_backend"):
-            payload.spec.suggested_stack.framework = str(stack_approval["selected_backend"])
-        payload.blueprint.setdefault("stack_approval", stack_approval)
-    if room is not None:
-        # The room's own approve()/acknowledge_preview() flow already requires and
-        # records explicit human sign-off for a degraded (deterministic-preview)
-        # blueprint before it can reach ENGINEERING_APPROVED (see
-        # project_room_service.py). Mirror that into the structured, queryable
-        # blueprint_approvals trail so it isn't only recoverable from history_json.
-        blueprint = room.get("architecture_blueprint") or {}
-        if blueprint.get("degraded") and blueprint.get("preview_acknowledged"):
-            approvals = BlueprintApprovalRepository()
-            blueprint_hash = hash_blueprint(blueprint)
-            if not approvals.is_approved(payload.projectId, blueprint_hash):
-                approvals.record(
-                    project_id=payload.projectId,
-                    blueprint_hash=blueprint_hash,
-                    approved_by_user_id=user["user_id"],
-                    reason="deterministic-preview blueprint consciously acknowledged before engineering approval",
-                )
-    context = _generation_llm_context(
-        user,
-        workspace_id=workspace["workspace_id"],
-        user_model_choice=payload.user_model_choice,
-        deterministic=payload.mode == "deterministic",
-    )
-    resolution = context.resolution
-    engine_mode = "deterministic" if payload.mode == "deterministic" else "normal"
-    try:
-        job = generation_job_engine.create_job(
-            owner_user_id=user["user_id"],
-            project_id=payload.projectId,
-            workspace_id=workspace["workspace_id"],
-            project_name=payload.projectName,
-            spec=payload.spec,
-            blueprint=payload.blueprint,
-            blueprint_version=payload.blueprintVersion,
-            provider=resolution.provider,
-            provider_label=resolution.providerLabel or "Nenhum",
-            model=resolution.model or ("Motor deterministico" if payload.mode == "deterministic" else None),
-            mode=engine_mode,
-        )
-    except PermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    generation_job_engine.start(
-        job["id"],
-        user["user_id"],
-        api_key=context.api_key,
-        user_model_choice=resolution.model,
-        mode=engine_mode,
-    )
+    """Create the durable pipeline record before any provider request is made.
+
+    All gating/creation logic lives in GenerationJobCreationService so the
+    Mission Workspace -> ProjectRoom handoff (MissionExecutionHandoffService)
+    can reuse it verbatim once a Mission-sourced room clears the same
+    Engineering Review + Stack Approval gates, instead of duplicating this or
+    calling a route function directly."""
+    job = generation_job_creation_service.create(payload=payload, user=user, engine=generation_job_engine)
     return GenerationJob.model_validate(job)
 
 
@@ -478,6 +323,33 @@ def resume_generation_job(job_id: str, user: CurrentUser) -> GenerationJob:
         api_key=context.api_key,
         user_model_choice=context.resolution.model,
     )
+    return GenerationJob.model_validate(updated)
+
+
+@router.post("/meta-factory/jobs/{job_id}/approve-repair", response_model=GenerationJob, status_code=status.HTTP_202_ACCEPTED)
+def approve_repair(job_id: str, user: CurrentUser) -> GenerationJob:
+    """Explicit human sign-off for a PipelineRecoveryOrchestrator repair that
+    CauseValidator flagged as requiring approval (e.g. a confirmed REAL_SECRET) --
+    see the job's persisted recovery/{id}.json for the full diagnosis/validation
+    trail behind this decision. Never auto-approved by any other action."""
+    job = generation_job_engine.get(job_id, user["user_id"])
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="GenerationJob nao encontrado.")
+    context = _generation_llm_context(
+        user,
+        workspace_id=job.get("workspaceId"),
+        user_model_choice=job.get("model"),
+        deterministic=job.get("mode") == "deterministic",
+    )
+    try:
+        updated = generation_job_engine.approve_repair(
+            job_id,
+            user["user_id"],
+            api_key=context.api_key,
+            user_model_choice=context.resolution.model,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return GenerationJob.model_validate(updated)
 
 
@@ -1300,6 +1172,29 @@ def _require_verified(project_id: str, *, force: bool, user_id: str | None = Non
     # through exactly like before (allowed, with no explicit prior label).
 
 
+def _require_delivery_eligible(project_id: str, user_id: str) -> None:
+    job = generation_job_engine.repository.latest_for_generated_project(project_id, user_id)
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "DELIVERY_EVIDENCE_MISSING", "message": "No generation job proves delivery eligibility."},
+        )
+    try:
+        delivery_eligibility_policy.require(
+            job,
+            required_stages=(job.get("stageStatuses") or {}).keys(),
+        )
+    except DeliveryEligibilityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "DELIVERY_NOT_ELIGIBLE",
+                "message": "Mandatory delivery conditions are not satisfied.",
+                "blockers": list(exc.decision.blockers),
+            },
+        ) from exc
+
+
 @router.get("/meta-factory/{project_id}/engineering-kernel", response_model=EngineeringKernelStatus)
 def get_engineering_kernel_status(project_id: str, user: CurrentUser) -> EngineeringKernelStatus:
     """Single source of truth for 'what state is this project in' -- consolidates
@@ -1380,6 +1275,7 @@ def prepare_meta_factory_download(
 ) -> PreparedDownloadResponse:
     project = _owned_meta_project(project_id, user)
     _require_verified(project_id, force=force, user_id=user["user_id"])
+    _require_delivery_eligible(project_id, user["user_id"])
     result = _download_service.prepare_archive(
         _generated_project_service, project,
         download_url=f"/api/meta-factory/{project_id}/download",
@@ -1390,6 +1286,7 @@ def prepare_meta_factory_download(
 @router.get("/meta-factory/{project_id}/download")
 def download_meta_factory_project(project_id: str, user: CurrentUser) -> FileResponse:
     project = _owned_meta_project(project_id, user)
+    _require_delivery_eligible(project_id, user["user_id"])
     zip_path = _download_service.resolve_archive(_generated_project_service, project, user["user_id"])
     return FileResponse(zip_path, media_type="application/zip", filename=f"{project_id}.zip")
 

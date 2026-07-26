@@ -57,7 +57,9 @@ class BuildCommandRecord(ApiModel):
     """One real command executed during build validation — the audit trail that
     build.report.json exposes (comando, cwd, exitCode, duração, stdout/stderr)."""
 
-    phase: Literal["dependency_validation", "preflight", "install", "build"] = "build"
+    phase: Literal[
+        "dependency_validation", "preflight", "install", "lint", "typecheck", "build",
+    ] = "build"
     command: str
     cwd: str
     exit_code: int | None = None

@@ -20,6 +20,7 @@
     "audit:hotspots:check": "node scripts/check-hotspot-budgets.mjs",
     "audit:typography:report": "node scripts/audit-typography.mjs --report",
     "test:e2e": "node scripts/run-e2e.mjs",
+    "test:e2e:real-runtime": "playwright test -c playwright.real-runtime.config.ts",
     "test:responsive-visibility": "playwright test -c playwright.responsive-visibility.config.ts"
   },
   "dependencies": {

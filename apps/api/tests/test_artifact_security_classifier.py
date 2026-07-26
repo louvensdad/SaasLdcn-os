@@ -55,6 +55,17 @@ class TestPlaceholder:
         assert _classification("backend/.env.example", content) == "PLACEHOLDER"
         assert artifact_block_reason("backend/.env.example", content) == ""
 
+    def test_stub_prefixed_mock_values_are_not_blocked(self):
+        # Real bug found live: a generated StubAuthService's mock token/id
+        # literals were flagged as UNSAFE_TEMPLATE (needing human approval)
+        # on every generation that produces a stub service.
+        for content in (
+            'return TokenResponse(access_token="stub-access-token", refresh_token="stub-refresh-token")\n',
+            'return TokenResponse(access_token="new-stub-access-token", refresh_token="new-stub-refresh-token")\n',
+            'return UserResponse(id="stub-user-id", username=request.username)\n',
+        ):
+            assert artifact_block_reason("backend/app/auth/application/auth_service.py", content) == "", content
+
     def test_suffixed_placeholder_word_is_detected(self):
         # "example1234..." has no word boundary between "example" and the
         # following digits -- must still be recognized as a placeholder.
@@ -64,6 +75,63 @@ class TestPlaceholder:
     def test_pydantic_field_default_placeholder_is_not_blocked(self):
         content = 'JWT_SECRET: str = Field(default="change-me")\n'
         assert artifact_block_reason("backend/app/core/config.py", content) == ""
+
+    def test_pydantic_field_description_is_never_mistaken_for_the_value(self):
+        # Real bug found live: a required field's `description=` kwarg (pure
+        # documentation, no literal default at all) was being scanned as if it
+        # were the field's own secret value, because it was simply the first
+        # quoted string on the line. "Token de atualizacao (refresh token)" is
+        # long/diverse enough in Portuguese to clear the entropy heuristic on
+        # its own, so this isn't a placeholder-wording escape -- it must never
+        # reach the classifier as a candidate value in the first place.
+        content = (
+            'refresh_token: str = Field(..., description="Token de atualizacao (refresh token)")\n'
+        )
+        assert _classification("backend/app/schemas/__init__.py", content) == "SAFE_REFERENCE"
+        assert artifact_block_reason("backend/app/schemas/__init__.py", content) == ""
+
+    def test_pydantic_field_default_factory_is_not_mistaken_for_a_literal(self):
+        content = 'session_id: str = Field(default_factory=lambda: str(uuid4()), description="Session identifier")\n'
+        assert artifact_block_reason("backend/app/schemas/session.py", content) == ""
+
+    def test_pydantic_field_actual_default_literal_still_blocks(self):
+        # The fix must not blanket-exempt every Field(...) call -- a real
+        # hardcoded secret assigned via `default=` is still caught.
+        content = 'API_KEY: str = Field(default="Xk9#mP2$vQ7nZ4wR8tY1uL5cB3sA6dF0", description="API key")\n'
+        assert _classification("backend/app/core/config.py", content) == "REAL_SECRET"
+
+    def test_except_clause_naming_a_token_error_does_not_swallow_the_next_line(self):
+        # Real bug found live: `except jwt.InvalidTokenError:` is a Python
+        # control-flow line ending in ':', not an assignment -- but `\s*`
+        # (which matches '\n' too) let the old regex cross the newline and
+        # read the NEXT line's `raise ValueError("Token invalido")` as if it
+        # were the value assigned to a "token" credential.
+        content = (
+            "def validate_token(self, token: str) -> dict:\n"
+            "    try:\n"
+            "        return jwt.decode(token, self._secret)\n"
+            "    except jwt.InvalidTokenError:\n"
+            '        raise ValueError("Token invalido")\n'
+        )
+        assert artifact_block_reason("backend/app/user/application/token_service.py", content) == ""
+
+    def test_class_named_after_a_secret_word_does_not_swallow_its_first_statement(self):
+        content = (
+            "class SecretRotationPolicy:\n"
+            '    """Docstring unrelated to any real value."""\n'
+        )
+        assert artifact_block_reason("backend/app/core/policy.py", content) == ""
+
+    def test_ordinary_long_string_that_is_not_credential_shaped_is_safe(self):
+        # Real bug found live: a Zod validation-message string landed on a
+        # `password: ...` line and, despite `_looks_like_usable_credential`
+        # correctly determining it doesn't look like a working secret (no
+        # digits/uppercase, plain snake_case English), the default branch
+        # still fell through to SUSPICIOUS -- blocking on ordinary UI/
+        # validation copy, not just real ambiguous secrets.
+        content = "  password: z.string().min(1, 'validation_required'),\n"
+        assert _classification("src/pages/LoginPage.tsx", content) == "SAFE_REFERENCE"
+        assert artifact_block_reason("src/pages/LoginPage.tsx", content) == ""
 
 
 class TestTestFixture:

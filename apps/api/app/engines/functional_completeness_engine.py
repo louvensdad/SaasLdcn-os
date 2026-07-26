@@ -93,6 +93,18 @@ _GENERIC_NEXT_SEGMENTS = {"api", "admin", "internal", "v1", "v2"}
 _FASTAPI_ROUTER_RE = re.compile(r"APIRouter\s*\(")
 _FASTAPI_PREFIX_RE = re.compile(r"""prefix\s*=\s*["']/([\w-]+)["']""")
 _FASTAPI_METHOD_RE = re.compile(r"@router\.(get|post|put|delete|patch)\s*\(", re.IGNORECASE)
+# Generic per-module role filenames (mirrors architecture_analysis.py's
+# _is_role_named_file): a bare APIRouter() with no prefix= kwarg is common in
+# hexagonal-style generation, and every module writes it to the SAME filename
+# ("router.py"). Real bug found live: falling back to the bare stem collapsed
+# 6 completely unrelated resources (account/router.py, admin/router.py,
+# auth/router.py, execution_log/router.py, instance/router.py, macro/router.py
+# -- a real CraftForge Hub generation) into one fake "Router" resource with a
+# false "6 separate controller implementations" BLOCKER. The parent directory
+# is the module name and disambiguates correctly; only the bare stem needs
+# this treatment -- an explicit prefix= or a distinctively-named file
+# ("account_controller.py") already identifies its own resource.
+_GENERIC_ROUTER_FILENAMES = {"router", "routes", "controller", "controllers", "api", "endpoints", "views"}
 _PY_EXCLUDED_DIRS = {"node_modules", ".venv", "venv", ".ldcn-venv", "site-packages", "__pycache__"}
 
 # OpenAPI <-> frontend contract drift -- confirmed live: TeamSync's types.ts opens
@@ -343,10 +355,13 @@ class FunctionalCompletenessEngine:
             if not _FASTAPI_ROUTER_RE.search(text):
                 continue
             prefix_match = _FASTAPI_PREFIX_RE.search(text)
-            resource = (
-                prefix_match.group(1).capitalize() if prefix_match
-                else _strip_suffix(path.stem, "_controller").capitalize()
-            )
+            stripped_stem = _strip_suffix(path.stem, "_controller")
+            if prefix_match:
+                resource = prefix_match.group(1).capitalize()
+            elif stripped_stem.lower() in _GENERIC_ROUTER_FILENAMES and path.parent.name:
+                resource = path.parent.name.capitalize()
+            else:
+                resource = stripped_stem.capitalize()
             methods = {m.group(1).upper() for m in _FASTAPI_METHOD_RE.finditer(text)}
             controllers.setdefault(resource, []).append(
                 {"file": str(path.relative_to(root)), "endpoints": methods}

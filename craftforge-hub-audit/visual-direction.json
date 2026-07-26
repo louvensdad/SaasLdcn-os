@@ -1,0 +1,54 @@
+{
+  "concept": "Gaming cockpit — um painel escuro e técnico que evoca uma central de controle de múltiplos agentes, com ênfase em dados em tempo real, status binário e eficiência operacional.",
+  "personality": [
+    "técnico",
+    "preciso",
+    "minimalista",
+    "imersivo",
+    "orientado a dados",
+    "gamificado leve (feedback visual para ações)"
+  ],
+  "typography": {
+    "heading_font": "Inter (sans-serif, pesos 600 e 700 para hierarquia clara)",
+    "body_font": "JetBrains Mono (monospace, para exibição de métricas como FPS, RAM e timestamps)",
+    "scale": [
+      "caption: 0.75rem",
+      "body: 0.875rem",
+      "subheading: 1rem",
+      "heading: 1.25rem",
+      "display: 1.5rem"
+    ]
+  },
+  "spacing_scale": [
+    "xs: 0.25rem",
+    "sm: 0.5rem",
+    "md: 1rem",
+    "lg: 1.5rem",
+    "xl: 2rem"
+  ],
+  "density": "compact — alta densidade de informação com margens reduzidas para maximizar visibilidade de múltiplas instâncias em simultâneo",
+  "surfaces": "cards em tom escuro sutilmente elevados (#1e1e2e) sobre fundo mais escuro (#11111b), com variação de brilho para diferenciar contas ativas/inativas",
+  "borders": "bordas finas (1px) em tons de cinza (#313244) para separar cards sem ruído visual; borda verde (#a6e3a1) para contorno de instância online, vermelha (#f38ba8) para offline",
+  "shadows": "sombras suaves e baixas (box-shadow: 0 2px 4px rgba(0,0,0,0.4)) para dar leve profundidade aos cards sem competir com conteúdo",
+  "icon_language": "ícones lineares da Phosphor (ou similar) com traço de 1.5px, no estilo UI de ferramentas — setas, power, play/stop, relógio, terminal — todos com significado direto no domínio de automação e jogos",
+  "color_palette": {
+    "primary": "#89b4fa",
+    "secondary": "#a6e3a1",
+    "accent": "#f5c2e7",
+    "neutral": "#45475a",
+    "rationale": "Paleta baseada no tema escuro Catppuccin Mocha (conhecido no universo de desenvolvimento e ferramentas CLI), que proporciona conforto visual para longas sessões. O azul primário (#89b4fa) remete a hiperlinks e comandos de rede, coerente com um painel de controle remoto. O verde secundário (#a6e3a1) é usado para estados 'online' e 'ativo', mimetizando LEDs de hardware. O rosa acento (#f5c2e7) destaca ações importantes como iniciar macro ou alertas não críticos. O cinza neutro (#45475a) mantém o fundo e bordas discretos. Não há gradiente roxo genérico; o rosa é usado pontualmente como acento justificado."
+  },
+  "motion_language": "animações curtas e utilitárias: fade+scale ao abrir/fechar cards (200ms ease-out), transição de cor suave ao mudar status online/offline (300ms), pulse sutil no ícone de instância quando um comando está em execução (ex.: girar ícone de loading). Evitar animações decorativas — todo movimento comunica mudança de estado ou disponibilidade.",
+  "avoided_generic_patterns": [
+    "gradiente roxo genérico (substituído por paleta Catppuccin Mocha com acentos específicos)",
+    "cards idênticos em grade sem variação (cada instância terá borda colorida conforme status e indicador de atividade única)",
+    "ícones aleatórios sem sistema (todos da família Phosphor UI com significado direto no domínio)",
+    "glassmorphism sem motivo (não há necessidade de translucidez; superfícies opacas garantem legibilidade de dados em tempo real)",
+    "hero gigante vazio (substituído por painel compacto com estatísticas de resumo no topo)",
+    "textos genéricos como 'Welcome' ou 'Your Product' (substituídos por 'Painel de Controle' e nomes de contas reais)",
+    "dashboards vazios sem dado real (sempre exibe contagem de instâncias, mesmo que 0, com sugestão de criar primeira conta)",
+    "excesso de badges (badges reservados para status online/offline e nível de plano, sem badges decorativos)",
+    "layout que pareça template genérico de landing page (a estrutura é de aplicação SaaS com sidebar fixa e conteúdo dinâmico)"
+  ],
+  "rationale": "O conceito 'Gaming cockpit' foi escolhido porque o domínio real do produto é gerenciar múltiplas contas de jogo — um usuário que opera várias instâncias simultâneas precisa de uma interface que pareça uma estação de comando, não um site genérico. A paleta escura e técnica (Catppuccin Mocha) é familiar para jogadores e desenvolvedores, facilitando imersão. A tipografia monospace para métricas e a densidade compacta priorizam a visualização de status em paralelo. Cada decisão visual está atrelada ao fluxo de trabalho: monitorar, iniciar, parar, executar macros — sem enfeites que distraiam."
+}

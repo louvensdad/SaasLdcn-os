@@ -1,0 +1,551 @@
+{
+    "info": {
+        "name": "Game Controller SaaS API",
+        "description": "Coleção para testes de API do painel SaaS multi-login",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Auth",
+            "item": [
+                {
+                    "name": "Register",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Status 201', function() { pm.response.to.have.status(201); });",
+                                    "pm.test('Response has id', function() { var jsonData = pm.response.json(); pm.expect(jsonData).to.have.property('id'); });"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"{{email}}\",\n    \"username\": \"{{username}}\",\n    \"password\": \"{{password}}\"\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/auth/register",
+                            "host": ["{{base_url}}"],
+                            "path": ["auth", "register"]
+                        }
+                    }
+                },
+                {
+                    "name": "Login",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Status 200', function() { pm.response.to.have.status(200); });",
+                                    "var jsonData = pm.response.json();",
+                                    "pm.test('Has access_token', function() { pm.expect(jsonData).to.have.property('access_token'); });",
+                                    "pm.collectionVariables.set('access_token', jsonData.access_token);",
+                                    "pm.collectionVariables.set('refresh_token', jsonData.refresh_token);"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"{{email}}\",\n    \"password\": \"{{password}}\"\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/auth/login",
+                            "host": ["{{base_url}}"],
+                            "path": ["auth", "login"]
+                        }
+                    }
+                },
+                {
+                    "name": "Refresh",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Status 200', function() { pm.response.to.have.status(200); });",
+                                    "var jsonData = pm.response.json();",
+                                    "pm.test('Has access_token', function() { pm.expect(jsonData).to.have.property('access_token'); });",
+                                    "pm.collectionVariables.set('access_token', jsonData.access_token);"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/auth/refresh",
+                            "host": ["{{base_url}}"],
+                            "path": ["auth", "refresh"]
+                        }
+                    }
+                },
+                {
+                    "name": "Me",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Status 200', function() { pm.response.to.have.status(200); });",
+                                    "var jsonData = pm.response.json();",
+                                    "pm.test('Has email', function() { pm.expect(jsonData).to.have.property('email'); });"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{access_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/auth/me",
+                            "host": ["{{base_url}}"],
+                            "path": ["auth", "me"]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Accounts",
+            "item": [
+                {
+                    "name": "Create Account",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Minha Conta Principal\",\n    \"credentials\": \"{\\\"user\\\":\\\"jogador1\\\",\\\"pass\\\":\\\"secret\\\"}\"\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/accounts",
+                            "host": ["{{base_url}}"],
+                            "path": ["accounts"]
+                        }
+                    }
+                },
+                {
+                    "name": "List Accounts",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/accounts",
+                            "host": ["{{base_url}}"],
+                            "path": ["accounts"]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Account",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/accounts/{{account_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["accounts", "{{account_id}}"]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Account",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Conta Atualizada\"\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/accounts/{{account_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["accounts", "{{account_id}}"]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Account",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/accounts/{{account_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["accounts", "{{account_id}}"]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Instances",
+            "item": [
+                {
+                    "name": "List Instances",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/instances",
+                            "host": ["{{base_url}}"],
+                            "path": ["instances"]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Instance",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/instances/{{instance_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["instances", "{{instance_id}}"]
+                        }
+                    }
+                },
+                {
+                    "name": "Start Instance",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/instances/{{instance_id}}/start",
+                            "host": ["{{base_url}}"],
+                            "path": ["instances", "{{instance_id}}", "start"]
+                        }
+                    }
+                },
+                {
+                    "name": "Stop Instance",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/instances/{{instance_id}}/stop",
+                            "host": ["{{base_url}}"],
+                            "path": ["instances", "{{instance_id}}", "stop"]
+                        }
+                    }
+                },
+                {
+                    "name": "Start All Instances (Batch)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"account_ids\": []\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/instances/start",
+                            "host": ["{{base_url}}"],
+                            "path": ["instances", "start"]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Macros",
+            "item": [
+                {
+                    "name": "Create Macro",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Macro Coleta\",\n    \"script\": \"# script de automacao\\nprint('coletando recursos')\"\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/macros",
+                            "host": ["{{base_url}}"],
+                            "path": ["macros"]
+                        }
+                    }
+                },
+                {
+                    "name": "List Macros",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/macros",
+                            "host": ["{{base_url}}"],
+                            "path": ["macros"]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Macro",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/macros/{{macro_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["macros", "{{macro_id}}"]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Macro",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Macro Atualizada\"\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/macros/{{macro_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["macros", "{{macro_id}}"]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Macro",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/macros/{{macro_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["macros", "{{macro_id}}"]
+                        }
+                    }
+                },
+                {
+                    "name": "Associate Macro",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"account_ids\": [\"{{account_id}}\"]\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/macros/{{macro_id}}/associate",
+                            "host": ["{{base_url}}"],
+                            "path": ["macros", "{{macro_id}}", "associate"]
+                        }
+                    }
+                },
+                {
+                    "name": "Execute Macro",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"account_id\": \"{{account_id}}\"\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/macros/{{macro_id}}/execute",
+                            "host": ["{{base_url}}"],
+                            "path": ["macros", "{{macro_id}}", "execute"]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Logs",
+            "item": [
+                {
+                    "name": "List Logs",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/logs",
+                            "host": ["{{base_url}}"],
+                            "path": ["logs"]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Log",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/logs/{{log_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["logs", "{{log_id}}"]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Admin",
+            "item": [
+                {
+                    "name": "List Users",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/users",
+                            "host": ["{{base_url}}"],
+                            "path": ["admin", "users"]
+                        }
+                    }
+                },
+                {
+                    "name": "Get User",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/users/{{user_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["admin", "users", "{{user_id}}"]
+                        }
+                    }
+                },
+                {
+                    "name": "Update User",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {"key": "Authorization", "value": "Bearer {{access_token}}"}
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"plan\": \"premium\"\n}",
+                            "options": {"raw": {"language": "json"}}
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/users/{{user_id}}",
+                            "host": ["{{base_url}}"],
+                            "path": ["admin", "users", "{{user_id}}"]
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:8000"
+        },
+        {
+            "key": "email",
+            "value": "teste@exemplo.com"
+        },
+        {
+            "key": "username",
+            "value": "teste"
+        },
+        {
+            "key": "password",
+            "value": "SenhaForte123!"
+        },
+        {
+            "key": "access_token",
+            "value": ""
+        },
+        {
+            "key": "refresh_token",
+            "value": ""
+        },
+        {
+            "key": "account_id",
+            "value": ""
+        },
+        {
+            "key": "instance_id",
+            "value": ""
+        },
+        {
+            "key": "macro_id",
+            "value": ""
+        },
+        {
+            "key": "log_id",
+            "value": ""
+        },
+        {
+            "key": "user_id",
+            "value": ""
+        }
+    ]
+}

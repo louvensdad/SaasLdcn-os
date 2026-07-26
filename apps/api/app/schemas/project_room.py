@@ -224,9 +224,20 @@ class EngineeringReviewAssessment(ApiModel):
     final_opinion: FinalOpinion | None = None
 
 
+class ProjectRoomOrigin(ApiModel):
+    """Provenance for a room seeded programmatically instead of via chat.
+    Absent (None) for every room created through the normal journey."""
+
+    source: Literal["MISSION_WORKSPACE"]
+    mission_id: str
+    deliverable_job_id: str
+    handoff_id: str
+
+
 class ProjectRoom(ApiModel):
     room_id: str
     workspace_id: str | None = None
+    origin: ProjectRoomOrigin | None = None
     title: str
     status: ProjectRoomStatus
     delivery_type: DeliveryType = "web"

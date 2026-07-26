@@ -1,11 +1,21 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-  AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, CircleDashed, Clock, Copy, Loader2, RefreshCw, XCircle,
+  AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, CircleDashed, Clock, Copy, Download, Loader2, RefreshCw, Rocket, XCircle,
 } from 'lucide-react';
 
 import { LlmConfirmationGate } from '@/components/llm/llm-confirmation-gate';
+import { projectRoomsClient } from '@/lib/api/project-rooms';
+import type { ProjectRoom } from '@contracts/project-room.contract';
 import { useMissionStore } from '../stores/missionStore';
-import type { DeliverableJobDto, DeliverableJobEventDto } from '../api/client';
+import { MissionApiError, missionClient } from '../api/client';
+import type { DeliverableJobDto, DeliverableJobEventDto, ExecutionHandoffDto } from '../api/client';
+
+/** Only the software.build genome maps to a runnable project today -- see
+ * MissionExecutionPolicyRegistry on the backend, the single source of truth
+ * this mirrors. Other genomes (documentation.create, error.diagnose, ...)
+ * keep the plain "Fechar" completion screen below. */
+const BUILDABLE_MISSION_TYPE = 'software.build';
 
 // ---------------------------------------------------------------- helpers
 // Every value rendered by this component is derived from real backend state
@@ -399,9 +409,81 @@ function FailureSummary({
   );
 }
 
+function downloadDrafts(job: DeliverableJobDto, title: string): void {
+  const combined = job.drafts.map((draft) => `# ${draft.title}\n\n${draft.content}`).join('\n\n---\n\n');
+  const blob = new Blob([combined], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${title.trim() || 'entregaveis'}.md`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 function CompletionSummary({ job, totalElapsedMs, onClose }: { job: DeliverableJobDto; totalElapsedMs: number; onClose: () => void }) {
+  const { activeMission, activeGenome } = useMissionStore();
+  const router = useRouter();
+  const isBuildable = activeGenome?.id === BUILDABLE_MISSION_TYPE;
+
   const stagesCompleted = PHASE_ORDER.length;
   const inferencesApplied = job.drafts.filter((draft) => draft.content.includes('## Complementado pela IA')).length;
+
+  const [handoff, setHandoff] = useState<ExecutionHandoffDto | null>(null);
+  const [handoffLoading, setHandoffLoading] = useState(isBuildable);
+  const [room, setRoom] = useState<ProjectRoom | null>(null);
+  const [showDrafts, setShowDrafts] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isBuildable || !activeMission) { setHandoffLoading(false); return; }
+    let cancelled = false;
+    setHandoffLoading(true);
+    missionClient.getMissionExecutionHandoff(activeMission.id)
+      .then((status) => { if (!cancelled) setHandoff(status); })
+      .catch(() => { if (!cancelled) setHandoff(null); })
+      .finally(() => { if (!cancelled) setHandoffLoading(false); });
+    return () => { cancelled = true; };
+  }, [isBuildable, activeMission]);
+
+  useEffect(() => {
+    if (!handoff?.projectRoomId || !handoff.engineeringApproved || !handoff.stackApproved || handoff.generationJobId) return;
+    let cancelled = false;
+    projectRoomsClient.get(handoff.projectRoomId).then((value) => { if (!cancelled) setRoom(value); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [handoff?.projectRoomId, handoff?.engineeringApproved, handoff?.stackApproved, handoff?.generationJobId]);
+
+  async function handlePrepare() {
+    if (!activeMission || preparing) return;
+    setPreparing(true);
+    setActionError(null);
+    try {
+      const result = await missionClient.prepareMissionProject(activeMission.id);
+      router.push(result.nextRoute);
+    } catch (error) {
+      setActionError(error instanceof MissionApiError ? error.message : 'Não foi possível preparar o projeto.');
+      setPreparing(false);
+    }
+  }
+
+  async function handleStart() {
+    if (!activeMission || starting) return;
+    setStarting(true);
+    setActionError(null);
+    try {
+      const result = await missionClient.startMissionGeneration(activeMission.id);
+      router.push(result.nextRoute);
+    } catch (error) {
+      setActionError(error instanceof MissionApiError ? error.message : 'Não foi possível iniciar a geração.');
+      setStarting(false);
+      setShowConfirm(false);
+    }
+  }
+
+  const stack = room?.spec?.suggested_stack;
+
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold text-[color:var(--text)]">Entregáveis concluídos</h3>
@@ -411,7 +493,107 @@ function CompletionSummary({ job, totalElapsedMs, onClose }: { job: DeliverableJ
         <div><dt className="text-[color:var(--muted)]">Artefatos criados</dt><dd className="text-[color:var(--text)]">{job.drafts.length}</dd></div>
         <div><dt className="text-[color:var(--muted)]">Inferências técnicas aplicadas</dt><dd className="text-[color:var(--text)]">{inferencesApplied}</dd></div>
       </dl>
-      <button onClick={onClose} className="rounded-lg border border-[color:var(--border)] px-3 py-1.5 text-xs font-medium text-[color:var(--text)]">Fechar</button>
+
+      {isBuildable ? (
+        <div className="space-y-2 rounded-lg border border-[color:var(--border)] bg-black/10 p-3">
+          <p className="text-xs text-[color:var(--muted)]">
+            Os artefatos de planejamento estão prontos. Agora você pode revisá-los ou iniciar a construção real do projeto.
+          </p>
+          {actionError ? <p className="text-xs text-red-300">{actionError}</p> : null}
+          {handoffLoading ? (
+            <p className="flex items-center gap-1.5 text-xs text-[color:var(--muted)]"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Verificando estado do projeto…</p>
+          ) : !handoff ? (
+            <button
+              onClick={() => void handlePrepare()}
+              disabled={preparing}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 py-1.5 text-xs font-medium text-black disabled:opacity-60"
+            >
+              {preparing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
+              {preparing ? 'Preparando o projeto…' : 'Preparar projeto'}
+            </button>
+          ) : handoff.generationJobId ? (
+            <button
+              onClick={() => router.push(handoff.nextRoute)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 py-1.5 text-xs font-medium text-black"
+            >
+              <Rocket className="h-3.5 w-3.5" /> Ver progresso da geração
+            </button>
+          ) : !handoff.engineeringApproved || !handoff.stackApproved ? (
+            <div className="space-y-1.5">
+              <p className="text-xs text-amber-200">
+                Projeto preparado. Revise a arquitetura e aprove o Engineering Review e a Stack Approval Gate antes de gerar.
+              </p>
+              <button
+                onClick={() => router.push(handoff.nextRoute)}
+                className="rounded-lg border border-amber-400/40 px-3 py-1.5 text-xs font-medium text-amber-100"
+              >
+                Continuar Engineering Review
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowConfirm(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 py-1.5 text-xs font-medium text-black"
+            >
+              <Rocket className="h-3.5 w-3.5" /> Iniciar geração do projeto
+            </button>
+          )}
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => setShowDrafts((value) => !value)} className="inline-flex items-center gap-1 text-xs text-[color:var(--muted)] hover:text-[color:var(--text)]">
+          {showDrafts ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />} Revisar entregáveis
+        </button>
+        <button
+          onClick={() => downloadDrafts(job, activeMission?.title ?? 'entregaveis')}
+          className="inline-flex items-center gap-1 text-xs text-[color:var(--muted)] hover:text-[color:var(--text)]"
+        >
+          <Download className="h-3.5 w-3.5" /> Baixar documentação
+        </button>
+        <button onClick={onClose} className="rounded-lg border border-[color:var(--border)] px-3 py-1.5 text-xs font-medium text-[color:var(--text)]">Fechar</button>
+      </div>
+
+      {showDrafts ? (
+        <ul className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-[color:var(--border)] bg-black/10 p-3">
+          {job.drafts.map((draft) => (
+            <li key={draft.type}>
+              <p className="text-xs font-medium text-[color:var(--text)]">{draft.title}</p>
+              <p className="line-clamp-2 text-[11px] text-[color:var(--muted)]">{draft.content}</p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {showConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Iniciar construção do projeto?">
+          <div className="w-full max-w-md space-y-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface,#111)] p-5">
+            <h4 className="text-sm font-semibold text-[color:var(--text)]">Iniciar construção do projeto?</h4>
+            <p className="text-xs text-[color:var(--muted)]">
+              O LDCN OS usará o Blueprint aprovado para gerar o código, integrar os módulos, executar testes, realizar o build e preparar o preview.
+            </p>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <div><dt className="text-[color:var(--muted)]">Linguagem</dt><dd className="text-[color:var(--text)]">{stack?.language || '—'}</dd></div>
+              <div><dt className="text-[color:var(--muted)]">Framework</dt><dd className="text-[color:var(--text)]">{stack?.framework || '—'}</dd></div>
+              <div><dt className="text-[color:var(--muted)]">Artefatos de entrada</dt><dd className="text-[color:var(--text)]">{job.drafts.length}</dd></div>
+            </dl>
+            {actionError ? <p className="text-xs text-red-300">{actionError}</p> : null}
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setShowConfirm(false)} disabled={starting} className="rounded-lg border border-[color:var(--border)] px-3 py-1.5 text-xs font-medium text-[color:var(--text)]">
+                Cancelar
+              </button>
+              <button
+                onClick={() => void handleStart()}
+                disabled={starting}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 py-1.5 text-xs font-medium text-black disabled:opacity-60"
+              >
+                {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {starting ? 'Preparando a construção do projeto…' : 'Iniciar construção'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

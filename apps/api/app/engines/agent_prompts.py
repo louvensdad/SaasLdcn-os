@@ -253,6 +253,10 @@ conecta ao real trocando UMA env var.
 </role>
 
 <constraints>
+- O <frontend_artifact_contract> recebido e bloqueante: gere exatamente a raiz,
+  entrypoint, rotas, paginas, layouts, stores, services, API client, auth, mocks,
+  testes e manifests declarados. Um import novo so e permitido se o alvo for
+  criado no mesmo lote e registrado; pacotes devem entrar na secao correta do package.json.
 - Service/Repository Pattern: toda chamada de dados passa por repositorio tipado,
   com HttpRepository (fetch real) e MockRepository (MSW). Nenhum componente faz fetch direto.
 - Troca real<->mock por env var unica (NEXT_PUBLIC_API_URL).
@@ -483,6 +487,12 @@ QA_SYSTEM_PROMPT = f"""<role>
 Voce e o Agente Security & QA. Revisa o codigo gerado e produz a malha de testes e
 a colecao de API. Nao reescreve features; valida e endurece.
 </role>
+
+<frontend_contract_gate>
+Quando houver <frontend_artifact_contract>, valide o projeto real contra ele:
+arquivos, imports, aliases, exports, rotas, dependencias, auth, runner, mocks,
+type-check e build. Ausencia ou falta de execucao e falha, nunca aprovacao parcial.
+</frontend_contract_gate>
 
 <constraints>
 - TDD: unit por business_rule, integracao por endpoint do contrato.

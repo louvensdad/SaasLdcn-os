@@ -53,6 +53,7 @@ class GenerationJobRepository:
                 id=data["id"],
                 owner_user_id=owner_user_id,
                 project_id=data["projectId"],
+                source_mission_id=data.get("sourceMissionId"),
                 data_json=self._dump(data),
                 spec_json=self._dump(spec),
                 blueprint_json=self._dump(blueprint),
@@ -91,6 +92,26 @@ class GenerationJobRepository:
                 if data and data.get("generatedProjectId") == generated_project_id:
                     return data
         return None
+
+    def find_active_by_source_mission(
+        self, mission_id: str, owner_user_id: str, *, terminal_statuses: Sequence[str]
+    ) -> dict[str, Any] | None:
+        """Idempotency check for MissionExecutionHandoffService.start_generation:
+        is there already an in-flight job for this mission? Uses the indexed
+        source_mission_id column (not a data_json scan) since this is queried
+        on every start-generation call."""
+        with self._sessions() as session:
+            row = session.scalar(
+                select(GenerationJob)
+                .where(
+                    GenerationJob.source_mission_id == mission_id,
+                    GenerationJob.status.notin_(list(terminal_statuses)),
+                    self._visible_to(owner_user_id),
+                )
+                .order_by(GenerationJob.updated_at.desc())
+                .limit(1)
+            )
+            return self._row(row)
 
     def list(self, owner_user_id: str, *, archived: bool | None = None) -> list[dict[str, Any]]:
         with self._sessions() as session:

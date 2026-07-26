@@ -22,11 +22,11 @@ def _base_job(**overrides) -> dict:
         "currentStage": "BUILD_RUNNING",
         "error": {
             "stage": "BUILD_RUNNING",
-            "message": "Artifact 'backend/app/application/services/auth_service.py' blocked: high-confidence secret material is forbidden (real_secret).",
+            "message": "Artifact 'backend/app/services/auth_service.py' blocked: high-confidence secret material is forbidden (real_secret).",
             "last_successful_checkpoint": "DOCUMENTATION_GENERATING",
         },
         "artifacts": [
-            {"kind": "generated", "name": "backend/app/application/services/auth_service.py", "valid": True},
+            {"kind": "generated", "name": "backend/app/services/auth_service.py", "valid": True},
         ],
         "events": [],
         "checkpoints": [
@@ -47,7 +47,7 @@ class TestRootCauseInvestigator:
         analysis = root_cause_investigator.investigate(_base_job())
         assert analysis.jobId == "genjob_test"
         assert analysis.failedStage == "BUILD_RUNNING"
-        assert "backend/app/application/services/auth_service.py" in analysis.affectedArtifacts
+        assert "backend/app/services/auth_service.py" in analysis.affectedArtifacts
         assert analysis.hypotheses, "expected at least one ranked hypothesis"
         assert analysis.hypotheses[0].confidence == max(h.confidence for h in analysis.hypotheses)
         assert analysis.firstDivergencePoint == "DOCUMENTATION_GENERATING"
@@ -62,7 +62,7 @@ class TestRootCauseInvestigator:
     def test_detects_duplicate_basenames_across_roots(self):
         job = _base_job(error={"stage": "BUILD_RUNNING", "message": "Build final nao passou.", "last_successful_checkpoint": "BACKEND_VALIDATING"})
         job["artifacts"] = [
-            {"kind": "generated", "name": "backend/app/application/services/auth_service.py", "valid": True},
+            {"kind": "generated", "name": "backend/app/services/auth_service.py", "valid": True},
             {"kind": "generated", "name": "app/services/auth_service.py", "valid": True},
             {"kind": "generated", "name": "backend/src/app/services/auth_service.py", "valid": True},
         ]
@@ -82,7 +82,7 @@ class TestRootCauseInvestigator:
 # ---------------------------------------------------------------------------
 
 class TestCauseValidator:
-    def _analysis_for(self, content: str, path: str = "backend/app/application/services/auth_service.py"):
+    def _analysis_for(self, content: str, path: str = "backend/app/services/auth_service.py"):
         job = _base_job(error={
             "stage": "BUILD_RUNNING",
             "message": f"Artifact '{path}' blocked: high-confidence secret material is forbidden.",
@@ -144,14 +144,14 @@ class TestCauseValidator:
     def test_generation_conflict_for_duplicate_roots(self):
         job = _base_job(error={"stage": "BUILD_RUNNING", "message": "Build final nao passou.", "last_successful_checkpoint": "BACKEND_VALIDATING"})
         job["artifacts"] = [
-            {"kind": "generated", "name": "backend/app/application/services/auth_service.py", "valid": True},
+            {"kind": "generated", "name": "backend/app/services/auth_service.py", "valid": True},
             {"kind": "generated", "name": "app/services/auth_service.py", "valid": True},
         ]
         analysis = root_cause_investigator.investigate(job)
         validation = cause_validator.validate(analysis, job, read_artifact=lambda path: None)
         assert validation.classification == "GENERATION_CONFLICT"
         assert validation.requiresApproval is True
-        assert validation.canonicalArtifact == "backend/app/application/services/auth_service.py"
+        assert validation.canonicalArtifact == "backend/app/services/auth_service.py"
 
     def test_unknown_when_artifact_unreadable(self):
         analysis, job = self._analysis_for("irrelevant")
@@ -320,14 +320,19 @@ class TestRepairEngineerGenerationConflict:
         assert set(report.filesChanged) == {"src/app/models/order.py", "backend/src/app/models/order.py"}
 
     def test_regression_check_fails_if_the_canonical_itself_still_collides(self):
-        # Contrived: two artifacts share the canonical's own basename even
-        # after the declared duplicates are dropped -- the self-check must
-        # catch that instead of reporting a false RECOVERED.
+        # Contrived: a THIRD competing path for the canonical's own module
+        # (same residual "models/order.py" under yet another root prefix)
+        # survives even after the declared duplicate is dropped -- the
+        # self-check must catch that instead of reporting a false RECOVERED.
+        # ("frontend/order.py" would NOT collide here: a different top-level
+        # file sharing only a bare basename with a backend model is exactly
+        # the false-positive architecture_analysis.duplicate_basenames no
+        # longer flags -- see TestPerModuleRoleFilesAreNeverFalselyMergedAcrossModules.)
         validation = self._validation(duplicateArtifacts=["src/app/models/order.py"])
         files = [
             EmittedFile(path="backend/app/models/order.py", content="class Order: ...\n"),
             EmittedFile(path="src/app/models/order.py", content="class Order: ...  # dup\n"),
-            EmittedFile(path="frontend/order.py", content="# unrelated collision left behind\n"),
+            EmittedFile(path="app/models/order.py", content="# unrelated collision left behind\n"),
         ]
         _, report = repair_engineer.repair_generation_conflict(validation, files, approved=True)
         assert report.testsFailed
@@ -428,7 +433,7 @@ class TestPipelineRecoveryOrchestrator:
         # real repair happening when the duplicate files are actually present.
         job = _base_job(error={"stage": "BUILD_RUNNING", "message": "Build final nao passou.", "last_successful_checkpoint": "BACKEND_VALIDATING"})
         job["artifacts"] = [
-            {"kind": "generated", "name": "backend/app/application/services/auth_service.py", "valid": True},
+            {"kind": "generated", "name": "backend/app/services/auth_service.py", "valid": True},
             {"kind": "generated", "name": "app/services/auth_service.py", "valid": True},
         ]
         run, files = pipeline_recovery_orchestrator.run_recovery(
@@ -446,11 +451,11 @@ class TestPipelineRecoveryOrchestrator:
         # just the RepairEngineer method in isolation.
         job = _base_job(error={"stage": "BUILD_RUNNING", "message": "Build final nao passou.", "last_successful_checkpoint": "BACKEND_VALIDATING"})
         job["artifacts"] = [
-            {"kind": "generated", "name": "backend/app/application/services/auth_service.py", "valid": True},
+            {"kind": "generated", "name": "backend/app/services/auth_service.py", "valid": True},
             {"kind": "generated", "name": "app/services/auth_service.py", "valid": True},
         ]
         files = [
-            EmittedFile(path="backend/app/application/services/auth_service.py", content="class AuthService: ...\n"),
+            EmittedFile(path="backend/app/services/auth_service.py", content="class AuthService: ...\n"),
             EmittedFile(path="app/services/auth_service.py", content="class AuthService: ...  # duplicate\n"),
             EmittedFile(path="backend/app/main.py", content="# entrypoint\n"),
         ]
@@ -460,7 +465,7 @@ class TestPipelineRecoveryOrchestrator:
         assert run.outcome == "RECOVERED"
         assert run.causeValidation.classification == "GENERATION_CONFLICT"
         repaired_paths = {f.path for f in repaired}
-        assert repaired_paths == {"backend/app/application/services/auth_service.py", "backend/app/main.py"}
+        assert repaired_paths == {"backend/app/services/auth_service.py", "backend/app/main.py"}
         assert "app/services/auth_service.py" not in repaired_paths
         assert run.repairReport.filesChanged == ["app/services/auth_service.py"]
         assert not run.repairReport.testsFailed
@@ -469,11 +474,11 @@ class TestPipelineRecoveryOrchestrator:
     def test_generation_conflict_without_approval_halts_like_a_real_secret_would(self):
         job = _base_job(error={"stage": "BUILD_RUNNING", "message": "Build final nao passou.", "last_successful_checkpoint": "BACKEND_VALIDATING"})
         job["artifacts"] = [
-            {"kind": "generated", "name": "backend/app/application/services/auth_service.py", "valid": True},
+            {"kind": "generated", "name": "backend/app/services/auth_service.py", "valid": True},
             {"kind": "generated", "name": "app/services/auth_service.py", "valid": True},
         ]
         files = [
-            EmittedFile(path="backend/app/application/services/auth_service.py", content="class AuthService: ...\n"),
+            EmittedFile(path="backend/app/services/auth_service.py", content="class AuthService: ...\n"),
             EmittedFile(path="app/services/auth_service.py", content="class AuthService: ...  # duplicate\n"),
         ]
         run, unchanged = pipeline_recovery_orchestrator.run_recovery(

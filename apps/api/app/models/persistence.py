@@ -68,6 +68,12 @@ class ProjectRoom(Base):
     blueprint_versions_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     active_blueprint_version: Mapped[int | None] = mapped_column(Integer)
     generation_handoff_json: Mapped[str | None] = mapped_column(Text)
+    # NULL for every room created via the normal chat journey. Set once, at
+    # creation, for a room programmatically seeded by
+    # MissionExecutionHandoffService: {"source": "MISSION_WORKSPACE",
+    # "missionId", "deliverableJobId", "handoffId"}. Provenance only -- never
+    # read by the normal ProjectRoom lifecycle/gates.
+    origin_json: Mapped[str | None] = mapped_column(Text)
     history_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     operational_log_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     last_failure_json: Mapped[str | None] = mapped_column(Text)
@@ -172,6 +178,11 @@ class GenerationJob(Base):
     owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     workspace_id: Mapped[str | None] = mapped_column(String, index=True)
     project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Set when this job was created via the Mission Workspace -> ProjectRoom
+    # handoff (MissionExecutionHandoffService), rather than the primary chat
+    # journey. Indexed so the handoff's idempotency check (is there already an
+    # active job for this mission?) is a real query, not a data_json scan.
+    source_mission_id: Mapped[str | None] = mapped_column(String, index=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="QUEUED", server_default="QUEUED", index=True)
     stage: Mapped[str | None] = mapped_column(String, index=True)
     model: Mapped[str | None] = mapped_column(String)
@@ -224,6 +235,36 @@ class MissionDeliverableJob(Base):
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
     completed_at: Mapped[str | None] = mapped_column(String)
+
+
+class MissionExecutionHandoff(Base):
+    """The canonical bridge record for MissionExecutionHandoffService: tracks,
+    per Mission, the real ProjectRoom it seeded (PromptMaster + Blueprint
+    generated via the same engines/services the normal chat journey uses) and
+    the real GenerationJob eventually created from it once that room clears
+    Engineering Review + Stack Approval for real. One row per mission;
+    input_checksum is the change-detection key so re-running prepare_project
+    with unchanged mission answers/artifacts is a no-op instead of creating a
+    duplicate room or a new prompt/blueprint version."""
+
+    __tablename__ = "mission_execution_handoffs"
+    __table_args__ = (
+        Index("idx_mission_execution_handoffs_mission", "mission_id"),
+        Index("idx_mission_execution_handoffs_room", "project_room_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    mission_id: Mapped[str] = mapped_column(ForeignKey("mission_instances.mission_id", ondelete="CASCADE"), nullable=False, unique=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    deliverable_job_id: Mapped[str] = mapped_column(String, nullable=False)
+    project_room_id: Mapped[str | None] = mapped_column(String)
+    generation_job_id: Mapped[str | None] = mapped_column(String)
+    input_checksum: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING", server_default="PENDING", index=True)
+    data_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class GenerationNotification(Base):

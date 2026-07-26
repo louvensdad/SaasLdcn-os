@@ -1,0 +1,143 @@
+{
+  "loading_states": [
+    {
+      "context": "Carregamento inicial da lista de contas, instâncias, macros ou logs",
+      "pattern": "skeleton"
+    },
+    {
+      "context": "Ação de iniciar/parar uma instância individual",
+      "pattern": "spinner (no botão da ação, substituindo o texto)"
+    },
+    {
+      "context": "Envio de formulário de criação/edição de conta ou macro",
+      "pattern": "spinner no botão de submit, desabilitando o formulário"
+    },
+    {
+      "context": "Execução de macro (feedback no card da macro ou na instância alvo)",
+      "pattern": "spinner animado no ícone de execução + mensagem 'Executando...'"
+    },
+    {
+      "context": "Inicialização em lote ('Iniciar todas')",
+      "pattern": "barra de progresso determinística (número de instâncias iniciadas / total) + skeleton nos cards das instâncias ainda não iniciadas"
+    },
+    {
+      "context": "Recarregamento após filtro ou paginação",
+      "pattern": "skeleton mantendo a estrutura atual (evitar layout shift)"
+    }
+  ],
+  "empty_states": [
+    {
+      "screen": "Lista de Contas",
+      "pattern": "Ilustração de personagem jogando + texto 'Nenhuma conta cadastrada ainda.' + botão 'Adicionar conta' (call-to-action)"
+    },
+    {
+      "screen": "Lista de Instâncias",
+      "pattern": "Ilustração de servidor vazio + texto 'Nenhuma instância em execução. Adicione uma conta e inicie a instância para começar.' + link para Contas"
+    },
+    {
+      "screen": "Lista de Macros",
+      "pattern": "Ilustração de robozinho + texto 'Você ainda não criou nenhuma macro.' + botão 'Criar macro'"
+    },
+    {
+      "screen": "Log de Execução",
+      "pattern": "Ilustração de folha de papel + texto 'Nenhum log de execução encontrado para os filtros atuais.' + botão 'Limpar filtros' (se aplicável)"
+    },
+    {
+      "screen": "Resultado de Busca (qualquer listagem)",
+      "pattern": "Ícone de lupa + texto 'Nenhum resultado encontrado para \"{termo}\".'"
+    }
+  ],
+  "hover_focus_keyboard": [
+    "Botões e links: mudança de cor de fundo no hover (transição 150ms ease), outline azul escuro no foco via teclado (2px solid, offset 2px) - nunca outline: none",
+    "Inputs e selects: borda destaca (2px primary) no foco, placeholder permanece visível até digitar",
+    "Tabelas interativas (lista de contas/instâncias/macros): linha fica com fundo sutil no hover; foco teclado aplica outline na linha inteira e permite navegação com setas (quando em modo de seleção)",
+    "Toggle de estado (online/offline): cursor pointer, feedback tátil no hover (mudança de cor), foco via teclado com outline e ativação com Enter ou Espaço",
+    "Dropdowns e popovers: abrir com Enter, fechar com Escape, navegação com setas e Tab",
+    "Modal de confirmação: foco inicial no botão 'Cancelar', ciclo de Tab fechado no modal, Enter confirma ação primária, Escape fecha sem confirmar",
+    "Navegação global (sidebar): responsividade de hover, foco visível em cada item, atalho 'c' para contas, 'i' para instâncias, 'm' para macros"
+  ],
+  "confirmation_patterns": [
+    {
+      "action": "Excluir conta",
+      "requires_confirmation": true,
+      "reason": "Ação destrutiva: remove permanentemente a conta e suas associações (instâncias, macros associadas, logs dependentes)."
+    },
+    {
+      "action": "Excluir macro",
+      "requires_confirmation": true,
+      "reason": "Ação destrutiva: remove a macro e desassocia de todas as contas (não remove logs históricos)."
+    },
+    {
+      "action": "Parar instância",
+      "requires_confirmation": false,
+      "reason": "Ação reversível: a instância pode ser reiniciada posteriormente sem perda de dados. O feedback visual (spinner + alteração de estado online para offline) já é suficiente."
+    },
+    {
+      "action": "Iniciar todas as instâncias",
+      "requires_confirmation": true,
+      "reason": "Pode exceder o limite do plano e iniciar dezenas de instâncias simultaneamente. Confirmação evita sobrecarga acidental."
+    },
+    {
+      "action": "Executar macro em múltiplas contas (>=5)",
+      "requires_confirmation": true,
+      "reason": "Operação em lote que pode causar comportamento indesejado se as contas estiverem em estado inesperado. Confirmação recorda o usuário de verificar as contas."
+    }
+  ],
+  "optimistic_updates": [
+    {
+      "action": "Atualizar nome da conta ou macro (edição inline)",
+      "rollback_on_error": true
+    },
+    {
+      "action": "Associar/desassociar macro de uma conta",
+      "rollback_on_error": true
+    },
+    {
+      "action": "Marcar instância como favorita (se implementado)",
+      "rollback_on_error": false
+    }
+  ],
+  "inline_vs_notification_errors": "Erros de validação de formulário (campo obrigatório, formato inválido, tamanho) são exibidos inline, abaixo do campo correspondente, com cor vermelha e mensagem descritiva. Erros de autenticação (token expirado, credenciais inválidas), limite de instâncias excedido e erros de servidor (5xx) são exibidos como toast/notificação global no topo da tela, com ícone de alerta e botão de fechar. Erros de WebSocket (desconexão) são mostrados como banner persistente no topo da página com opção 'Reconectar'. Erros de execução de macro são notificados via toast + indicador no card da instância (ícone de erro).",
+  "microinteractions": [
+    {
+      "trigger": "Usuário alterna o toggle de estado de uma instância (online/offline)",
+      "effect": "O toggle desliza suavemente (150ms ease-out) e o ícone de estado (bolinha verde/cinza) anima com fade. O número FPS e RAM desaparecem em 300ms fade-out se ficar offline.",
+      "purpose": "Feedback imediato da mudança de estado sem necessidade de recarregar a tela."
+    },
+    {
+      "trigger": "Instância inicia (após comando na interface)",
+      "effect": "O card da instância recebe um indicador de carregamento (spinner pulsante no lugar do status), e após sucesso, o status exibe 'Online' com animação de entrada (slide down + fade)", 
+      "purpose": "Orientar a atenção do usuário para a instância que acabou de ficar ativa."
+    },
+    {
+      "trigger": "Inicialização em lote concluída",
+      "effect": "Barra de progresso atinge 100% e exibe confetes leves na tela (duração 1s), seguido de toast 'Todas as instâncias foram iniciadas'.",
+      "purpose": "Celebrar a conclusão da operação e dar sensação de conclusão positiva."
+    },
+    {
+      "trigger": "Execução de macro em andamento",
+      "effect": "O ícone de play no card da macro muda para um spinner giratório; o card da instância alvo exibe um glow sutil (box-shadow animado) durante a execução.",
+      "purpose": "Indicar claramente que a macro está rodando e qual instância está sendo afetada."
+    },
+    {
+      "trigger": "Novo log de execução aparece (via WebSocket)",
+      "effect": "O ícone de log no sidebar recebe um badge numerado (animação de bounce) e a lista de logs rola automaticamente para o item mais recente com destaque amarelo transitório (2s).",
+      "purpose": "Notificar o usuário de atividade em andamento sem interrupção brusca."
+    },
+    {
+      "trigger": "Usuário digita no campo de busca de logs",
+      "effect": "Após 400ms de inatividade (debounce), os resultados da lista filtram‑se com transição de opacidade (200ms) – resultados antigos saem com fade out, novos entram com fade in.",
+      "purpose": "Evitar flickering e suavizar a atualização da lista durante digitação."
+    },
+    {
+      "trigger": "Erro de validação inline em campo de formulário",
+      "effect": "O campo treme horizontalmente (100ms, duas oscilações) e exibe a mensagem de erro com slide down (200ms ease-out). O botão de submit é desabilitado suavemente (opacidade 0.6).",
+      "purpose": "Chamar atenção visual para o campo com erro, tornando a correção mais fácil."
+    },
+    {
+      "trigger": "Usuário deleta uma conta (após confirmação)",
+      "effect": "O card da conta encolhe em escala (scale 0.9) e desliza para cima sumindo (300ms ease-in), seguido de toast 'Conta removida' com opção 'Desfazer' por 5 segundos.",
+      "purpose": "Feedback visual da remoção, permitindo undo rápido caso o usuário tenha se enganado."
+    }
+  ]
+}

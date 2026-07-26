@@ -177,6 +177,8 @@ def test_finalize_pipeline_emits_build_completed_only_when_build_actually_passed
 
     job = _create(engine, owner, project_id="room-build-passed")
     job["buildStatus"] = "PASSED"
+    job["partial"] = False
+    job["valid"] = True
     engine._finalize_pipeline(job, owner, outcome="SUCCESS", message="ok")
     types = [n["type"] for n in _notifications_for_job(client, job["id"])]
     assert "TASK_COMPLETED" in types
@@ -186,7 +188,8 @@ def test_finalize_pipeline_emits_build_completed_only_when_build_actually_passed
     job2["buildStatus"] = "PENDING"
     engine._finalize_pipeline(job2, owner, outcome="SUCCESS", message="ok")
     types2 = [n["type"] for n in _notifications_for_job(client, job2["id"])]
-    assert "TASK_COMPLETED" in types2
+    assert "TASK_COMPLETED" not in types2
+    assert "TASK_FAILED" in types2
     assert "BUILD_COMPLETED" not in types2
 
 

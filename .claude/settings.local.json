@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -n '1,60p' apps/api/app/engines/orchestrator_engine.py)",
+      "Bash(sed -n '1,50p' apps/api/app/engines/factory_pipeline.py)",
+      "Read(//c/c/ldcn-os/apps/api/**)",
+      "Bash(nohup python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001)",
+      "Bash(disown)",
+      "Bash(echo \"api pid: $!\")",
+      "Read(//c/c/ldcn-os/**)",
+      "Bash(npx eslint *)",
+      "Bash(git push *)",
+      "Bash(python -m pytest tests/test_project_rooms.py tests/test_settings_persistence_phase1.py -q --basetemp=\"/c/Users/louvens/AppData/Local/Temp/ldcn-pytest-cont3\")",
+      "Bash(PYTHONPATH=. python -c ' *)"
+    ]
+  }
+}

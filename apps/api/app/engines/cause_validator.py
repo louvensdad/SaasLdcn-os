@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
-from app.engines.architecture_analysis import pick_canonical
+from app.engines.architecture_analysis import duplicate_basenames, pick_canonical
 from app.schemas.pipeline_recovery import CauseClassification, CauseValidation, RootCauseAnalysis
 from app.services.artifact_security import SecretFinding, classify_secret_findings
 
@@ -45,14 +45,34 @@ class CauseValidatorEngine:
         duplicate_lines = [line for line in analysis.evidence if "different paths" in line]
         if duplicate_lines:
             all_duplicate_paths = [p for p in analysis.affectedArtifacts]
-            canonical = pick_canonical(all_duplicate_paths) if all_duplicate_paths else ""
+            # analysis.affectedArtifacts is every path across EVERY distinct
+            # duplicate group flattened together (root_cause_investigator's
+            # own evidence-collection shape) -- real bug found live: a single
+            # pick_canonical() call over that flattened list treated
+            # unrelated groups (e.g. main.py's 2 competing paths AND
+            # config.py's 2 competing paths) as one group to resolve, which
+            # could mark a needed canonical file from one group as a
+            # "duplicate" of an unrelated canonical from another and delete
+            # it. Re-derive the true per-group structure and pick a canonical
+            # PER group so `duplicateArtifacts` never includes another
+            # group's real, needed canonical file.
+            regrouped = duplicate_basenames(all_duplicate_paths)
+            canonical_paths = sorted({pick_canonical(group_paths) for group_paths in regrouped.values()})
+            # CauseValidation.canonicalArtifact is a single field, so when
+            # more than one true group exists only the first (deterministic,
+            # sorted) is reported as "the" canonical -- every OTHER group's
+            # canonical is still correctly excluded from duplicateArtifacts
+            # below, so repair_generation_conflict never deletes it even
+            # though this field alone can't name all of them.
+            canonical = canonical_paths[0] if canonical_paths else (all_duplicate_paths[0] if all_duplicate_paths else "")
+            duplicate_paths = [p for p in all_duplicate_paths if p not in canonical_paths]
             return CauseValidation(
                 confirmed=True,
                 classification="GENERATION_CONFLICT",
                 triggeringContent="; ".join(duplicate_lines),
                 triggeringRule="duplicate_basename_detection",
                 canonicalArtifact=canonical,
-                duplicateArtifacts=[p for p in all_duplicate_paths if p != canonical],
+                duplicateArtifacts=duplicate_paths,
                 safeCorrectionStrategy=(
                     "Requires the Architecture Consolidation Gate to pick one canonical root and drop "
                     "the rejected alternatives; not safe to auto-resolve without that gate."

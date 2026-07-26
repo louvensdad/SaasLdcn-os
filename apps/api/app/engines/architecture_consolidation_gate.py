@@ -33,17 +33,26 @@ def _extension_of(path: str) -> str:
 
 
 class ArchitectureConsolidationGate:
-    def consolidate(self, files: list[EmittedFile]) -> tuple[list[EmittedFile], ArchitectureManifest]:
+    def consolidate(
+        self,
+        files: list[EmittedFile],
+        *,
+        expected: ArchitectureManifest | None = None,
+    ) -> tuple[list[EmittedFile], ArchitectureManifest]:
         rejected_paths: set[str] = set()
         canonical_files: dict[str, str] = {}
         rejected_alternatives: list[RejectedAlternative] = []
         conflicts: list[ConflictResolved] = []
 
         paths = [f.path for f in files]
+        # Keyed by module-relative residual path, not bare basename -- two
+        # different real per-module files (account/port.py, admin/port.py)
+        # never collide here even though both end in "port.py".
         duplicates = architecture_analysis.duplicate_basenames(paths)
-        for basename, group in sorted(duplicates.items()):
+        for residual, group in sorted(duplicates.items()):
             canonical = architecture_analysis.pick_canonical(group)
-            canonical_files[basename] = canonical
+            basename = architecture_analysis.basename_of(canonical)
+            canonical_files[residual] = canonical
             losers = [p for p in group if p != canonical]
             rejected_paths.update(losers)
             for loser in losers:
@@ -53,7 +62,7 @@ class ArchitectureConsolidationGate:
                 ))
             conflicts.append(ConflictResolved(
                 kind="duplicate_basename",
-                description=f"'{basename}' was generated at {len(group)} competing paths.",
+                description=f"'{residual}' was generated at {len(group)} competing root-prefixed paths.",
                 canonicalPath=canonical, rejectedPaths=losers,
             ))
 
@@ -91,6 +100,40 @@ class ArchitectureConsolidationGate:
                 canonicalPath="", rejectedPaths=entrypoints,
             ))
 
+        observed_roots = architecture_analysis.competing_backend_roots(remaining_paths)
+        if expected is not None:
+            violations: list[str] = []
+            backend_paths = [
+                path for path in remaining_paths
+                if path.startswith("backend/")
+                and _extension_of(path) in architecture_analysis.BACKEND_SOURCE_EXTENSIONS
+            ]
+            outside_root = [
+                path for path in backend_paths
+                if path != expected.canonicalRoot and not path.startswith(expected.canonicalRoot.rstrip("/") + "/")
+            ]
+            if outside_root:
+                violations.append(
+                    f"{len(outside_root)} backend source file(s) outside planned root '{expected.canonicalRoot}'"
+                )
+            if expected.entrypoint:
+                unexpected_entrypoints = [path for path in entrypoints if path != expected.entrypoint]
+                if unexpected_entrypoints or expected.entrypoint not in remaining_paths:
+                    violations.append(
+                        f"planned entrypoint '{expected.entrypoint}' was missing or replaced by {unexpected_entrypoints}"
+                    )
+            if expected.dependencyFile and expected.dependencyFile not in remaining_paths:
+                violations.append(f"planned dependency file '{expected.dependencyFile}' is missing")
+            if violations:
+                blocked = True
+                block_reason = "; ".join(violations)
+                conflicts.append(ConflictResolved(
+                    kind="manifest_violation",
+                    description=block_reason,
+                    canonicalPath=expected.canonicalRoot,
+                    rejectedPaths=outside_root,
+                ))
+
         # Restricted to backend-language files: a full-stack job's frontend
         # (Next.js "src/app/[locale]/...") also matches these bare prefixes,
         # which previously made canonicalRoot report the frontend's router
@@ -119,12 +162,20 @@ class ArchitectureConsolidationGate:
         test_root = next((p.rsplit("/", 1)[0] for p in remaining_paths if "/test/" in p or "/tests/" in p or p.startswith("tests/")), None)
 
         manifest = ArchitectureManifest(
+            phase="observed",
+            planned=False,
             canonicalRoot=canonical_root,
             sourceRoot=canonical_root,
             entrypoint=entrypoint,
             dependencyFile=dependency_file,
             testRoot=test_root,
             architectureStyle="clean_architecture" if canonical_root else "unknown",
+            backendLanguage=expected.backendLanguage if expected else "",
+            backendFramework=expected.backendFramework if expected else "",
+            allowedRoots=list(expected.allowedRoots) if expected else [],
+            forbiddenRoots=list(expected.forbiddenRoots) if expected else [],
+            observedRoots=observed_roots,
+            conformsToPlan=not blocked,
             canonicalFiles=canonical_files,
             rejectedAlternatives=rejected_alternatives,
             conflictsResolved=conflicts,

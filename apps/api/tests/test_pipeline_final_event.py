@@ -55,7 +55,13 @@ def _final_events(job: dict) -> list[dict]:
 def test_pipeline_complete_emitted_on_success(isolated_engine, monkeypatch):
     engine, repository = isolated_engine
     job = _create(engine)
-    monkeypatch.setattr(engine, "_execute_step", lambda *args, **kwargs: None)
+    def successful_step(current, owner, step, *args, **kwargs):  # noqa: ANN001
+        if step.logical == "build":
+            current["buildStatus"] = "PASSED"
+            current["partial"] = False
+            current["valid"] = True
+
+    monkeypatch.setattr(engine, "_execute_step", successful_step)
     engine.execute(job["id"], "user-1", api_key=None, user_model_choice=None)
 
     completed = repository.get(job["id"], "user-1")
@@ -66,7 +72,7 @@ def test_pipeline_complete_emitted_on_success(isolated_engine, monkeypatch):
     assert completed["finishedAt"]
 
 
-def test_pipeline_complete_emitted_on_degraded_build_skip(isolated_engine, monkeypatch):
+def test_pipeline_complete_reports_failure_on_degraded_build_skip(isolated_engine, monkeypatch):
     engine, repository = isolated_engine
     job = _create(engine)
 
@@ -85,12 +91,12 @@ def test_pipeline_complete_emitted_on_degraded_build_skip(isolated_engine, monke
     completed = repository.get(job["id"], "user-1")
     # SKIPPED_AFTER_FAILURE never blocks: the pipeline still terminates READY
     # (degraded) — a status the frontend treats as terminal-but-actionable.
-    assert completed["status"] == "READY"
+    assert completed["status"] == "FAILED"
     assert completed["status"] in TERMINAL_STATUSES
     assert completed["partial"] is True
     finals = _final_events(completed)
     assert len(finals) == 1
-    assert "PIPELINE_COMPLETE (DEGRADED_CONTINUATION)" in finals[0]["message"]
+    assert "PIPELINE_COMPLETE (FAILED)" in finals[0]["message"]
     assert finals[0]["level"] == "warning"
     assert completed["finishedAt"]
 

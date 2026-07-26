@@ -38,10 +38,11 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-final/types/**/*.ts",
     ".next-responsive/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-final/types/**/*.ts"
+    ".next-real-runtime/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

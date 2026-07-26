@@ -1,0 +1,166 @@
+{
+  "personas": [
+    {
+      "name": "Jogador",
+      "goals": [
+        "Gerenciar múltiplas contas de jogo de forma centralizada",
+        "Iniciar/parar instâncias em lote para economizar tempo",
+        "Monitorar status, FPS e RAM de cada instância em tempo real",
+        "Automatizar tarefas repetitivas com macros por conta",
+        "Consultar logs de execução para depurar falhas"
+      ],
+      "context": "Usuário avançado que opera várias contas simultaneamente (ex.: bots, farms). Precisa de visibilidade unificada e automação para escalar operações sem abrir cada instância manualmente."
+    },
+    {
+      "name": "Administrador",
+      "goals": [
+        "Gerenciar usuários e seus planos (limites de instâncias)",
+        "Auditar atividades e logs de todos os usuários",
+        "Garantir que nenhuma instância seja iniciada duas vezes",
+        "Configurar permissões e monitorar uso geral do sistema"
+      ],
+      "context": "Responsável pela infraestrutura do painel SaaS. Precisa de uma visão consolidada de todos os jogadores, seus planos e instâncias, além de ferramentas para suporte e fiscalização."
+    }
+  ],
+  "key_tasks": [
+    {
+      "persona": "Jogador",
+      "task": "Adicionar nova conta (usuário/senha do jogo)",
+      "current_friction": "Precisa sair do painel para buscar credenciais em outro local; sem feedback visual se a validação falhou em tempo real."
+    },
+    {
+      "persona": "Jogador",
+      "task": "Iniciar todas as instâncias de uma só vez (batch start)",
+      "current_friction": "Não há ação em lote; precisa iniciar cada instância individualmente, clicando e confirmando várias vezes."
+    },
+    {
+      "persona": "Jogador",
+      "task": "Acompanhar status online/offline e métricas (FPS/RAM) ao vivo",
+      "current_friction": "Sem dashboard consolidado; precisa alternar entre janelas de cada jogo para ver desempenho."
+    },
+    {
+      "persona": "Jogador",
+      "task": "Criar e associar uma macro a múltiplas contas selecionadas",
+      "current_friction": "Cada macro é configurada manualmente em cada instância; não há reuso de scripts nem associação em lote."
+    },
+    {
+      "persona": "Jogador",
+      "task": "Executar uma macro e visualizar o log de resultado",
+      "current_friction": "Execução não tem feedback imediato; logs ficam espalhados e sem histórico centralizado."
+    },
+    {
+      "persona": "Administrador",
+      "task": "Listar usuários e seus planos, alterar limite de instâncias",
+      "current_friction": "Sem painel administrativo dedicado; precisa acessar banco ou API diretamente para alterar planos."
+    }
+  ],
+  "information_hierarchy": [
+    "Painel principal: cards de instâncias ativas com indicadores online/offline, FPS, RAM",
+    "Barra superior com contagem de instâncias ativas/total, botão 'Iniciar todas' e 'Parar todas'",
+    "Seção de Contas: lista com credenciais mascaradas e status de cada conta",
+    "Seção de Macros: lista de scripts disponíveis, botão 'Associar a instâncias'",
+    "Seção de Logs: tabela cronológica com filtros por instância, macro, resultado",
+    "Painel Administrativo (admin): tabela de usuários, planos, instâncias ativas, ações de suspensão"
+  ],
+  "empty_states": [
+    {
+      "screen": "Tela de Contas",
+      "message": "Nenhuma conta de jogo adicionada ainda. Adicione sua primeira conta para começar.",
+      "primary_action": "Adicionar conta"
+    },
+    {
+      "screen": "Tela de Instâncias",
+      "message": "Nenhuma instância ativa no momento. Inicie uma ou mais contas para ver o status aqui.",
+      "primary_action": "Iniciar instância"
+    },
+    {
+      "screen": "Tela de Macros",
+      "message": "Você ainda não criou nenhuma macro. Crie seu primeiro script de automação.",
+      "primary_action": "Criar macro"
+    },
+    {
+      "screen": "Tela de Logs",
+      "message": "Nenhum log de execução registrado. As execuções de macros aparecerão aqui automaticamente.",
+      "primary_action": "Executar macro"
+    },
+    {
+      "screen": "Painel Administrativo (admin) - Usuários",
+      "message": "Nenhum usuário cadastrado no sistema. Convidar jogadores ou aguardar registros.",
+      "primary_action": "Convidar usuário"
+    }
+  ],
+  "onboarding": {
+    "needed": true,
+    "steps": [
+      "Boas-vindas: 'Bem-vindo ao GameHub Painel! Centralize e automatize suas contas de jogo.'",
+      "Passo 1: 'Adicione sua primeira conta no menu Contas — insira usuário e senha do jogo.'",
+      "Passo 2: 'Após validar, a instância será criada. Clique em \"Iniciar\" ou use \"Iniciar todas\" para rodar em lote.'",
+      "Passo 3: 'Acompanhe o status, FPS e RAM em tempo real no dashboard principal.'",
+      "Passo 4: 'Crie macros no menu Macros e associe a uma ou mais contas. Execute e veja os logs!'",
+      "Finalização: 'Pronto! Explore os filtros e configurações. Dúvidas? Consulte a ajuda.'"
+    ]
+  },
+  "feedback_patterns": {
+    "success": [
+      "Conta adicionada com sucesso.",
+      "Instância iniciada com sucesso.",
+      "Todas as instâncias foram iniciadas.",
+      "Instância parada com sucesso.",
+      "Macro criada e associada às contas selecionadas.",
+      "Macro executada — consulte os logs para detalhes.",
+      "Log de execução carregado.",
+      "Plano do usuário atualizado."
+    ],
+    "error": [
+      "Falha ao validar credenciais: verifique usuário e senha.",
+      "Instância já está em execução. Não é possível iniciar duas vezes.",
+      "Limite de instâncias simultâneas do seu plano atingido. Faça upgrade.",
+      "Erro ao associar macro: conta não encontrada.",
+      "Execução da macro falhou — verifique os logs para diagnóstico.",
+      "Erro interno do servidor. Tente novamente mais tarde.",
+      "Acesso negado: você não tem permissão para esta ação."
+    ]
+  },
+  "error_success_flows": [
+    {
+      "flow": "Adicionar conta",
+      "on_success": "A instância é criada automaticamente e aparece na lista de instâncias com status 'offline'.",
+      "on_error": "Mensagem de erro específica: 'Credenciais inválidas' ou 'Conta já cadastrada'."
+    },
+    {
+      "flow": "Iniciar instância (individual)",
+      "on_success": "Card da instância muda para 'online', métricas (FPS, RAM) começam a ser exibidas em tempo real via WebSocket.",
+      "on_error": "Erro 'Instância já iniciada' ou 'Limite de instâncias atingido'."
+    },
+    {
+      "flow": "Iniciar todas as instâncias",
+      "on_success": "Todas as instâncias offline elegíveis são iniciadas em lote; painel atualiza status de uma vez.",
+      "on_error": "Para cada instância com erro, exibir notificação individual; as bem-sucedidas prosseguem."
+    },
+    {
+      "flow": "Criar macro",
+      "on_success": "Macro adicionada à lista; botão 'Associar a contas' disponível.",
+      "on_error": "Validação do script falhou (ex.: sintaxe inválida)."
+    },
+    {
+      "flow": "Associar macro a contas",
+      "on_success": "Confirmação visual: contas selecionadas exibem badge com nome da macro.",
+      "on_error": "Macro não encontrada ou contas inválidas."
+    },
+    {
+      "flow": "Executar macro",
+      "on_success": "Log de execução é gerado instantaneamente com timestamp e status 'concluído'.",
+      "on_error": "Log gerado com status 'falha' e detalhes do erro; notificação toast aparece."
+    },
+    {
+      "flow": "Consultar logs",
+      "on_success": "Tabela de logs é exibida com filtros por instância, macro, data e resultado.",
+      "on_error": "Nenhum log encontrado com os filtros aplicados — empty state direciona para executar macro."
+    },
+    {
+      "flow": "Gerenciar plano de usuário (admin)",
+      "on_success": "Limite de instâncias do usuário atualizado e refletido na próxima solicitação.",
+      "on_error": "Valor de limite inválido (ex.: menor que instâncias ativas atuais)."
+    }
+  ]
+}

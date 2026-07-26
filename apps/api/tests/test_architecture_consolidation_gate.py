@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from app.engines.architecture_consolidation_gate import architecture_consolidation_gate
+from app.engines.architecture_manifest_planner import architecture_manifest_planner
+from app.schemas.orchestrator import ProjectSpec, SuggestedStack
 from app.services.file_protocol import EmittedFile
 
 
@@ -8,21 +10,101 @@ def _files(*paths: str) -> list[EmittedFile]:
     return [EmittedFile(path=p, content=f"// content of {p}\n") for p in paths]
 
 
+def _python_plan():
+    return architecture_manifest_planner.plan(ProjectSpec(
+        raw_intent="API",
+        suggested_stack=SuggestedStack(language="Python", framework="FastAPI"),
+    ))
+
+
+class TestPlannedManifestEnforcement:
+    def test_matching_output_conforms_to_pre_generation_plan(self):
+        _, manifest = architecture_consolidation_gate.consolidate(
+            _files("backend/app/main.py", "backend/app/services/orders.py", "backend/requirements.txt"),
+            expected=_python_plan(),
+        )
+        assert manifest.blocked is False
+        assert manifest.conformsToPlan is True
+
+    def test_competing_backend_root_is_a_hard_manifest_violation(self):
+        _, manifest = architecture_consolidation_gate.consolidate(
+            _files(
+                "backend/app/main.py",
+                "backend/app/services/orders.py",
+                "backend/src/app/services/customers.py",
+                "backend/requirements.txt",
+            ),
+            expected=_python_plan(),
+        )
+        assert manifest.blocked is True
+        assert manifest.conformsToPlan is False
+        assert "outside planned root" in manifest.blockReason
+        assert any(item.kind == "manifest_violation" for item in manifest.conflictsResolved)
+
+    def test_missing_planned_entrypoint_blocks_architecture(self):
+        _, manifest = architecture_consolidation_gate.consolidate(
+            _files("backend/app/server.py", "backend/requirements.txt"),
+            expected=_python_plan(),
+        )
+        assert manifest.blocked is True
+        assert "planned entrypoint" in manifest.blockReason
+
+    def test_missing_planned_dependency_file_blocks_architecture(self):
+        _, manifest = architecture_consolidation_gate.consolidate(
+            _files("backend/app/main.py"),
+            expected=_python_plan(),
+        )
+        assert manifest.blocked is True
+        assert "dependency file" in manifest.blockReason
+
+
 class TestDuplicateResolution:
     def test_picks_one_canonical_and_drops_the_rest(self):
+        # Same module-relative path (services/auth_service.py) re-emitted
+        # under 3 competing root prefixes -- a genuine same-file duplicate,
+        # not the account/port.py-vs-admin/port.py false positive covered by
+        # TestPerModuleRoleFilesAreNeverFalselyMergedAcrossModules below.
         files = _files(
-            "backend/app/application/services/auth_service.py",
+            "backend/app/services/auth_service.py",
             "app/services/auth_service.py",
             "backend/src/app/services/auth_service.py",
         )
         consolidated, manifest = architecture_consolidation_gate.consolidate(files)
         assert len(consolidated) == 1
-        assert consolidated[0].path == "backend/app/application/services/auth_service.py"
-        assert manifest.canonicalFiles["auth_service.py"] == "backend/app/application/services/auth_service.py"
+        assert consolidated[0].path == "backend/app/services/auth_service.py"
+        assert manifest.canonicalFiles["services/auth_service.py"] == "backend/app/services/auth_service.py"
         assert len(manifest.rejectedAlternatives) == 2
         assert {r.path for r in manifest.rejectedAlternatives} == {
             "app/services/auth_service.py", "backend/src/app/services/auth_service.py",
         }
+
+    def test_same_module_role_file_across_competing_roots_still_consolidates(self):
+        # The SAME module's port.py re-emitted at 2 competing root prefixes
+        # is still a true duplicate -- the fix for the false-positive below
+        # must not blanket-exempt these filenames from ever deduplicating.
+        files = _files("app/account/application/port.py", "backend/app/account/application/port.py")
+        consolidated, manifest = architecture_consolidation_gate.consolidate(files)
+        assert len(consolidated) == 1
+        assert consolidated[0].path == "backend/app/account/application/port.py"
+
+    def test_per_module_role_files_are_never_falsely_merged_across_modules(self):
+        # Real bug found live (genjob_e5872a61637a47): account/port.py,
+        # admin/port.py, auth/port.py, ... are 6 genuinely different files
+        # that happen to share a filename by hexagonal-architecture
+        # convention (one port.py per bounded-context module) -- the gate
+        # previously treated them as "6 competing duplicates of the same
+        # file" and discarded 5 of the 6 real modules' code.
+        files = _files(
+            "app/account/application/port.py",
+            "app/admin/application/port.py",
+            "app/auth/application/port.py",
+            "app/execution_log/application/port.py",
+            "app/instance/application/port.py",
+            "app/macro/application/port.py",
+        )
+        consolidated, manifest = architecture_consolidation_gate.consolidate(files)
+        assert len(consolidated) == 6
+        assert manifest.rejectedAlternatives == []
 
     def test_non_duplicated_files_are_untouched(self):
         files = _files("backend/app/main.py", "backend/app/core/config.py")

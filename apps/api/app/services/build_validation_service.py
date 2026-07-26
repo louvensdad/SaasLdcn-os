@@ -331,6 +331,35 @@ class BuildValidationService:
             return self._failed_with_guide(root, report, commands, repairs, classified, dep_validation, compat_report)
         classified = None
 
+        # Frontend Artifact Contract execution gates. These are independent
+        # commands: a framework build that happens to invoke TypeScript does not
+        # count as proof that the declared type-check or lint command ran.
+        package_data = self._package_data(root)
+        scripts = package_data.get("scripts") if isinstance(package_data.get("scripts"), dict) else {}
+        for script_name, phase in (("lint", "lint"), ("type-check", "typecheck")):
+            if script_name not in scripts:
+                continue
+            check = self._run(
+                ["npm", "run", script_name],
+                root,
+                collector,
+                phase,
+                sink,
+                records=commands,
+                record_phase=phase,
+            )
+            if check.returncode != 0:
+                logs = install.stdout + install.stderr + "\n" + check.stdout + check.stderr
+                report = BuildValidationReport(
+                    installed="passed",
+                    built="failed",
+                    ok=False,
+                    logs_tail=self._tail(logs),
+                )
+                return self._attach_audit(
+                    report, commands, repairs, None, dep_validation, compat_report,
+                )
+
         # -------------------------------------------------------- build + repair
         build_status = "skipped"
         build_result: subprocess.CompletedProcess[str] | None = None
@@ -474,12 +503,21 @@ class BuildValidationService:
         return result, classified
 
     def _node_build_command(self, root: Path) -> list[str] | None:
-        package = (root / "package.json").read_text(encoding="utf-8", errors="ignore")
-        if '"build"' in package:
+        package = self._package_data(root)
+        scripts = package.get("scripts") if isinstance(package.get("scripts"), dict) else {}
+        if scripts.get("build"):
             return ["npm", "run", "build"]
         if (root / "tsconfig.json").is_file():
             return ["npm", "exec", "tsc", "--", "--noEmit"]
         return None
+
+    @staticmethod
+    def _package_data(root: Path) -> dict[str, Any]:
+        try:
+            value = json.loads((root / "package.json").read_text(encoding="utf-8", errors="ignore"))
+        except (OSError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
 
     def _repair_install_error(
         self, root: Path, classified: ClassifiedBuildError, logs: str, sink: EventSink | None,

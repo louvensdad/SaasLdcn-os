@@ -14,7 +14,18 @@ from app.schemas.mission import ConfirmArtifactsRequest, MissionInstance
 from app.schemas.mission_deliverable_job import (
     CompileDeliverablesRequest,
     MissionDeliverableJob,
+    MissionExecutionHandoffStatus,
     RetryDeliverablesRequest,
+    StartGenerationResponse,
+)
+from app.services.mission_execution_handoff_service import (
+    DeliverablesNotReadyError,
+    EngineeringReviewRequiredError,
+    HandoffAlreadyStartedError,
+    HandoffNotPreparedError,
+    MissionNotBuildableError,
+    MissionNotFoundError,
+    mission_execution_handoff_service,
 )
 
 router = APIRouter(tags=["mission-deliverables"])
@@ -148,3 +159,53 @@ def cancel_mission_deliverable_job(mission_id: str, job_id: str, user: CurrentUs
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return MissionDeliverableJob.model_validate(job)
+
+
+# --------------------------------------------------------------------------
+# Canonical bridge: Mission -> real ProjectRoom -> Engineering Review/Stack
+# Approval (real, manual, untouched) -> real GenerationJob. See
+# MissionExecutionHandoffService for the full flow.
+# --------------------------------------------------------------------------
+
+
+@router.post("/missions/{mission_id}/prepare-project", response_model=MissionExecutionHandoffStatus)
+def prepare_mission_project(mission_id: str, user: CurrentUser) -> MissionExecutionHandoffStatus:
+    mission = _require_mission(mission_id, user)
+    try:
+        payload = mission_execution_handoff_service.prepare_project(
+            mission_id, user, workspace_id=mission.get("workspace_id")
+        )
+    except MissionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except MissionNotBuildableError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except (DeliverablesNotReadyError, ValueError, HandoffAlreadyStartedError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return MissionExecutionHandoffStatus.model_validate(payload)
+
+
+@router.get("/missions/{mission_id}/execution-handoff", response_model=MissionExecutionHandoffStatus)
+def get_mission_execution_handoff(mission_id: str, user: CurrentUser) -> MissionExecutionHandoffStatus:
+    _require_mission(mission_id, user)
+    try:
+        payload = mission_execution_handoff_service.get_status(mission_id, user)
+    except HandoffNotPreparedError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return MissionExecutionHandoffStatus.model_validate(payload)
+
+
+@router.post("/missions/{mission_id}/start-generation", response_model=StartGenerationResponse)
+def start_mission_generation(mission_id: str, user: CurrentUser) -> StartGenerationResponse:
+    mission = _require_mission(mission_id, user)
+    try:
+        payload = mission_execution_handoff_service.start_generation(
+            mission_id, user, workspace_id=mission.get("workspace_id")
+        )
+    except HandoffNotPreparedError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except EngineeringReviewRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ENGINEERING_REVIEW_REQUIRED", "message": str(exc), "nextRoute": exc.next_route},
+        ) from exc
+    return StartGenerationResponse.model_validate(payload)

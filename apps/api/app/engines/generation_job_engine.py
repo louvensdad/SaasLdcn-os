@@ -53,13 +53,20 @@ from app.schemas.functional_coverage import FunctionalCoverageReport
 from app.schemas.generation_validation import BuildRuntimeMetrics
 from app.schemas.orchestrator import ProjectSpec
 from app.services.runtime_functional_test_service import runtime_functional_test_service
+from app.services.test_runner_service import test_runner_service
 from app.services.file_protocol import EmittedFile
 from app.services.download_service import DownloadService
+from app.services.delivery_eligibility_policy import DeliveryEligibilityError, delivery_eligibility_policy
 from app.services.generated_project_service import GeneratedProjectService
 from app.services import import_graph_engine
 from app.services.project_writer import DEFAULT_OUTPUT_ROOT, ProjectWriter, ProjectWriteError
 from app.engines.pipeline_recovery_orchestrator import pipeline_recovery_orchestrator
 from app.engines.architecture_consolidation_gate import architecture_consolidation_gate
+from app.engines.architecture_manifest_planner import architecture_manifest_planner
+from app.engines.frontend_artifact_contract_planner import frontend_artifact_contract_planner
+from app.engines.frontend_artifact_gate import frontend_artifact_gate
+from app.schemas.architecture_manifest import ArchitectureManifest
+from app.schemas.frontend_artifact_contract import FrontendArtifactContract
 from app.engines.backend_ownership_registry import CHUNK_SCOPE_DESCRIPTIONS, infer_owner_chunk
 from app.engines.frontend_authenticity_gate import frontend_authenticity_gate
 from app.services.stack_compatibility import STACK_LOCK_FILE, StackLock, stack_compatibility_engine
@@ -139,7 +146,7 @@ class GenerationJobEngine:
         self, *, owner_user_id: str, project_id: str, workspace_id: str | None,
         project_name: str, spec: ProjectSpec, blueprint: dict[str, Any],
         blueprint_version: int, provider: str | None, provider_label: str,
-        model: str | None, mode: str = "normal",
+        model: str | None, mode: str = "normal", source_mission_id: str | None = None,
     ) -> dict[str, Any]:
         if spec.delivery_type in DELIVERY_TYPES_WITH_MOBILE and self._mobile_stack(spec, blueprint) == "flutter":
             raise ValueError(
@@ -156,6 +163,7 @@ class GenerationJobEngine:
         data = {
             "id": job_id, "projectId": project_id, "generatedProjectId": None,
             "executionProfile": profile.model_dump(mode="json"),
+            "sourceMissionId": source_mission_id,
             "workspaceId": workspace_id, "status": "QUEUED", "currentStage": "QUEUED",
             "provider": provider, "providerLabel": provider_label, "model": model, "mode": mode,
             "blueprintVersion": blueprint_version, "startedAt": now, "finishedAt": None,
@@ -247,15 +255,9 @@ class GenerationJobEngine:
                 self._execute_step(job, owner_user_id, step, spec, blueprint, mega, api_key, user_model_choice, mode)
                 self._assert_not_paused(job, owner_user_id)
                 self._finish_step(job, owner_user_id, step, index, steps)
-            job["status"] = "READY"
-            job["currentStage"] = "READY"
-            job["progress"] = 100
             build_skipped = job.get("buildStatus") == "SKIPPED_AFTER_FAILURE"
             job["partial"] = build_skipped
             job["valid"] = not build_skipped
-            job["packageReady"] = True
-            job["finishedAt"] = self._now()
-            job["error"] = None
             # Manifest first: the Functional Completeness Gate's Integrations
             # category (product-completion-report.json) calls the External
             # Integration Auditor, which reads ldcn.project.json's
@@ -267,6 +269,13 @@ class GenerationJobEngine:
             for stage in logical_stages_for(steps):
                 if job["stageStatuses"].get(stage) != "skipped":
                     job["stageStatuses"][stage] = "success"
+            delivery_eligibility_policy.require(job, required_stages=logical_stages_for(steps))
+            job["status"] = "READY"
+            job["currentStage"] = "READY"
+            job["progress"] = 100
+            job["packageReady"] = True
+            job["finishedAt"] = self._now()
+            job["error"] = None
             self._log(
                 job, "READY", "warning" if build_skipped else "info",
                 "Pipeline concluida com build pulado; guia manual preservado."
@@ -365,6 +374,13 @@ class GenerationJobEngine:
         can never be left waiting for a BUILD_SUCCESS that will not come.
 
         Outcomes: SUCCESS | DEGRADED_CONTINUATION | NEEDS_USER_ACTION | STALLED | FAILED."""
+        if outcome == "SUCCESS":
+            decision = delivery_eligibility_policy.evaluate(job)
+            if not decision.eligible:
+                outcome = "FAILED"
+                message = f"Delivery eligibility blocked completion: {', '.join(decision.blockers)}"
+                job["status"] = "FAILED"
+                job["packageReady"] = False
         job["finishedAt"] = job.get("finishedAt") or self._now()
         self._emit(
             job, owner, "pipeline_complete",
@@ -482,6 +498,23 @@ class GenerationJobEngine:
         # because it stalled/paused and is being resumed.
         self.start(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice, start_index=max(0, index), mode=job.get("mode", "normal"))
         return self.repository.get(job_id, owner_user_id)
+
+    def approve_repair(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None) -> dict[str, Any] | None:
+        """User explicitly approved a PipelineRecoveryOrchestrator repair that
+        CauseValidator flagged as requiring approval (e.g. a confirmed REAL_SECRET
+        or an ambiguous UNSAFE_TEMPLATE) before RepairEngineer may touch the file --
+        see recov_*.json's causeValidation.requiresApproval. Sets a one-shot flag
+        _attempt_pipeline_recovery reads (auto_approve), then resumes the same
+        BUILD_RUNNING attempt so the retry write actually goes through repaired."""
+        job = self.repository.get(job_id, owner_user_id)
+        if job is None:
+            return None
+        if job.get("status") != "NEEDS_USER_ACTION":
+            raise ValueError("Este job nao esta aguardando aprovacao de reparo.")
+        job["repairApproved"] = True
+        self._log(job, job["currentStage"], "warning", "Usuario aprovou explicitamente o reparo da causa confirmada; retomando.")
+        self._save(job, owner_user_id)
+        return self.resume(job_id, owner_user_id, api_key=api_key, user_model_choice=user_model_choice)
 
     def continue_with_warnings(self, job_id: str, owner_user_id: str, *, api_key: str | None, user_model_choice: str | None) -> dict[str, Any] | None:
         """User override: accept the current stage's warnings as non-blocking and
@@ -613,6 +646,31 @@ class GenerationJobEngine:
             memory = project_memory_engine.build_initial(spec, blueprint)
             job["projectMemory"] = memory.as_dict()
             self._write_json_artifact(job, owner, step, PROJECT_MEMORY_FILE, job["projectMemory"], "generated")
+            architecture_manifest = architecture_manifest_planner.plan(spec)
+            job["architectureManifest"] = architecture_manifest.model_dump(mode="json")
+            job.setdefault("mandatoryGates", {})["architecture_manifest"] = "planned"
+            self._write_json_artifact(
+                job,
+                owner,
+                step,
+                "architecture-manifest.json",
+                job["architectureManifest"],
+                "generated",
+            )
+            frontend_contract = frontend_artifact_contract_planner.plan(
+                spec, blueprint, architecture_manifest,
+            )
+            job["frontendArtifactContract"] = frontend_contract.model_dump(mode="json")
+            job["frontendArtifactRegistry"] = {}
+            job.setdefault("mandatoryGates", {})["frontend_artifact_contract"] = "planned"
+            self._write_json_artifact(
+                job,
+                owner,
+                step,
+                "frontend-artifact-contract.json",
+                job["frontendArtifactContract"],
+                "generated",
+            )
             # Evolution Engine (cross-generation, owner-scoped, consultivo-only --
             # see evolution_engine.py's module docstring for scope): fixed here,
             # same reasoning as Project Memory above, so every LLM step sees the
@@ -677,6 +735,28 @@ class GenerationJobEngine:
         # Ground Truth above, so it always survives a partitioned/compressed retry.
         memory = ProjectMemory.from_dict(job.get("projectMemory"))
         context += "\n\n" + project_memory_engine.prompt_block(memory)
+        manifest_data = job.get("architectureManifest")
+        if not isinstance(manifest_data, dict) or not manifest_data.get("planned"):
+            raise StageFailure(
+                "Architecture Manifest planejado ausente antes da geracao.",
+                diagnostic=self._diagnostic(
+                    job, step.state, role,
+                    "PREPARING_CONTEXT deve persistir o Architecture Manifest antes de qualquer chamada LLM.",
+                ),
+            )
+        context += "\n\n" + architecture_manifest_planner.prompt_block(
+            ArchitectureManifest.model_validate(manifest_data)
+        )
+        frontend_contract_data = job.get("frontendArtifactContract")
+        frontend_roles = {
+            "frontend", "frontend_architect", "frontend_developer",
+            "frontend_qa", "frontend_reviewer", "qa", "security", "docs",
+        }
+        if step.logical in {"frontend", "tests", "security", "docs"} or role in frontend_roles:
+            if isinstance(frontend_contract_data, dict) and frontend_contract_data.get("planned"):
+                context += "\n\n" + frontend_artifact_contract_planner.prompt_block(
+                    FrontendArtifactContract.model_validate(frontend_contract_data)
+                )
         # Evolution Engine: cross-generation, owner-scoped advisory (never
         # injected on a cold start -- see evolution_engine.prompt_block()).
         insight_data = job.get("evolutionInsight")
@@ -733,6 +813,13 @@ class GenerationJobEngine:
                 job, owner, step, emitted_file.path, emitted_file.content, kind,
                 valid=(kind == "generated"), warnings=[*parsed.warnings, *semantic_warnings],
             )
+            normalized_path = emitted_file.path.replace("\\", "/").lstrip("./")
+            if kind == "generated" and normalized_path.startswith("apps/web/"):
+                job.setdefault("frontendArtifactRegistry", {})[normalized_path] = {
+                    "artifactId": artifact["id"],
+                    "stage": step.logical,
+                    "batch": step.chunk or step.logical,
+                }
             checkpoint["artifact_ids"].append(artifact["id"])
         if not parsed.files:
             last = parsed.attempts[-1] if parsed.attempts else {}
@@ -925,6 +1012,13 @@ class GenerationJobEngine:
             self._check_stack_conflicts(job, owner, step)
             if self._profile(job).enable_import_graph:
                 self._check_import_graph(job, owner, step)
+        if valid and step.logical == "tests" and job.get("frontendArtifactRegistry"):
+            self._check_frontend_artifact_contract(
+                job,
+                owner,
+                step,
+                require_test_integration=True,
+            )
         # Warning policy gate: classify everything this stage produced. Only
         # blocking_warning / error / critical stop the pipeline — documentation,
         # coverage, TODO, traceability, territory-drift and synthesized-manifest
@@ -962,6 +1056,83 @@ class GenerationJobEngine:
                     job, step.state, step.logical, message,
                     validator="warning_policy",
                     reason="Warnings classificados como bloqueantes (blocking_warning/error/critical) exigem decisao do usuario.",
+                ),
+            )
+
+    def _check_frontend_artifact_contract(
+        self,
+        job: dict[str, Any],
+        owner: str,
+        step: PipelineStep,
+        *,
+        require_test_integration: bool,
+        execution: dict[str, str] | None = None,
+        require_execution: bool = False,
+        files_override: dict[str, str] | None = None,
+    ) -> None:
+        contract_data = job.get("frontendArtifactContract")
+        if not isinstance(contract_data, dict) or not contract_data.get("planned"):
+            raise StageFailure(
+                "Frontend Artifact Contract obrigatorio nao foi planejado.",
+                diagnostic=self._diagnostic(
+                    job, step.state, step.logical,
+                    "Contrato frontend ausente no gate de reconciliacao.",
+                    validator="frontend_artifact_contract",
+                ),
+            )
+        latest: dict[str, str] = files_override or {}
+        if files_override is None:
+            for artifact in job.get("artifacts") or []:
+                if artifact.get("kind") != "generated" or not artifact.get("valid"):
+                    continue
+                path = str(artifact.get("name") or "").replace("\\", "/").lstrip("./")
+                try:
+                    latest[path] = Path(artifact["path"]).read_text(encoding="utf-8")
+                except (KeyError, OSError):
+                    continue
+        result = frontend_artifact_gate.evaluate(
+            FrontendArtifactContract.model_validate(contract_data),
+            latest,
+            execution=execution,
+            require_execution=require_execution,
+            require_test_integration=require_test_integration,
+        )
+        for signal, blocked in result.signals.items():
+            job[signal] = blocked
+        gate_names = {
+            "missingFrontendArtifact": "frontend_artifact_completeness",
+            "unresolvedFrontendImport": "frontend_import_resolution",
+            "missingFrontendDependency": "frontend_dependency_reconciliation",
+            "invalidFrontendRoute": "frontend_route_completeness",
+            "incompleteAuthenticationArtifacts": "frontend_authentication_completeness",
+        }
+        if require_test_integration:
+            gate_names["frontendTestsNotExecuted"] = "frontend_test_integration"
+        if require_execution:
+            gate_names.update({
+                "frontendTestsFailed": "frontend_tests",
+                "frontendTypeCheckFailed": "frontend_type_check",
+                "frontendBuildFailed": "frontend_build",
+            })
+        mandatory = job.setdefault("mandatoryGates", {})
+        mandatory["frontend_artifact_contract"] = "passed" if result.passed else "failed"
+        for signal, gate_name in gate_names.items():
+            mandatory[gate_name] = "failed" if result.signals.get(signal) else "passed"
+        self._write_json_artifact(
+            job,
+            owner,
+            step,
+            f"frontend-artifact-gate-{step.logical}.json",
+            result.model_dump(mode="json"),
+            "validation",
+        )
+        if not result.passed:
+            preview = "; ".join(result.blockers[:5])
+            raise StageFailure(
+                f"Frontend Artifact Contract bloqueou a etapa: {preview}",
+                diagnostic=self._diagnostic(
+                    job, step.state, step.logical, preview,
+                    validator="frontend_artifact_contract",
                 ),
             )
 
@@ -1357,7 +1528,16 @@ class GenerationJobEngine:
         if not files:
             raise StageFailure("Nenhum arquivo valido para build.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", "Nenhum arquivo valido para build."))
 
-        files, architecture_manifest = architecture_consolidation_gate.consolidate(files)
+        planned_manifest_data = job.get("architectureManifest")
+        if not isinstance(planned_manifest_data, dict) or not planned_manifest_data.get("planned"):
+            raise StageFailure(
+                "Build bloqueado: Architecture Manifest planejado ausente.",
+                diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", "Gate de arquitetura obrigatorio nao executado antes da geracao."),
+            )
+        planned_manifest = ArchitectureManifest.model_validate(planned_manifest_data)
+        files, architecture_manifest = architecture_consolidation_gate.consolidate(
+            files, expected=planned_manifest,
+        )
         if architecture_manifest.conflictsResolved:
             self._emit(
                 job, owner, "info", stage="BUILD_RUNNING", level="warning",
@@ -1368,31 +1548,64 @@ class GenerationJobEngine:
             )
         if architecture_manifest.blocked:
             self._emit(
-                job, owner, "info", stage="BUILD_RUNNING", level="warning",
+                job, owner, "error", stage="BUILD_RUNNING", level="error",
                 message=f"Architecture Consolidation Gate: conflito nao resolvido automaticamente -- {architecture_manifest.blockReason}",
             )
+            job["duplicateArchitecture"] = True
+            job.setdefault("mandatoryGates", {})["architecture_manifest"] = "failed"
+            raise StageFailure(
+                "Build bloqueado pelo Architecture Manifest.",
+                diagnostic=self._diagnostic(
+                    job, "BUILD_RUNNING", "build", architecture_manifest.blockReason,
+                    validator="architecture_manifest",
+                ),
+            )
+        job["duplicateArchitecture"] = False
+        job.setdefault("mandatoryGates", {})["architecture_manifest"] = "passed"
+        job["architectureManifestObserved"] = architecture_manifest.model_dump(mode="json")
+        files = [item for item in files if item.path != "architecture-manifest.json"]
+        files.append(EmittedFile(
+            path="architecture-manifest.json",
+            content=json.dumps(job["architectureManifestObserved"], ensure_ascii=False, indent=2),
+        ))
         self._write_json_artifact(
             job, owner, PipelineStep("BUILD_RUNNING", "build", "build"),
             "architecture-manifest.json", architecture_manifest.model_dump(mode="json"), "architecture_manifest",
         )
 
-        try:
-            result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner, workspace_id=job.get("workspaceId"))
-        except ProjectWriteError as exc:
-            # Previously: any ArtifactSecurityError/ProjectWriteError here fell
-            # straight into run()'s generic `except Exception` -> hard FAILED,
-            # bypassing the Quality Gate / Auto-Repair / LLM-Repair chain
-            # entirely (confirmed: ProjectWriteError is a bare RuntimeError,
-            # not a StageFailure). PipelineRecoveryOrchestrator investigates,
-            # validates and -- only when safe without human approval --
-            # repairs the exact file(s) that triggered the block, then this
-            # retries the write once. Anything not safely auto-repairable
-            # still raises StageFailure -> NEEDS_USER_ACTION, never a silent
-            # bypass of the scanner.
-            files = self._attempt_pipeline_recovery(job, owner, files, exc)
-            result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner, workspace_id=job.get("workspaceId"))
-            self._emit(job, owner, "repair_applied", stage="BUILD_RUNNING", level="info", message="Escrita final concluida apos recuperacao automatica da pipeline.")
-            self._notify(job, owner, "PIPELINE_RESUMED", severity="SUCCESS", stage="BUILD_RUNNING")
+        # Bounded loop, not a single repair-and-retry: a real job can hit MORE
+        # THAN ONE distinct blocked artifact across separate write attempts
+        # (confirmed live -- app/schemas/__init__.py's REAL_SECRET repaired
+        # fine, but the retried write then hit a SEPARATE, unrelated block on
+        # token_service.py). Previously the retried write at the bottom of
+        # the except-block wasn't itself guarded, so a second distinct block
+        # propagated straight past this method into run()'s generic `except
+        # Exception` -> hard FAILED, silently skipping recovery for it.
+        max_repair_attempts = 5
+        for attempt in range(max_repair_attempts):
+            try:
+                result = ProjectWriter().write(files, project_name=job["projectName"], metadata={"generation_job_id": job["id"], "partial": True}, owner=owner, workspace_id=job.get("workspaceId"))
+                if attempt > 0:
+                    self._emit(job, owner, "repair_applied", stage="BUILD_RUNNING", level="info", message="Escrita final concluida apos recuperacao automatica da pipeline.")
+                    self._notify(job, owner, "PIPELINE_RESUMED", severity="SUCCESS", stage="BUILD_RUNNING")
+                break
+            except ProjectWriteError as exc:
+                # Previously: any ArtifactSecurityError/ProjectWriteError here fell
+                # straight into run()'s generic `except Exception` -> hard FAILED,
+                # bypassing the Quality Gate / Auto-Repair / LLM-Repair chain
+                # entirely (confirmed: ProjectWriteError is a bare RuntimeError,
+                # not a StageFailure). PipelineRecoveryOrchestrator investigates,
+                # validates and -- only when safe without human approval --
+                # repairs the exact file(s) that triggered the block, then this
+                # retries the write. Anything not safely auto-repairable still
+                # raises StageFailure -> NEEDS_USER_ACTION, never a silent
+                # bypass of the scanner; exhausting every attempt does too.
+                if attempt == max_repair_attempts - 1:
+                    raise StageFailure(
+                        f"Write ainda bloqueada apos {max_repair_attempts} tentativas de reparo automatico: {exc}",
+                        diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", str(exc)),
+                    ) from exc
+                files = self._attempt_pipeline_recovery(job, owner, files, exc)
         job["generatedProjectId"] = result.project_id
         job["resultPath"] = str(result.root_path)
         job["buildStatus"] = "RUNNING"
@@ -1462,10 +1675,69 @@ class GenerationJobEngine:
                 applied = sum(1 for item in report.build.repairs if item.applied)
                 message += f" (Auto-reparo: {applied}/{len(report.build.repairs)} patch(es) aplicado(s) antes desta falha.)"
             raise StageFailure("Build final nao passou; projeto permanece parcial e sem pacote.", diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", message, validator="lint+typecheck+tests+build+openapi"))
+
+        if not any(item.path.replace("\\", "/").startswith("apps/web/") for item in files):
+            job.setdefault("mandatoryGates", {})["frontend_artifact_contract"] = "passed"
+            ProjectWriter().set_verification(result.project_id, verified=True, score=report.score)
+            job["buildStatus"] = "PASSED"
+            job["manualBuildFixGuide"] = None
+            job["valid"] = True
+            job["partial"] = False
+            return
+
+        command_status = {
+            phase: (
+                "passed"
+                if any(command.phase == phase for command in report.build.commands)
+                and all(command.exit_code == 0 for command in report.build.commands if command.phase == phase)
+                else "failed"
+            )
+            for phase in ("typecheck", "build")
+        }
+        test_report = test_runner_service.run(result.project_id, owner)
+        self._write_json_artifact(
+            job,
+            owner,
+            PipelineStep("BUILD_RUNNING", "build", "build"),
+            "frontend-test-runner.report.json",
+            test_report.model_dump(mode="json"),
+            "validation",
+        )
+        test_status = "passed" if test_report.status == "passed" else (
+            "failed" if test_report.status == "failed" else "not_run"
+        )
+        job["testStatus"] = test_status
+        frontend_files: dict[str, str] = {}
+        project_root = Path(result.root_path)
+        ignored_parts = {"node_modules", ".next", "dist", "build", "coverage", ".venv"}
+        for path in project_root.rglob("*"):
+            if not path.is_file() or any(part in ignored_parts for part in path.parts):
+                continue
+            relative = path.relative_to(project_root).as_posix()
+            if not relative.startswith("apps/web/"):
+                continue
+            try:
+                frontend_files[relative] = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+        self._check_frontend_artifact_contract(
+            job,
+            owner,
+            PipelineStep("BUILD_RUNNING", "build", "build"),
+            require_test_integration=True,
+            execution={
+                "tests": test_status,
+                "typecheck": command_status["typecheck"],
+                "build": command_status["build"],
+            },
+            require_execution=True,
+            files_override=frontend_files,
+        )
         ProjectWriter().set_verification(result.project_id, verified=True, score=report.score)
         job["buildStatus"] = "PASSED"
         job["manualBuildFixGuide"] = None
         job["valid"] = True
+        job["partial"] = False
 
     def _attempt_pipeline_recovery(
         self, job: dict[str, Any], owner: str, files: list[EmittedFile], exc: ProjectWriteError,
@@ -1484,6 +1756,7 @@ class GenerationJobEngine:
             job, owner, files=files,
             read_artifact=lambda path: content_by_path.get(path.replace("\\", "/").strip("/")),
             now=self._now,
+            auto_approve=bool(job.get("repairApproved")),
         )
 
         event_type_by_state = {"REPAIRING": "repair_started", "RECOVERED": "repair_applied", "RECOVERY_FAILED": "repair_failed"}
@@ -1517,12 +1790,24 @@ class GenerationJobEngine:
                 f"{run.outcomeMessage} Diagnostico completo em recovery/{run.id}.json."
             )
             raise StageFailure(message, diagnostic=self._diagnostic(job, "BUILD_RUNNING", "build", message))
+        # Approval (if any) was scoped to resolving this one confirmed cause --
+        # never a standing blanket approval for whatever a future retry might hit.
+        job["repairApproved"] = False
         return repaired_files
 
     def _package(self, job: dict[str, Any], owner: str) -> None:
-        degraded = job.get("buildStatus") == "SKIPPED_AFTER_FAILURE"
-        if (not job.get("valid") and not degraded) or not job.get("generatedProjectId"):
+        if not job.get("generatedProjectId"):
             raise StageFailure("Package bloqueado: build ainda nao esta valido.", diagnostic=self._diagnostic(job, "PACKAGE_CREATING", "package", "Build obrigatorio nao aprovado."))
+        try:
+            delivery_eligibility_policy.require(
+                job,
+                required_stages=[stage for stage in (job.get("stageStatuses") or {}) if stage != "package"],
+            )
+        except DeliveryEligibilityError as exc:
+            raise StageFailure(
+                "Package bloqueado pela politica central de entrega.",
+                diagnostic=self._diagnostic(job, "PACKAGE_CREATING", "package", str(exc)),
+            ) from exc
         project = {
             "project_id": job["generatedProjectId"],
             "generated_project_path": str(DEFAULT_OUTPUT_ROOT / job["generatedProjectId"]),
@@ -1537,7 +1822,7 @@ class GenerationJobEngine:
             job["generatedProjectId"],
             [],
             metadata={
-                "partial": degraded,
+                "partial": False,
                 "package_ready": True,
                 "generation_job_id": job["id"],
                 "build_status": job.get("buildStatus"),
@@ -1993,6 +2278,3 @@ class GenerationJobEngine:
 
 
 generation_job_engine = GenerationJobEngine()
-
-
-
