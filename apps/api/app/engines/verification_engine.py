@@ -203,6 +203,11 @@ def iter_verification(
         applied = 0
         if parsed.files:
             try:
+                # No agent_role passed here on purpose: the repair loop's whole job is
+                # to patch already-existing files anywhere in the project regardless
+                # of which pipeline stage originally wrote them, so append()'s
+                # territory-overwrite guard (audit finding #1) must stay inert here --
+                # passing a role would silently no-op nearly every real repair.
                 ProjectWriter().append(project_id, parsed.files, metadata={"repaired_round": round_no + 1})
             except ProjectWriteError as exc:
                 yield {"type": "repair_finished", "round": round_no + 1, "applied": 0, "detail": str(exc)}

@@ -126,6 +126,12 @@ class LlmRepairEngine:
                 for issue in issues
             ]
         try:
+            # No agent_role passed here on purpose (mirrors verification_engine.py):
+            # this repairs already-existing files across the whole project, not
+            # within one pipeline stage's territory, so append()'s territory-overwrite
+            # guard (audit finding #1) must stay inert -- and this call site doesn't
+            # even inspect the returned WriteResult, so a silently-skipped write would
+            # be reported as "applied" below, which is worse than the bug being fixed.
             self.writer.append(str(project["project_id"]), parsed.files, metadata={"llm_repaired": True})
         except ProjectWriteError as exc:
             return [

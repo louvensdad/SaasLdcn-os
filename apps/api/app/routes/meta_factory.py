@@ -791,9 +791,25 @@ def generate_stage_stream(payload: StageGenerateRequest, user: CurrentUser) -> S
                     _persist_stage_inputs(write_result.root_path, payload.spec, payload.blueprint)
                 else:
                     write_result = writer.append(
-                        project_id, parsed_files, metadata=metadata, owner=user["user_id"]
+                        project_id, parsed_files, metadata=metadata, owner=user["user_id"],
+                        agent_role=payload.role,
                     )
                 project_id = write_result.project_id
+                if write_result.territory_overwrites:
+                    # Security fix (audit finding #1): refuse to let this pass as a
+                    # clean stage -- one or more files this agent tried to write
+                    # already existed and belonged to a different agent's territory,
+                    # and ProjectWriter refused the overwrite. Surfacing it here
+                    # (the endpoint's existing stage_errors -> stage_done.errors path)
+                    # halts the whole generation the same way a path-traversal
+                    # ProjectWriteError already does -- the frontend stops the loop
+                    # on the first stage_done with a non-empty errors list.
+                    stage_errors.append(
+                        f"Agent '{payload.role}' tried to overwrite "
+                        f"{len(write_result.territory_overwrites)} file(s) already written by "
+                        f"another stage outside its territory; refused: "
+                        f"{', '.join(write_result.territory_overwrites)}"
+                    )
                 yield _sse({
                     "type": "written",
                     "project_id": write_result.project_id,

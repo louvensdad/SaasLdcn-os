@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.core.config import BASE_DIR
+from app.data.agent_territories import path_in_territory
 from app.data.foundation import CONTRACT_VERSION
 from app.services.artifact_security import ArtifactSecurityError, assert_artifact_safe
 from app.services.artifact_storage import ArtifactStore, get_artifact_store
@@ -40,6 +41,10 @@ class WriteResult:
     project_id: str
     root_path: str
     written: list[str] = field(default_factory=list)
+    # Paths a caller-supplied agent_role tried to overwrite but was refused (see
+    # append()'s territory check). Never populated by write() -- a fresh staging
+    # dir has nothing pre-existing to overwrite.
+    territory_overwrites: list[str] = field(default_factory=list)
 
     @property
     def file_count(self) -> int:
@@ -104,18 +109,38 @@ class ProjectWriter:
         metadata: dict | None = None,
         owner: str | None = None,
         workspace_id: str | None = None,
+        agent_role: str | None = None,
     ) -> WriteResult:
         root = self._project_root(project_id, workspace_id=workspace_id)
         marker = self._read_marker(root)
         project_name = str(marker.get("project_name") or "meta-factory-project")
 
         written: list[str] = []
+        territory_overwrites: list[str] = []
         for emitted in files:
             try:
                 assert_artifact_safe(emitted.path, emitted.content)
             except ArtifactSecurityError as exc:
                 raise ProjectWriteError(str(exc)) from exc
             target = self._safe_target(root, emitted.path)
+            # Security fix (audit finding #1, Meta-Factory pipeline): a later
+            # pipeline stage could silently overwrite a file an EARLIER stage
+            # already wrote and that may have already passed validation --
+            # e.g. `docs` clobbering `qa`'s docs/security_review.md, or worse,
+            # a non-devops agent planting/replacing .github/workflows/*.yml,
+            # which would execute in the end user's own CI after Git export.
+            # `parse_agent_output`'s territory check is advisory-only by
+            # design (tolerates legitimate idiomatic layouts on NEW files),
+            # so this is the one place that can actually see whether the
+            # target already exists -- refuse the overwrite instead of
+            # silently letting the wrong agent win. New paths (nothing to
+            # overwrite yet) stay unrestricted on purpose: territories
+            # deliberately overlap (contracts/frontend/mobile all own
+            # packages/contracts/), and blocking brand-new files would
+            # regress that.
+            if agent_role is not None and target.exists() and not path_in_territory(agent_role, emitted.path):
+                territory_overwrites.append(emitted.path)
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(emitted.content, encoding="utf-8")
             written.append(target.relative_to(root).as_posix())
@@ -130,7 +155,7 @@ class ProjectWriter:
         workspace_id = workspace_id or marker.get("workspace_id")
         self._write_marker(root, project_id, project_name, merged_metadata, all_files, owner=owner, workspace_id=workspace_id)
         self.artifact_store.save_project(project_id, root, workspace_id=workspace_id)
-        return WriteResult(project_id=project_id, root_path=str(root), written=all_files)
+        return WriteResult(project_id=project_id, root_path=str(root), written=all_files, territory_overwrites=territory_overwrites)
 
     def set_verification(self, project_id: str, *, verified: bool, score: int) -> None:
         """Persist the release-gate verdict into the project marker so download/export

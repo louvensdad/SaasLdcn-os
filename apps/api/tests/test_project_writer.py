@@ -134,3 +134,71 @@ def test_append_still_extends_a_published_project(output_root):
     root = Path(appended.root_path)
     assert (root / "a.txt").is_file() and (root / "b.txt").is_file()
     assert set(appended.written) >= {"a.txt", "b.txt"}
+
+
+# --- territory-overwrite guard (audit finding #1) -------------------------
+#
+# A later pipeline stage (e.g. "docs") must not be able to silently overwrite
+# a file an earlier stage (e.g. "qa") already wrote and that may have already
+# passed validation. Coverage here is deliberately at the ProjectWriter.append
+# level -- the actual write-time boundary -- not the parse-time warning that
+# file_protocol.py already covers (test_meta_factory.py) and which stays
+# advisory-only by design.
+
+def test_append_refuses_out_of_territory_overwrite_of_existing_file(output_root):
+    writer = ProjectWriter(output_root=output_root)
+    created = writer.write(
+        [EmittedFile("docs/security_review.md", "qa's real findings")], project_name="Demo"
+    )
+
+    result = writer.append(
+        created.project_id,
+        [EmittedFile("docs/security_review.md", "docs agent overwrite attempt")],
+        agent_role="frontend",
+    )
+
+    # `written` is the cumulative file list for the project (see
+    # test_append_still_extends_a_published_project), so the pre-existing path is
+    # still reported -- what matters is that its content was never touched.
+    assert result.territory_overwrites == ["docs/security_review.md"]
+    on_disk = (output_root / created.project_id / "docs" / "security_review.md").read_text(encoding="utf-8")
+    assert on_disk == "qa's real findings"
+
+
+def test_append_allows_owning_agent_to_overwrite_its_own_file(output_root):
+    writer = ProjectWriter(output_root=output_root)
+    created = writer.write([EmittedFile("apps/api/main.py", "v1")], project_name="Demo")
+
+    result = writer.append(
+        created.project_id, [EmittedFile("apps/api/main.py", "v2")], agent_role="backend"
+    )
+
+    assert result.territory_overwrites == []
+    assert result.written == ["apps/api/main.py"]
+    on_disk = (output_root / created.project_id / "apps" / "api" / "main.py").read_text(encoding="utf-8")
+    assert on_disk == "v2"
+
+
+def test_append_still_allows_brand_new_out_of_territory_file(output_root):
+    writer = ProjectWriter(output_root=output_root)
+    created = writer.write([EmittedFile("README.md", "hello")], project_name="Demo")
+
+    # "frontend" has no declared territory under apps/api/, but the path is NEW
+    # (nothing to overwrite) -- must stay unrestricted, matching parse_agent_output's
+    # own tolerance for idiomatic layouts that don't match monorepo prefixes.
+    result = writer.append(
+        created.project_id, [EmittedFile("apps/api/new_file.py", "new")], agent_role="frontend"
+    )
+
+    assert result.territory_overwrites == []
+    assert "apps/api/new_file.py" in result.written
+
+
+def test_append_without_agent_role_keeps_legacy_overwrite_behavior(output_root):
+    writer = ProjectWriter(output_root=output_root)
+    created = writer.write([EmittedFile("a.txt", "v1")], project_name="Demo")
+
+    result = writer.append(created.project_id, [EmittedFile("a.txt", "v2")])
+
+    assert result.territory_overwrites == []
+    assert (output_root / created.project_id / "a.txt").read_text(encoding="utf-8") == "v2"
