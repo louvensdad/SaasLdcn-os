@@ -493,7 +493,7 @@ Enable governed external AI usage on the backend.
 ### Scope
 
 - Gemini or OpenAI on backend
-- no BYOK
+- encrypted, expiring BYOK sessions are allowed
 - platform API key
 - clear local fallback
 
@@ -520,7 +520,7 @@ Enable governed external AI usage on the backend.
 
 - AI execution is controlled
 - provider failure falls back clearly
-- no BYOK exposure
+- no raw BYOK material exposed to UI, logs, traces, or artifacts
 
 ### Expected report
 

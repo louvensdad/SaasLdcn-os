@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LDCN OS">
+  <defs>
+    <linearGradient id="signal" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#36E7F5"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#171337"/>
+  <path d="M20 18h24v10H20zM20 36h24v10H20z" fill="none" stroke="url(#signal)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M32 28v8M20 23h-5v18h5M44 23h5v18h-5" fill="none" stroke="url(#signal)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="15" cy="23" r="3" fill="#36E7F5"/>
+  <circle cx="49" cy="41" r="3" fill="#8B5CF6"/>
+</svg>

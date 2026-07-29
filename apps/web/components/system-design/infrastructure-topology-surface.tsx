@@ -3,11 +3,13 @@ import { Database } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { InfrastructureTopology } from '@/lib/api/types';
+import { useLocale } from '@/hooks/use-locale';
 export function InfrastructureTopologySurface({ topology }: { readonly topology: InfrastructureTopology }) {
+  const { t } = useLocale();
   return (
     <Card className="grid gap-4 p-5" data-testid="infrastructure-topology-surface">
       <div className="flex items-start justify-between gap-3">
-        <div><p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Infrastructure Topology</p><p className="mt-2 text-sm text-[color:var(--muted)]">Datastores, queues, observability and deployment ownership.</p></div>
+        <div><p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('systemDesign.infrastructure.title')}</p><p className="mt-2 text-sm text-[color:var(--muted)]">{t('systemDesign.infrastructure.description')}</p></div>
         <Database className="h-5 w-5 text-[color:var(--accent-2)]" />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">

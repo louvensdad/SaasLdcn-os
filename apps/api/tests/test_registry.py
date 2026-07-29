@@ -82,6 +82,31 @@ def test_registry_capabilities_endpoint(client):
     assert any(item["id"] == "observability" for item in payload)
 
 
+def test_capabilities_remain_available_for_microservices_and_distributed_architectures(client):
+    # Regression: architecture_level_minimum is a FLOOR ("at least this much
+    # maturity"), so a capability tagged for a lower/mid tier must still be
+    # available at every MORE complex tier too. The previous per-tier lookup
+    # returned a disjoint list per level, and since "microservices"/
+    # "distributed_system" only ever appeared in level_4/5's own list, EVERY
+    # capability in the registry (none of which are tagged level_4/5) had zero
+    # architecture_ids in common with those two -- selecting either
+    # architecture in the wizard produced a completely empty Capabilities step
+    # for every language/framework, confirmed live end-to-end.
+    payload = client.get("/api/registry/capabilities").json()
+    by_id = {item["id"]: item for item in payload}
+
+    # authentication: level_1_mvp -> must be available for literally every architecture.
+    assert {"monolith", "microservices", "distributed_system"} <= set(by_id["authentication"]["architecture_ids"])
+
+    # rbac: level_2_professional -> still available for its own original tier...
+    assert {"monolith", "modular_monolith", "clean_architecture"} <= set(by_id["rbac"]["architecture_ids"])
+    # ...AND now also for microservices/distributed_system (the actual bug).
+    assert {"microservices", "distributed_system"} <= set(by_id["rbac"]["architecture_ids"])
+
+    # multi_tenancy: level_3_enterprise -> same fix, one tier up.
+    assert {"microservices", "distributed_system"} <= set(by_id["multi_tenancy"]["architecture_ids"])
+
+
 def test_registry_business_modules_endpoint(client):
     response = client.get("/api/registry/business-modules")
 

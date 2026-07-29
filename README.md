@@ -1,8 +1,10 @@
 # LDCN OS
 
-LDCN OS is a V1 Foundation workspace for planning, validating, previewing, and locally generating governed software project foundations. The current release focuses on deterministic architecture contracts, registry-backed wizard flows, Prompt Master previews, Gatekeeper checks, safe local generation previews, and clear governance surfaces.
+LDCN OS is a workspace for planning, validating, generating, and modernizing governed software project foundations. It combines deterministic architecture contracts, registry-backed wizard flows, Prompt Master previews, Gatekeeper checks, and clear governance surfaces with an AI meta-factory that turns an idea into a full, secure project — and a brownfield path that ingests and refactors an existing codebase.
 
-V1 Foundation does not run real AI agents, does not call model providers, does not export to Git providers, and does not analyze PDF contracts. Those secure extensions are documented and exposed only as inactive placeholders.
+**AI with graceful degrade.** The multi-provider LLM router (Anthropic / OpenAI / Google) is optional: when no provider key/SDK is reachable, the system falls back to a deterministic high-fidelity Mock generator instead of failing. The degrade is always signalled to the UI (`degraded` / "Modo Mock"), never disguised as a real model run. Set `LDCN_FORCE_MOCK=1` for a fully offline demo.
+
+PDF contract analysis remains an inactive placeholder.
 
 ## Stack
 
@@ -15,34 +17,36 @@ V1 Foundation does not run real AI agents, does not call model providers, does n
 ## Architecture
 
 - `apps/api`: FastAPI app, routes, schemas, engines, services, tests
+  - `app/engines/llm`: multi-provider LLM router + adapters + deterministic mock fallback
+  - meta-factory: orchestrator → mega-prompt → API-first agent pipeline (`/meta-factory/*`, incl. SSE `generate/stream`)
+  - modernize: brownfield ingestion (ZIP/Git) → diagnosis → migration plan → refactor (`/modernize/*`)
+  - account security: session listing/revocation, TOTP 2FA, consent revoke, activity export (`/auth/*`)
+  - presence + telemetry: engineering presence and runtime metrics engines feeding the shell's live status surfaces
 - `apps/web`: Next.js shell, pages, API client, UI components, frontend tests
+  - `/meta-factory` (greenfield, real-time progress) and `/modernize` (brownfield) surfaces
+  - `/settings`: unified premium settings shell (Conta, IA, Git, Interface, Runtime, Avançado) on shared components
 - `packages/contracts`: shared TypeScript contracts used by the frontend and documentation
 - `templates`: local static/site/app templates used by local generation V0
 - `generated-projects`: active, archived, and temp generated output areas
 - `future`: reserved future service/engine boundaries
 - `reports`: validation, governance, and architecture reports
+- `docs/design-system`: visual reference material used to keep the shell pixel-faithful to design
 
-## Run Backend
+## Run Locally
 
 ```powershell
 python -m pip install -r apps\api\requirements.txt
-cd apps\api
-python -m uvicorn app.main:app --reload --port 8001
-```
-
-Backend URL: `http://127.0.0.1:8001`
-
-## Run Frontend
-
-```powershell
 cd apps\web
-npm install
-npm run dev
+npm.cmd install
+cd ..\..
+.\dev.cmd
 ```
 
-Frontend URL: `http://localhost:3000`
+The root `.\dev.cmd` command starts both applications. Press `Ctrl+C` to stop them together.
 
-The frontend defaults to `http://127.0.0.1:8001` for API calls. Override with `NEXT_PUBLIC_API_URL` if needed.
+- Backend URL: `http://localhost:8001`
+- Frontend URL: `http://localhost:3000`
+- The frontend defaults to `http://localhost:8001` for API calls. Override with `NEXT_PUBLIC_API_URL` if needed.
 
 ## Test
 
@@ -64,17 +68,13 @@ npm run build
 
 ## Current Limitations
 
-- No real AI/model provider calls.
-- No real agent runtime.
-- No production authentication or authorization.
-- No GitHub/GitLab export.
-- No PDF parsing, OCR, or contract analysis.
-- Local generation supports deterministic foundation templates only.
-- Placeholder secure extension endpoints return HTTP `501`.
+- Real model calls require provider SDKs + API keys (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`); without them, the deterministic Mock generator serves instead (signalled as `degraded`).
+- Production authentication requires explicit JWT/encryption secrets, PostgreSQL, Redis-backed distributed controls, trusted hosts, and HTTPS origins.
+- Brownfield Git ingestion runs in the sandbox, accepts HTTPS URLs only, and restricts hosts through `LDCN_MODERNIZE_GIT_ALLOWED_HOSTS`.
+- No PDF parsing, OCR, or contract analysis (inactive placeholder).
+- Account security covers session/device listing, revocation, and TOTP 2FA; backup codes, new-login email alerts, account deactivation, and workspace invites are not yet implemented.
 
 ## Planned Features
 
-- User Key Boost for temporary user-owned AI keys.
-- Git Export to GitHub/GitLab after Security Gate validation.
 - PDF Contract Input for embedded-text contract understanding.
 - Future agent/service boundaries under `future`.

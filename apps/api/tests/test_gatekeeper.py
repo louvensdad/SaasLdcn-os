@@ -30,6 +30,16 @@ def _build_blueprint(client, *, valid: bool = True, insecure: bool = False):
             "endpoint_ids": endpoint_ids,
             "locale": "pt-BR",
             "generation_mode": "local_build_90",
+            "project_requirements": {
+                "project_goal": "Deliver a governed SaaS application.",
+                "business_context": "Commercial SaaS operation.",
+                "target_users": ["operators", "customers"],
+                "business_rules": ["Authorized users manage records."],
+                "entities": ["User", "Account"],
+                "workflows": ["Customer request is reviewed by an operator."],
+                "constraints": ["Protect personal data."],
+                "delivery_target": "github",
+            },
         },
     )
     assert response.status_code == 200
@@ -54,8 +64,30 @@ def test_gatekeeper_preview_approved(client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["decision"] == "approved"
-    assert len(payload["checks"]) == 13
+    assert len(payload["checks"]) == 19
     assert all(check["status"] == "passed" for check in payload["checks"])
+
+
+def test_gatekeeper_blocks_prompt_master_missing_file_contract_sections(client):
+    blueprint = _build_blueprint(client)
+    prompt_master = _build_prompt_master(client, blueprint)
+    prompt_master["sections"] = [
+        section for section in prompt_master["sections"]
+        if section["id"] not in {"required_files", "forbidden_files"}
+    ]
+
+    response = client.post(
+        "/api/gatekeeper/preview",
+        json={"blueprint": blueprint, "prompt_master": prompt_master},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["decision"] == "blocked"
+    required_check = next(check for check in payload["checks"] if check["id"] == "required_files_check")
+    forbidden_check = next(check for check in payload["checks"] if check["id"] == "forbidden_files_check")
+    assert required_check["status"] == "failed"
+    assert forbidden_check["status"] == "failed"
 
 
 def test_gatekeeper_prompt_master_invalid_blocks(client):
@@ -144,6 +176,16 @@ def test_gatekeeper_microservices_without_observability_blocks(client):
             "endpoint_ids": ["auth.login"],
             "locale": "pt-BR",
             "generation_mode": "local_build_90",
+            "project_requirements": {
+                "project_goal": "Deliver a governed service.",
+                "business_context": "Commercial service operation.",
+                "target_users": ["operators"],
+                "business_rules": ["Authorized users manage records."],
+                "entities": ["User"],
+                "workflows": ["Operator handles requests."],
+                "constraints": ["Protect personal data."],
+                "delivery_target": "github",
+            },
         },
     )
     assert response.status_code == 200

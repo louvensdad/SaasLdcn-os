@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.data.foundation import CONTRACT_VERSION
+from app.engines.project_requirements_engine import normalize_project_requirements
 
 
 PROMPT_MASTER_ENGINE_VERSION = "0.1.0"
@@ -15,6 +16,7 @@ MANDATORY_SECTIONS = [
     ("architecture_profile", "Architecture Profile"),
     ("business_modules", "Business Modules"),
     ("endpoint_plan", "Endpoint Plan"),
+    ("required_files", "Required Files"),
     ("capability_plan", "Capability Plan"),
     ("security_requirements", "Security Requirements"),
     ("data_model_hints", "Data Model Hints"),
@@ -22,6 +24,7 @@ MANDATORY_SECTIONS = [
     ("documentation_requirements", "Documentation Requirements"),
     ("quality_gates", "Quality Gates"),
     ("forbidden_decisions", "Forbidden Decisions"),
+    ("forbidden_files", "Forbidden Files"),
     ("generation_constraints", "Generation Constraints"),
     ("locale_language_rules", "Locale / Language Rules"),
     ("trace", "Trace"),
@@ -42,6 +45,7 @@ def build_prompt_master_document(blueprint: dict[str, Any]) -> dict[str, Any]:
         "blueprint_id": normalized_blueprint["blueprint_id"],
         "project_name": normalized_blueprint["project_name"],
         "locale": normalized_blueprint["locale"],
+        "locale_profile": normalized_blueprint["locale_profile"],
         "generation_mode": normalized_blueprint["generation_mode"],
         "source_blueprint_valid": normalized_blueprint["validation"]["valid"],
         "version": {
@@ -61,13 +65,21 @@ def build_prompt_master_document(blueprint: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_blueprint_input(blueprint: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(blueprint)
-    normalized["project_name"] = str(normalized.get("project_name") or "ldcn-blueprint").strip() or "ldcn-blueprint"
+    normalized["project_name"] = str(normalized.get("project_name") or "").strip()
     normalized["locale"] = str(normalized.get("locale") or "pt-BR").strip() or "pt-BR"
+    normalized["locale_profile"] = normalized.get("locale_profile") or {
+        "selected_locale": normalized["locale"],
+        "fallback_locale": "pt-BR",
+        "generated_docs_locale": normalized["locale"],
+        "generated_readme_locale": normalized["locale"],
+        "generated_comments_locale": normalized["locale"],
+    }
     normalized["generation_mode"] = str(normalized.get("generation_mode") or "foundation_only").strip() or "foundation_only"
     normalized["capabilities"] = list(normalized.get("capabilities") or [])
     normalized["business_modules"] = list(normalized.get("business_modules") or [])
     normalized["endpoints"] = list(normalized.get("endpoints") or [])
     normalized["recommendations"] = list(normalized.get("recommendations") or [])
+    normalized["project_requirements"] = normalize_project_requirements(normalized.get("project_requirements"))
     normalized["validation"] = normalized.get("validation") or {
         "valid": False,
         "errors": [{"code": "blueprint_missing_validation", "message": "Blueprint validation was not provided.", "related_item_ids": []}],
@@ -87,25 +99,27 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
     complexity = blueprint["complexity_profile"]
     validation = blueprint["validation"]
     recommendations = blueprint["recommendations"]
+    requirements = blueprint["project_requirements"]
 
     warnings = [item["message"] for item in validation["warnings"]]
-    suggestion_lines = validation.get("suggestions", [])
     recommendation_lines = [item["message"] for item in recommendations]
 
     sections = [
         _section(
             "product_intent",
             "Product Intent",
-            "High-level product scope inferred directly from the validated blueprint.",
+            "User-defined product scope preserved directly from the validated blueprint.",
             (
-                f"Build '{blueprint['project_name']}' as a {archetype_profile['name']} product in locale "
-                f"{blueprint['locale']} using the fixed technology path selected in the wizard."
+                f"Build '{blueprint['project_name']}' to achieve this goal: {requirements['project_goal']}. "
+                f"Business context: {requirements['business_context']}."
             ),
             [
+                f"Target users: {', '.join(requirements['target_users']) or 'missing'}",
+                f"Delivery target: {requirements['delivery_target'] or 'missing'}",
                 f"Archetype: {archetype_profile['name']} ({archetype_profile['category']})",
                 f"Generation mode: {blueprint['generation_mode']}",
                 f"Complexity score: {complexity['overall_score']} ({complexity['risk_level']})",
-                "Do not reinterpret the product category beyond the selected blueprint archetype.",
+                "Do not reinterpret or invent product requirements beyond the user-defined intent.",
             ],
         ),
         _section(
@@ -147,7 +161,8 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
             [
                 f"{module['name']} ({module['id']}): {module['description']}"
                 for module in modules
-            ] or ["No business modules were selected."],
+            ] + [f"Business rule: {rule}" for rule in requirements["business_rules"]]
+            + [f"Workflow: {workflow}" for workflow in requirements["workflows"]],
         ),
         _section(
             "endpoint_plan",
@@ -158,6 +173,13 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
                 f"{endpoint['method']} {endpoint['path']} [{endpoint['id']}]"
                 for endpoint in endpoints
             ] or ["No endpoints were selected."],
+        ),
+        _section(
+            "required_files",
+            "Required Files",
+            "Minimum file-level contract future generation phases must satisfy for the selected stack.",
+            "Generated output must include the stack-specific project files below before it can be treated as structurally complete.",
+            _required_file_bullets(technology_graph, endpoints),
         ),
         _section(
             "capability_plan",
@@ -180,8 +202,10 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
             "data_model_hints",
             "Data Model Hints",
             "Non-authoritative data shape guidance for future design phases.",
-            "Use module and endpoint ownership to seed aggregates, entities, and access boundaries without generating a schema yet.",
-            _data_model_hints(modules, endpoints),
+            "Use user-defined entities plus module and endpoint ownership to seed aggregates, relationships, and access boundaries.",
+            [f"Required entity/data concept: {entity}" for entity in requirements["entities"]]
+            + _data_model_hints(modules, endpoints)
+            + [f"Constraint: {constraint}" for constraint in requirements["constraints"]],
         ),
         _section(
             "testing_requirements",
@@ -225,6 +249,13 @@ def build_sections(blueprint: dict[str, Any]) -> list[dict[str, Any]]:
             "Explicit anti-decisions that prevent scope drift or silent stack invention.",
             "These decisions are forbidden unless a new blueprint revision is produced and approved.",
             _forbidden_decisions(blueprint, recommendation_lines),
+        ),
+        _section(
+            "forbidden_files",
+            "Forbidden Files",
+            "File patterns that future generation phases must not emit for this stack contract.",
+            "These files indicate secret leakage, dependency drift, framework substitution, or unsafe generated artifacts.",
+            _forbidden_file_bullets(technology_graph),
         ),
         _section(
             "generation_constraints",
@@ -408,6 +439,61 @@ def _data_model_hints(modules: list[dict[str, Any]], endpoints: list[dict[str, A
     endpoint_hints = [f"Map endpoint '{endpoint['id']}' to the owning module '{endpoint.get('business_module_id') or 'unassigned'}'." for endpoint in endpoints]
     return module_hints + endpoint_hints or ["No module or endpoint hints were available."]
 
+
+def _required_file_bullets(technology_graph: dict[str, Any], endpoints: list[dict[str, Any]]) -> list[str]:
+    language_id = technology_graph["language"]["id"]
+    framework_id = technology_graph["framework"]["id"]
+    architecture_id = technology_graph["architecture"]["id"]
+
+    bullets = [
+        "README.md with setup, run, test, and stack summary instructions.",
+        "A dependency manifest matching the selected stack.",
+        "Automated test files covering selected endpoints and business rules.",
+    ]
+
+    if language_id == "typescript":
+        bullets.extend(["package.json", "tsconfig.json"])
+    elif language_id == "python":
+        bullets.extend(["pyproject.toml or requirements.txt", "app/main.py"])
+    elif language_id == "java":
+        bullets.extend(["pom.xml or build.gradle", "src/main/java application entrypoint"])
+
+    if framework_id == "nestjs":
+        bullets.extend(["src/main.ts", "src/app.module.ts", "controller/service/module files for each selected business module"])
+    elif framework_id == "nextjs":
+        bullets.extend(["app or src/app route tree", "shared API client for selected endpoints"])
+    elif framework_id == "fastapi":
+        bullets.extend(["app/main.py", "router files for selected endpoint groups"])
+    elif framework_id == "spring_boot":
+        bullets.extend(["Spring Boot application class", "controller/service/repository packages for selected modules"])
+
+    if architecture_id == "microservices":
+        bullets.append("Per-service README or service manifest documenting ownership boundaries.")
+    if endpoints:
+        bullets.append("Contract or route declaration covering every selected endpoint id.")
+
+    return list(dict.fromkeys(bullets))
+
+
+def _forbidden_file_bullets(technology_graph: dict[str, Any]) -> list[str]:
+    framework_id = technology_graph["framework"]["id"]
+    forbidden = [
+        ".env with real secrets or credentials.",
+        "Generated files containing API keys, tokens, private keys, passwords, or provider secrets.",
+        "node_modules/, .venv/, target/, dist/, build/, coverage/, or other generated dependency/build directories.",
+        "Lockfiles or manifests for a framework that contradicts the selected technology graph.",
+    ]
+
+    if framework_id == "nestjs":
+        forbidden.extend(["Next.js-only app/page files unless a frontend stack is separately approved.", "Spring Boot or FastAPI source trees in the NestJS backend output."])
+    elif framework_id == "nextjs":
+        forbidden.extend(["NestJS backend trees unless a backend stack is separately approved.", "Spring Boot or FastAPI source trees in the Next.js frontend output."])
+    elif framework_id == "fastapi":
+        forbidden.extend(["NestJS or Spring Boot source trees in the FastAPI output.", "package.json used as the primary backend manifest."])
+    elif framework_id == "spring_boot":
+        forbidden.extend(["NestJS or FastAPI source trees in the Spring Boot output.", "package.json used as the primary backend manifest."])
+
+    return forbidden
 
 def _forbidden_decisions(blueprint: dict[str, Any], recommendation_lines: list[str]) -> list[str]:
     technology_graph = blueprint["technology_graph"]

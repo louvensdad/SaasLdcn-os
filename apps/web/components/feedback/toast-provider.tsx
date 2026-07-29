@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
 import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 import { useUiStore, type ToastMessage, type ToastTone } from '@/stores/use-ui-store';
 
@@ -26,6 +27,7 @@ function ToastIcon({ tone }: { readonly tone: ToastTone }) {
 
 function ToastItem({ toast }: { readonly toast: ToastMessage }) {
   const dismissToast = useUiStore((state) => state.dismissToast);
+  const { t } = useLocale();
 
   useEffect(() => {
     const timeout = window.setTimeout(() => dismissToast(toast.id), 5200);
@@ -71,7 +73,7 @@ function ToastItem({ toast }: { readonly toast: ToastMessage }) {
           variant="ghost"
           className="h-8 w-8 shrink-0 rounded-full p-0"
           onClick={() => dismissToast(toast.id)}
-          aria-label="Dismiss notification"
+          aria-label={t('notifications.dismiss')}
         >
           <X className="h-3.5 w-3.5" />
         </Button>
@@ -83,6 +85,7 @@ function ToastItem({ toast }: { readonly toast: ToastMessage }) {
 export function ToastProvider() {
   const toasts = useUiStore((state) => state.toasts);
   const shouldReduceMotion = useReducedMotion();
+  const { t } = useLocale();
 
   return (
     <div className="pointer-events-none fixed right-4 top-4 z-[90] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-3 sm:right-6 sm:top-6">
@@ -93,7 +96,7 @@ export function ToastProvider() {
           </div>
         ))}
       </AnimatePresence>
-      {shouldReduceMotion ? null : <span className="sr-only">Animated toast stack active</span>}
+      {shouldReduceMotion ? null : <span className="sr-only">{t('notifications.animatedStack')}</span>}
     </div>
   );
 }

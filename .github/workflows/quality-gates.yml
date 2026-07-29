@@ -1,0 +1,192 @@
+name: Quality Gates
+
+on:
+  pull_request:
+  push:
+    branches: [main, feat/premium-foundation]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      LDCN_ENVIRONMENT: test
+      LDCN_DATABASE_URL: sqlite:////tmp/ldcn-ci-test.db
+      LDCN_FORCE_MOCK: "0"
+      EXECUTION_RUNTIME: sandbox
+      ALLOW_HOST_EXECUTION: "false"
+      LDCN_SANDBOX_EGRESS_NETWORK: ci-denied
+      LDCN_SANDBOX_EGRESS_PROXY: http://127.0.0.1:9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+      - run: pip install --require-hashes --requirement requirements-dev.lock
+      # test_preview_inspector.py drives a real headless browser (PreviewInspector)
+      # -- the `playwright` pip package only ships the Python bindings, not the
+      # browser binary itself. Same requirement as the frontend job's
+      # `npx playwright install --with-deps chromium`, just via the Python CLI.
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m alembic upgrade head
+      - run: python -m alembic check
+      - run: python -m pytest -q -m "not slow and not enterprise and not integration" --cov=app --cov-report=xml --cov-fail-under=87 --basetemp /tmp/ldcn-pytest
+      - run: pip-audit --requirement requirements.lock
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run audit:i18n:check
+      - run: npm run audit:typography:check
+      - run: npm run audit:locales:check
+      - run: npm run audit:hotspots:check
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm audit --audit-level=high
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: pip install --require-hashes --requirement apps/api/requirements-dev.lock
+      - run: npm ci
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+      - name: Start web app
+        working-directory: apps/web
+        run: |
+          npm run start > /tmp/ldcn-web.log 2>&1 &
+          for i in {1..30}; do
+            curl --fail --silent http://127.0.0.1:3000/login > /dev/null && exit 0
+            sleep 2
+          done
+          cat /tmp/ldcn-web.log
+          exit 1
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - run: npx playwright test tests/project-room-delivery-type.spec.ts tests/accessibility-smoke.spec.ts
+        working-directory: apps/web
+        env:
+          LDCN_FORCE_MOCK: "1"
+          EXECUTION_RUNTIME: sandbox
+          ALLOW_HOST_EXECUTION: "false"
+  security-adversarial:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      LDCN_ENVIRONMENT: test
+      LDCN_DATABASE_URL: sqlite:////tmp/ldcn-security-test.db
+      LDCN_FORCE_MOCK: "0"
+      EXECUTION_RUNTIME: sandbox
+      ALLOW_HOST_EXECUTION: "false"
+      LDCN_SANDBOX_EGRESS_NETWORK: ci-denied
+      LDCN_SANDBOX_EGRESS_PROXY: http://127.0.0.1:9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+      - run: pip install --require-hashes --requirement requirements-dev.lock
+      - run: python -m alembic upgrade head
+      - run: >-
+          python -m pytest -q
+          tests/test_execution_runtime.py
+          tests/test_execution_terminal.py
+          tests/test_artifact_storage.py
+          tests/test_auth_security_lgpd.py
+          tests/test_modernize_ingest_enterprise.py
+  infrastructure-contracts:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ldcn
+          POSTGRES_PASSWORD: contract-only
+          POSTGRES_DB: ldcn_contract
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ldcn -d ldcn_contract"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      LDCN_TEST_POSTGRES_URL: postgresql+psycopg2://ldcn:contract-only@127.0.0.1:5432/ldcn_contract
+      LDCN_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      LDCN_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+      LDCN_TEST_S3_ACCESS_KEY: contract-access
+      LDCN_TEST_S3_SECRET_KEY: contract-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+      - run: pip install --require-hashes --requirement requirements-dev.lock
+      - run: docker run --detach --rm --name ldcn-minio --publish 9000:9000 --env MINIO_ROOT_USER=contract-access --env MINIO_ROOT_PASSWORD=contract-secret minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+      - run: for i in {1..30}; do curl --fail --silent http://127.0.0.1:9000/minio/health/live && exit 0; sleep 2; done; exit 1
+      - run: python -m pytest -q -m integration tests/test_infrastructure_contracts.py
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build --file apps/api/Dockerfile --tag ldcn-api:ci .
+      - run: docker build --file apps/web/Dockerfile --tag ldcn-web:ci .
+      - run: docker build --tag ldcn-sandbox:ci infrastructure/docker/sandbox-runtime
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

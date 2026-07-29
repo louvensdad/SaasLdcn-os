@@ -19,7 +19,7 @@ ARCHITECTURES: list[dict] = [
         "name": "Modular Monolith",
         "description": "Single deployable with clear module boundaries and domain separation.",
         "complexity_level": "medium",
-        "supported_frameworks": ["spring_boot", "quarkus", "micronaut", "nestjs", "nextjs", "angular", "react", "fastapi", "django", "aspnet_core", "blazor", "laravel", "fiber", "gin"],
+        "supported_frameworks": ["spring_boot", "quarkus", "micronaut", "nestjs", "express", "fastify", "nextjs", "angular", "react", "fastapi", "django", "aspnet_core", "blazor", "laravel", "fiber", "gin"],
         "required_capabilities": [],
         "recommended_capabilities": ["authentication", "api_docs", "observability"],
         "scalability_profile": "enterprise",

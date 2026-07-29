@@ -1,0 +1,231 @@
+# Full production stack for the LDCN OS platform on a single VPS. Separate
+# from docker-compose.yml (that file stays local-dev-only, unmodified).
+#
+# Always invoke with the production env file explicit, e.g.:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Topology: only `caddy` publishes ports to the host (80/443). Postgres,
+# Redis, MinIO and the Docker socket proxy are reachable ONLY from other
+# containers on their own internal network -- never from the host or the
+# Internet. `api` reaches the real Docker daemon only through
+# docker-socket-proxy's allowlisted API surface, never the raw host socket
+# (see apps/api/Dockerfile.prod and the docker-socket-proxy service below).
+#
+# Pre-deploy steps (run once, before `up`): see README section this file's
+# sibling scripts/generate-prod-secrets.sh prints, and
+# infrastructure/docker/sandbox-runtime/README.md (build the sandbox workload
+# image + egress-proxy network, reused here unmodified via
+# LDCN_SANDBOX_EGRESS_NETWORK / LDCN_SANDBOX_EGRESS_PROXY below).
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal_data
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal_data
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal_data
+
+  # One-shot: creates the artifact bucket and makes it private, then exits.
+  # `api` waits for this to complete successfully before it starts.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
+      mc mb --ignore-existing local/$$MINIO_BUCKET &&
+      mc anonymous set none local/$$MINIO_BUCKET
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    networks:
+      - internal_data
+
+  # Least-privilege gateway to the HOST Docker daemon: EXECUTION_RUNTIME=sandbox
+  # (execution_runtime.py) shells `docker run`/`exec`/`network connect` to
+  # manage sandbox workload containers, but `api` never gets the raw host
+  # socket (that would be host root). Only the API surfaces it actually needs
+  # are allowed; everything else this image supports defaults to denied.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      EXEC: 1
+      NETWORKS: 1
+      IMAGES: 1
+      POST: 1
+      # Explicit for defense-in-depth even though these already default to 0.
+      SERVICES: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+      VOLUMES: 0
+      SECRETS: 0
+      CONFIGS: 0
+      NODES: 0
+      PLUGINS: 0
+      BUILD: 0
+      DISTRIBUTION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker_control
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      docker-socket-proxy:
+        condition: service_started
+    environment:
+      LDCN_ENVIRONMENT: production
+      EXECUTION_RUNTIME: sandbox
+      ALLOW_HOST_EXECUTION: "false"
+      LDCN_SANDBOX_CONTAINER_CLI: docker
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      LDCN_SANDBOX_EGRESS_NETWORK: ldcn-sandbox-egress
+      LDCN_SANDBOX_EGRESS_PROXY: http://egress-proxy:3128
+      LDCN_SANDBOX_EGRESS_PROXY_CONTAINER: ldcn-sandbox-egress-proxy
+      LDCN_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LDCN_REDIS_URL: redis://redis:6379/0
+      LDCN_ARTIFACT_STORAGE: s3
+      LDCN_ARTIFACT_BUCKET: ${MINIO_BUCKET}
+      LDCN_ARTIFACT_ENDPOINT: http://minio:9000
+      LDCN_ARTIFACT_REGION: us-east-1
+      # boto3's native credential env vars (see apps/api/.aws/config, mounted
+      # below, for the path-style addressing MinIO needs -- boto3 has no env
+      # var for that, only a shared config-file setting).
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      LDCN_SECRET_KEY: ${LDCN_SECRET_KEY}
+      LDCN_JWT_REFRESH_SECRET: ${LDCN_JWT_REFRESH_SECRET}
+      LDCN_TOKEN_ENC_KEY: ${LDCN_TOKEN_ENC_KEY}
+      LDCN_METRICS_BEARER_TOKEN: ${LDCN_METRICS_BEARER_TOKEN}
+      LDCN_FRONTEND_URL: ${PUBLIC_ORIGIN}
+      LDCN_API_PUBLIC_URL: ${PUBLIC_ORIGIN}
+      LDCN_ALLOWED_ORIGINS: ${PUBLIC_ORIGIN}
+      LDCN_TRUSTED_HOSTS: ${PUBLIC_HOST}
+      LDCN_TRUST_PROXY_HEADERS: "1"
+      LDCN_MAX_CONCURRENT_GENERATIONS: ${LDCN_MAX_CONCURRENT_GENERATIONS:-1}
+      LDCN_AGENT_WORKERS: ${LDCN_AGENT_WORKERS:-2}
+    volumes:
+      - ./generated-projects:/workspace/generated-projects
+      - ./apps/api/.aws/config:/home/ldcn/.aws/config:ro
+    command: sh -c "alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers --workers 2"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - internal_data
+      - docker_control
+      - edge
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_ORIGIN}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - edge
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST}
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+    networks:
+      - edge
+
+networks:
+  # Postgres/Redis/MinIO: reachable only by the services that need them.
+  internal_data:
+    internal: true
+  # api <-> docker-socket-proxy only.
+  docker_control:
+    internal: true
+  # caddy <-> api/web only; caddy alone bridges out via its published ports.
+  edge: {}
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  caddy_data:
+  caddy_config:

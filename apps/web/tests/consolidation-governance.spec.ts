@@ -1,9 +1,49 @@
-import { expect, test, type Page } from '@playwright/test';
+﻿import { expect, test, type Page } from '@playwright/test';
 
-const API_BASE = 'http://127.0.0.1:8001/api';
+const API_BASE = 'http://localhost:8001/api';
 const WEB_BASE = 'http://127.0.0.1:3000';
 
-function skillsFixture() {
+function authFixture() {
+  const now = '2026-06-25T00:00:00Z';
+  return {
+    user: {
+      user_id: 'test-user',
+      email: 'test@example.com',
+      full_name: 'Test User',
+      role: 'admin',
+      locale: 'pt-BR',
+      is_active: true,
+      consent_accepted_at: now,
+      consent_policy_version: '1.0.0',
+      created_at: now,
+      updated_at: now,
+    },
+    tokens: {
+      access_token: 'test-access-token',
+      token_type: 'bearer',
+      expires_in: 3600,
+    },
+  };
+}
+
+async function mockAuth(page: Page) {
+  const fixture = authFixture();
+  await page.addInitScript((authResponse) => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('/api/auth/refresh')) {
+        return new Response(JSON.stringify(authResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return originalFetch(input, init);
+    };
+  }, fixture);
+  await page.route('**/api/auth/refresh', async (route) => route.fulfill({ json: fixture }));
+  await page.route('**/api/auth/me', async (route) => route.fulfill({ json: fixture.user }));
+}function skillsFixture() {
   return {
     contractVersion: '1.0.0',
     categories: ['architecture', 'planning', 'generation', 'support'],
@@ -88,6 +128,7 @@ function roadmapFixture() {
 }
 
 async function mockGovernanceEndpoints(page: Page) {
+  await mockAuth(page);
   await page.route(`${API_BASE}/skills`, async (route) => route.fulfill({ json: skillsFixture() }));
   await page.route(`${API_BASE}/skills/preview`, async (route) =>
     route.fulfill({
@@ -102,7 +143,7 @@ async function mockGovernanceEndpoints(page: Page) {
       },
     }),
   );
-  await page.route(`${API_BASE}/system-status`, async (route) => route.fulfill({ json: systemStatusFixture() }));
+  await page.route('**/api/system-status', async (route) => route.fulfill({ json: systemStatusFixture() }));
   await page.route(`${API_BASE}/roadmap`, async (route) => route.fulfill({ json: roadmapFixture() }));
 }
 
@@ -121,16 +162,21 @@ test('skills page renders registry, filters and safe preview', async ({ page }) 
   await expect(page.getByText('No action is executed.')).toBeVisible();
 });
 
-test('system status page renders platform health cards', async ({ page }) => {
+test('system status page renders compact platform health cards', async ({ page }) => {
   await mockGovernanceEndpoints(page);
   await page.goto(`${WEB_BASE}/system-status`);
 
-  await expect(page.getByRole('heading', { name: 'System Status', exact: true })).toBeVisible();
-  await expect(page.getByText('Runtime Health', { exact: true })).toBeVisible();
-  await expect(page.getByText('Validation Status', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Build Health', { exact: true })).toBeVisible();
-  await expect(page.getByText('Active skills', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('review_blueprint')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /System Status|Status do Sistema/ })).toBeVisible();
+  await expect(page.getByText(/^Runtime$/).first()).toBeVisible();
+  await expect(page.getByText(/^API$/).first()).toBeVisible();
+  await expect(page.getByText(/^Build$/).first()).toBeVisible();
+  await expect(page.getByText(/Active skills|Skills ativas/).first()).toBeVisible();
+  await expect(page.getByText('review_blueprint')).toHaveCount(0);
+  const skillsGroupToggle = page
+    .locator('[data-testid="system-group"]')
+    .filter({ hasText: /Active skills|Skills ativas/ })
+    .getByRole('button');
+  await expect(skillsGroupToggle).toHaveAttribute('aria-expanded', 'false');
 });
 
 test('architecture page renders active and future maps', async ({ page }) => {
@@ -138,19 +184,26 @@ test('architecture page renders active and future maps', async ({ page }) => {
   await page.goto(`${WEB_BASE}/architecture`);
 
   await expect(page.getByRole('heading', { name: 'Architecture', exact: true })).toBeVisible();
+  await page.locator('summary').filter({ hasText: 'Advanced architecture' }).click();
   await expect(page.getByText('Active Runtime Map')).toBeVisible();
   await expect(page.getByText('Future Modules Map')).toBeVisible();
   await expect(page.getByText('Engine Overview')).toBeVisible();
   await expect(page.getByText('Registry Overview')).toBeVisible();
 });
 
-test('roadmap page groups implemented future and archived work', async ({ page }) => {
+test('roadmap page renders executive center with governed groups', async ({ page }) => {
   await mockGovernanceEndpoints(page);
   await page.goto(`${WEB_BASE}/roadmap`);
 
-  await expect(page.getByRole('heading', { name: 'Roadmap', exact: true })).toBeVisible();
-  await expect(page.getByText('IMPLEMENTED').first()).toBeVisible();
-  await expect(page.getByText('Skill Registry Foundation')).toBeVisible();
-  await expect(page.getByText('Agent Runtime')).toBeVisible();
-  await expect(page.getByText('Archived Placeholders')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Roadmap Center', exact: true })).toBeVisible();
+  await expect(page.getByText('Roadmap executivo')).toBeVisible();
+  await page.getByTestId('roadmap-section-implemented').click({ force: true });
+  await expect(page.getByText('Skill Registry Foundation').first()).toBeVisible();
+  await page.getByTestId('roadmap-section-archived').click({ force: true });
+  await expect(page.getByText('Archived Placeholders').first()).toBeVisible();
 });
+
+
+
+
+

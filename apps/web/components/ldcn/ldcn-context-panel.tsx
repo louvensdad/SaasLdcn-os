@@ -6,6 +6,7 @@ import type { LdcnContext } from '@contracts/ldcn.contract';
 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 
 import { LDCNStatusPill } from './ldcn-status-pill';
@@ -24,13 +25,15 @@ function KeyValue({
 }) {
   return (
     <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">{label}</p>
       <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{value}</p>
     </div>
   );
 }
 
 export function LDCNContextPanel({ className, context, compact = false, ...props }: LDCNContextPanelProps) {
+  const { t } = useLocale();
+
   return (
     <Card
       className={cn('relative overflow-hidden p-4', compact ? 'p-4' : 'p-5', className)}
@@ -40,7 +43,7 @@ export function LDCNContextPanel({ className, context, compact = false, ...props
       <div className="relative space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">Presence context</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">{t('ldcn.context.title')}</p>
             <p className="mt-2 text-lg font-semibold text-[color:var(--text)]">{context.page_title}</p>
             <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{context.summary}</p>
           </div>
@@ -48,10 +51,10 @@ export function LDCNContextPanel({ className, context, compact = false, ...props
         </div>
 
         <div className={cn('grid gap-3', compact ? 'sm:grid-cols-2' : 'md:grid-cols-2')}>
-          <KeyValue label="Route" value={context.route} />
-          <KeyValue label="Phase" value={context.current_phase} />
-          <KeyValue label="Pipeline" value={context.pipeline.readiness_label} />
-          <KeyValue label="Status" value={context.pipeline.status} />
+          <KeyValue label={t('ldcn.context.route')} value={context.route} />
+          <KeyValue label={t('ldcn.context.phase')} value={context.current_phase} />
+          <KeyValue label={t('ldcn.context.pipeline')} value={context.pipeline.readiness_label} />
+          <KeyValue label={t('ldcn.context.status')} value={context.pipeline.status} />
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -63,7 +66,7 @@ export function LDCNContextPanel({ className, context, compact = false, ...props
 
         {context.suggestions.length ? (
           <div className="space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">Reserved suggestions</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">{t('ldcn.context.suggestions')}</p>
             <div className="grid gap-2">
               {context.suggestions.slice(0, compact ? 2 : 3).map((suggestion) => (
                 <div key={suggestion.id} className="rounded-[var(--radius-xl)] border border-white/10 bg-black/10 px-3 py-2">

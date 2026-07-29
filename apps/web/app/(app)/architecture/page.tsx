@@ -1,31 +1,36 @@
 'use client';
 
 import { useEffect } from 'react';
+import { ArrowRight, Boxes, Braces, Cloud, Database, Globe2, Server, Workflow } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { Disclosure } from '@/components/ui/disclosure';
 import { SectionHeader } from '@/components/shell/section-header';
-import {
-  ArchitectureGraphSurface,
-  DeploymentPathSurface,
-  OperationalRail,
-  StackEcosystemMap,
-} from '@/components/visual/engineering-surface';
+import { TopologyGraph } from '@/components/three/topology-graph';
+import { OperationalRail } from '@/components/visual/engineering-surface';
+import { useLocale } from '@/hooks/use-locale';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
 
-const activeRuntimeMap = [
-  'apps/api FastAPI backend',
-  'apps/web Next.js frontend',
-  'packages/contracts shared contracts',
-  'templates local generated bases',
-  'reports governance memory',
+const graphNodes = [
+  { id: 'frontend', icon: Globe2, tone: 'accent' },
+  { id: 'api', icon: Braces, tone: 'accent2' },
+  { id: 'backend', icon: Server, tone: 'success' },
+  { id: 'database', icon: Database, tone: 'warning' },
+  { id: 'queues', icon: Workflow, tone: 'accent' },
+  { id: 'integrations', icon: Cloud, tone: 'accent2' },
 ] as const;
 
-const futureModules = ['future/agents', 'future/engines', 'future/services', 'future/voice'] as const;
-const engines = ['blueprint', 'gatekeeper', 'template_registry', 'skill_registry', 'system_status', 'roadmap'] as const;
-const registries = ['technology registry', 'template registry', 'skill registry', 'project registry'] as const;
+const connections = [
+  ['frontend', 'api'],
+  ['api', 'backend'],
+  ['backend', 'database'],
+  ['backend', 'queues'],
+  ['queues', 'integrations'],
+] as const;
 
 export default function ArchitecturePage() {
+  const { locale, t } = useLocale();
   const setPresenceState = useLDCNStore((state) => state.setPresenceState);
   const setContext = useLDCNStore((state) => state.setContext);
 
@@ -33,96 +38,102 @@ export default function ArchitecturePage() {
     setPresenceState('observing');
     setContext({
       route: '/architecture',
-      page_title: 'Architecture Center',
-      current_phase: 'Platform architecture',
+      page_title: t('architecture.title'),
+      current_phase: t('architecture.phase'),
       pipeline: {
         route: '/architecture',
-        phase: 'Platform architecture',
+        phase: t('architecture.phase'),
         status: 'ready',
-        readiness_label: 'Active runtime map documented',
-        detail: 'Current architecture is visible without generation or deployment.',
+        readiness_label: t('architecture.ready'),
+        detail: t('architecture.description'),
       },
       status: 'observing',
-      summary: 'Active runtime, future modules, engines and registries are separated for governance.',
+      summary: t('architecture.description'),
       suggestions: [],
     });
-  }, [setContext, setPresenceState]);
+  }, [locale, setContext, setPresenceState, t]);
 
   return (
     <div className="space-y-8">
-      <SectionHeader
-        title="Architecture"
-        description="Current LDCN OS platform architecture, separating active runtime, future modules, engines and registries."
-      />
+      <SectionHeader title={t('architecture.title')} description={t('architecture.description')} />
 
-      <ArchitectureGraphSurface
-        title="Architectural Graph"
-        subtitle="High-level local platform topology. This view reads current organization and reports; it does not generate code."
-        hint="Architecture Center"
-        nodes={[
-          { label: 'Contracts', value: 'packages', detail: 'Shared platform contracts', tone: 'accent' },
-          { label: 'API', value: 'apps/api', detail: 'FastAPI route and engine layer', tone: 'success' },
-          { label: 'Web', value: 'apps/web', detail: 'Next.js governance UI', tone: 'accent2' },
-          { label: 'Reports', value: 'reports', detail: 'Audit and validation memory', tone: 'muted' },
-        ]}
-      />
+      <Card className="relative overflow-hidden p-5 md:p-7" data-testid="engineering-architecture-graph">
+        <div className="ambient-grid pointer-events-none absolute inset-0 opacity-25" />
+        <div className="relative space-y-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="ds-caption text-[color:var(--muted)]">{t('architecture.graph.eyebrow')}</p>
+              <h2 className="mt-2 text-2xl font-semibold text-[color:var(--text)]">{t('architecture.graph.title')}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">{t('architecture.graph.description')}</p>
+            </div>
+            <Badge>{t('architecture.graph.compatible')}</Badge>
+          </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <StackEcosystemMap
-          title="Active Runtime Map"
-          nodes={activeRuntimeMap.map((item, index) => ({
-            label: `Runtime ${index + 1}`,
-            value: item,
-            detail: 'Active build/runtime/test surface',
-            tone: index === 0 ? 'success' : index === 1 ? 'accent' : 'muted',
-          }))}
-        />
+          <TopologyGraph
+            className="h-[clamp(20rem,42vh,30rem)] overflow-hidden rounded-[var(--radius-xl)] border border-white/10 bg-black/20"
+            nodes={graphNodes.map(({ id }) => ({ id, label: t(`architecture.node.${id}`) }))}
+            edges={connections.map(([from, to]) => ({ from, to }))}
+            fallback={
+              <div className="grid gap-3 lg:grid-cols-6">
+                {graphNodes.map(({ id, icon: Icon }, index) => (
+                  <div key={id} className="relative">
+                    <div className="h-full rounded-[var(--radius-xl)] border border-white/10 bg-black/20 p-4 shadow-[var(--shadow-soft)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <Icon className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
+                        <span className="h-2 w-2 rounded-full bg-[color:var(--success)] shadow-[0_0_14px_var(--glow)]" />
+                      </div>
+                      <p className="mt-5 text-sm font-semibold text-[color:var(--text)]">{t(`architecture.node.${id}`)}</p>
+                      <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">{t(`architecture.node.${id}.detail`)}</p>
+                    </div>
+                    {index < graphNodes.length - 1 ? (
+                      <ArrowRight className="absolute -right-3 top-1/2 z-10 hidden h-5 w-5 -translate-y-1/2 text-[color:var(--accent)] lg:block" aria-hidden />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            }
+          />
 
-        <DeploymentPathSurface
-          title="Future Modules Map"
-          steps={futureModules.map((item) => ({
-            label: item,
-            detail: 'Reserved for future phases, not active runtime.',
-            tone: 'muted',
-          }))}
-        />
-      </div>
+          <div className="flex flex-wrap gap-2">
+            {connections.map(([from, to]) => <Badge key={`${from}-${to}`}>{t(`architecture.node.${from}`)} → {t(`architecture.node.${to}`)}</Badge>)}
+          </div>
+        </div>
+      </Card>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <OperationalRail
-          title="Engine Overview"
-          items={engines.map((engine) => ({
-            label: engine,
-            value: 'active',
-            detail: 'Deterministic backend engine or registry foundation.',
-            tone: 'success',
-          }))}
+          title={t('architecture.layers.title')}
+          items={[
+            { label: t('architecture.layers.contracts'), value: 'packages/contracts', detail: t('architecture.layers.contracts.detail'), tone: 'accent' },
+            { label: t('architecture.layers.modules'), value: 'apps/api + apps/web', detail: t('architecture.layers.modules.detail'), tone: 'success' },
+            { label: t('architecture.layers.integrations'), value: 'GitHub + GitLab', detail: t('architecture.layers.integrations.detail'), tone: 'accent2' },
+            { label: t('architecture.layers.governance'), value: 'Gatekeeper', detail: t('architecture.layers.governance.detail'), tone: 'warning' },
+          ]}
         />
-
-        <OperationalRail
-          title="Registry Overview"
-          items={registries.map((registry) => ({
-            label: registry,
-            value: 'indexed',
-            detail: 'Local platform registry; no external marketplace integration.',
-            tone: 'accent',
-          }))}
-        />
+        <Card className="space-y-5 p-5">
+          <Boxes className="h-6 w-6 text-[color:var(--accent)]" aria-hidden />
+          <div>
+            <p className="ds-caption text-[color:var(--muted)]">{t('architecture.summary.eyebrow')}</p>
+            <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{t('architecture.summary.title')}</h3>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('architecture.summary.description')}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {graphNodes.map(({ id }) => <Badge key={id}>{t(`architecture.node.${id}`)}</Badge>)}
+          </div>
+        </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        {[
-          ['Dependency Overview', 'Dependency graph, architectural graph and engineering readiness surfaces are active.'],
-          ['Infrastructure Overview', 'Infrastructure recommendations and topology are local deterministic previews.'],
-          ['Report Sources', 'active_runtime_map, future_modules_map, template reports and skill audit inform this center.'],
-        ].map(([title, detail]) => (
-          <Card key={title} className="space-y-3 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{title}</p>
-            <p className="text-sm leading-6 text-[color:var(--muted)]">{detail}</p>
-            <Badge>governed</Badge>
-          </Card>
-        ))}
-      </div>
+      <Disclosure title={t('architecture.advanced.title')} description={t('architecture.advanced.description')}>
+        <div className="grid gap-4 md:grid-cols-3">
+          {['runtime', 'engines', 'registries'].map((item) => (
+            <Card key={item} className="space-y-3 p-5">
+              <p className="ds-subsection text-[color:var(--text)]">{t(`architecture.advanced.${item}`)}</p>
+              <p className="ds-caption text-[color:var(--muted)]">{t(`architecture.advanced.${item}.detail`)}</p>
+              <Badge>{t('architecture.ready')}</Badge>
+            </Card>
+          ))}
+        </div>
+      </Disclosure>
     </div>
   );
 }

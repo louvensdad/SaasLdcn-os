@@ -1,0 +1,1317 @@
+openapi: "3.1.0"
+info:
+  title: "Game Manager API"
+  version: "1.0.0"
+  description: >
+    API RESTful para o painel SaaS multi-login de gerenciamento de contas/instâncias de jogos.
+    Permite centralizar o controle de várias contas, com inicialização em lote, monitoramento
+    de status (online/offline, FPS, RAM) e execução de macros/scripts de automação por conta.
+    Para atualizações em tempo real, conectar ao WebSocket descrito no final deste documento.
+  contact:
+    name: "Suporte"
+    email: "suporte@gamepanel.example.com"
+servers:
+  - url: "https://api.gamepanel.example.com/v1"
+    description: "Servidor de produção"
+  - url: "http://localhost:8000/v1"
+    description: "Servidor de desenvolvimento local"
+
+tags:
+  - name: "Autenticação"
+    description: "Endpoint de registro, login e refresh de token"
+  - name: "Contas"
+    description: "Gerenciamento de contas do jogo"
+  - name: "Instâncias"
+    description: "Controle e monitoramento de instâncias de jogo"
+  - name: "Macros"
+    description: "Criação, associação e execução de macros"
+  - name: "Logs de Execução"
+    description: "Consulta de logs de execução de macros"
+  - name: "Admin"
+    description: "Endpoints administrativos (apenas para administradores)"
+
+paths:
+  /auth/register:
+    post:
+      tags:
+        - "Autenticação"
+      summary: "Registrar novo usuário"
+      description: "Cria uma nova conta de usuário com as credenciais fornecidas."
+      operationId: "registerUser"
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: "Usuário registrado com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          description: "Email já cadastrado"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      tags:
+        - "Autenticação"
+      summary: "Realizar login"
+      description: "Autentica o usuário e retorna tokens JWT (access e refresh)."
+      operationId: "loginUser"
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: "Login bem-sucedido"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/refresh:
+    post:
+      tags:
+        - "Autenticação"
+      summary: "Renovar access token"
+      description: "Utiliza o refresh token para obter um novo access token e opcionalmente um novo refresh token."
+      operationId: "refreshToken"
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: "Tokens renovados com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/me:
+    get:
+      tags:
+        - "Autenticação"
+      summary: "Obter dados do usuário atual"
+      description: "Retorna as informações do usuário autenticado."
+      operationId: "getCurrentUser"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "Dados do usuário"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /accounts:
+    post:
+      tags:
+        - "Contas"
+      summary: "Adicionar nova conta de jogo"
+      description: "Adiciona uma nova conta do jogo no painel. As credenciais são armazenadas de forma segura."
+      operationId: "createAccount"
+      x-business-rule:
+        - "Cada conta cadastrada vira uma instância isolada com seu próprio estado (online/offline)"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAccountRequest"
+      responses:
+        "201":
+          description: "Conta criada com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    get:
+      tags:
+        - "Contas"
+      summary: "Listar contas do usuário"
+      description: "Retorna a lista de contas associadas ao usuário autenticado."
+      operationId: "listAccounts"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "page"
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: "Número da página (paginação)"
+        - name: "per_page"
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: "Itens por página"
+      responses:
+        "200":
+          description: "Lista de contas"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AccountResponse"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /accounts/{account_id}:
+    get:
+      tags:
+        - "Contas"
+      summary: "Obter detalhes de uma conta"
+      description: "Retorna as informações detalhadas de uma conta específica."
+      operationId: "getAccount"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "account_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da conta"
+      responses:
+        "200":
+          description: "Detalhes da conta"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "404":
+          description: "Conta não encontrada"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    put:
+      tags:
+        - "Contas"
+      summary: "Atualizar conta"
+      description: "Atualiza as informações de uma conta (ex.: credenciais, apelido)."
+      operationId: "updateAccount"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "account_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da conta"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAccountRequest"
+      responses:
+        "200":
+          description: "Conta atualizada com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    delete:
+      tags:
+        - "Contas"
+      summary: "Excluir conta"
+      description: "Remove uma conta e sua instância associada (se houver)."
+      operationId: "deleteAccount"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "account_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da conta"
+      responses:
+        "204":
+          description: "Conta excluída com sucesso"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances:
+    get:
+      tags:
+        - "Instâncias"
+      summary: "Listar instâncias do usuário"
+      description: "Retorna a lista de instâncias associadas ao usuário, com status atual."
+      operationId: "listInstances"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "status"
+          in: query
+          schema:
+            type: string
+            enum: ["online", "offline"]
+          description: "Filtrar por status"
+        - name: "page"
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: "per_page"
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: "Lista de instâncias"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InstanceResponse"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/start:
+    post:
+      tags:
+        - "Instâncias"
+      summary: "Iniciar todas as instâncias offline"
+      description: >
+        Inicia todas as instâncias do usuário que estão atualmente offline,
+        respeitando o limite de instâncias simultâneas do plano.
+      operationId: "startAllInstances"
+      x-business-rule:
+        - "O número de instâncias simultâneas é limitado pelo plano do usuário"
+        - "Uma instância não pode ser iniciada duas vezes ao mesmo tempo"
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: "Comando de inicialização em lote enviado. Detalhes das instâncias afetadas."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  started:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InstanceResponse"
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        instance_id:
+                          type: integer
+                        error:
+                          type: string
+        "429":
+          description: "Limite de instâncias simultâneas excedido"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instance_id}:
+    get:
+      tags:
+        - "Instâncias"
+      summary: "Obter detalhes da instância"
+      description: "Retorna informações detalhadas de uma instância, incluindo status e métricas (FPS, RAM se disponível)."
+      operationId: "getInstance"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "instance_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da instância"
+      responses:
+        "200":
+          description: "Detalhes da instância"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instance_id}/start:
+    post:
+      tags:
+        - "Instâncias"
+      summary: "Iniciar instância"
+      description: "Inicia uma instância específica, validando se não está já em execução e se o limite do plano permite."
+      operationId: "startInstance"
+      x-business-rule:
+        - "Uma instância não pode ser iniciada duas vezes ao mesmo tempo"
+        - "O número de instâncias simultâneas é limitado pelo plano do usuário"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "instance_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da instância"
+      responses:
+        "200":
+          description: "Instância iniciada com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceResponse"
+        "409":
+          description: "Instância já está em execução"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: "Limite de instâncias simultâneas excedido"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /instances/{instance_id}/stop:
+    post:
+      tags:
+        - "Instâncias"
+      summary: "Parar instância"
+      description: "Para uma instância em execução."
+      operationId: "stopInstance"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "instance_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da instância"
+      responses:
+        "200":
+          description: "Instância parada com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceResponse"
+        "409":
+          description: "Instância não está em execução"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /macros:
+    post:
+      tags:
+        - "Macros"
+      summary: "Criar nova macro"
+      description: "Cria uma nova macro de automação. O script é enviado como string."
+      operationId: "createMacro"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMacroRequest"
+      responses:
+        "201":
+          description: "Macro criada com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MacroResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    get:
+      tags:
+        - "Macros"
+      summary: "Listar macros do usuário"
+      description: "Retorna a lista de macros pertencentes ao usuário autenticado."
+      operationId: "listMacros"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "page"
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: "per_page"
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: "Lista de macros"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MacroResponse"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /macros/{macro_id}:
+    get:
+      tags:
+        - "Macros"
+      summary: "Obter detalhes de uma macro"
+      operationId: "getMacro"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "macro_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da macro"
+      responses:
+        "200":
+          description: "Detalhes da macro"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MacroResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    put:
+      tags:
+        - "Macros"
+      summary: "Atualizar macro"
+      operationId: "updateMacro"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "macro_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da macro"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMacroRequest"
+      responses:
+        "200":
+          description: "Macro atualizada com sucesso"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MacroResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    delete:
+      tags:
+        - "Macros"
+      summary: "Excluir macro"
+      operationId: "deleteMacro"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "macro_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da macro"
+      responses:
+        "204":
+          description: "Macro excluída com sucesso"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /macros/{macro_id}/associate:
+    post:
+      tags:
+        - "Macros"
+      summary: "Associar macro a instâncias"
+      description: "Associa uma macro a uma ou mais instâncias do usuário, permitindo execução direcionada."
+      operationId: "associateMacro"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "macro_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da macro"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - instance_ids
+              properties:
+                instance_ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: "Lista de IDs de instâncias para associar"
+      responses:
+        "200":
+          description: "Macro associada com sucesso às instâncias"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MacroResponse"
+        "404":
+          description: "Macro ou instância não encontrada"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /macros/{macro_id}/execute:
+    post:
+      tags:
+        - "Macros"
+      summary: "Executar macro em instâncias associadas"
+      description: >
+        Dispara a execução da macro em todas as instâncias associadas que estão online.
+        Cada execução gera um log com timestamp e resultado.
+      operationId: "executeMacro"
+      x-business-rule:
+        - "Toda execução de macro fica registrada em log com timestamp e resultado"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "macro_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID da macro"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                instance_ids:
+                  type: array
+                  items:
+                    type: integer
+                  description: >
+                    Lista opcional de IDs de instância para limitar a execução.
+                    Se omitida, executa em todas as instâncias associadas e online.
+      responses:
+        "200":
+          description: "Execução iniciada. Retorna os logs recém-criados."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExecutionLogResponse"
+        "400":
+          description: "Nenhuma instância online para executar"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /logs:
+    get:
+      tags:
+        - "Logs de Execução"
+      summary: "Listar logs de execução"
+      description: "Retorna logs de execução de macros, com suporte a filtros por instância, macro e período."
+      operationId: "listExecutionLogs"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "instance_id"
+          in: query
+          schema:
+            type: integer
+          description: "Filtrar por ID da instância"
+        - name: "macro_id"
+          in: query
+          schema:
+            type: integer
+          description: "Filtrar por ID da macro"
+        - name: "start_date"
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: "Data/hora inicial (inclusive)"
+        - name: "end_date"
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: "Data/hora final (inclusive)"
+        - name: "page"
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: "per_page"
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: "Lista de logs"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ExecutionLogResponse"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /logs/{log_id}:
+    get:
+      tags:
+        - "Logs de Execução"
+      summary: "Obter detalhes de um log de execução"
+      operationId: "getExecutionLog"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "log_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID do log"
+      responses:
+        "200":
+          description: "Detalhes do log"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionLogResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /admin/users:
+    get:
+      tags:
+        - "Admin"
+      summary: "Listar todos os usuários (admin)"
+      description: "Retorna a lista de todos os usuários cadastrados. Requer papel de administrador."
+      operationId: "adminListUsers"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "page"
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: "per_page"
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: "Lista de usuários"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UserAdminResponse"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+        "403":
+          description: "Acesso proibido (não é admin)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /admin/users/{user_id}:
+    get:
+      tags:
+        - "Admin"
+      summary: "Obter detalhes de um usuário (admin)"
+      operationId: "adminGetUser"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: "user_id"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: "ID do usuário"
+      responses:
+        "200":
+          description: "Detalhes do usuário"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserAdminResponse"
+        "403":
+          description: "Acesso proibido"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+x-summary: >
+  Este documento descreve a API RESTful do Game Manager. Para monitoramento em
+  tempo real de status de instâncias (FPS, RAM, online/offline) e progresso de
+  execução de macros, utilize o WebSocket:
+
+  Connect to: `/ws/v1/ws/status`
+
+  Após autenticação via token JWT (query parameter `token` ou header `Sec-WebSocket-Protocol`),
+  o servidor enviará mensagens JSON com o formato:
+
+  ```json
+  {
+    "type": "instance_status",
+    "data": {
+      "instance_id": 1,
+      "status": "online",
+      "fps": 60,
+      "ram_mb": 512.3,
+      "timestamp": "2025-03-15T10:30:00Z"
+    }
+  }
+  ```
+
+  Também emite eventos `macro_execution_progress` com o progresso da macro.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Token JWT obtido no endpoint /auth/login. Enviar no header Authorization: Bearer <token>"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: "Descrição do erro."
+
+    ValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationErrorItem"
+
+    ValidationErrorItem:
+      type: object
+      properties:
+        loc:
+          type: array
+          items:
+            type: string
+          description: "Localização do erro (ex.: ['body', 'email'])"
+        msg:
+          type: string
+          description: "Mensagem de erro"
+        type:
+          type: string
+          description: "Tipo do erro (ex.: 'value_error')"
+
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+          description: "Email do usuário (será usado para login)"
+        password:
+          type: string
+          minLength: 8
+          description: "Senha (mínimo 8 caracteres)"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: "Nome do usuário"
+
+    LoginRequest:
+      type: object
+      properties:
+        grant_type:
+          type: string
+          enum:
+            - password
+          description: "Tipo de concessão. Sempre 'password'."
+        username:
+          type: string
+          description: "Email do usuário"
+        password:
+          type: string
+          description: "Senha do usuário"
+        client_id:
+          type: string
+          description: "ID do cliente (opcional)"
+        client_secret:
+          type: string
+          description: "Segredo do cliente (opcional)"
+      required:
+        - grant_type
+        - username
+        - password
+
+    RefreshRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          description: "Refresh token obtido no login"
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: "Token JWT de acesso (curta duração, ex.: 30 minutos)"
+        refresh_token:
+          type: string
+          description: "Token de renovação (longa duração, ex.: 7 dias)"
+        token_type:
+          type: string
+          default: "bearer"
+        expires_in:
+          type: integer
+          description: "Tempo de vida do access token em segundos"
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum:
+            - user
+            - admin
+        plan:
+          type: string
+          enum:
+            - free
+            - pro
+            - enterprise
+          description: "Plano atual do usuário (influencia limite de instâncias)"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UserAdminResponse:
+      allOf:
+        - $ref: "#/components/schemas/UserResponse"
+        - type: object
+          properties:
+            is_active:
+              type: boolean
+            instances_count:
+              type: integer
+              description: "Número de instâncias ativas atualmente"
+
+    CreateAccountRequest:
+      type: object
+      required:
+        - game_username
+        - game_password
+      properties:
+        game_username:
+          type: string
+          description: "Nome de usuário da conta do jogo"
+        game_password:
+          type: string
+          description: "Senha da conta do jogo"
+        nickname:
+          type: string
+          description: "Apelido opcional para identificar a conta no painel"
+
+    UpdateAccountRequest:
+      type: object
+      properties:
+        game_username:
+          type: string
+        game_password:
+          type: string
+        nickname:
+          type: string
+
+    AccountResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+          description: "ID do usuário proprietário"
+        game_username:
+          type: string
+        nickname:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        instance:
+          $ref: "#/components/schemas/InstanceResponse"
+
+    InstanceResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        account_id:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+            - online
+            - offline
+            - starting
+            - stopping
+            - error
+        metrics:
+          type: object
+          properties:
+            fps:
+              type: number
+              nullable: true
+            ram_mb:
+              type: number
+              nullable: true
+            cpu_percent:
+              type: number
+              nullable: true
+        last_seen:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateMacroRequest:
+      type: object
+      required:
+        - name
+        - script
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          description: "Nome descritivo da macro"
+        description:
+          type: string
+          description: "Descrição opcional"
+        script:
+          type: string
+          description: "Conteúdo do script de automação (ex.: Python, Lua)"
+
+    UpdateMacroRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        script:
+          type: string
+
+    MacroResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        script:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        associated_instances:
+          type: array
+          items:
+            type: integer
+          description: "IDs das instâncias associadas"
+
+    ExecutionLogResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        instance_id:
+          type: integer
+          format: int64
+        macro_id:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - success
+            - failure
+            - cancelled
+        result:
+          type: object
+          nullable: true
+          description: "Resultado da execução (estrutura livre, ex.: JSONB)"
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+  responses:
+    Unauthorized:
+      description: "Não autenticado. Token JWT ausente ou inválido."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: "Acesso negado. Permissão insuficiente."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: "Recurso não encontrado."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ValidationError:
+      description: "Erro de validação dos parâmetros da requisição."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+    RateLimit:
+      description: "Limite de requisições excedido."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalServerError:
+      description: "Erro interno do servidor."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

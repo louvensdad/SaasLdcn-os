@@ -3,6 +3,8 @@
   "name": "Next.js Static Landing",
   "description": "Deterministic static landing page foundation for LDCN OS local generation V0.",
   "runtime": "local_static_v0",
+  "supported_locales": ["pt-BR", "en-US", "es-ES", "fr-FR"],
+  "fallback_locale": "en-US",
   "metadata": {
     "framework": "nextjs",
     "mode": "static",

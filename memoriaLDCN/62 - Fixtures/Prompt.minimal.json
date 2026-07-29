@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "prompt_version": "1.0.0",
+  "project_type": "web_application",
+  "status": "draft",
+  "original_intent": {"text": "Quero uma lista de tarefas"},
+  "requirements": {"confirmed": [], "inferred": [], "suggested": [], "rejected": []},
+  "acceptance_criteria": [],
+  "assumptions": [],
+  "approval": {"approved_by": null, "approved_at": null}
+}

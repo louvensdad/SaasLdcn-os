@@ -8,8 +8,11 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { AnimatedCounter } from '@/components/motion/animated-counter';
+import { DonutChart } from '@/components/visual/donut-chart';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 
 type Tone = 'accent' | 'accent2' | 'success' | 'warning' | 'danger' | 'muted';
@@ -44,6 +47,7 @@ export function ArchitectureGraphSurface({
   readonly className?: string;
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const { t } = useLocale();
 
   return (
     <Card className={cn('cinematic-surface relative overflow-hidden p-0', className)}>
@@ -52,14 +56,14 @@ export function ArchitectureGraphSurface({
       <div className="relative grid gap-4 p-5 md:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
-              {hint ?? 'Architecture graph engine'}
+            <p className="ds-caption text-[color:var(--muted)]">
+              {hint ?? t('engineering.graphEngine')}
             </p>
             <h3 className="mt-2 text-xl font-semibold text-[color:var(--text)]">{title}</h3>
             {subtitle ? <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">{subtitle}</p> : null}
           </div>
           <Badge className="shrink-0 border-[color-mix(in_srgb,var(--accent)_28%,transparent)] bg-white/5">
-            Live topology
+            {t('engineering.liveTopology')}
           </Badge>
         </div>
 
@@ -77,7 +81,7 @@ export function ArchitectureGraphSurface({
             >
               <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--muted)]">
+                <p className="ds-caption text-[color:var(--muted)]">
                   {node.label}
                 </p>
                 <div className="h-2 w-2 rounded-full bg-[color:var(--accent)] shadow-[0_0_16px_var(--glow)]" />
@@ -107,6 +111,7 @@ export function ReadinessRing({
   readonly tone?: Tone;
   readonly className?: string;
 }) {
+  const { t } = useLocale();
   const clamped = Math.max(0, Math.min(100, value));
   const accentVar = tone === 'warning' ? 'var(--warning)' : tone === 'danger' ? 'var(--danger)' : tone === 'success' ? 'var(--success)' : 'var(--accent)';
 
@@ -116,24 +121,18 @@ export function ReadinessRing({
       <div className="relative grid gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{title}</p>
-            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{caption ?? 'Operational readiness surface'}</p>
+            <p className="ds-subsection text-[color:var(--text)]">{title}</p>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{caption ?? t('engineering.readinessSurface')}</p>
           </div>
           <Badge className={toneClasses[tone]}>{label}</Badge>
         </div>
 
-        <div className="mx-auto grid h-40 w-40 place-items-center rounded-full border border-white/10 bg-black/20">
-          <div
-            className="grid h-32 w-32 place-items-center rounded-full border border-white/10"
-            style={{
-              background: `conic-gradient(${accentVar} 0 ${clamped}%, rgba(255,255,255,0.06) ${clamped}% 100%)`,
-            }}
-          >
-            <div className="grid h-24 w-24 place-items-center rounded-full border border-white/10 bg-[color:var(--surface)]">
-              <span className="text-3xl font-semibold text-[color:var(--text)]">{clamped}</span>
-            </div>
+        <DonutChart value={clamped} size={160} stroke={14} color={accentVar} className="mx-auto">
+          <div className="text-center">
+            <AnimatedCounter value={clamped} className="text-3xl font-semibold text-[color:var(--text)]" />
+            <p className="mt-0.5 t-overline">{t('engineering.percent')}</p>
           </div>
-        </div>
+        </DonutChart>
       </div>
     </Card>
   );
@@ -150,16 +149,18 @@ export function ComplexityRadar({
   readonly axes: readonly { label: string; value: number }[];
   readonly className?: string;
 }) {
+  const { t } = useLocale();
   const size = 240;
   const center = size / 2;
   const radius = 82;
   const max = 100;
-  const normalizedAxes = axes.length ? axes : [{ label: 'Operations', value: score }];
+  const normalizedAxes = axes.length ? axes : [{ label: t('engineering.operations'), value: score }];
   const points = normalizedAxes.map((axis, index) => {
     const angle = -Math.PI / 2 + (index * Math.PI * 2) / normalizedAxes.length;
     const distance = radius * Math.max(0.26, Math.min(1, axis.value / max));
     return `${center + Math.cos(angle) * distance},${center + Math.sin(angle) * distance}`;
   });
+  const shouldReduceMotion = useReducedMotion();
 
   return (
     <Card className={cn('relative overflow-hidden p-5', className)}>
@@ -167,10 +168,10 @@ export function ComplexityRadar({
       <div className="relative grid gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{title}</p>
-            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">Complexity radar and operational burden are derived from the current architecture selection.</p>
+            <p className="ds-subsection text-[color:var(--text)]">{title}</p>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('engineering.complexityDetail')}</p>
           </div>
-          <Badge className="border-[color-mix(in_srgb,var(--accent)_28%,transparent)] bg-white/5">{score} score</Badge>
+          <Badge className="border-[color-mix(in_srgb,var(--accent)_28%,transparent)] bg-white/5">{t('engineering.score', { score })}</Badge>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)] lg:items-center">
@@ -203,12 +204,20 @@ export function ComplexityRadar({
                   />
                 );
               })}
-              <polygon
-                points={points.join(' ')}
-                fill="color-mix(in srgb, var(--accent) 22%, transparent)"
-                stroke="var(--accent)"
-                strokeWidth="2"
-              />
+              <motion.g
+                style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+                initial={shouldReduceMotion ? undefined : { scale: 0.45, opacity: 0 }}
+                whileInView={shouldReduceMotion ? undefined : { scale: 1, opacity: 1 }}
+                viewport={{ once: true, margin: '0px 0px -10% 0px' }}
+                transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <polygon
+                  points={points.join(' ')}
+                  fill="color-mix(in srgb, var(--accent) 22%, transparent)"
+                  stroke="var(--accent)"
+                  strokeWidth="2"
+                />
+              </motion.g>
               <circle cx={center} cy={center} r="8" fill="var(--accent-2)" opacity="0.9" />
             </svg>
           </div>
@@ -216,14 +225,19 @@ export function ComplexityRadar({
           <div className="grid gap-3 sm:grid-cols-2">
             {normalizedAxes.map((axis) => (
               <div key={axis.label} className="rounded-[var(--radius-xl)] border border-white/10 bg-black/15 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">{axis.label}</p>
+                <p className="ds-caption text-[color:var(--muted)]">{axis.label}</p>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/5">
-                  <div
+                  <motion.div
                     className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--accent-2))]"
-                    style={{ width: `${Math.max(12, Math.min(100, axis.value))}%` }}
+                    initial={shouldReduceMotion ? false : { width: 0 }}
+                    whileInView={{ width: `${Math.max(12, Math.min(100, axis.value))}%` }}
+                    viewport={{ once: true, margin: '0px 0px -10% 0px' }}
+                    transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
                   />
                 </div>
-                <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">{axis.value}/100</p>
+                <p className="mt-2 text-sm font-semibold text-[color:var(--text)]">
+                  <AnimatedCounter value={axis.value} />/100
+                </p>
               </div>
             ))}
           </div>
@@ -242,18 +256,19 @@ export function OperationalRail({
   readonly items: readonly { label: string; value: string; detail?: string; tone?: Tone }[];
   readonly className?: string;
 }) {
+  const { t } = useLocale();
   return (
     <Card className={cn('relative overflow-hidden p-5', className)}>
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,transparent,rgba(255,255,255,0.02),transparent)]" />
       <div className="relative grid gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{title}</p>
-            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">Operational intelligence rail with synchronized runtime signals.</p>
+            <p className="ds-subsection text-[color:var(--text)]">{title}</p>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('engineering.operationalRail')}</p>
           </div>
-          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-[color:var(--muted)]">
+          <div className="ds-caption flex items-center gap-2 text-[color:var(--muted)]">
             <Sparkles className="h-4 w-4 text-[color:var(--accent)]" />
-            Live
+            {t('engineering.live')}
           </div>
         </div>
 
@@ -261,7 +276,7 @@ export function OperationalRail({
           {items.map((item) => (
             <div key={item.label} className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">{item.label}</p>
+                <p className="ds-caption text-[color:var(--muted)]">{item.label}</p>
                 <span className={cn('h-2.5 w-2.5 rounded-full shadow-[0_0_14px_var(--glow)]', item.tone === 'warning' ? 'bg-[color:var(--warning)]' : item.tone === 'danger' ? 'bg-[color:var(--danger)]' : item.tone === 'success' ? 'bg-[color:var(--success)]' : 'bg-[color:var(--accent)]')} />
               </div>
               <p className="mt-3 text-lg font-semibold text-[color:var(--text)]">{item.value}</p>
@@ -283,13 +298,14 @@ export function StackEcosystemMap({
   readonly nodes: readonly { label: string; value: string; detail?: string; tone?: Tone }[];
   readonly className?: string;
 }) {
+  const { t } = useLocale();
   return (
     <Card className={cn('relative overflow-hidden p-5', className)}>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--accent)_8%,transparent),transparent_38%)]" />
       <div className="relative grid gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{title}</p>
-          <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">Connected ecosystem nodes describe how the current stack behaves at runtime.</p>
+          <p className="ds-subsection text-[color:var(--text)]">{title}</p>
+          <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('engineering.ecosystemDetail')}</p>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           {nodes.map((node, index) => (
@@ -301,7 +317,7 @@ export function StackEcosystemMap({
               )}
             >
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">{node.label}</p>
+                <p className="ds-caption text-[color:var(--muted)]">{node.label}</p>
                 <Badge className="border-white/10 bg-white/5 text-[color:var(--text)]">{node.value}</Badge>
               </div>
               {node.detail ? <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">{node.detail}</p> : null}
@@ -322,14 +338,15 @@ export function DeploymentPathSurface({
   readonly steps: readonly { label: string; detail: string; tone?: Tone }[];
   readonly className?: string;
 }) {
+  const { t } = useLocale();
   return (
     <Card className={cn('relative overflow-hidden p-5', className)}>
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),transparent)]" />
       <div className="relative grid gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{title}</p>
-            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">Deployment flow visualization for blueprint, contract, validation, and registry phases.</p>
+            <p className="ds-subsection text-[color:var(--text)]">{title}</p>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t('engineering.deploymentDetail')}</p>
           </div>
           <Workflow className="h-5 w-5 text-[color:var(--accent)]" aria-hidden />
         </div>
@@ -365,7 +382,7 @@ export function SurfaceLabel({
 }) {
   return (
     <div className="rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] p-4">
-      <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
+      <div className="ds-caption flex items-center gap-2 text-[color:var(--muted)]">
         {icon}
         {label}
       </div>

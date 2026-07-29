@@ -157,6 +157,60 @@ function generationResult(status: 'generated' | 'blocked' = 'generated') {
   };
 }
 
+function backendGenerationManifest(status: 'previewed' | 'generated' | 'blocked' = 'previewed') {
+  const blocked = status === 'blocked';
+  return {
+    contractVersion: '1.0.0',
+    generation_id: 'backendgen_preview',
+    project_id: 'project_local',
+    project_name: 'Local Static Project',
+    status,
+    target: {
+      language: 'typescript',
+      framework: 'nextjs',
+      output_path: 'generated-projects/active/backend-project_local',
+      project_name: 'Local Static Project',
+    },
+    profile: {
+      profile_id: 'basic_api',
+      capabilities: ['sqlite', 'health', 'swagger'],
+      database: 'sqlite',
+      complexity: 'basic',
+    },
+    template_id: 'nestjs-basic-api',
+    template_name: 'NestJS Basic API',
+    output_path: 'generated-projects/active/backend-project_local',
+    artifacts: blocked ? [] : [
+      { contractVersion: '1.0.0', id: 'artifact_package', kind: 'file', relative_path: 'package.json', size_bytes: 256, checksum: 'pkg' },
+      { contractVersion: '1.0.0', id: 'artifact_main', kind: 'file', relative_path: 'src/main.ts', size_bytes: 180, checksum: 'main' },
+    ],
+    file_tree: blocked ? [] : ['package.json', 'src', 'src/main.ts', 'src/modules', 'src/modules/items/items.module.ts'],
+    validation: {
+      contractVersion: '1.0.0',
+      status: blocked ? 'blocked' : 'passed',
+      generation_enabled: !blocked,
+      security_gate: blocked ? 'blocked' : 'passed',
+      handoff_readiness: blocked ? 'blocked' : 'ready',
+      checks: [
+        { id: 'handoff_ready', status: blocked ? 'blocked' : 'passed', message: blocked ? 'Generation Disabled' : 'Generation handoff is ready.' },
+      ],
+      failures: blocked ? [
+        { code: 'invalid_handoff', message: 'Generation Disabled: required handoff flow is blocked or incomplete.', recoverable: true, related_ids: ['project_local'] },
+      ] : [],
+    },
+    metrics: {
+      contractVersion: '1.0.0',
+      file_count: blocked ? 0 : 5,
+      directory_count: blocked ? 0 : 3,
+      total_size_bytes: blocked ? 0 : 1024,
+      complexity: 'basic',
+      framework: 'nestjs',
+      template_id: 'nestjs-basic-api',
+    },
+    metadata: { no_ai: true, no_agents: true, no_deploy: true },
+  };
+}
+
 function generatedFilesFixture() {
   return {
     contractVersion: '1.0.0',
@@ -222,6 +276,53 @@ function preparedDownloadFixture() {
       blocked_files: [],
       blocked_count: 0,
     },
+  };
+}
+
+function qualityGateFixture(status: 'passed' | 'failed' = 'passed') {
+  const failed = status === 'failed';
+  return {
+    contractVersion: '1.0.0',
+    project_id: 'project_local',
+    framework: 'nestjs',
+    template_id: 'nestjs-basic-api',
+    profile_id: 'basic_api',
+    passed: !failed,
+    failed,
+    score: failed ? 68 : 97,
+    checks: [
+      {
+        contractVersion: '1.0.0',
+        id: 'nestjs_package',
+        label: 'NestJS package.json exists',
+        category: 'structure',
+        status: 'passed',
+        required: true,
+        message: 'package.json exists.',
+        paths: ['package.json'],
+      },
+      {
+        contractVersion: '1.0.0',
+        id: 'nestjs_main',
+        label: 'NestJS src/main.ts exists',
+        category: 'structure',
+        status: failed ? 'failed' : 'passed',
+        required: true,
+        message: failed ? 'src/main.ts is missing.' : 'src/main.ts exists.',
+        paths: ['src/main.ts'],
+      },
+    ],
+    warnings: failed ? ['ZIP not prepared yet; root containment will be validated when a ZIP exists.'] : [],
+    missing_files: failed ? ['src/main.ts'] : [],
+    security_findings: failed ? [
+      {
+        contractVersion: '1.0.0',
+        code: 'hardcoded_secret',
+        severity: 'high',
+        message: 'Secret-like hardcoded value detected.',
+        path: 'src/config/app.config.ts',
+      },
+    ] : [],
   };
 }
 
@@ -292,11 +393,24 @@ async function mockProject(
   await page.route(`${API_BASE}/generation/project_local/download`, async (route) =>
     route.fulfill({ status: 200, contentType: 'application/zip', body: 'PK mock zip' }),
   );
+  await page.route(`${API_BASE}/generated-projects/project_local/quality-check`, async (route) => route.fulfill({ json: qualityGateFixture() }));
   await page.route(`${API_BASE}/templates/landing-page`, async (route) => route.fulfill({ json: templateDetailFixture() }));
   await page.route(`${API_BASE}/generation/local-run`, async (route) => {
     if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
     await route.fulfill({ json: generationResult(status) });
   });
+  await page.route(`${API_BASE}/backend-generation/templates`, async (route) => route.fulfill({
+    json: {
+      contractVersion: '1.0.0',
+      templates: [
+        { contractVersion: '1.0.0', template_id: 'fastapi-basic-api', name: 'FastAPI Basic API', language: 'python', framework: 'fastapi', profiles: ['basic_api'], implemented: true, capabilities: ['sqlite', 'health'] },
+        { contractVersion: '1.0.0', template_id: 'spring-boot-basic-rest-api', name: 'Spring Boot Basic REST API', language: 'java', framework: 'spring_boot', profiles: ['basic_rest_api'], implemented: true, capabilities: ['h2', 'health'] },
+        { contractVersion: '1.0.0', template_id: 'nestjs-basic-api', name: 'NestJS Basic API', language: 'typescript', framework: 'nestjs', profiles: ['basic_api'], implemented: true, capabilities: ['sqlite', 'health'] },
+      ],
+    },
+  }));
+  await page.route(`${API_BASE}/backend-generation/preview`, async (route) => route.fulfill({ json: backendGenerationManifest('previewed') }));
+  await page.route(`${API_BASE}/backend-generation/run`, async (route) => route.fulfill({ json: backendGenerationManifest(status === 'blocked' ? 'blocked' : 'generated') }));
 }
 
 async function openAndFill(page: Page) {
@@ -395,4 +509,54 @@ test('binary generated file shows unsupported preview presence', async ({ page }
 
   await expect(page.getByText('Unsupported preview')).toBeVisible();
   await expect(page.getByText('Preview blocked for binary/large file')).toBeVisible();
+});
+
+test('backend generation explorer shows empty state before preview', async ({ page }) => {
+  await mockProject(page);
+  await page.goto(PROJECT_URL);
+
+  await expect(page.getByTestId('backend-generation-explorer-section')).toBeVisible();
+  await expect(page.getByTestId('backend-generation-empty-state')).toBeVisible();
+  await expect(page.getByText('No backend manifest yet')).toBeVisible();
+});
+
+test('backend generation preview renders manifest metrics and structure', async ({ page }) => {
+  await mockProject(page);
+  await page.goto(PROJECT_URL);
+  await page.getByRole('button', { name: 'Preview' }).click();
+
+  await expect(page.getByTestId('backend-generation-explorer-section').getByText('previewed')).toBeVisible();
+  await expect(page.getByText('Generated Metrics')).toBeVisible();
+  await expect(page.getByText('NestJS Basic API')).toBeVisible();
+  await expect(page.getByText('src/main.ts')).toBeVisible();
+});
+
+test('backend generation blocked state is visible', async ({ page }) => {
+  await mockProject(page, 'blocked');
+  await page.goto(PROJECT_URL);
+  await page.getByRole('button', { name: 'Generate Backend' }).click();
+
+  await expect(page.getByTestId('backend-generation-blocked-state')).toBeVisible();
+  await expect(page.getByText('Generation Disabled: required handoff flow is blocked or incomplete.')).toBeVisible();
+});
+
+test('backend generation run keeps download zip workflow available', async ({ page }) => {
+  await mockProject(page);
+  await page.goto(PROJECT_URL);
+  await page.getByRole('button', { name: 'Generate Backend' }).click();
+  await expect(page.getByTestId('backend-generation-explorer-section').getByText('generated', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Prepare Download' }).click();
+
+  await expect(page.getByRole('link', { name: 'Download ZIP' })).toBeVisible();
+});
+
+test('generated project quality gate displays score and checklist', async ({ page }) => {
+  await mockProject(page);
+  await page.goto(PROJECT_URL);
+  await page.getByRole('button', { name: 'Run Quality Gate' }).click();
+
+  await expect(page.getByTestId('generated-project-quality-section')).toBeVisible();
+  await expect(page.getByText('97', { exact: true })).toBeVisible();
+  await expect(page.getByText('NestJS package.json exists')).toBeVisible();
+  await expect(page.getByText('Generated project quality validated.')).toBeVisible();
 });

@@ -38,10 +38,10 @@ export function GraphNode({
           <Activity className="h-3 w-3 shrink-0 text-[color:var(--success)]" />
         )}
       </span>
-      <span className="truncate text-[10px] uppercase tracking-[0.14em] text-[color:var(--muted)]">{node.type}</span>
+      <span className="truncate text-xs uppercase tracking-[0.14em] text-[color:var(--muted)]">{node.type}</span>
       <span className="flex gap-1">
-        <Badge className="h-4 border-white/10 px-1 text-[9px]">{node.burden_score}</Badge>
-        <Badge className="h-4 border-white/10 px-1 text-[9px]">{node.readiness_score}</Badge>
+        <Badge className="h-4 border-white/10 px-1 text-xs">{node.burden_score}</Badge>
+        <Badge className="h-4 border-white/10 px-1 text-xs">{node.readiness_score}</Badge>
       </span>
     </button>
   );

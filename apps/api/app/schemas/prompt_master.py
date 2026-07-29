@@ -6,6 +6,7 @@ from pydantic import Field, model_validator
 
 from app.schemas.blueprint import ProjectBlueprint
 from app.schemas.common import ApiModel
+from app.schemas.localization import GeneratedProjectLocaleProfile
 
 
 class PromptMasterPreviewRequest(ApiModel):
@@ -16,9 +17,9 @@ class PromptMasterPreviewRequest(ApiModel):
     def validate_blueprint_source(self) -> "PromptMasterPreviewRequest":
         if self.blueprint is not None:
             return self
-        if self.blueprint_id:
-            raise ValueError("blueprint_id lookup is not implemented yet. Send a full blueprint preview payload.")
-        raise ValueError("A blueprint payload is required.")
+        if self.blueprint_id and self.blueprint_id.strip():
+            return self
+        raise ValueError("A blueprint payload or blueprint_id is required.")
 
 
 class PromptMasterSection(ApiModel):
@@ -28,6 +29,7 @@ class PromptMasterSection(ApiModel):
         "architecture_profile",
         "business_modules",
         "endpoint_plan",
+        "required_files",
         "capability_plan",
         "security_requirements",
         "data_model_hints",
@@ -35,6 +37,7 @@ class PromptMasterSection(ApiModel):
         "documentation_requirements",
         "quality_gates",
         "forbidden_decisions",
+        "forbidden_files",
         "generation_constraints",
         "locale_language_rules",
         "trace",
@@ -89,6 +92,7 @@ class PromptMasterDocument(ApiModel):
     blueprint_id: str
     project_name: str
     locale: str
+    locale_profile: GeneratedProjectLocaleProfile = Field(default_factory=GeneratedProjectLocaleProfile)
     generation_mode: str
     source_blueprint_valid: bool
     version: PromptMasterVersion

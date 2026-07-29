@@ -1,423 +1,315 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Activity, Database, Gauge, Radio, ServerCrash, Sparkles } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, FolderKanban, Send } from 'lucide-react';
 
-import { LDCNPresenceCore } from '@/components/ldcn/ldcn-presence-core';
 import { ActionLink } from '@/components/ui/action-link';
-import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { CardLoading } from '@/components/feedback/loading-system';
 import { PageError } from '@/components/feedback/error-system';
-import { SectionHeader } from '@/components/shell/section-header';
-import {
-  ArchitectureGraphSurface,
-  ComplexityRadar,
-  DeploymentPathSurface,
-  OperationalRail,
-  ReadinessRing,
-  StackEcosystemMap,
-  SurfaceDivider,
-  SurfaceLabel,
-  SurfaceIcon,
-} from '@/components/visual/engineering-surface';
+import { AnimatedCounter } from '@/components/motion/animated-counter';
+import { Stagger, StaggerItem } from '@/components/motion/stagger';
+import { ComplexityRadar } from '@/components/visual/engineering-surface';
+import { LDCNPresenceCore } from '@/components/ldcn/ldcn-presence-core';
 import { useHealth } from '@/hooks/use-health';
 import { useProjects } from '@/hooks/use-projects';
-import { useStacks } from '@/hooks/use-stacks';
-import { getApiErrorMessage, isApiOffline } from '@/lib/api/errors';
+import { useLocale } from '@/hooks/use-locale';
 import { useLDCNStore } from '@/stores/use-ldcn-store';
+import { cn } from '@/lib/cn';
+import { getApiErrorMessage } from '@/lib/api/errors';
+import type { Project } from '@/lib/api/types';
 
-const activitySignals = [
-  'Health endpoint observed',
-  'Stacks registry synchronized',
-  'Projects persistence local-first',
-  'Frontend retry path ready',
-] as const;
+type MetricTone = 'accent' | 'success' | 'warning';
+type StageState = 'done' | 'active' | 'idle';
+
+const TONE_COLOR: Record<MetricTone, string> = {
+  accent: 'var(--accent)',
+  success: 'var(--success)',
+  warning: 'var(--warning)',
+};
+
+// Full BadgeTone -> color map for the portfolio live-dot, which must agree
+// with the adjacent Badge's tone instead of collapsing 'danger'/'warning' into
+// the same color as 'success'.
+const READINESS_DOT_COLOR: Record<BadgeTone, string> = {
+  neutral: 'var(--muted-2)',
+  accent: 'var(--accent)',
+  success: 'var(--success)',
+  warning: 'var(--warning)',
+  danger: 'var(--danger)',
+};
+
+const STAGE_KEYS = ['idea', 'spec', 'contract', 'build', 'verify', 'ship'] as const;
+
+function readinessTone(status: string): BadgeTone {
+  if (status === 'ready' || status === 'generated') return 'success';
+  if (status === 'ready_with_warnings') return 'warning';
+  if (status === 'blocked') return 'danger';
+  return 'accent';
+}
+
+// Cumulative count of matching projects across the portfolio — a real, monotonic
+// series for the card sparkline (no fabricated trend data).
+function cumulativeSeries(projects: Project[], predicate: (p: Project) => boolean): number[] {
+  let running = 0;
+  const series = projects.map((p) => (running += predicate(p) ? 1 : 0));
+  return series.length ? series : [0];
+}
 
 export default function DashboardPage() {
+  const { t } = useLocale();
   const healthQuery = useHealth();
-  const stacksQuery = useStacks();
   const projectsQuery = useProjects();
-  const setPresenceState = useLDCNStore((state) => state.setPresenceState);
-  const setContext = useLDCNStore((state) => state.setContext);
-  const backendOffline = healthQuery.isError && isApiOffline(healthQuery.error);
+  const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
+  const healthOk = healthQuery.data?.status === 'ok';
 
-  const projectCount = projectsQuery.data?.length ?? 0;
-  const stackCount = stacksQuery.data?.length ?? 0;
-  const readinessScore = backendOffline ? 28 : healthQuery.data?.status === 'degraded' ? 72 : 94;
-  const healthLabel = backendOffline
-    ? 'Offline'
-    : healthQuery.data?.status === 'degraded'
-      ? 'Degraded'
-      : 'Connected';
+  const metrics = useMemo(() => {
+    const ready = projects.filter((p) => ['ready', 'ready_with_warnings', 'generated'].includes(p.readiness_status)).length;
+    const risks = projects.filter((p) => p.readiness_status === 'blocked' || p.status === 'generation_blocked').length;
+    const generated = projects.filter((p) => p.status === 'generated').length;
+    const complexity = projects.length ? Math.min(100, 28 + projects.length * 9 + risks * 12) : 18;
+    return { ready, risks, generated, complexity };
+  }, [projects]);
+
+  const reached = useMemo(() => {
+    const milestones = [healthOk, projects.length > 0, projects.length > 0, metrics.generated > 0, metrics.ready > 0, metrics.generated > 0];
+    let count = 0;
+    for (const done of milestones) { if (!done) break; count += 1; }
+    return count;
+  }, [healthOk, metrics.generated, metrics.ready, projects.length]);
+
+  const loading = healthQuery.isLoading || projectsQuery.isLoading;
+  const error = healthQuery.error ?? projectsQuery.error;
+  const readinessPct = projects.length ? Math.round((metrics.ready / projects.length) * 100) : 0;
+
+  const ldcnContext = useLDCNStore((state) => state.context);
+  const setLdcnContext = useLDCNStore((state) => state.setContext);
+  const setLdcnPresenceState = useLDCNStore((state) => state.setPresenceState);
 
   useEffect(() => {
-    setPresenceState(backendOffline ? 'warning' : 'observing');
-    setContext({
+    if (loading) return;
+    const presenceState = !healthOk ? 'offline' : metrics.risks > 0 ? 'warning' : 'observing';
+    setLdcnPresenceState(presenceState);
+    setLdcnContext({
       route: '/dashboard',
-      page_title: 'Engineering Runtime Command Center',
-      current_phase: 'Command center',
+      page_title: t('dashboard.title'),
+      current_phase: t('dashboard.title'),
       pipeline: {
         route: '/dashboard',
-        phase: 'Command center',
-        status: backendOffline ? 'blocked' : 'previewing',
-        readiness_label: backendOffline ? 'Runtime recovery required' : 'Observing runtime surfaces',
-        detail: backendOffline
-          ? 'Backend is offline or degraded.'
-          : 'Dashboard surfaces are synchronized with the foundation runtime.',
+        phase: t('dashboard.title'),
+        status: !healthOk ? 'offline' : metrics.risks > 0 ? 'degraded' : 'healthy',
+        readiness_label: !healthOk
+          ? t('dashboard.line.offline')
+          : metrics.risks > 0
+            ? t('dashboard.attention')
+            : t('dashboard.healthy'),
+        detail: t('dashboard.presence.detail', { ready: metrics.ready, total: projects.length }),
       },
-      status: backendOffline ? 'warning' : 'observing',
-      summary: 'Reserved presence layer watching the engineering shell without executing generation or voice.',
-      suggestions: [
-        {
-          id: 'ldcn-dashboard-explain',
-          action: 'explain_current_page',
-          label: 'Explain current page',
-          summary: 'Reserved for contextual explanation of the runtime command center.',
-          reserved: true,
-        },
-        {
-          id: 'ldcn-dashboard-palette',
-          action: 'open_command_palette',
-          label: 'Open command palette',
-          summary: 'Reserved for future command palette integration.',
-          reserved: true,
-        },
-      ],
+      status: presenceState,
+      summary: t('dashboard.presence.detail', { ready: metrics.ready, total: projects.length }),
+      suggestions: [],
     });
-  }, [backendOffline, setContext, setPresenceState]);
+  }, [healthOk, loading, metrics.ready, metrics.risks, projects.length, setLdcnContext, setLdcnPresenceState, t]);
 
   return (
-    <div className="space-y-8 pb-10">
-      <section className="cinematic-surface relative overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-5 md:p-6">
-        <div className="ambient-grid pointer-events-none absolute inset-0 opacity-30" />
-        <div className="cinematic-gradient-motion pointer-events-none absolute inset-0" />
+    <div className="space-y-6 pb-12">
+      <ScrollProgress />
 
-        <div className="relative grid gap-5 xl:grid-cols-[1.12fr_0.88fr]">
-          <div className="grid gap-5">
-            <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-              <ArchitectureGraphSurface
-                title="Runtime topology surface"
-                subtitle="Live backend presence, stack catalog, and persisted project registry are exposed as an architectural graph instead of a flat status panel."
-                hint="Engineering runtime command center"
-                nodes={[
-                  {
-                    label: 'Backend',
-                    value: healthQuery.data?.service ?? 'Foundation API',
-                    detail: backendOffline ? 'Offline state detected' : `v${healthQuery.data?.version ?? 'pending'}`,
-                    tone: backendOffline ? 'danger' : 'accent',
-                  },
-                  {
-                    label: 'Stacks',
-                    value: String(stackCount),
-                    detail: 'Live registry connections',
-                    tone: stackCount > 0 ? 'success' : 'muted',
-                  },
-                  {
-                    label: 'Projects',
-                    value: String(projectCount),
-                    detail: 'Persisted project records',
-                    tone: projectCount > 0 ? 'accent2' : 'muted',
-                  },
-                  {
-                    label: 'Contracts',
-                    value: 'Synced',
-                    detail: 'Typed foundation contracts',
-                    tone: 'success',
-                  },
-                ]}
-              />
-
-              <ReadinessRing
-                title="Foundation readiness"
-                value={readinessScore}
-                label={healthLabel}
-                caption="Operational pulse derived from the real backend health state."
-                tone={backendOffline ? 'danger' : healthQuery.data?.status === 'degraded' ? 'warning' : 'success'}
-              />
-            </div>
-
-            <OperationalRail
-              title="Operational intelligence rail"
-              items={[
-                {
-                  label: 'API health',
-                  value: healthQuery.isLoading ? 'Syncing' : healthQuery.data?.status ?? 'pending',
-                  detail: healthQuery.data ? `${healthQuery.data.service} v${healthQuery.data.version}` : 'Waiting for backend response',
-                  tone: backendOffline ? 'danger' : healthQuery.data?.status === 'degraded' ? 'warning' : 'success',
-                },
-                {
-                  label: 'Registry sync',
-                  value: `${projectCount} records`,
-                  detail: 'Persisted projects pulled from SQLite local-first storage',
-                  tone: projectCount > 0 ? 'success' : 'muted',
-                },
-                {
-                  label: 'Stack surface',
-                  value: `${stackCount} stacks`,
-                  detail: 'Live stack catalog from the foundation API',
-                  tone: stackCount > 0 ? 'accent2' : 'muted',
-                },
-                {
-                  label: 'Offline guard',
-                  value: backendOffline ? 'Enabled' : 'Clear',
-                  detail: backendOffline ? 'Explicit offline recovery paths are active' : 'Connected runtime can be retried at any time',
-                  tone: backendOffline ? 'warning' : 'success',
-                },
-              ]}
-            />
-          </div>
-
-          <div className="grid gap-5">
-            <StackEcosystemMap
-              title="Stack ecosystem map"
-              nodes={[
-                {
-                  label: 'Service',
-                  value: healthQuery.data?.service ?? 'Foundation API',
-                  detail: 'Backend runtime surface',
-                  tone: 'accent',
-                },
-                {
-                  label: 'Projects',
-                  value: `${projectCount} persisted`,
-                  detail: 'Project registry memory',
-                  tone: 'success',
-                },
-                {
-                  label: 'Stacks',
-                  value: `${stackCount} active`,
-                  detail: 'Technology catalog visibility',
-                  tone: 'accent2',
-                },
-                {
-                  label: 'Contracts',
-                  value: 'Typed',
-                  detail: 'Schema-aligned integration layer',
-                  tone: 'muted',
-                },
-              ]}
-            />
-
-            <ComplexityRadar
-              title="Runtime complexity radar"
-              score={Math.min(100, 26 + stackCount * 7 + projectCount * 6 + (backendOffline ? 0 : 14))}
-              axes={[
-                { label: 'Registry density', value: Math.min(100, projectCount * 18 + 24) },
-                { label: 'Stack breadth', value: Math.min(100, stackCount * 16 + 18) },
-                { label: 'Backend presence', value: backendOffline ? 18 : 92 },
-                { label: 'Recovery posture', value: backendOffline ? 72 : 88 },
-                { label: 'Operational rhythm', value: backendOffline ? 40 : 84 },
-              ]}
-            />
+      {/* Hero header */}
+      <header className="glass noise relative flex flex-wrap items-center justify-between gap-5 overflow-hidden p-6">
+        <div className="pointer-events-none absolute -left-10 -top-16 h-48 w-48 rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--accent)_22%,transparent),transparent_70%)] blur-2xl" />
+        <div className="relative min-w-0">
+          <p className="t-overline">{t('dashboard.title')}</p>
+          <h1 className="mt-2 ds-page-title text-[color:var(--text)]">{t('dashboard.description')}</h1>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge tone={healthOk ? 'success' : 'danger'}>
+              <span className="live-dot mr-1.5" style={healthOk ? undefined : { background: 'var(--danger)' }} aria-hidden />
+              {healthOk ? t('dashboard.line.live') : t('dashboard.line.offline')}
+            </Badge>
+            <Badge>{t('dashboard.activeProjects')}: {projects.length}</Badge>
+            <Badge tone={metrics.risks ? 'warning' : 'success'}>{t('dashboard.risks')}: {metrics.risks}</Badge>
           </div>
         </div>
-      </section>
+        <ActionLink href="/wizard" variant="primary">{t('dashboard.newProject')}</ActionLink>
+      </header>
 
-      <section className="space-y-4">
-        <SectionHeader
-          title="LDCN presence surface"
-          description="A reserved operational layer that keeps the shell aware of route, phase, and pipeline posture without exposing voice, avatar, or AI execution."
-        />
+      <LDCNPresenceCore context={ldcnContext} />
+      <ActionLink href="/wizard" variant="secondary">{t('dashboard.presence.enterJourney')}</ActionLink>
 
-        <LDCNPresenceCore
-          context={{
-            route: '/dashboard',
-            page_title: 'Engineering Runtime Command Center',
-            current_phase: 'Command center',
-            pipeline: {
-              route: '/dashboard',
-              phase: 'Command center',
-              status: backendOffline ? 'blocked' : 'previewing',
-              readiness_label: backendOffline ? 'Runtime recovery required' : 'Observing runtime surfaces',
-              detail: backendOffline
-                ? 'Backend is offline or degraded.'
-                : 'Dashboard surfaces are synchronized with the foundation runtime.',
-            },
-            status: backendOffline ? 'warning' : 'observing',
-            summary: 'Reserved presence layer watching the engineering shell without executing generation or voice.',
-            suggestions: [
-              {
-                id: 'ldcn-dashboard-explain',
-                action: 'explain_current_page',
-                label: 'Explain current page',
-                summary: 'Reserved for contextual explanation of the runtime command center.',
-                reserved: true,
-              },
-              {
-                id: 'ldcn-dashboard-palette',
-                action: 'open_command_palette',
-                label: 'Open command palette',
-                summary: 'Reserved for future command palette integration.',
-                reserved: true,
-              },
-            ],
-          }}
-        />
-      </section>
+      {loading ? (
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><CardLoading /><CardLoading /><CardLoading /><CardLoading /></div>
+          <CardLoading className="h-72" />
+        </div>
+      ) : error ? (
+        <PageError title={t('dashboard.error.title')} description={getApiErrorMessage(error, t('dashboard.error.description'))} onRetry={() => { void healthQuery.refetch(); void projectsQuery.refetch(); }} />
+      ) : (
+        <>
+          {/* KPI row */}
+          <Stagger className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('dashboard.metrics')}>
+            <KpiCard icon={FolderKanban} label={t('dashboard.activeProjects')} value={projects.length} detail={t('dashboard.activeProjects.detail')} series={cumulativeSeries(projects, () => true)} />
+            <KpiCard icon={CheckCircle2} label={t('dashboard.readyProjects')} value={metrics.ready} detail={t('dashboard.readyProjects.detail')} tone="success" series={cumulativeSeries(projects, (p) => ['ready', 'ready_with_warnings', 'generated'].includes(p.readiness_status))} />
+            <KpiCard icon={AlertTriangle} label={t('dashboard.risks')} value={metrics.risks} detail={t('dashboard.risks.detail')} tone={metrics.risks ? 'warning' : 'success'} series={cumulativeSeries(projects, (p) => p.readiness_status === 'blocked' || p.status === 'generation_blocked')} />
+            <KpiCard icon={Send} label={t('dashboard.exports')} value={metrics.generated} detail={t('dashboard.exports.detail')} series={cumulativeSeries(projects, (p) => p.status === 'generated')} />
+          </Stagger>
 
-      <section className="space-y-4">
-        <SectionHeader
-          title="Operational pulse"
-          description="Live foundation metrics are rendered as layered engineering signals instead of equal-weight dashboard tiles."
-        />
+          {/* Main: gauge + load */}
+          <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="glass noise relative flex flex-col items-center justify-center gap-4 overflow-hidden p-7">
+              <p className="t-overline self-start">{t('dashboard.readiness')}</p>
+              <RuntimeGauge value={readinessPct} />
+              <p className="ds-caption text-center">{t('dashboard.readiness.detail')}</p>
+              <Badge tone={metrics.risks ? 'warning' : 'success'}>{metrics.risks ? t('dashboard.attention') : t('dashboard.healthy')}</Badge>
+            </div>
 
-        {healthQuery.isLoading || stacksQuery.isLoading || projectsQuery.isLoading ? (
-          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-            <CardLoading />
-            <CardLoading />
-            <CardLoading />
-          </div>
-        ) : healthQuery.isError || stacksQuery.isError || projectsQuery.isError ? (
-          <PageError
-            title={backendOffline ? 'Backend offline state detected' : 'Foundation metrics unavailable'}
-            description={getApiErrorMessage(
-              healthQuery.error ?? stacksQuery.error ?? projectsQuery.error,
-              'Unable to load dashboard metrics from the backend foundation.',
-            )}
-            onRetry={() => {
-              void healthQuery.refetch();
-              void stacksQuery.refetch();
-              void projectsQuery.refetch();
-            }}
-          />
-        ) : (
-          <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-            <Card className="relative overflow-hidden p-5">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,color-mix(in_srgb,var(--accent)_12%,transparent),transparent_32%)]" />
-              <div className="relative grid gap-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Operational feed</p>
-                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">Synced backend signals and live registry observations.</p>
-                  </div>
-                  <Badge className={backendOffline ? 'border-[color-mix(in_srgb,var(--danger)_28%,transparent)] text-[color:var(--danger)]' : 'border-[color-mix(in_srgb,var(--accent)_28%,transparent)]'}>
-                    {healthLabel}
-                  </Badge>
-                </div>
-
-                <div className="grid gap-3">
-                  {activitySignals.map((signal, index) => (
-                    <div
-                      key={signal}
-                      className="flex items-center justify-between gap-4 rounded-[var(--radius-xl)] border border-white/10 bg-white/[0.04] px-4 py-3"
-                    >
-                      <span className="flex min-w-0 items-center gap-2 text-sm text-[color:var(--muted)]">
-                        {index % 2 === 0 ? (
-                          <Activity className="h-3.5 w-3.5 text-[color:var(--accent)]" />
-                        ) : (
-                          <Radio className="h-3.5 w-3.5 text-[color:var(--accent-2)]" />
-                        )}
-                        <span className="truncate">{signal}</span>
-                      </span>
-                      <span
-                        className={`h-2.5 w-2.5 rounded-full ${backendOffline ? 'bg-[color:var(--danger)]' : 'bg-[color:var(--accent)]'} shadow-[0_0_16px_var(--glow)]`}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Card>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <Card className="flex min-h-52 flex-col justify-between overflow-hidden p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Backend health</p>
-                    <p className="mt-2 text-lg font-semibold text-[color:var(--text)]">
-                      {backendOffline ? 'Foundation API offline' : 'Foundation API connected'}
-                    </p>
-                  </div>
-                  {backendOffline ? <ServerCrash className="h-5 w-5 text-[color:var(--danger)]" /> : <Gauge className="h-5 w-5 text-[color:var(--accent)]" />}
-                </div>
-                <p className="mt-4 text-sm leading-6 text-[color:var(--muted)]">
-                  {healthQuery.data ? `${healthQuery.data.service} v${healthQuery.data.version}` : 'Waiting for health response'}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge>{healthQuery.data?.status ?? 'pending'}</Badge>
-                  <Badge>{backendOffline ? 'offline recovery' : 'live runtime'}</Badge>
-                </div>
-              </Card>
-
-              <Card className="flex min-h-52 flex-col justify-between overflow-hidden p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Contract sync</p>
-                    <p className="mt-2 text-lg font-semibold text-[color:var(--text)]">Typed frontend ↔ backend alignment</p>
-                  </div>
-                  <Database className="h-5 w-5 text-[color:var(--accent-2)]" />
-                </div>
-                <p className="mt-4 text-sm leading-6 text-[color:var(--muted)]">
-                  Contracts, registry payloads, and persisted project records stay aligned with the backend foundation.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge>Projects {projectCount}</Badge>
-                  <Badge>Stacks {stackCount}</Badge>
-                </div>
-              </Card>
+            <div className="glass noise relative overflow-hidden p-6">
+              <p className="t-overline">{t('dashboard.line.eyebrow')}</p>
+              <h2 className="mt-2 ds-section text-[color:var(--text)]">{t('dashboard.line.title')}</h2>
+              <p className="mt-2 ds-caption max-w-lg">{t('dashboard.line.caption')}</p>
+              <PipelineRail reached={reached} t={t} />
             </div>
           </div>
-        )}
-      </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
-        <DeploymentPathSurface
-          title="Deployment pathway surface"
-          steps={[
-            {
-              label: 'Observe runtime presence',
-              detail: 'The dashboard confirms whether the backend is connected, degraded, or offline before any next step.',
-              tone: backendOffline ? 'warning' : 'success',
-            },
-            {
-              label: 'Inspect registry topology',
-              detail: 'Stack and project registries are exposed as synchronized engineering surfaces rather than empty metrics.',
-              tone: 'accent',
-            },
-            {
-              label: 'Open architecture surfaces',
-              detail: 'Projects, templates, and wizard flows keep their operational identities while preserving backend contracts.',
-              tone: 'accent2',
-            },
-          ]}
-        />
+          {/* Portfolio + complexity */}
+          <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="glass relative overflow-hidden p-6">
+              <p className="t-overline">{t('dashboard.portfolio.eyebrow')}</p>
+              <h2 className="mt-2 ds-section text-[color:var(--text)]">{t('dashboard.portfolio.title')}</h2>
+              <Stagger className="mt-4 space-y-2.5">
+                {projects.slice(0, 5).map((project) => (
+                  <StaggerItem key={project.project_id} className="lift flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_60%,transparent)] px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="live-dot" style={{ background: READINESS_DOT_COLOR[readinessTone(project.readiness_status)] }} aria-hidden />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[color:var(--text)]">{project.project_name}</p>
+                        <p className="mt-0.5 t-mono text-xs text-[color:var(--muted-2)]">{project.technology_graph.framework.name} · {project.technology_graph.architecture.name}</p>
+                      </div>
+                    </div>
+                    <Badge tone={readinessTone(project.readiness_status)}>{project.readiness_status.replaceAll('_', ' ')}</Badge>
+                  </StaggerItem>
+                ))}
+                {!projects.length ? <p className="ds-caption">{t('dashboard.empty')}</p> : null}
+              </Stagger>
+            </div>
 
-        <Card className="flex flex-col justify-between gap-6 overflow-hidden p-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Command surfaces</p>
-            <h3 className="mt-2 text-2xl font-semibold text-[color:var(--text)]">Navigate the engineering OS</h3>
-            <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">
-              The shell remains stable, but the surfaces now communicate topology, readiness, and operational context with higher density.
-            </p>
+            <div className="glass noise relative overflow-hidden p-6">
+              <ComplexityRadar title={t('dashboard.complexity')} score={metrics.complexity} axes={[
+                { label: t('dashboard.axis.scope'), value: metrics.complexity },
+                { label: t('dashboard.axis.risk'), value: Math.min(100, metrics.risks * 28 + 12) },
+                { label: t('dashboard.axis.team'), value: Math.min(100, 30 + projects.length * 4) },
+                { label: t('dashboard.axis.time'), value: Math.min(100, 24 + projects.length * 5) },
+              ]} />
+            </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <SurfaceLabel
-              icon={<SurfaceIcon icon={Sparkles} />}
-              label="Registry"
-              value={`${projectCount} project records`}
-              detail="Persisted through the backend project registry."
-            />
-            <SurfaceLabel
-              icon={<SurfaceIcon icon={Activity} />}
-              label="Health"
-              value={healthQuery.data?.status ?? 'pending'}
-              detail={backendOffline ? 'Recovery path is explicit' : 'Foundation runtime is visible'}
-            />
-          </div>
-          <SurfaceDivider />
-          <div className="flex flex-wrap gap-3">
-            <ActionLink href="/projects" variant="primary">
-              Open project registry
-            </ActionLink>
-            <ActionLink href="/wizard" variant="secondary">
-              Enter architecture journey
-            </ActionLink>
-            <ActionLink href="/settings" variant="ghost">
-              Foundation settings
-            </ActionLink>
-          </div>
-        </Card>
-      </section>
+        </>
+      )}
     </div>
+  );
+}
+
+function ScrollProgress() {
+  const [progress, setProgress] = useState(0);
+  useEffect(() => {
+    const onScroll = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      setProgress(max > 0 ? Math.min(1, window.scrollY / max) : 0);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return <div className="scroll-progress" style={{ ['--progress' as string]: progress }} aria-hidden />;
+}
+
+function RuntimeGauge({ value }: { readonly value: number }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const offset = c * (1 - Math.max(0, Math.min(100, value)) / 100);
+  return (
+    <div className="relative grid h-44 w-44 place-items-center">
+      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+        <defs>
+          <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" style={{ stopColor: 'var(--accent)' }} />
+            <stop offset="100%" style={{ stopColor: 'var(--accent-2)' }} />
+          </linearGradient>
+        </defs>
+        <circle cx="60" cy="60" r={r} fill="none" stroke="color-mix(in srgb, var(--border-strong) 90%, transparent)" strokeWidth="8" />
+        <circle
+          cx="60" cy="60" r={r} fill="none" stroke="url(#gaugeGrad)" strokeWidth="8" strokeLinecap="round"
+          className="ring-draw"
+          style={{ strokeDasharray: c, strokeDashoffset: offset, ['--dash' as string]: c, ['--dash-offset' as string]: offset }}
+        />
+      </svg>
+      <div className="absolute grid place-items-center text-center">
+        <AnimatedCounter value={value} className="t-mono text-4xl font-bold text-[color:var(--text)]" />
+        <span className="t-overline mt-1">%</span>
+      </div>
+    </div>
+  );
+}
+
+function PipelineRail({ reached, t }: { readonly reached: number; readonly t: (k: string) => string }) {
+  const stages = STAGE_KEYS.map((key, i): { key: string; state: StageState } => ({
+    key,
+    state: i < reached ? 'done' : i === reached ? 'active' : 'idle',
+  }));
+  return (
+    <ol className="mt-6 flex flex-col gap-3 md:flex-row md:items-center">
+      {stages.map((stage, i) => (
+        <Fragment key={stage.key}>
+          <li className="flex-1">
+            <div className={cn(
+              'rounded-[var(--radius-lg)] border p-3 transition',
+              stage.state === 'idle'
+                ? 'border-[color:var(--border)] bg-[color-mix(in_srgb,var(--surface-3)_40%,transparent)]'
+                : 'border-[color-mix(in_srgb,var(--accent)_35%,var(--border))] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)]',
+            )}>
+              <div className="flex items-center justify-between">
+                <span className={cn('live-dot', stage.state === 'idle' && 'opacity-40')} style={{ background: stage.state === 'idle' ? 'var(--muted-2)' : 'var(--accent)' }} aria-hidden />
+                <span className="ds-metadata">{String(i + 1).padStart(2, '0')}</span>
+              </div>
+              <p className="mt-2 t-mono text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text)]">{t(`dashboard.stage.${stage.key}`)}</p>
+            </div>
+          </li>
+          {i < stages.length - 1 ? (
+            <li aria-hidden className="hidden self-center md:block md:w-6 lg:w-10">
+              <span className="flow-line block h-0.5 rounded-full" data-active={stage.state === 'done'} />
+            </li>
+          ) : null}
+        </Fragment>
+      ))}
+    </ol>
+  );
+}
+
+function Sparkline({ series, color }: { readonly series: number[]; readonly color: string }) {
+  const max = Math.max(1, ...series);
+  const pts = series.length > 1 ? series : [0, ...series];
+  const step = 100 / (pts.length - 1 || 1);
+  const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i * step).toFixed(2)} ${(28 - (v / max) * 24).toFixed(2)}`).join(' ');
+  return (
+    <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="sparkline h-7 w-full" aria-hidden>
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+    </svg>
+  );
+}
+
+function KpiCard({ icon: Icon, label, value, detail, tone = 'accent', series }: { readonly icon: typeof FolderKanban; readonly label: string; readonly value: number; readonly detail: string; readonly tone?: MetricTone; readonly series: number[] }) {
+  return (
+    <StaggerItem className="h-full">
+      <div className="glass lift noise relative h-full overflow-hidden p-5">
+        <div className="flex items-center justify-between gap-3">
+          <Icon className="h-5 w-5" style={{ color: TONE_COLOR[tone] }} />
+          <span className="live-dot" style={{ background: TONE_COLOR[tone] }} aria-hidden />
+        </div>
+        <AnimatedCounter value={value} className="mt-5 block t-mono text-4xl font-bold text-[color:var(--text)]" />
+        <p className="mt-1.5 text-sm font-semibold text-[color:var(--text)]">{label}</p>
+        <p className="mt-1 ds-caption">{detail}</p>
+        <div className="mt-3 -mx-1 opacity-70">
+          <Sparkline series={series} color={TONE_COLOR[tone]} />
+        </div>
+      </div>
+    </StaggerItem>
   );
 }

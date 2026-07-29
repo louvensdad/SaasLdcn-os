@@ -1,0 +1,29 @@
+{
+	"nodes":[
+		{"id":"ideia","type":"text","text":"Ideia do usuário","x":0,"y":0,"width":220,"height":80},
+		{"id":"descoberta","type":"text","text":"Perguntas da IA","x":300,"y":0,"width":220,"height":80},
+		{"id":"blueprint","type":"text","text":"Blueprint","x":600,"y":0,"width":220,"height":80},
+		{"id":"arquitetura","type":"text","text":"Arquitetura","x":900,"y":0,"width":220,"height":80},
+		{"id":"plano","type":"text","text":"Plano","x":1200,"y":0,"width":220,"height":80},
+		{"id":"geracao","type":"text","text":"Geração","x":1500,"y":0,"width":220,"height":80},
+		{"id":"execucao","type":"text","text":"Execução","x":1800,"y":0,"width":220,"height":80},
+		{"id":"preview","type":"text","text":"Preview","x":2100,"y":0,"width":220,"height":80},
+		{"id":"testes","type":"text","text":"Testes","x":2400,"y":0,"width":220,"height":80},
+		{"id":"alteracoes","type":"text","text":"Alterações","x":2700,"y":0,"width":220,"height":80},
+		{"id":"deploy","type":"text","text":"Deploy","x":3000,"y":0,"width":220,"height":80},
+		{"id":"monitoramento","type":"text","text":"Monitoramento","x":3300,"y":0,"width":220,"height":80}
+	],
+	"edges":[
+		{"id":"e1","fromNode":"ideia","toNode":"descoberta","fromSide":"right","toSide":"left"},
+		{"id":"e2","fromNode":"descoberta","toNode":"blueprint","fromSide":"right","toSide":"left"},
+		{"id":"e3","fromNode":"blueprint","toNode":"arquitetura","fromSide":"right","toSide":"left"},
+		{"id":"e4","fromNode":"arquitetura","toNode":"plano","fromSide":"right","toSide":"left"},
+		{"id":"e5","fromNode":"plano","toNode":"geracao","fromSide":"right","toSide":"left"},
+		{"id":"e6","fromNode":"geracao","toNode":"execucao","fromSide":"right","toSide":"left"},
+		{"id":"e7","fromNode":"execucao","toNode":"preview","fromSide":"right","toSide":"left"},
+		{"id":"e8","fromNode":"preview","toNode":"testes","fromSide":"right","toSide":"left"},
+		{"id":"e9","fromNode":"testes","toNode":"alteracoes","fromSide":"right","toSide":"left"},
+		{"id":"e10","fromNode":"alteracoes","toNode":"deploy","fromSide":"right","toSide":"left"},
+		{"id":"e11","fromNode":"deploy","toNode":"monitoramento","fromSide":"right","toSide":"left"}
+	]
+}

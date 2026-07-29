@@ -19,12 +19,14 @@ export function PageError({
   description = 'This surface can be retried without losing the current shell state.',
   actionLabel = 'Retry',
   onRetry,
+  retrying = false,
   className,
 }: {
   readonly title?: string;
   readonly description?: string;
   readonly actionLabel?: string;
   readonly onRetry?: () => void;
+  readonly retrying?: boolean;
   readonly className?: string;
 }) {
   return (
@@ -37,7 +39,7 @@ export function PageError({
           </p>
           <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{description}</p>
         </div>
-        <Button type="button" variant="soft" onClick={onRetry}>
+        <Button type="button" variant="soft" onClick={onRetry} loading={retrying} disabled={retrying}>
           <RotateCcw className="h-4 w-4" />
           {actionLabel}
         </Button>

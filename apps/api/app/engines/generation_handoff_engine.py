@@ -5,9 +5,11 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from app.core.logging import logger
 from app.data.foundation import CONTRACT_VERSION
 from app.engines.dependency_graph_engine import calculate_impact
 from app.engines.engineering_readiness_engine import calculate_engineering_readiness
+from app.engines.project_requirements_engine import requirements_complete
 from app.services.infrastructure_registry_service import InfrastructureRegistryService
 
 SENSITIVE_KEY_PATTERN = re.compile(r"(secret|token|password|api[_-]?key|private[_-]?key|credential)", re.IGNORECASE)
@@ -131,6 +133,12 @@ def _build_checklist(
     gatekeeper_decision = (gatekeeper or {}).get("decision")
     return [
         _check("blueprint_exists", "Blueprint exists", bool(blueprint), "Blueprint snapshot is attached to the project."),
+        _check(
+            "project_requirements_complete",
+            "Project requirements complete",
+            requirements_complete((blueprint or {}).get("project_requirements")),
+            "Project intent, business rules, entities, workflows, constraints, and delivery target are required.",
+        ),
         _check("prompt_master_exists", "Prompt Master exists", bool(prompt_master), "Prompt Master snapshot is attached to the project."),
         _check(
             "gatekeeper_approved",
@@ -285,6 +293,9 @@ def _safe_build(factory):
     try:
         return factory()
     except Exception:
+        # Degrade gracefully (callers expect None on failure) but never silently:
+        # surface the traceback so a broken subsystem is debuggable, not invisible.
+        logger.exception("generation_handoff: optional subsystem build failed")
         return None
 
 

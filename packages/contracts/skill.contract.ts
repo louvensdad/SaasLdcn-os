@@ -59,3 +59,35 @@ export interface SkillPreviewRequest {
   readonly project_id?: string | null;
   readonly context?: Record<string, unknown>;
 }
+
+export interface SkillExecutionRequest {
+  readonly skill_id: string;
+  readonly project_id?: string | null;
+  readonly context?: Record<string, unknown>;
+}
+
+export interface SkillExecutionTrace extends ContractMetadata {
+  readonly timestamp: string;
+  readonly step: string;
+  readonly status: 'completed' | 'blocked' | 'failed';
+  readonly message: string;
+}
+
+export interface SkillExecutionSafety {
+  readonly no_ai: true;
+  readonly no_llm: true;
+  readonly no_agents: true;
+  readonly no_shell: true;
+  readonly no_external_access: true;
+}
+
+export interface SkillExecutionResult extends ContractMetadata {
+  readonly execution_id: string;
+  readonly skill_id: string;
+  readonly project_id?: string | null;
+  readonly status: 'completed' | 'blocked' | 'failed';
+  readonly summary: string;
+  readonly outputs: Record<string, unknown>;
+  readonly trace: readonly SkillExecutionTrace[];
+  readonly safety: SkillExecutionSafety;
+}

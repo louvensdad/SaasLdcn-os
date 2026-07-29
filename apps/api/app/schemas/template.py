@@ -56,6 +56,8 @@ class TemplateMarketplaceItem(ApiModel):
     supported_frameworks: list[str] = Field(default_factory=list)
     supported_architectures: list[str] = Field(default_factory=list)
     supported_archetypes: list[str] = Field(default_factory=list)
+    supported_locales: list[str] = Field(default_factory=list)
+    fallback_locale: str = "en-US"
     capabilities: list[str] = Field(default_factory=list)
     complexity: Literal["low", "medium", "high"]
     maturity: Literal["experimental", "stable", "mature"]

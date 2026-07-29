@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
-import sqlite3
 from collections.abc import Sequence
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from app.core.config import get_settings
+from app.core.database import connection as database_connection, database_url_for
 from app.data.foundation import CONTRACT_VERSION, PROJECT_SEED
 from app.engines.architectural_graph_engine import generate_graph_snapshot
 
@@ -19,57 +19,20 @@ SENSITIVE_KEY_PATTERN = re.compile(r"(secret|token|password|api[_-]?key|private[
 SENSITIVE_VALUE_PATTERN = re.compile(r"(secret|token|password|api[_-]?key|private[_-]?key)\s*[:=]\s*\S+", re.IGNORECASE)
 SAFE_BOOLEAN_TRACE_KEYS = {"contains_secrets"}
 
+logger = logging.getLogger("ldcn.projects")
+
 
 class ProjectRepository:
-    def __init__(self, sqlite_path: Path | None = None) -> None:
-        self.sqlite_path = sqlite_path or get_settings().sqlite_path
+    def __init__(self, database: str | Path | None = None) -> None:
+        self.database_url = database_url_for(database)
+        self.sqlite_path = database if isinstance(database, Path) else get_settings().sqlite_path
 
-    @contextmanager
-    def connection(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.sqlite_path)
-        connection.row_factory = sqlite3.Row
-        try:
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()
+    def connection(self):
+        return database_connection(self.database_url)
 
     def initialize(self) -> None:
+        """Seed reference projects after Alembic has created the schema."""
         with self.connection() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS projects (
-                    project_id TEXT PRIMARY KEY,
-                    project_key TEXT NOT NULL,
-                    project_name TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    objective TEXT NOT NULL,
-                    stack_id TEXT NOT NULL,
-                    project_locale TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    scope TEXT NOT NULL,
-                    locale TEXT NOT NULL,
-                    generation_mode TEXT NOT NULL,
-                    technology_graph_json TEXT NOT NULL,
-                    architecture_id TEXT NOT NULL,
-                    archetype_id TEXT NOT NULL,
-                    selected_capabilities_json TEXT NOT NULL,
-                    selected_business_modules_json TEXT NOT NULL,
-                    selected_endpoints_json TEXT NOT NULL,
-                    blueprint_snapshot_json TEXT NOT NULL,
-                    architectural_graph_snapshot_json TEXT,
-                    prompt_master_snapshot_json TEXT NOT NULL,
-                    gatekeeper_snapshot_json TEXT NOT NULL,
-                    tags_json TEXT NOT NULL,
-                    readiness_status TEXT NOT NULL,
-                    contract_version TEXT NOT NULL,
-                    generated_project_path TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            self._ensure_optional_columns(conn)
             project_count = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
             if project_count == 0:
                 for project in PROJECT_SEED:
@@ -92,13 +55,13 @@ class ProjectRepository:
                         """,
                         seed_project,
                     )
-
-    def list_projects(self) -> Sequence[dict[str, Any]]:
-        with self.connection() as conn:
-            rows = conn.execute(
-                """
+    def list_projects(self, *, user_id: str | None = None, limit: int | None = None, offset: int = 0) -> Sequence[dict[str, Any]]:
+        # Optional, opt-in pagination (audit B7/M3): when limit is None the full list
+        # is returned (unchanged behavior); when set, LIMIT/OFFSET are pushed to SQL
+        # so a large catalog is never fully materialized over the wire.
+        query = """
                 SELECT
-                    COALESCE(project_id, project_key) AS project_id,
+                    COALESCE(project_id, project_key) AS project_id, owner_user_id, workspace_id,
                     project_key, project_name, status, locale, generation_mode,
                     technology_graph_json, architecture_id, archetype_id,
                     selected_capabilities_json, selected_business_modules_json, selected_endpoints_json,
@@ -108,28 +71,92 @@ class ProjectRepository:
                 WHERE status != 'draft'
                 ORDER BY created_at DESC
                 """
-            ).fetchall()
-        return [self._row_to_project(dict(row)) for row in rows]
+        params: list[Any] = []
+        if user_id is not None:
+            query = query.replace(
+                "WHERE status != 'draft'",
+                """WHERE status != 'draft' AND (
+                    owner_user_id IS NULL OR owner_user_id = ? OR workspace_id IN (
+                        SELECT workspace_id FROM workspace_memberships WHERE user_id = ?
+                    )
+                )""",
+            )
+            params.extend([user_id, user_id])
+        if limit is not None:
+            query += " LIMIT ? OFFSET ?"
+            params.extend([int(limit), max(0, int(offset))])
+        with self.connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                result.append(self._row_to_project(dict(row)))
+            except Exception:  # noqa: BLE001 — one corrupted row must not blank the whole listing
+                logger.warning("projects: skipped an unreadable row in list_projects")
+        return result
 
-    def get_project(self, project_id: str) -> dict[str, Any] | None:
+    def count_projects(self, user_id: str | None = None) -> int:
+        with self.connection() as conn:
+            if user_id is None:
+                row = conn.execute("SELECT COUNT(*) FROM projects WHERE status != 'draft'").fetchone()
+            else:
+                row = conn.execute(
+                    """SELECT COUNT(*) FROM projects WHERE status != 'draft' AND (
+                        owner_user_id IS NULL OR owner_user_id = ? OR workspace_id IN (
+                            SELECT workspace_id FROM workspace_memberships WHERE user_id = ?
+                        )
+                    )""",
+                    (user_id, user_id),
+                ).fetchone()
+            return int(row[0])
+
+    def count_active_projects_for_workspaces(self, workspace_ids: Sequence[str]) -> int:
+        if not workspace_ids:
+            return 0
+        placeholders = ",".join("?" for _ in workspace_ids)
         with self.connection() as conn:
             row = conn.execute(
-                """
+                f"SELECT COUNT(*) FROM projects WHERE status != 'draft' AND workspace_id IN ({placeholders})",
+                list(workspace_ids),
+            ).fetchone()
+            return int(row[0])
+
+    def get_project(self, project_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+        scope = ""
+        params: list[Any] = [project_id, project_id]
+        if user_id is not None:
+            scope = """ AND (
+                owner_user_id IS NULL OR owner_user_id = ? OR workspace_id IN (
+                    SELECT workspace_id FROM workspace_memberships WHERE user_id = ?
+                )
+            )"""
+            params.extend([user_id, user_id])
+        with self.connection() as conn:
+            row = conn.execute(
+                f"""
                 SELECT
-                    COALESCE(project_id, project_key) AS project_id,
+                    COALESCE(project_id, project_key) AS project_id, owner_user_id, workspace_id,
                     project_key, project_name, status, locale, generation_mode,
                     technology_graph_json, architecture_id, archetype_id,
                     selected_capabilities_json, selected_business_modules_json, selected_endpoints_json,
                     blueprint_snapshot_json, architectural_graph_snapshot_json, prompt_master_snapshot_json, gatekeeper_snapshot_json,
                     readiness_status, contract_version, generated_project_path, created_at, updated_at
                 FROM projects
-                WHERE (project_id = ? OR project_key = ?) AND status != 'draft'
+                WHERE (project_id = ? OR project_key = ?) AND status != 'draft' {scope}
                 """,
-                (project_id, project_id),
+                params,
             ).fetchone()
         return self._row_to_project(dict(row)) if row else None
 
-    def save_from_wizard(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def get_project_by_blueprint_id(self, blueprint_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+        # JSON extraction differs between SQLite and PostgreSQL. Keep the snapshot
+        # portable by decoding candidate rows in Python until this column becomes
+        # a native JSONB field in a dedicated migration.
+        for project in self.list_projects(user_id=user_id):
+            if project.get("blueprint_snapshot", {}).get("blueprint_id") == blueprint_id:
+                return project
+        return None
+    def save_from_wizard(self, payload: dict[str, Any], *, owner_user_id: str, workspace_id: str) -> dict[str, Any]:
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         blueprint = self._sanitize_snapshot(payload["blueprint"])
         prompt_master = self._sanitize_snapshot(payload["prompt_master"])
@@ -157,6 +184,8 @@ class ProjectRepository:
 
         record = {
             "project_id": project_id,
+            "owner_user_id": owner_user_id,
+            "workspace_id": workspace_id,
             "project_key": project_id,
             "project_name": blueprint["project_name"],
             "description": f"Persisted registry snapshot for {blueprint['project_name']}.",
@@ -193,14 +222,14 @@ class ProjectRepository:
             conn.execute(
                 """
                 INSERT INTO projects (
-                    project_id, project_key, project_name, description, objective, stack_id, project_locale,
+                    project_id, owner_user_id, workspace_id, project_key, project_name, description, objective, stack_id, project_locale,
                     status, scope, locale, generation_mode,
                     technology_graph_json, architecture_id, archetype_id,
                     selected_capabilities_json, selected_business_modules_json, selected_endpoints_json,
                     blueprint_snapshot_json, architectural_graph_snapshot_json, prompt_master_snapshot_json, gatekeeper_snapshot_json, tags_json,
                     readiness_status, contract_version, generated_project_path, created_at, updated_at
                 ) VALUES (
-                    :project_id, :project_key, :project_name, :description, :objective, :stack_id, :project_locale,
+                    :project_id, :owner_user_id, :workspace_id, :project_key, :project_name, :description, :objective, :stack_id, :project_locale,
                     :status, :scope, :locale, :generation_mode,
                     :technology_graph_json, :architecture_id, :archetype_id,
                     :selected_capabilities_json, :selected_business_modules_json, :selected_endpoints_json,
@@ -212,8 +241,8 @@ class ProjectRepository:
             )
         return self._row_to_project(record)
 
-    def update_project(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
-        current = self.get_project(project_id)
+    def update_project(self, project_id: str, payload: dict[str, Any], *, actor_user_id: str | None = None) -> dict[str, Any] | None:
+        current = self.get_project(project_id, actor_user_id)
         if current is None:
             return None
 
@@ -224,6 +253,8 @@ class ProjectRepository:
         }
         record = {
             "project_id": updated["project_id"],
+            "owner_user_id": updated.get("owner_user_id"),
+            "workspace_id": updated.get("workspace_id"),
             "project_key": updated["project_id"],
             "project_name": updated["project_name"],
             "description": updated.get("description", f"Persisted registry snapshot for {updated['project_name']}."),
@@ -254,9 +285,18 @@ class ProjectRepository:
             "created_at": updated["created_at"],
             "updated_at": updated["updated_at"],
         }
+        write_scope = ""
+        if actor_user_id is not None:
+            record["actor_user_id"] = actor_user_id
+            write_scope = """ AND (
+                owner_user_id = :actor_user_id OR workspace_id IN (
+                    SELECT workspace_id FROM workspace_memberships
+                    WHERE user_id = :actor_user_id AND role IN ('owner', 'admin', 'member')
+                )
+            )"""
         with self.connection() as conn:
-            conn.execute(
-                """
+            result = conn.execute(
+                f"""
                 UPDATE projects
                 SET
                     project_id = :project_id,
@@ -286,44 +326,31 @@ class ProjectRepository:
                     generated_project_path = :generated_project_path,
                     created_at = :created_at,
                     updated_at = :updated_at
-                WHERE project_id = :project_id OR project_key = :project_id
+                WHERE (project_id = :project_id OR project_key = :project_id) {write_scope}
                 """,
                 record,
             )
+        if actor_user_id is not None and not result.rowcount:
+            return None
         return self._row_to_project(record)
 
-    def delete_project(self, project_id: str) -> bool:
+    def delete_project(self, project_id: str, actor_user_id: str | None = None) -> bool:
         with self.connection() as conn:
-            result = conn.execute("DELETE FROM projects WHERE project_id = ? OR project_key = ?", (project_id, project_id))
+            if actor_user_id is None:
+                result = conn.execute("DELETE FROM projects WHERE project_id = ? OR project_key = ?", (project_id, project_id))
+            else:
+                result = conn.execute(
+                    """DELETE FROM projects WHERE (project_id = ? OR project_key = ?) AND (
+                        owner_user_id = ? OR workspace_id IN (
+                            SELECT workspace_id FROM workspace_memberships
+                            WHERE user_id = ? AND role IN ('owner', 'admin', 'member')
+                        )
+                    )""",
+                    (project_id, project_id, actor_user_id, actor_user_id),
+                )
         return result.rowcount > 0
 
-    def _ensure_optional_columns(self, conn: sqlite3.Connection) -> None:
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(projects)").fetchall()}
-        optional_columns = {
-            "project_key": "ALTER TABLE projects ADD COLUMN project_key TEXT",
-            "project_name": "ALTER TABLE projects ADD COLUMN project_name TEXT",
-            "status": "ALTER TABLE projects ADD COLUMN status TEXT",
-            "locale": "ALTER TABLE projects ADD COLUMN locale TEXT",
-            "generation_mode": "ALTER TABLE projects ADD COLUMN generation_mode TEXT",
-            "technology_graph_json": "ALTER TABLE projects ADD COLUMN technology_graph_json TEXT",
-            "architecture_id": "ALTER TABLE projects ADD COLUMN architecture_id TEXT",
-            "archetype_id": "ALTER TABLE projects ADD COLUMN archetype_id TEXT",
-            "selected_capabilities_json": "ALTER TABLE projects ADD COLUMN selected_capabilities_json TEXT",
-            "selected_business_modules_json": "ALTER TABLE projects ADD COLUMN selected_business_modules_json TEXT",
-            "selected_endpoints_json": "ALTER TABLE projects ADD COLUMN selected_endpoints_json TEXT",
-            "blueprint_snapshot_json": "ALTER TABLE projects ADD COLUMN blueprint_snapshot_json TEXT",
-            "prompt_master_snapshot_json": "ALTER TABLE projects ADD COLUMN prompt_master_snapshot_json TEXT",
-            "gatekeeper_snapshot_json": "ALTER TABLE projects ADD COLUMN gatekeeper_snapshot_json TEXT",
-            "architectural_graph_snapshot_json": "ALTER TABLE projects ADD COLUMN architectural_graph_snapshot_json TEXT",
-            "readiness_status": "ALTER TABLE projects ADD COLUMN readiness_status TEXT",
-            "contract_version": "ALTER TABLE projects ADD COLUMN contract_version TEXT",
-            "generated_project_path": "ALTER TABLE projects ADD COLUMN generated_project_path TEXT",
-        }
-        for column_name, statement in optional_columns.items():
-            if column_name not in columns:
-                conn.execute(statement)
-
-    def _generate_project_id(self, conn: sqlite3.Connection) -> str:
+    def _generate_project_id(self, conn) -> str:
         while True:
             project_id = f"project_{uuid4().hex[:12]}"
             exists = conn.execute(
@@ -348,6 +375,8 @@ class ProjectRepository:
         return {
             "contractVersion": row["contract_version"],
             "project_id": row["project_id"],
+            "owner_user_id": row.get("owner_user_id"),
+            "workspace_id": row.get("workspace_id"),
             "project_key": row["project_key"] if "project_key" in row.keys() else row["project_id"],
             "project_name": row["project_name"],
             "status": row["status"],
@@ -377,7 +406,13 @@ class ProjectRepository:
     def _deserialize_json(value: str | None) -> Any:
         if not value:
             return None
-        return json.loads(value)
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError):
+            # A single corrupted JSON column must not take down the whole row
+            # (and, transitively, every other project in the same listing).
+            logger.warning("projects: failed to decode a JSON column; treating as empty")
+            return None
 
     def _sanitize_snapshot(self, value: Any) -> Any:
         if isinstance(value, dict):

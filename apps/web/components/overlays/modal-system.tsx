@@ -5,24 +5,25 @@ import { AlertTriangle, Info, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, type KeyboardEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 import { useUiStore, type ModalKind } from '@/stores/use-ui-store';
 
 const modalCopy: Record<ModalKind, { title: string; description: string; action: string }> = {
   confirmation: {
-    title: 'Confirm foundation action',
-    description: 'This demonstrates a safe confirmation modal for future project and template actions.',
-    action: 'Confirm',
+    title: 'modal.confirmation.title',
+    description: 'modal.confirmation.description',
+    action: 'modal.confirmation.action',
   },
   information: {
-    title: 'Information surface',
-    description: 'This modal is frontend-only and exists to validate accessible overlay behavior.',
-    action: 'Acknowledge',
+    title: 'modal.information.title',
+    description: 'modal.information.description',
+    action: 'modal.information.action',
   },
   destructive: {
-    title: 'Destructive action guard',
-    description: 'Future destructive flows must use explicit confirmation and clear copy before execution.',
-    action: 'Understand risk',
+    title: 'modal.destructive.title',
+    description: 'modal.destructive.description',
+    action: 'modal.destructive.action',
   },
 };
 
@@ -33,6 +34,7 @@ function ModalIcon({ kind }: { readonly kind: ModalKind }) {
 }
 
 export function ModalSystem() {
+  const { t } = useLocale();
   const open = useUiStore((state) => state.modalOpen);
   const kind = useUiStore((state) => state.modalKind);
   const closeModal = useUiStore((state) => state.closeModal);
@@ -98,7 +100,7 @@ export function ModalSystem() {
     <AnimatePresence initial={false}>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/62 px-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/65 px-4 backdrop-blur-md"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -109,14 +111,14 @@ export function ModalSystem() {
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
-            aria-label={copy.title}
+            aria-label={t(copy.title)}
             className={cn(
               'glass-panel-strong cinematic-surface w-full max-w-lg rounded-[var(--radius-xl)] p-5 shadow-[var(--shadow-cinematic)]',
               kind === 'destructive' && 'border-[color-mix(in_srgb,var(--danger)_42%,var(--border))]',
             )}
-            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 14, scale: 0.98 }}
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 10, scale: shouldReduceMotion ? 1 : 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: shouldReduceMotion ? 0 : 8, scale: 0.98 }}
+            exit={{ opacity: 0, y: shouldReduceMotion ? 0 : 6, scale: shouldReduceMotion ? 1 : 0.95 }}
             transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 220, damping: 28 }}
             onMouseDown={(event) => event.stopPropagation()}
             onKeyDown={onKeyDown}
@@ -126,22 +128,22 @@ export function ModalSystem() {
                 <ModalIcon kind={kind} />
               </span>
               <div className="min-w-0 flex-1">
-                <h2 className="text-lg font-semibold text-[color:var(--text)]">{copy.title}</h2>
-                <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{copy.description}</p>
+                <h2 className="text-lg font-semibold text-[color:var(--text)]">{t(copy.title)}</h2>
+                <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{t(copy.description)}</p>
               </div>
-              <Button ref={closeRef} type="button" variant="ghost" className="h-9 w-9 rounded-full p-0" onClick={closeModal} aria-label="Close modal">
+              <Button ref={closeRef} type="button" variant="ghost" className="h-9 w-9 rounded-full p-0" onClick={closeModal} aria-label={t('modal.close')}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
             {kind === 'destructive' ? (
               <div className="mt-5 rounded-2xl border border-[color-mix(in_srgb,var(--danger)_28%,transparent)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] p-3 text-xs leading-5 text-[color:var(--muted)]">
                 <AlertTriangle className="mr-2 inline h-3.5 w-3.5 text-[color:var(--danger)]" />
-                Destructive actions are blocked in foundation mode.
+                {t('modal.destructive.blocked')}
               </div>
             ) : null}
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <Button type="button" variant="secondary" onClick={closeModal}>
-                Cancel
+                {t('modal.cancel')}
               </Button>
               <Button
                 type="button"
@@ -149,13 +151,13 @@ export function ModalSystem() {
                 onClick={() => {
                   addToast({
                     tone: kind === 'destructive' ? 'warning' : 'success',
-                    title: 'Modal action captured',
-                    description: 'Foundation interaction completed without backend execution.',
+                    title: t('modal.toast.title'),
+                    description: t('modal.toast.description'),
                   });
                   closeModal();
                 }}
               >
-                {copy.action}
+                {t(copy.action)}
               </Button>
             </div>
           </motion.div>

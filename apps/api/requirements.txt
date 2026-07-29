@@ -1,5 +1,49 @@
 fastapi==0.136.1
 uvicorn==0.47.0
 pydantic==2.13.4
-pytest==9.0.3
 httpx==0.28.1
+# Multipart form parsing for brownfield ZIP uploads (POST /modernize/ingest/zip).
+python-multipart>=0.0.9
+
+# Loads apps/api/.env so a stable LDCN_SECRET_KEY survives restarts (see config.py).
+python-dotenv>=1.0.0
+
+# Auth / security (Fase B): JWT access+refresh tokens and password hashing.
+pyjwt>=2.8.0
+passlib[bcrypt]>=1.7.4
+# passlib 1.7.4 is not compatible with bcrypt 5.x.
+bcrypt>=3.1.0,<4.1
+
+# Encryption at rest for stored provider credentials (Gap C).
+cryptography>=42.0.0
+
+# TOTP two-factor authentication (settings Conta tab).
+pyotp>=2.9.0
+
+# Real CRON schedule parsing for the Automation scheduler (app/services/
+# automation_scheduler.py) -- computes genuine next-run times, not a
+# hand-rolled approximation of cron semantics.
+croniter>=2.0.5
+
+# Multi-LLM router (apps/api/app/engines/llm). All provider SDKs are imported
+# lazily inside their adapters, so the app and test suite import cleanly without
+# them. Install only the providers you actually route to, and set the matching
+# API key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY).
+# anthropic requires a recent build for adaptive thinking / output_config / fallbacks.
+anthropic>=0.69.0
+openai>=1.50.0
+google-genai>=0.3.0
+psutil>=5.9
+
+# YAML parsing used by blueprint and runtime audit services.
+PyYAML>=6.0
+
+# Production database and distributed-state infrastructure.
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+psycopg2-binary>=2.9.0
+redis>=5.0.0
+boto3>=1.34.0
+
+# Prometheus /metrics endpoint (request count/latency by route+status).
+prometheus-client>=0.20.0

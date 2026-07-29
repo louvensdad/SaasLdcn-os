@@ -7,9 +7,11 @@ import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { ActivityTimeline } from '@/components/activity/activity-timeline';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useLocale } from '@/hooks/use-locale';
 import { useUiStore } from '@/stores/use-ui-store';
 
 export function DrawerSystem() {
+  const { t } = useLocale();
   const open = useUiStore((state) => state.drawerOpen);
   const drawerKind = useUiStore((state) => state.drawerKind);
   const closeDrawer = useUiStore((state) => state.closeDrawer);
@@ -84,7 +86,7 @@ export function DrawerSystem() {
             ref={drawerRef}
             role="dialog"
             aria-modal="true"
-            aria-label="Foundation details drawer"
+            aria-label={t('drawer.ariaLabel')}
             className="glass-panel-strong fixed inset-y-0 right-0 flex w-full max-w-xl flex-col overflow-hidden border-l border-[color:var(--border)] p-5 shadow-[var(--shadow-cinematic)] sm:w-[30rem]"
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
@@ -95,13 +97,13 @@ export function DrawerSystem() {
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <Badge>{drawerKind} drawer</Badge>
-                <h2 className="mt-3 text-xl font-semibold text-[color:var(--text)]">Operational details panel</h2>
+                <Badge>{t('drawer.kind', { kind: drawerKind })}</Badge>
+                <h2 className="mt-3 text-xl font-semibold text-[color:var(--text)]">{t('drawer.title')}</h2>
                 <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                  A reusable right drawer for future project, template, download, and runtime details.
+                  {t('drawer.description')}
                 </p>
               </div>
-              <Button ref={closeRef} type="button" variant="ghost" className="h-9 w-9 rounded-full p-0" onClick={closeDrawer} aria-label="Close drawer">
+              <Button ref={closeRef} type="button" variant="ghost" className="h-9 w-9 rounded-full p-0" onClick={closeDrawer} aria-label={t('drawer.close')}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -112,8 +114,8 @@ export function DrawerSystem() {
                     <Layers3 className="h-4 w-4 text-[color:var(--accent)]" />
                   </span>
                   <div>
-                    <p className="text-sm font-semibold text-[color:var(--text)]">Details foundation</p>
-                    <p className="text-xs text-[color:var(--muted)]">Ready for future data binding.</p>
+                    <p className="text-sm font-semibold text-[color:var(--text)]">{t('drawer.foundation')}</p>
+                    <p className="text-xs text-[color:var(--muted)]">{t('drawer.foundationDetail')}</p>
                   </div>
                 </div>
               </div>

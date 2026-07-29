@@ -1,0 +1,61 @@
+import type { ContractMetadata } from './shared.contract';
+import type { GeneratedProjectQualityResponse } from './generated-project-quality.contract';
+
+export type DependencyFindingStatus = 'missing' | 'outdated' | 'current' | 'managed' | 'skipped' | 'vulnerable';
+export type BuildStageStatus = 'passed' | 'failed' | 'skipped';
+export type VulnerabilitySeverity = 'CRITICAL' | 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN';
+
+// Real CVE/GHSA data from OSV.dev for the exact requested version, not a curated table.
+export interface VulnerabilityFinding {
+  readonly id: string;
+  readonly aliases: readonly string[];
+  readonly summary: string;
+  readonly severity: VulnerabilitySeverity;
+  readonly url: string;
+}
+
+export interface DependencyFinding {
+  readonly ecosystem: 'pypi' | 'npm' | 'maven';
+  readonly name: string;
+  readonly requested_version?: string | null;
+  readonly latest_version?: string | null;
+  readonly status: DependencyFindingStatus;
+  readonly message: string;
+  readonly manifest_path: string;
+  readonly vulnerabilities: readonly VulnerabilityFinding[];
+}
+
+export interface DependencyAuditReport {
+  readonly status: 'passed' | 'failed' | 'skipped';
+  readonly skipped_reason?: string | null;
+  readonly findings: readonly DependencyFinding[];
+}
+
+export interface BuildRuntimeMetrics {
+  readonly install_ms: number;
+  readonly build_ms: number;
+  readonly total_ms: number;
+  readonly peak_memory_mb?: number | null;
+  readonly cpu_seconds?: number | null;
+  readonly sampler: 'psutil' | 'wallclock';
+}
+
+export interface BuildValidationReport {
+  readonly installed: BuildStageStatus;
+  readonly built: BuildStageStatus;
+  readonly ok: boolean;
+  readonly skipped_reason?: string | null;
+  readonly logs_tail: string;
+  readonly metrics?: BuildRuntimeMetrics | null;
+}
+
+export interface GenerationValidationReport extends ContractMetadata {
+  readonly project_id: string;
+  readonly score: number;
+  readonly passed: boolean;
+  readonly quality: GeneratedProjectQualityResponse;
+  readonly security_findings: readonly Record<string, unknown>[];
+  readonly dependency_audit: DependencyAuditReport;
+  readonly build: BuildValidationReport;
+  readonly warnings: readonly string[];
+}

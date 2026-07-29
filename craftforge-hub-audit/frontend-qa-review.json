@@ -1,0 +1,22 @@
+{
+  "answers": {
+    "domain_fit": "Não é possível avaliar: nenhum artefato de frontend real foi fornecido para revisão.",
+    "visual_identity": "Não é possível avaliar: ausência de artefatos visuais ou direção visual.",
+    "screen_purpose": "Não é possível avaliar: sem código de telas ou fluxos.",
+    "actions_functional": "Não é possível avaliar: sem handlers ou componentes.",
+    "real_data_integration": "Não é possível avaliar: sem camada de dados ou repositórios.",
+    "states_complete": "Não é possível avaliar: sem fetch/loading/error.",
+    "visual_consistency": "Não é possível avaliar: sem estilos ou componentes.",
+    "premium_quality": "Não é possível avaliar: sem implementação.",
+    "ai_generation_tells": "Não é possível avaliar: sem código gerado.",
+    "required_fixes": "O repositório não contém nenhum arquivo de frontend (React/Vite, componentes, i18n, etc.). A revisão só pode ser realizada após o fornecimento do código-fonte real gerado."
+  },
+  "approved": false,
+  "issues": [
+    {
+      "file": "N/A",
+      "problem": "Nenhum artefato de frontend foi fornecido no contexto da conversa. A ProjectSpec foi enviada, mas não o código correspondente a ser revisado.",
+      "severity": "blocker"
+    }
+  ]
+}

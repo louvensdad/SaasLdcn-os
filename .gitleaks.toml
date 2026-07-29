@@ -1,0 +1,14 @@
+title = "LDCN OS secret scan policy"
+
+[allowlist]
+description = "Synthetic test values and one natural-language fixture only; keep patterns exact and review on change."
+regexTarget = "match"
+regexes = [
+  '''sk-proj-ABCDEF1234567890LONGENOUGH''',
+  '''sk-live-ABCDEFGHIJKLMNOPQRSTUVWX''',
+  '''sk_test_0000000000000000000000''',
+  '''ghp-secret-value-that-must-not-return''',
+  '''APIs foram decididas'''
+]
+paths = []
+commits = []

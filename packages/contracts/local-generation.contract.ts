@@ -1,5 +1,6 @@
 import type { GenerationHandoffPackage } from './generation-handoff.contract';
 import type { ContractMetadata, ContractValue } from './shared.contract';
+import type { GeneratedProjectLocaleProfile } from './locale.contract';
 
 export type GenerationRuntime = 'local_static_v0';
 export type LocalGenerationStatus = 'generated' | 'blocked' | 'failed';
@@ -9,6 +10,7 @@ export type GeneratedProjectSecurityState = 'safe' | 'filtered' | 'blocked';
 export interface LocalGenerationRequest {
   readonly project_id: string;
   readonly output_path: string;
+  readonly locale_profile?: GeneratedProjectLocaleProfile;
 }
 
 export interface GeneratedArtifact extends ContractMetadata {

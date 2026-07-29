@@ -1,0 +1,61 @@
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const apiRoot = resolve(import.meta.dirname, '..', '..', 'api');
+const runId = process.env.LDCN_E2E_RUN_ID;
+const apiPort = process.env.PLAYWRIGHT_API_PORT ?? '8001';
+if (!/^\d{2,5}$/.test(apiPort)) throw new Error('PLAYWRIGHT_API_PORT must be numeric.');
+if (!runId || !/^e2e-test-[a-zA-Z0-9_-]+$/.test(runId)) {
+  throw new Error('LDCN_E2E_RUN_ID must use the e2e-test-* namespace.');
+}
+
+const databasePath = resolve(apiRoot, 'tests', '.tmp', `ldcn-${runId}.db`);
+const databaseUrl = `sqlite:///${databasePath.replaceAll('\\', '/')}`;
+if (!databaseUrl.includes('e2e-test-')) {
+  throw new Error('Refusing E2E startup without an isolated test database.');
+}
+
+const env = {
+  ...process.env,
+  LDCN_ENVIRONMENT: 'test',
+  LDCN_DATABASE_URL: databaseUrl,
+  LDCN_FORCE_MOCK: '1',
+  EXECUTION_RUNTIME: 'sandbox',
+  ALLOW_HOST_EXECUTION: 'false',
+};
+
+const migration = spawnSync('python', ['-m', 'alembic', 'upgrade', 'head'], {
+  cwd: apiRoot,
+  env,
+  stdio: 'inherit',
+  shell: false,
+});
+if (migration.status !== 0) {
+  throw new Error(`E2E database migration failed with status ${migration.status}.`);
+}
+
+const api = spawn(
+  'python',
+  ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', apiPort],
+  { cwd: apiRoot, env, stdio: 'inherit', shell: false },
+);
+
+let stopping = false;
+function stop(signal = 'SIGTERM') {
+  if (stopping) return;
+  stopping = true;
+  if (!api.killed) api.kill(signal);
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => stop(signal));
+}
+
+api.on('exit', (code) => {
+  for (const suffix of ['', '-shm', '-wal']) {
+    const candidate = `${databasePath}${suffix}`;
+    if (existsSync(candidate)) rmSync(candidate, { force: true });
+  }
+  process.exit(code ?? 0);
+});

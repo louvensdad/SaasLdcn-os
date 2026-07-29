@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "blueprint_version": "1.0.0",
+  "status": "draft",
+  "source_prompt_id": "prompt_automation_demo",
+  "project_type": "automation",
+  "modules": [],
+  "screens": [],
+  "entities": [{"id": "order", "name": "Order", "status": "suggested", "source_refs": ["req_order"], "dependencies": []}],
+  "apis": [],
+  "permissions": ["automation.activate"],
+  "integrations": [{"id": "whatsapp", "name": "WhatsApp", "status": "pending", "source_refs": ["integration_001"], "dependencies": []}],
+  "automations": [{"id": "order_flow", "name": "Order Flow", "status": "draft", "source_refs": ["flow_001"], "dependencies": ["whatsapp"]}],
+  "technology": {"frontend": null, "backend": "Node.js", "database": "PostgreSQL"},
+  "infrastructure": {"environments": ["preview"], "resources": {}},
+  "tests": ["order_flow_dry_run"],
+  "acceptance_criteria": ["não registrar sem confirmação"],
+  "dependencies": [],
+  "risks": ["credencial externa"],
+  "decisions": [],
+  "approval": {"approved_by": null, "approved_at": null}
+}

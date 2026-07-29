@@ -1,0 +1,28 @@
+import { Bolt, Bot, CircleGauge, CloudUpload, Database, FileCode2, FileText, FolderOpen, GraduationCap, Network, PanelTop, Route, SearchCode, Sparkles } from 'lucide-react';
+import type { ExecutionMode, InputType, MissionTypeId, SpecialistRole } from '../../types';
+
+export interface MissionOption { label: string; type: MissionTypeId; }
+export interface MissionGroup { label: string; tone: string; items: readonly MissionOption[]; }
+export const missionGroups: readonly MissionGroup[] = [
+  { label:'Criar', tone:'violet', items:[['Software / App / API','software.build'],['Automação / Workflow','automation.create'],['Agente de IA','agent.create'],['Integração','integration.create'],['Documentação','documentation.create']].map(([label,type])=>({label,type:type as MissionTypeId})) },
+  { label:'Analisar', tone:'cyan', items:[['Projeto / Código','project.analyze'],['Arquitetura','architecture.review'],['Segurança','security.audit'],['Dados / Documento','data.analyze'],['Performance','performance.analyze']].map(([label,type])=>({label,type:type as MissionTypeId})) },
+  { label:'Corrigir', tone:'amber', items:[['Bug / Erro','error.diagnose'],['Build / Deploy','build.fix'],['Segurança','security.fix'],['Performance','performance.fix']].map(([label,type])=>({label,type:type as MissionTypeId})) },
+  { label:'Evoluir', tone:'green', items:[['Modernizar','system.modernize'],['Migrar tecnologia','tech.migrate'],['Refatorar','code.refactor'],['Escalar','system.scale']].map(([label,type])=>({label,type:type as MissionTypeId})) },
+  { label:'Planejar', tone:'violet', items:[['Produto / Projeto','project.plan'],['Sprint / Roadmap','sprint.plan'],['Infraestrutura','infrastructure.plan']].map(([label,type])=>({label,type:type as MissionTypeId})) },
+  { label:'Pesquisar', tone:'pink', items:[['Tecnologia','tech.research'],['Comparar soluções','solutions.compare'],['Viabilidade','feasibility.study']].map(([label,type])=>({label,type:type as MissionTypeId})) },
+];
+export const modeMeta: Record<ExecutionMode,{label:string;description:string;icon:typeof Sparkles;tone:string}> = {
+  guided:{label:'Guiado',description:'Todas as etapas, explicações e validações',icon:CircleGauge,tone:'violet'},
+  quick:{label:'Rápido',description:'Contexto essencial e primeira versão',icon:Bolt,tone:'cyan'},
+  expert:{label:'Especialista',description:'Configuração avançada e decisões manuais',icon:GraduationCap,tone:'green'},
+  analysis:{label:'Análise',description:'Diagnóstico orientado por evidências',icon:SearchCode,tone:'amber'},
+  collaborative:{label:'Colaborativo',description:'Construção conjunta com a IA',icon:Network,tone:'pink'},
+  autonomous:{label:'Autônomo',description:'Execução dentro dos limites aprovados',icon:Bot,tone:'amber'},
+  learning:{label:'Aprendizado',description:'Explica cada decisão da jornada',icon:FileText,tone:'violet'},
+};
+export const specialistMeta: Partial<Record<SpecialistRole,{label:string;tone:string;responsibilities:readonly string[]}>> = {
+  software_architect:{label:'Architect',tone:'violet',responsibilities:['Arquitetura','Padrões','Modularidade','Compatibilidade']}, backend_engineer:{label:'Backend Eng.',tone:'cyan',responsibilities:['APIs','Serviços','Regras','Integrações']}, frontend_engineer:{label:'Frontend',tone:'purple',responsibilities:['Interface','Acessibilidade','Estado','Performance']}, database_engineer:{label:'DB Engineer',tone:'green',responsibilities:['Modelo de dados','Índices','Integridade','Migrações']}, security_engineer:{label:'Security',tone:'amber',responsibilities:['Autenticação','Autorização','Dados sensíveis','Ameaças']}, security_auditor:{label:'Auditor',tone:'amber',responsibilities:['Evidências','Vulnerabilidades','Compliance','Recomendações']}, qa_engineer:{label:'QA Engineer',tone:'pink',responsibilities:['Critérios','Testes','Regressão','Qualidade']}, devops_engineer:{label:'DevOps',tone:'slate',responsibilities:['Deploy','CI/CD','Observabilidade','Ambientes']}, risk_analyst:{label:'Risk Analyst',tone:'slate',responsibilities:['Riscos','Impactos','Mitigação','Decisões']}, automation_architect:{label:'Automation',tone:'cyan',responsibilities:['Gatilhos','Ações','Orquestração','Falhas']}, integration_specialist:{label:'Integration',tone:'green',responsibilities:['Contratos','Mapeamentos','Credenciais','Sincronização']}, technical_writer:{label:'Tech Writer',tone:'purple',responsibilities:['Estrutura','Clareza','Exemplos','Referência']}, performance_analyst:{label:'Performance',tone:'cyan',responsibilities:['Métricas','Baseline','Gargalos','Benchmark']}, product_strategist:{label:'Product',tone:'violet',responsibilities:['Objetivos','Prioridades','Roadmap','Valor']}, data_analyst:{label:'Data Analyst',tone:'green',responsibilities:['Qualidade','Exploração','Evidências','Conclusões']},
+};
+export const inputMeta: Record<InputType,{label:string;description:string;icon:typeof FileText;tone:string}> = {
+  text:{label:'Texto / Objetivo',description:'Descreva o resultado esperado.',icon:FileText,tone:'blue'}, files:{label:'Arquivos',description:'Envie documentos e materiais existentes.',icon:FolderOpen,tone:'purple'}, code:{label:'Código',description:'Cole um trecho de código relevante.',icon:FileCode2,tone:'cyan'}, logs:{label:'Logs / Stack trace',description:'Adicione logs ou erros observados.',icon:PanelTop,tone:'amber'}, urls:{label:'Repositório / URL',description:'Informe uma URL válida para análise.',icon:Route,tone:'cyan'}, schemas:{label:'Banco / Schema',description:'Cole SQL, JSON ou schema Prisma.',icon:Database,tone:'green'}, project_ref:{label:'Projeto existente',description:'Informe o projeto do workspace.',icon:CloudUpload,tone:'violet'},
+};

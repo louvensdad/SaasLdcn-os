@@ -1,34 +1,39 @@
+'use client';
+
 import { CheckCircle2, Circle, GitBranch, ShieldCheck } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import { cn } from '@/lib/cn';
 
 const events = [
   {
     id: 'shell',
-    title: 'Shell initialized',
-    description: 'Navigation, theme, overlays, and command surfaces loaded.',
+    titleKey: 'activity.shell.title',
+    descriptionKey: 'activity.shell.description',
     icon: CheckCircle2,
   },
   {
     id: 'contracts',
-    title: 'Contracts ready',
-    description: 'Frontend prepared to consume future shared contracts.',
+    titleKey: 'activity.contracts.title',
+    descriptionKey: 'activity.contracts.description',
     icon: GitBranch,
   },
   {
     id: 'gates',
-    title: 'Quality gates pending',
-    description: 'Backend and AI phases remain blocked until frontend foundation validates.',
+    titleKey: 'activity.gates.title',
+    descriptionKey: 'activity.gates.description',
     icon: ShieldCheck,
   },
 ] as const;
 
 export function ActivityTimeline({ compact = false }: { readonly compact?: boolean }) {
+  const { t } = useLocale();
+
   return (
     <Card className={cn('overflow-hidden', compact && 'p-4')}>
       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
-        Activity timeline
+        {t('activity.title')}
       </p>
       <div className="mt-5 space-y-4">
         {events.map((event, index) => {
@@ -42,8 +47,8 @@ export function ActivityTimeline({ compact = false }: { readonly compact?: boole
                 <Icon className="h-3.5 w-3.5 text-[color:var(--accent)]" />
               </span>
               <div className="min-w-0 pb-2">
-                <p className="text-sm font-semibold text-[color:var(--text)]">{event.title}</p>
-                <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">{event.description}</p>
+                <p className="text-sm font-semibold text-[color:var(--text)]">{t(event.titleKey)}</p>
+                <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">{t(event.descriptionKey)}</p>
               </div>
             </div>
           );
@@ -53,8 +58,8 @@ export function ActivityTimeline({ compact = false }: { readonly compact?: boole
             <Circle className="h-3 w-3 text-[color:var(--muted)]" />
           </span>
           <div>
-            <p className="text-sm font-semibold text-[color:var(--text)]">Future backend event</p>
-            <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">Reserved for real runtime events later.</p>
+            <p className="text-sm font-semibold text-[color:var(--text)]">{t('activity.future.title')}</p>
+            <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">{t('activity.future.description')}</p>
           </div>
         </div>
       </div>

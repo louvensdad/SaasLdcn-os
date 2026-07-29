@@ -2,14 +2,17 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { useLocale } from '@/hooks/use-locale';
 import type { ArchitecturalNode } from '@/lib/api/types';
 
 export function GraphNodeDetails({ node }: { readonly node: ArchitecturalNode | null }) {
+  const { t } = useLocale();
+
   return (
     <Card className="grid gap-3 p-4" data-testid="graph-node-details">
-      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">Node Details</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">{t('graph.nodeDetails')}</p>
       {!node ? (
-        <p className="text-sm text-[color:var(--muted)]">Select a node to inspect burden, ownership, risk and readiness.</p>
+        <p className="text-sm text-[color:var(--muted)]">{t('graph.selectNode')}</p>
       ) : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -17,10 +20,10 @@ export function GraphNodeDetails({ node }: { readonly node: ArchitecturalNode | 
             <Badge>{node.type}</Badge>
           </div>
           <div className="grid gap-2 text-sm text-[color:var(--muted)] sm:grid-cols-2">
-            <p>Readiness <span className="font-semibold text-[color:var(--text)]">{node.readiness_score}</span></p>
-            <p>Ownership <span className="font-semibold text-[color:var(--text)]">{node.ownership_role}</span></p>
-            <p>Risk <span className="font-semibold text-[color:var(--text)]">{node.risk_level}</span></p>
-            <p>Burden <span className="font-semibold text-[color:var(--text)]">{node.burden_score}</span></p>
+            <p>{t('graph.readiness')} <span className="font-semibold text-[color:var(--text)]">{node.readiness_score}</span></p>
+            <p>{t('graph.ownership')} <span className="font-semibold text-[color:var(--text)]">{node.ownership_role}</span></p>
+            <p>{t('graph.risk')} <span className="font-semibold text-[color:var(--text)]">{node.risk_level}</span></p>
+            <p>{t('graph.burden')} <span className="font-semibold text-[color:var(--text)]">{node.burden_score}</span></p>
           </div>
           <div className="flex flex-wrap gap-2">
             {node.required_skills.map((skill) => (

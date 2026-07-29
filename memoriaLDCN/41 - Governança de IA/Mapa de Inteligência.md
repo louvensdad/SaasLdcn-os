@@ -1,0 +1,17 @@
+# Mapa de Inteligência
+
+- [[Mapa de Blueprint]]
+- [[Mapa de contexto]]
+- [[Mapa de engenharia reversa]]
+- [[Mapa de migração]]
+- [[Refatoração inteligente]]
+- [[Plataforma de Conhecimento]]
+- [[Sistema de compatibilidade]]
+- [[Biblioteca de padrões]]
+- [[Sistema de simulação]]
+- [[Sistema de custos inteligentes]]
+- [[Sistema de Agentes Personalizados]]
+- [[Sistema de missões]]
+- [[Laboratório de IA]]
+- [[Catálogo de Tecnologias]]
+- [[Sistema de Governança de IA]]

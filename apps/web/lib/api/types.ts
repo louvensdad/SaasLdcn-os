@@ -1,8 +1,34 @@
+import type {
+  AccountDeactivationResponse as AccountDeactivationResponseContract,
+  AccountDeletionResponse as AccountDeletionResponseContract,
+  ActivityExportResponse as ActivityExportResponseContract,
+  AuthResponse as AuthResponseContract,
+  AvatarResponse as AvatarResponseContract,
+  AvatarUpdateRequest as AvatarUpdateRequestContract,
+  ConsentRequest as ConsentRequestContract,
+  DataExportResponse as DataExportResponseContract,
+  PasswordChangeRequest as PasswordChangeRequestContract,
+  RefreshRequest as RefreshRequestContract,
+  SessionResponse as SessionResponseContract,
+  TokenResponse as TokenResponseContract,
+  TwoFactorCodeRequest as TwoFactorCodeRequestContract,
+  TwoFactorEnrollResponse as TwoFactorEnrollResponseContract,
+  UserLoginRequest as UserLoginRequestContract,
+  UserPublic as UserPublicContract,
+  UserRegisterRequest as UserRegisterRequestContract,
+  UserRole as UserRoleContract,
+  UserUpdateRequest as UserUpdateRequestContract,
+} from '@contracts/auth.contract';
+import type {
+  Workspace as WorkspaceContract,
+  WorkspaceMember as WorkspaceMemberContract,
+} from '@contracts/tenant.contract';
 import type { ArchitectureContract } from '@contracts/architecture.contract';
 import type { ArchitectureLevelContract } from '@contracts/architecture-level.contract';
 import type { ArchetypeContract } from '@contracts/archetype.contract';
 import type {
   BlueprintGenerationMode,
+  ProjectRequirements as ProjectRequirementsContract,
   ProjectBlueprint as ProjectBlueprintContract,
 } from '@contracts/blueprint.contract';
 import type { BusinessModuleContract } from '@contracts/business-module.contract';
@@ -63,6 +89,13 @@ import type {
 } from '@contracts/infrastructure.contract';
 import type { LanguageContract } from '@contracts/language.contract';
 import type {
+  LocaleDefinition as LocaleDefinitionContract,
+  LocalizationPreviewRequest as LocalizationPreviewRequestContract,
+  LocalizationPreviewResponse as LocalizationPreviewResponseContract,
+  LocalizationValidationResponse as LocalizationValidationResponseContract,
+  TranslationDictionary as TranslationDictionaryContract,
+} from '@contracts/locale.contract';
+import type {
   LanguageDomainArchitectureSet as LanguageDomainArchitectureSetContract,
   LanguageDomainCapabilitySet as LanguageDomainCapabilitySetContract,
   LanguageDomainFrameworkSet as LanguageDomainFrameworkSetContract,
@@ -80,17 +113,40 @@ import type {
 } from '@contracts/gatekeeper.contract';
 import type { GenerationHandoffPackage as GenerationHandoffPackageContract } from '@contracts/generation-handoff.contract';
 import type {
+  BackendGenerationRequest as BackendGenerationRequestContract,
+  BackendGenerationTemplateCatalog as BackendGenerationTemplateCatalogContract,
+  GenerationManifest as BackendGenerationManifestContract,
+} from '@contracts/backend-generation.contract';
+import type {
   GeneratedFileContentResponse as GeneratedFileContentResponseContract,
   GeneratedProjectFilesResponse as GeneratedProjectFilesResponseContract,
   LocalGenerationRequest as LocalGenerationRequestContract,
   LocalGenerationResult as LocalGenerationResultContract,
   PreparedDownloadResponse as PreparedDownloadResponseContract,
 } from '@contracts/local-generation.contract';
+import type { GeneratedProjectQualityResponse as GeneratedProjectQualityResponseContract } from '@contracts/generated-project-quality.contract';
+import type {
+  DocumentationDoc as DocumentationDocContract,
+  DocumentationCheck as DocumentationCheckContract,
+  DocumentationFinding as DocumentationFindingContract,
+  DocumentationLibraryResponse as DocumentationLibraryResponseContract,
+  DocumentationExportResponse as DocumentationExportResponseContract,
+  GeneratedDoc as GeneratedDocContract,
+  DocumentationGenerateRequest as DocumentationGenerateRequestContract,
+  DocumentationGenerateResponse as DocumentationGenerateResponseContract,
+  DocumentationSaveRequest as DocumentationSaveRequestContract,
+  DocumentationSaveResponse as DocumentationSaveResponseContract,
+} from '@contracts/documentation.contract';
 import type {
   GitExportJob as GitExportJobContract,
   GitExportRequest as GitExportRequestContract,
   GitExportStatusResponse as GitExportStatusResponseContract,
 } from '@contracts/git-export.contract';
+import type {
+  GitProviderConnection as GitProviderConnectionContract,
+  RepositoryCreateRequest as RepositoryCreateRequestContract,
+  RepositoryDelivery as RepositoryDeliveryContract,
+} from '@contracts/git-provider.contract';
 import type {
   ContractUnderstandingReport as ContractUnderstandingReportContract,
   PdfContractUploadPolicy as PdfContractUploadPolicyContract,
@@ -147,7 +203,30 @@ export interface HealthResponse {
   readonly status: 'ok' | 'degraded' | 'offline';
   readonly service: string;
   readonly version: string;
+  readonly checks?: Record<string, string>;
 }
+
+export type UserRole = UserRoleContract;
+export type UserPublic = UserPublicContract;
+export type TokenResponse = TokenResponseContract;
+export type AuthResponse = AuthResponseContract;
+export type UserRegisterRequest = UserRegisterRequestContract;
+export type UserLoginRequest = UserLoginRequestContract;
+export type RefreshRequest = RefreshRequestContract;
+export type UserUpdateRequest = UserUpdateRequestContract;
+export type PasswordChangeRequest = PasswordChangeRequestContract;
+export type ConsentRequest = ConsentRequestContract;
+export type DataExportResponse = DataExportResponseContract;
+export type AccountDeletionResponse = AccountDeletionResponseContract;
+export type SessionResponse = SessionResponseContract;
+export type TwoFactorEnrollResponse = TwoFactorEnrollResponseContract;
+export type TwoFactorCodeRequest = TwoFactorCodeRequestContract;
+export type ActivityExportResponse = ActivityExportResponseContract;
+export type AvatarResponse = AvatarResponseContract;
+export type AvatarUpdateRequest = AvatarUpdateRequestContract;
+export type AccountDeactivationResponse = AccountDeactivationResponseContract;
+export type Workspace = WorkspaceContract;
+export type WorkspaceMember = WorkspaceMemberContract;
 
 export type Stack = StackContract;
 export type SkillCatalogResponse = SkillCatalogResponseContract;
@@ -217,14 +296,24 @@ export type RegistryEndpoint = EndpointContract;
 export type ArchitectureLevel = ArchitectureLevelContract;
 export type CompatibilityRule = CompatibilityRuleContract;
 export type ProjectBlueprint = ProjectBlueprintContract;
+export type ProjectRequirements = ProjectRequirementsContract;
+export type LocaleDefinition = LocaleDefinitionContract;
+export type TranslationDictionary = TranslationDictionaryContract;
+export type LocalizationPreviewRequest = LocalizationPreviewRequestContract;
+export type LocalizationPreviewResponse = LocalizationPreviewResponseContract;
+export type LocalizationValidationResponse = LocalizationValidationResponseContract;
 export type GatekeeperReport = GatekeeperReportContract;
 export type PromptMasterDocument = PromptMasterDocumentContract;
 export type GenerationHandoffPackage = GenerationHandoffPackageContract;
+export type BackendGenerationRequest = BackendGenerationRequestContract;
+export type BackendGenerationManifest = BackendGenerationManifestContract;
+export type BackendGenerationTemplateCatalog = BackendGenerationTemplateCatalogContract;
 export type LocalGenerationRequest = LocalGenerationRequestContract;
 export type LocalGenerationResult = LocalGenerationResultContract;
 export type GeneratedProjectFilesResponse = GeneratedProjectFilesResponseContract;
 export type GeneratedFileContentResponse = GeneratedFileContentResponseContract;
 export type PreparedDownloadResponse = PreparedDownloadResponseContract;
+export type GeneratedProjectQualityResponse = GeneratedProjectQualityResponseContract;
 export type UserKeyBoostSessionRequest = UserKeyBoostSessionRequestContract;
 export type UserKeyBoostSessionResponse = UserKeyBoostSessionResponseContract;
 export type UserKeyBoostStatusResponse = UserKeyBoostStatusResponseContract;
@@ -232,6 +321,9 @@ export type DeleteUserKeyBoostSessionResponse = DeleteUserKeyBoostSessionRespons
 export type GitExportRequest = GitExportRequestContract;
 export type GitExportJob = GitExportJobContract;
 export type GitExportStatusResponse = GitExportStatusResponseContract;
+export type GitProviderConnection = GitProviderConnectionContract;
+export type RepositoryCreateRequest = RepositoryCreateRequestContract;
+export type RepositoryDelivery = RepositoryDeliveryContract;
 export type PdfContractUploadPolicy = PdfContractUploadPolicyContract;
 export type PdfContractUploadResponse = PdfContractUploadResponseContract;
 export type ContractUnderstandingReport = ContractUnderstandingReportContract;
@@ -240,11 +332,29 @@ export type Project = ProjectRecordContract;
 export type SaveProjectFromWizardPayload = SaveProjectFromWizardPayloadContract;
 export type UpdateProjectPayload = UpdateProjectPayloadContract;
 
+export type DocumentationDoc = DocumentationDocContract;
+export type DocumentationCheck = DocumentationCheckContract;
+export type DocumentationFinding = DocumentationFindingContract;
+export type DocumentationLibraryResponse = DocumentationLibraryResponseContract;
+export type DocumentationExportResponse = DocumentationExportResponseContract;
+export type GeneratedDoc = GeneratedDocContract;
+export type DocumentationGenerateRequest = DocumentationGenerateRequestContract;
+export type DocumentationGenerateResponse = DocumentationGenerateResponseContract;
+export type DocumentationSaveRequest = DocumentationSaveRequestContract;
+export type DocumentationSaveResponse = DocumentationSaveResponseContract;
+
 export interface DownloadRecord {
   readonly downloadId: string;
   readonly projectId: string;
-  readonly status: string;
-  readonly artifactPath?: string | null;
+  readonly workspaceId?: string | null;
+  readonly status: 'prepared' | 'downloaded' | 'expired';
+  readonly artifactId: string;
+  readonly checksumSha256: string;
+  readonly sizeBytes: number;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly downloadedAt?: string | null;
+  readonly downloadUrl: string;
 }
 
 export interface ValidateSelectionPayload {
@@ -286,6 +396,7 @@ export interface BlueprintPreviewPayload {
   readonly infrastructure_component_ids: readonly string[];
   readonly locale: string;
   readonly generation_mode: BlueprintGenerationMode | string;
+  readonly project_requirements: ProjectRequirementsContract;
 }
 
 export interface InfrastructureRecommendationPayload {

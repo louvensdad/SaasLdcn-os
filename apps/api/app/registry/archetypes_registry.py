@@ -237,7 +237,7 @@ ARCHETYPES: list[dict] = [
         "name": "REST API",
         "description": "Classic resource-oriented API service.",
         "category": "backend",
-        "supported_stacks": ["fastapi", "spring_boot", "nestjs"],
+        "supported_stacks": ["fastapi", "spring_boot", "nestjs", "express", "fastify"],
         "recommended_stacks": ["fastapi", "nestjs"],
         "default_capabilities": ["api_docs", "rate_limiting"],
         "recommended_business_modules": ["users", "settings"],

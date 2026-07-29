@@ -29,7 +29,6 @@ export function MetricCard({ label, value, detail, trend }: MetricCardProps) {
           </div>
         ) : null}
       </div>
-      <div className="micro-graph mt-5" aria-hidden />
     </Card>
   );
 }

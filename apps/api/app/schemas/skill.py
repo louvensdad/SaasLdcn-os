@@ -71,3 +71,37 @@ class SkillPreviewRequest(ApiModel):
     skill_id: str
     project_id: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
+
+
+class SkillExecutionRequest(ApiModel):
+    skill_id: str
+    project_id: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class SkillExecutionTrace(ApiModel):
+    contractVersion: str
+    timestamp: str
+    step: str
+    status: Literal["completed", "blocked", "failed"]
+    message: str
+
+
+class SkillExecutionSafety(ApiModel):
+    no_ai: bool
+    no_llm: bool
+    no_agents: bool
+    no_shell: bool
+    no_external_access: bool
+
+
+class SkillExecutionResult(ApiModel):
+    contractVersion: str
+    execution_id: str
+    skill_id: str
+    project_id: str | None = None
+    status: Literal["completed", "blocked", "failed"]
+    summary: str
+    outputs: dict[str, Any] = Field(default_factory=dict)
+    trace: list[SkillExecutionTrace] = Field(default_factory=list)
+    safety: SkillExecutionSafety

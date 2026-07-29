@@ -69,6 +69,8 @@ export interface TemplateMarketplaceItem extends ContractMetadata {
   readonly supported_frameworks: readonly string[];
   readonly supported_architectures: readonly string[];
   readonly supported_archetypes: readonly string[];
+  readonly supported_locales: readonly string[];
+  readonly fallback_locale: string;
   readonly capabilities: readonly string[];
   readonly complexity: TemplateComplexity;
   readonly maturity: TemplateMaturity;

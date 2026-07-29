@@ -1,0 +1,1 @@
+# domain package – will contain domain models, interfaces, and value objects

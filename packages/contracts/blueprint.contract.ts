@@ -7,7 +7,7 @@ import type { InfrastructureProfile } from './infrastructure.contract';
 import type { EndpointContract } from './endpoint.contract';
 import type { FrameworkContract } from './framework.contract';
 import type { LanguageContract } from './language.contract';
-import type { LocaleCode } from './locale.contract';
+import type { GeneratedProjectLocaleProfile, LocaleCode } from './locale.contract';
 import type { RuntimeContract } from './runtime.contract';
 import type { ContractId, ContractMetadata } from './shared.contract';
 
@@ -37,6 +37,18 @@ export type BlueprintRecommendationType =
   | 'endpoint';
 
 export type BlueprintRecommendationSeverity = 'info' | 'warning' | 'critical';
+export type DeliveryTarget = 'zip' | 'github' | 'gitlab' | 'both';
+
+export interface ProjectRequirements {
+  readonly project_goal: string;
+  readonly business_context: string;
+  readonly target_users: readonly string[];
+  readonly business_rules: readonly string[];
+  readonly entities: readonly string[];
+  readonly workflows: readonly string[];
+  readonly constraints: readonly string[];
+  readonly delivery_target?: DeliveryTarget | null;
+}
 
 export interface TechnologyGraph {
   readonly language: Pick<
@@ -105,7 +117,9 @@ export interface ProjectBlueprint extends ContractMetadata {
   readonly blueprint_id: ContractId | string;
   readonly project_name: string;
   readonly locale: LocaleCode;
+  readonly locale_profile: GeneratedProjectLocaleProfile;
   readonly generation_mode: BlueprintGenerationMode;
+  readonly project_requirements: ProjectRequirements;
   readonly technology_graph: TechnologyGraph;
   readonly architecture_profile: ArchitectureProfile;
   readonly archetype_profile: ArchetypeProfile;

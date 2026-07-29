@@ -1,82 +1,163 @@
 import {
   BarChart3,
+  ChartNoAxesCombined,
   BookOpen,
   BrainCircuit,
   GitBranch,
+  History,
+  Library,
+  SearchCheck,
   LayoutDashboard,
+  Compass,
+  FlaskConical,
   Map,
+  MessagesSquare,
   MonitorCog,
+  Orbit,
+  RefreshCw,
+  Rocket,
   Settings2,
-  SquareStack,
+  Store,
+  Wallet,
   WandSparkles,
 } from 'lucide-react';
 
 export interface NavigationItem {
-  readonly label: string;
+  readonly labelKey: string;
   readonly href: string;
   readonly icon: typeof LayoutDashboard;
-  readonly description: string;
+  readonly descriptionKey: string;
+  /** Extensible union -- only one real variant exists today (Marketplace's
+   * real, computed "updates available" count). */
+  readonly badgeCountKey?: 'marketplaceUpdates';
 }
 
 export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
   {
-    label: 'Dashboard',
+    labelKey: 'navigation.platform.label',
+    href: '/platform',
+    icon: Orbit,
+    descriptionKey: 'navigation.platform.description',
+  },
+  {
+    labelKey: 'navigation.dashboard.label',
     href: '/dashboard',
     icon: LayoutDashboard,
-    description: 'Operational overview and system pulse.',
+    descriptionKey: 'navigation.dashboard.description',
   },
   {
-    label: 'Projects',
+    labelKey: 'navigation.analytics.label',
+    href: '/analytics',
+    icon: ChartNoAxesCombined,
+    descriptionKey: 'navigation.analytics.description',
+  },
+  {
+    labelKey: 'navigation.projects.label',
     href: '/projects',
     icon: BarChart3,
-    description: 'Project registry and delivery state.',
+    descriptionKey: 'navigation.projects.description',
   },
   {
-    label: 'Templates',
-    href: '/templates',
-    icon: SquareStack,
-    description: 'Blueprint-driven starting points.',
-  },
-  {
-    label: 'Skills',
+    labelKey: 'navigation.skills.label',
     href: '/skills',
     icon: BrainCircuit,
-    description: 'Operational skills registry.',
+    descriptionKey: 'navigation.skills.description',
   },
   {
-    label: 'Wizard',
+    labelKey: 'navigation.wizard.label',
     href: '/wizard',
-    icon: WandSparkles,
-    description: 'Stack-specific setup journeys.',
+    icon: Rocket,
+    descriptionKey: 'navigation.wizard.description',
   },
   {
-    label: 'System Status',
+    labelKey: 'navigation.projectRooms.label',
+    href: '/project-rooms',
+    icon: MessagesSquare,
+    descriptionKey: 'navigation.projectRooms.description',
+  },
+  {
+    labelKey: 'navigation.architect.label',
+    href: '/architect',
+    icon: Compass,
+    descriptionKey: 'navigation.architect.description',
+  },
+  {
+    labelKey: 'navigation.engineeringReview.label',
+    href: '/engineering-review',
+    icon: SearchCheck,
+    descriptionKey: 'navigation.engineeringReview.description',
+  },
+  {
+    labelKey: 'navigation.jobs.label',
+    href: '/jobs',
+    icon: History,
+    descriptionKey: 'navigation.jobs.description',
+  },
+  {
+    labelKey: 'navigation.engineeringLaboratory.label',
+    href: '/engineering-laboratory',
+    icon: FlaskConical,
+    descriptionKey: 'navigation.engineeringLaboratory.description',
+  },
+  {
+    labelKey: 'navigation.library.label',
+    href: '/templates',
+    icon: Library,
+    descriptionKey: 'navigation.library.description',
+  },
+  {
+    labelKey: 'navigation.marketplace.label',
+    href: '/marketplace',
+    icon: Store,
+    descriptionKey: 'navigation.marketplace.description',
+    badgeCountKey: 'marketplaceUpdates',
+  },
+  {
+    labelKey: 'navigation.pricing.label',
+    href: '/pricing',
+    icon: Wallet,
+    descriptionKey: 'navigation.pricing.description',
+  },
+  {
+    labelKey: 'navigation.modernize.label',
+    href: '/modernize',
+    icon: RefreshCw,
+    descriptionKey: 'navigation.modernize.description',
+  },
+  {
+    labelKey: 'navigation.autoFix.label',
+    href: '/auto-fix',
+    icon: WandSparkles,
+    descriptionKey: 'navigation.autoFix.description',
+  },
+  {
+    labelKey: 'navigation.systemStatus.label',
     href: '/system-status',
     icon: MonitorCog,
-    description: 'Internal platform health.',
+    descriptionKey: 'navigation.systemStatus.description',
   },
   {
-    label: 'Architecture',
+    labelKey: 'navigation.architecture.label',
     href: '/architecture',
     icon: GitBranch,
-    description: 'Runtime and module map.',
+    descriptionKey: 'navigation.architecture.description',
   },
   {
-    label: 'Roadmap',
+    labelKey: 'navigation.roadmap.label',
     href: '/roadmap',
     icon: Map,
-    description: 'Governed platform plan.',
+    descriptionKey: 'navigation.roadmap.description',
   },
   {
-    label: 'Documentation',
+    labelKey: 'navigation.documentation.label',
     href: '/documentation',
     icon: BookOpen,
-    description: 'Platform memory and standards.',
+    descriptionKey: 'navigation.documentation.description',
   },
   {
-    label: 'Settings',
+    labelKey: 'navigation.settings.label',
     href: '/settings',
     icon: Settings2,
-    description: 'Theme and runtime preferences.',
+    descriptionKey: 'navigation.settings.description',
   },
 ] as const;

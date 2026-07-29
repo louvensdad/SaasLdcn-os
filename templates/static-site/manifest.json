@@ -3,6 +3,8 @@
   "name": "Vanilla Static Site",
   "description": "Deterministic vanilla HTML/CSS static site foundation.",
   "runtime": "local_static_v0",
+  "supported_locales": ["pt-BR", "en-US", "es-ES", "fr-FR"],
+  "fallback_locale": "en-US",
   "metadata": {
     "framework": "vanilla",
     "mode": "static",

@@ -1,113 +1,27 @@
-ldcn-os/
-├── apps/
-│   ├── web      (Next.js)
-│   └── api      (FastAPI)
-├── packages/
-├── reports/
+LDCN OS - executar localmente
 
-Para rodar tudo localmente:
+Instale as dependencias uma vez:
 
-1. Backend (FastAPI)
+python -m pip install -r apps\api\requirements.txt
+cd apps\web
+npm.cmd install
+cd ..\..
 
-Abra um terminal:
+Depois, execute backend e frontend juntos com um unico comando:
 
-cd C:\ldcn-os\apps\api
+.\dev.cmd
 
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+URLs:
 
-Teste:
+- Backend: http://127.0.0.1:8001
+- Health check: http://127.0.0.1:8001/api/health
+- Swagger: http://127.0.0.1:8001/docs
+- Frontend: http://localhost:3000
 
-http://127.0.0.1:8001/api/health
+Use Ctrl+C para encerrar os dois processos juntos.
 
-ou
+Se aparecer "Backend offline", confirme:
 
-http://127.0.0.1:8001/docs
+curl.exe http://127.0.0.1:8001/api/health
 
-Se abrir o Swagger, o backend está funcionando.
-
-2. Frontend (Next.js)
-
-Abra OUTRO terminal:
-
-cd C:\ldcn-os\apps\web
-
-npm install
-npm run dev
-
-ou se estiver usando a porta que vocês configuraram:
-
-npm run dev -- -p 3000
-
-ou
-
-npm run dev -- -p 3003
-
-Dependendo do que está no projeto.
-
-Abra:
-
-http://localhost:3000
-
-ou
-
-http://localhost:3003
-3. Verificar a URL da API
-
-Confira o arquivo:
-
-apps/web/.env.local
-
-Ele deve apontar para:
-
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8001
-4. Se aparecer "Backend offline"
-
-Verifique:
-
-curl http://127.0.0.1:8001/api/health
-
-Se responder:
-
-{
-  "status": "ok"
-}
-
-o backend está vivo.
-
-5. Se der erro de dependências
-
-No frontend:
-
-cd C:\ldcn-os\apps\web
-
-Remove-Item -Recurse -Force .next
-npm install
-npm run build
-npm run dev
-
-No backend:
-
-cd C:\ldcn-os\apps\api
-
-pip install -r requirements.txt
-
-(se existir requirements.txt)
-
-ou
-
-pip install fastapi uvicorn pydantic sqlalchemy
-6. Rodar os testes
-
-Backend:
-
-cd C:\ldcn-os
-
-pytest apps/api/tests
-
-Frontend:
-
-cd C:\ldcn-os\apps\web
-
-npm run typecheck
-npm run build
-npx playwright test
+O frontend usa NEXT_PUBLIC_API_URL=http://127.0.0.1:8001 por padrao.

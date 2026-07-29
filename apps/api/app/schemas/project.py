@@ -12,9 +12,24 @@ from app.schemas.prompt_master import PromptMasterDocument
 
 
 class SaveProjectFromWizardRequest(ApiModel):
+    workspace_id: str | None = None
     blueprint: ProjectBlueprint
     prompt_master: PromptMasterDocument
     gatekeeper: GatekeeperReport
+
+
+class BlueprintApprovalRequest(ApiModel):
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class BlueprintApprovalRecord(ApiModel):
+    approval_id: str
+    project_id: str
+    blueprint_hash: str
+    approved_by_user_id: str
+    reason: str | None = None
+    created_at: str
+    revoked_at: str | None = None
 
 
 class ProjectUpdateRequest(ApiModel):
@@ -42,6 +57,8 @@ class ProjectUpdateRequest(ApiModel):
 
 class ProjectRecord(ApiModel):
     project_id: str
+    owner_user_id: str | None = None
+    workspace_id: str | None = None
     project_name: str
     status: Literal[
         "draft",

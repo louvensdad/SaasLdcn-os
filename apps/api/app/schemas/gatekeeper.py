@@ -7,6 +7,7 @@ from pydantic import Field
 from app.schemas.blueprint import ProjectBlueprint
 from app.schemas.common import ApiModel
 from app.schemas.prompt_master import PromptMasterDocument
+from app.schemas.localization import GeneratedProjectLocaleProfile
 
 
 class GatekeeperPreviewRequest(ApiModel):
@@ -17,15 +18,21 @@ class GatekeeperPreviewRequest(ApiModel):
 class GatekeeperCheck(ApiModel):
     id: Literal[
         "technology_graph_check",
+        "requirements_completeness_check",
+        "business_rules_check",
+        "entity_model_check",
+        "delivery_target_check",
         "architecture_compatibility_check",
         "business_module_check",
         "endpoint_plan_check",
+        "required_files_check",
         "capability_dependency_check",
         "engineering_readiness_check",
         "security_baseline_check",
         "testing_baseline_check",
         "documentation_baseline_check",
         "generation_constraint_check",
+        "forbidden_files_check",
         "locale_i18n_check",
         "secret_exposure_check",
         "trace_safety_check",
@@ -52,6 +59,7 @@ class GatekeeperReport(ApiModel):
     blueprint_id: str
     prompt_master_id: str
     decision: Literal["approved", "approved_with_warnings", "blocked"]
+    locale_profile: GeneratedProjectLocaleProfile = Field(default_factory=GeneratedProjectLocaleProfile)
     summary: str
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

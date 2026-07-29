@@ -1,0 +1,29 @@
+services:
+  egress-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    image: ldcn/sandbox-egress-proxy:2026.07
+    container_name: ldcn-sandbox-egress-proxy
+    restart: unless-stopped
+    user: '13:13'
+    volumes:
+      - ./squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      - sandbox-egress
+      - proxy-internet
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /var/log/squid:size=32m
+      - /var/spool/squid:size=64m
+      - /run:size=8m
+
+networks:
+  sandbox-egress:
+    name: ldcn-sandbox-egress
+    internal: true
+  proxy-internet: {}

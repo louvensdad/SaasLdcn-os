@@ -1,9 +1,4 @@
-export type ThemeId =
-  | 'obsidian-blue'
-  | 'graphite-cyan'
-  | 'titanium-violet'
-  | 'emerald-matrix'
-  | 'crimson-pulse';
+export type ThemeId = 'dark' | 'light';
 
 export interface ThemeDefinition {
   readonly id: ThemeId;
@@ -15,43 +10,22 @@ export interface ThemeDefinition {
 
 export const THEMES: readonly ThemeDefinition[] = [
   {
-    id: 'obsidian-blue',
-    name: 'Obsidian Blue',
-    accent: '#7ba7ff',
-    accentSecondary: '#65d6ff',
-    description: 'Cold blue precision with deep obsidian surfaces.',
+    id: 'dark',
+    name: 'Dark',
+    accent: '#a78bfa',
+    accentSecondary: '#22b8c7',
+    description: 'Aubergine instrument surfaces with an ultraviolet operational signal.',
   },
   {
-    id: 'graphite-cyan',
-    name: 'Graphite Cyan',
-    accent: '#67d9eb',
-    accentSecondary: '#9df3ff',
-    description: 'Graphite tones with a restrained cyan edge.',
-  },
-  {
-    id: 'titanium-violet',
-    name: 'Titanium Violet',
-    accent: '#b69cff',
-    accentSecondary: '#8fc6ff',
-    description: 'Titanium depth with violet intelligence.',
-  },
-  {
-    id: 'emerald-matrix',
-    name: 'Emerald Matrix',
-    accent: '#7cf0b9',
-    accentSecondary: '#76c9ff',
-    description: 'Emerald control with a calm operational glow.',
-  },
-  {
-    id: 'crimson-pulse',
-    name: 'Crimson Pulse',
-    accent: '#ff8aa3',
-    accentSecondary: '#f2ab62',
-    description: 'A controlled crimson signal for higher urgency.',
+    id: 'light',
+    name: 'Light',
+    accent: '#6d28d9',
+    accentSecondary: '#087f8c',
+    description: 'Cool drafting surfaces with a high-contrast ultraviolet signal.',
   },
 ] as const;
 
-export const DEFAULT_THEME_ID: ThemeId = 'obsidian-blue';
+export const DEFAULT_THEME_ID: ThemeId = 'dark';
 
 export function isThemeId(value: string): value is ThemeId {
   return THEMES.some((theme) => theme.id === value);

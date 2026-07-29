@@ -586,5 +586,3 @@ TEMPLATES: list[dict[str, Any]] = [
 
 
 PROJECT_SEED: list[dict[str, Any]] = []
-
-DOWNLOADS: list[dict[str, Any]] = []

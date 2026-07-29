@@ -170,7 +170,7 @@ Agents are specialized, accountable, and orchestrated. They are not a bypass for
 
 - Local Build 90% without external AI
 - Agent Boost 100% with platform API key
-- no BYOK
+- BYOK is supported only through encrypted, expiring, user-scoped sessions
 - API keys only in backend
 - generation trace is mandatory
 - validation report is mandatory
@@ -259,19 +259,19 @@ Quality gates are mandatory and govern phase progression.
 | Accessibility mandatory | Design System | 1 | planned | Accessibility audit |
 | Clean routes and sidebar functional | Development Phases | 1 | planned | Navigation gate |
 | Premium dashboard and real templates | Development Phases | 2 | planned | UX review and template tests |
-| FastAPI core backend | Master Requirements Ledger | 3 | planned | Backend build and API tests |
-| Health endpoint | Master Requirements Ledger | 3 | planned | Health check validation |
-| Project registry | Master Requirements Ledger | 3 | planned | CRUD and persistence tests |
+| FastAPI core backend | Master Requirements Ledger | 3 | validated | Backend build and API tests |
+| Health endpoint | Master Requirements Ledger | 3 | validated | Health check validation |
+| Project registry | Master Requirements Ledger | 3 | validated | CRUD and persistence tests |
 | Stack registry | Master Requirements Ledger | 4 | planned | Stack contract and compatibility tests |
 | Wizard per stack | Master Requirements Ledger | 5 | planned | Wizard flow tests |
 | Prompt Master transforms answers into contract | Master Requirements Ledger | 6 | planned | Prompt fidelity tests |
 | Mandatory agents with boundaries and tests | Master Requirements Ledger | 7 | planned | Agent isolation and execution tests |
 | Local Build 90% without external AI | Product Vision | 8 | planned | Local generation tests |
-| Agent Boost 100% with platform API key | Product Vision | 10 | planned | Provider routing and fallback tests |
+| Agent Boost with platform or user key | Product Vision | 10 | validated | Provider routing, vault, redaction, and fallback tests |
 | Generation trace and validation report mandatory | Quality Gates | 8 | planned | Generation gate |
 | Secure download and no root ZIP | Quality Gates | 9 | planned | Download gate |
 | Text then voice then avatar | Product Vision | 11 | planned | Interaction phase validation |
-| Secrets only backend | Security Requirements | 3 | planned | Security gate and secret scan |
+| Secrets only backend | Security Requirements | 3 | validated | Security gate, artifact scan, vault, and redaction tests |
 | No HTTP 200 with hidden error | Backend Requirements | 3 | planned | API error contract tests |
 | Each phase must report and pass gates | Quality Gates | all | planned | Phase validation reports |
 

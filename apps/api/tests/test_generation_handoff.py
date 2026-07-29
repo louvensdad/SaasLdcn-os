@@ -17,6 +17,16 @@ def _build_blueprint(client, *, valid: bool = True):
         "infrastructure_component_ids": ["postgresql", "redis", "opentelemetry"],
         "locale": "pt-BR",
         "generation_mode": "local_build_90",
+        "project_requirements": {
+            "project_goal": "Deliver a governed handoff.",
+            "business_context": "Commercial SaaS operation.",
+            "target_users": ["operators"],
+            "business_rules": ["Authorized operators manage requests."],
+            "entities": ["User", "Request"],
+            "workflows": ["Operator reviews a request."],
+            "constraints": ["Protect user data."],
+            "delivery_target": "github",
+        },
     }
     response = client.post("/api/blueprints/preview", json=payload)
     assert response.status_code == 200

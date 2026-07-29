@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.core.deps import CurrentUser
+from app.engines.skill_execution_engine import SkillExecutionEngine
 from app.engines.skill_registry_engine import SkillRegistryEngine
+from app.routes.projects import service as project_service
 from app.schemas.skill import (
     SkillCatalogResponse,
     SkillDefinition,
+    SkillExecutionRequest,
+    SkillExecutionResult,
     SkillPreview,
     SkillPreviewRequest,
     SkillRecommendation,
@@ -13,6 +18,7 @@ from app.schemas.skill import (
 
 router = APIRouter(tags=["skills"])
 engine = SkillRegistryEngine()
+execution_engine = SkillExecutionEngine(project_service=project_service)
 
 
 @router.get("/skills", response_model=SkillCatalogResponse)
@@ -59,6 +65,13 @@ def recommended_skills(
 @router.post("/skills/preview", response_model=SkillPreview)
 def preview_skill(payload: SkillPreviewRequest) -> SkillPreview:
     return SkillPreview.model_validate(engine.preview(payload.skill_id, payload.context))
+
+
+@router.post("/skills/execute", response_model=SkillExecutionResult)
+def execute_skill(payload: SkillExecutionRequest, user: CurrentUser) -> SkillExecutionResult:
+    return SkillExecutionResult.model_validate(
+        execution_engine.execute(payload.skill_id, payload.project_id, payload.context, user["user_id"])
+    )
 
 
 @router.get("/skills/{skill_id}", response_model=SkillDefinition)

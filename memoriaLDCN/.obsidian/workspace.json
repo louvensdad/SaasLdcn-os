@@ -1,0 +1,219 @@
+{
+  "main": {
+    "id": "8f2a0852d872890b",
+    "type": "split",
+    "children": [
+      {
+        "id": "09152aa30d417384",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "671b4e1b2bbef968",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Visualização em gráfico"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "51b7860f413bfda1",
+    "type": "split",
+    "children": [
+      {
+        "id": "ae6a524c471c3ae7",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "c6a37fc8d70a24eb",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Explorador de arquivos"
+            }
+          },
+          {
+            "id": "f6766db84c9a4743",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Procurar"
+            }
+          },
+          {
+            "id": "5b0093d111b835b5",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Marcadores"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 200
+  },
+  "right": {
+    "id": "ad0748ea8b378bff",
+    "type": "split",
+    "children": [
+      {
+        "id": "496faba91aac68f9",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "75b7b3ba638d7193",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Links inversos"
+            }
+          },
+          {
+            "id": "3780e69b8bde9abf",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Links de saída"
+            }
+          },
+          {
+            "id": "70f7ef8a17eb3dc2",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Etiquetas"
+            }
+          },
+          {
+            "id": "d2dd750b13a128d3",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Todas as propriedades"
+            }
+          },
+          {
+            "id": "df0d8e582daf7748",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Sumário"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Abrir a troca rápida": false,
+      "graph:Abrir visualização em gráfico": false,
+      "canvas:Criar novo canvas": false,
+      "daily-notes:Abrir a nota de hoje": false,
+      "templates:Inserir modelo": false,
+      "command-palette:Abrir paleta de comandos": false,
+      "bases:Criar nova base": false
+    }
+  },
+  "active": "671b4e1b2bbef968",
+  "lastOpenFiles": [
+    "70 - Meta Engine/Meta Engine.md.tmp.27988.1099075269d7",
+    "43 - Eventos/Catálogo de eventos da plataforma.md.tmp.27988.b35d574b88e0",
+    "44 - Estados/Máquina de Estados Global.md.tmp.27988.9d9e037d952b",
+    "64 - Language Model/Glossário oficial do MLTagente.md.tmp.27988.d882df9c9ae5",
+    "70 - Frontend Premium/Estados da interface.md",
+    "70 - Frontend Premium/Settings Experience.md",
+    "70 - Frontend Premium/Onboarding Experience.md",
+    "70 - Frontend Premium/Illustrations.md",
+    "70 - Frontend Premium/Iconography.md",
+    "70 - Frontend Premium/Theme System.md",
+    "70 - Frontend Premium/Loading Experience.md",
+    "70 - Frontend Premium/Error Experience.md",
+    "70 - Frontend Premium/Empty States.md",
+    "70 - Frontend Premium/UX Writing.md",
+    "70 - Frontend Premium/Visual Language.md",
+    "70 - Frontend Premium/Responsive System.md",
+    "70 - Frontend Premium/Accessibility System.md",
+    "70 - Frontend Premium/AI Experience.md",
+    "70 - Frontend Premium/Dashboard System.md",
+    "70 - Frontend Premium/Preview System Frontend.md",
+    "70 - Frontend Premium/Editor System Frontend.md",
+    "70 - Frontend Premium/Workspace System Frontend.md",
+    "70 - Frontend Premium/Component Library.md",
+    "70 - Frontend Premium/UI Tokens.md",
+    "70 - Frontend Premium/Navigation System.md",
+    "70 - Frontend Premium/Motion System.md",
+    "70 - Frontend Premium/Mapa do Frontend Premium.md",
+    "70 - Frontend Premium/Layout System.md",
+    "70 - Frontend Premium/Interaction System.md",
+    "70 - Frontend Premium",
+    "71 - Plataforma",
+    "70 - Meta Engine",
+    "69 - Extensibilidade",
+    "68 - Escopo de IA",
+    "67 - Features",
+    "66 - Blueprint",
+    "00 - Inicio/Fluxo visual do MLTagente.canvas"
+  ]
+}

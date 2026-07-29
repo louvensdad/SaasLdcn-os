@@ -52,10 +52,18 @@ class TemplateRenderService:
         def replace(match: re.Match[str]) -> str:
             key = match.group(1)
             current: Any = variables
-            for part in key.split("."):
-                if not isinstance(current, dict) or part not in current:
+            parts = key.split(".")
+            for index, part in enumerate(parts):
+                if not isinstance(current, dict):
                     return ""
-                current = current[part]
+                if part in current:
+                    current = current[part]
+                    continue
+                flat_key = ".".join(parts[index:])
+                if flat_key in current:
+                    current = current[flat_key]
+                    break
+                return ""
             if isinstance(current, list):
                 return "\n".join(str(item) for item in current)
             return str(current)

@@ -6,6 +6,8 @@
 # Node
 node_modules/
 .next/
+.next-final/
+.next-real-runtime/
 dist/
 build/
 coverage/
@@ -34,6 +36,12 @@ reports/screenshots/
 # Browser/runtime report caches
 reports/cdp-search-profile*/
 
+# Local test-run artifacts (job dumps, flow logs, one-off run scripts)
+reports/plan-md/job-genjob_*.json
+reports/plan-md/project-room-flow-*.json
+reports/plan-md/project-room-flow-*.jsonl
+reports/plan-md/run-*.ps1
+
 # Generated archives
 *.zip
 
@@ -41,7 +49,20 @@ reports/cdp-search-profile*/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated project output (deterministic + meta-factory output areas)
+generated-projects/
+
+# Production backups (scripts/backup-prod.sh)
+backups/
+
+# Generated OpenAPI spec artifact (build output of scripts/generate_openapi.py)
+apps/api/openapi.json
+
+# Next.js alternate build cache
+.next-responsive/

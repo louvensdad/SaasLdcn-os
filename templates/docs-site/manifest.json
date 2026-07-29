@@ -3,6 +3,8 @@
   "name": "Documentation Static Site",
   "description": "Deterministic documentation site foundation with static HTML.",
   "runtime": "local_static_v0",
+  "supported_locales": ["pt-BR", "en-US", "es-ES", "fr-FR"],
+  "fallback_locale": "en-US",
   "metadata": {
     "framework": "vanilla",
     "mode": "static",

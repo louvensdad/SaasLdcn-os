@@ -1,0 +1,409 @@
+from __future__ import annotations
+
+from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, PrimaryKeyConstraint, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    project_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_user_id: Mapped[str | None] = mapped_column(String, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String, index=True)
+    project_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    objective: Mapped[str | None] = mapped_column(Text)
+    stack_id: Mapped[str | None] = mapped_column(String)
+    project_locale: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    scope: Mapped[str | None] = mapped_column(Text)
+    locale: Mapped[str] = mapped_column(String, nullable=False)
+    generation_mode: Mapped[str] = mapped_column(String, nullable=False)
+    technology_graph_json: Mapped[str] = mapped_column(Text, nullable=False)
+    architecture_id: Mapped[str] = mapped_column(String, nullable=False)
+    archetype_id: Mapped[str] = mapped_column(String, nullable=False)
+    selected_capabilities_json: Mapped[str] = mapped_column(Text, nullable=False)
+    selected_business_modules_json: Mapped[str] = mapped_column(Text, nullable=False)
+    selected_endpoints_json: Mapped[str] = mapped_column(Text, nullable=False)
+    blueprint_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    architectural_graph_snapshot_json: Mapped[str | None] = mapped_column(Text)
+    prompt_master_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    gatekeeper_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    tags_json: Mapped[str | None] = mapped_column(Text)
+    readiness_status: Mapped[str] = mapped_column(String, nullable=False)
+    contract_version: Mapped[str] = mapped_column(String, nullable=False)
+    generated_project_path: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class ProjectRoom(Base):
+    __tablename__ = "project_rooms"
+    __table_args__ = (Index("idx_project_rooms_owner", "owner_user_id"),)
+
+    room_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    delivery_type: Mapped[str] = mapped_column(String, nullable=False, default="web", server_default="web")
+    # "" = auto (orchestrator/LLM decides); otherwise a language profile id the
+    # user explicitly chose at room creation — enforced onto every compiled spec.
+    preferred_language: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    # Economy / Professional / Enterprise -- a room-level USER decision made at
+    # creation time, never inferred by the LLM. See execution_profiles_registry.py.
+    execution_profile: Mapped[str] = mapped_column(String, nullable=False, default="professional", server_default="professional")
+    raw_intent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    locale: Mapped[str] = mapped_column(String, nullable=False, default="pt-BR")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    degraded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    spec_json: Mapped[str | None] = mapped_column(Text)
+    messages_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    prompt_master_md: Mapped[str | None] = mapped_column(Text)
+    prompt_master_versions_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    architecture_blueprint_json: Mapped[str | None] = mapped_column(Text)
+    blueprint_versions_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    active_blueprint_version: Mapped[int | None] = mapped_column(Integer)
+    generation_handoff_json: Mapped[str | None] = mapped_column(Text)
+    # NULL for every room created via the normal chat journey. Set once, at
+    # creation, for a room programmatically seeded by
+    # MissionExecutionHandoffService: {"source": "MISSION_WORKSPACE",
+    # "missionId", "deliverableJobId", "handoffId"}. Provenance only -- never
+    # read by the normal ProjectRoom lifecycle/gates.
+    origin_json: Mapped[str | None] = mapped_column(Text)
+    history_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    operational_log_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    last_failure_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class MissionInstance(Base):
+    __tablename__ = "mission_instances"
+    __table_args__ = (
+        Index("idx_mission_instances_owner", "owner_user_id"),
+        Index("idx_mission_instances_type", "mission_type"),
+        Index("idx_mission_instances_status", "status"),
+    )
+
+    mission_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    mission_type: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active", server_default="active")
+    mode: Mapped[str] = mapped_column(String, nullable=False, default="guided", server_default="guided")
+    experience_level: Mapped[str] = mapped_column(String, nullable=False, default="intermediate", server_default="intermediate")
+    degraded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # "stepId.fieldId" -> value, the field-level answers captured across the
+    # mission's genome-defined steps (see apps/web/modules/mission-workspace).
+    answers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    inputs_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    journey_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    decisions_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    rejections_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    derived_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    gaps_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    risks_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    inconsistencies_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    artifacts_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    history_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    operational_log_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    last_failure_json: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class ChangeRequest(Base):
+    __tablename__ = "change_requests"
+    __table_args__ = (
+        Index("idx_change_requests_project", "project_id", "updated_at"),
+        Index("idx_change_requests_owner", "owner_user_id"),
+    )
+
+    change_request_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    # The generated-project id (generated-projects/active/{project_id}/), i.e. the
+    # same id space as GenerationJob.generated_project_id -- NOT a project_room
+    # room_id and NOT the legacy `projects` table. Patch/diff/build/rollback only
+    # make sense against real files on disk.
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    room_id: Mapped[str | None] = mapped_column(String)  # traceability only, no engine logic depends on it
+    feature_id: Mapped[str | None] = mapped_column(String)  # reserved for a future Feature entity
+    task_id: Mapped[str | None] = mapped_column(String)  # reserved for a future Task entity
+    base_version: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="Draft", server_default="Draft", index=True)
+    intent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    classification_json: Mapped[str | None] = mapped_column(Text)
+    scope_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    impact_json: Mapped[str | None] = mapped_column(Text)
+    snapshot_json: Mapped[str | None] = mapped_column(Text)
+    diff_json: Mapped[str | None] = mapped_column(Text)
+    build_result_json: Mapped[str | None] = mapped_column(Text)
+    preview_result_json: Mapped[str | None] = mapped_column(Text)
+    approval_json: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[str | None] = mapped_column(Text)
+    history_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    operational_log_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    last_failure_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class ModernizeJob(Base):
+    __tablename__ = "modernize_jobs"
+    __table_args__ = (Index("idx_modernize_jobs_owner", "owner_user_id"),)
+
+    project_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String, index=True)
+    data_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class GenerationJob(Base):
+    __tablename__ = "generation_jobs"
+    __table_args__ = (
+        Index("idx_generation_jobs_owner", "owner_user_id", "updated_at"),
+        Index("idx_generation_jobs_owner_status", "owner_user_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String, index=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Set when this job was created via the Mission Workspace -> ProjectRoom
+    # handoff (MissionExecutionHandoffService), rather than the primary chat
+    # journey. Indexed so the handoff's idempotency check (is there already an
+    # active job for this mission?) is a real query, not a data_json scan.
+    source_mission_id: Mapped[str | None] = mapped_column(String, index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="QUEUED", server_default="QUEUED", index=True)
+    stage: Mapped[str | None] = mapped_column(String, index=True)
+    model: Mapped[str | None] = mapped_column(String)
+    error: Mapped[str | None] = mapped_column(Text)
+    result_path: Mapped[str | None] = mapped_column(Text)
+    input_tokens_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    output_tokens_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    started_at: Mapped[str | None] = mapped_column(String)
+    completed_at: Mapped[str | None] = mapped_column(String)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0", index=True)
+    attempt_id: Mapped[str | None] = mapped_column(String)
+    lease_owner: Mapped[str | None] = mapped_column(String)
+    lease_expires_at: Mapped[str | None] = mapped_column(String, index=True)
+    heartbeat_at: Mapped[str | None] = mapped_column(String)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    token_budget: Mapped[int] = mapped_column(Integer, nullable=False, default=800000, server_default="800000")
+    reserved_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    data_json: Mapped[str] = mapped_column(Text, nullable=False)
+    spec_json: Mapped[str] = mapped_column(Text, nullable=False)
+    blueprint_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class MissionDeliverableJob(Base):
+    """Async, SSE-tracked job that drafts a mission's final-step artifacts
+    (mission_artifact_engine.draft_artifact, one LLM call per artifact) in a
+    background thread instead of a single blocking request -- so the
+    "Gerar entregaveis" buttons in Mission Workspace get real progress instead
+    of a frozen-looking disabled button. Mirrors GenerationJob's "wide typed
+    row + data_json blob" pattern, but is its own table: generation_jobs'
+    columns/state vocabulary are code-generation-pipeline-specific."""
+
+    __tablename__ = "mission_deliverable_jobs"
+    __table_args__ = (
+        Index("idx_mission_deliverable_jobs_mission", "mission_id", "created_at"),
+        Index("idx_mission_deliverable_jobs_owner", "owner_user_id", "updated_at"),
+        Index("idx_mission_deliverable_jobs_idempotency", "mission_id", "idempotency_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    mission_id: Mapped[str] = mapped_column(ForeignKey("mission_instances.mission_id", ondelete="CASCADE"), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="QUEUED", server_default="QUEUED", index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String)
+    heartbeat_at: Mapped[str | None] = mapped_column(String)
+    error: Mapped[str | None] = mapped_column(Text)
+    data_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    completed_at: Mapped[str | None] = mapped_column(String)
+
+
+class MissionExecutionHandoff(Base):
+    """The canonical bridge record for MissionExecutionHandoffService: tracks,
+    per Mission, the real ProjectRoom it seeded (PromptMaster + Blueprint
+    generated via the same engines/services the normal chat journey uses) and
+    the real GenerationJob eventually created from it once that room clears
+    Engineering Review + Stack Approval for real. One row per mission;
+    input_checksum is the change-detection key so re-running prepare_project
+    with unchanged mission answers/artifacts is a no-op instead of creating a
+    duplicate room or a new prompt/blueprint version."""
+
+    __tablename__ = "mission_execution_handoffs"
+    __table_args__ = (
+        Index("idx_mission_execution_handoffs_mission", "mission_id"),
+        Index("idx_mission_execution_handoffs_room", "project_room_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    mission_id: Mapped[str] = mapped_column(ForeignKey("mission_instances.mission_id", ondelete="CASCADE"), nullable=False, unique=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    deliverable_job_id: Mapped[str] = mapped_column(String, nullable=False)
+    project_room_id: Mapped[str | None] = mapped_column(String)
+    generation_job_id: Mapped[str | None] = mapped_column(String)
+    input_checksum: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING", server_default="PENDING", index=True)
+    data_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class GenerationNotification(Base):
+    """Real, persisted, per-user notification for a lifecycle transition of
+    a GenerationJob or (Phase 5) a Mission Deliverable Job. Title/message are
+    deliberately NEVER stored here -- only type/stage/metadata, rendered
+    client-side via i18n (notifications.generation.<type>.title/message) so
+    a locale switch or future copy edit never needs a data migration.
+    Idempotency (as of Phase 5) is a serialized SELECT-then-INSERT on
+    (entity_type, entity_id, user_id, idempotency_key) -- job_id-based
+    dedup was retired when a second, non-GenerationJob producer arrived,
+    since not every subject has one. Same overall pattern as
+    MissionDeliverableJobRepository.create_or_get_idempotent, not a DB
+    partial-unique index (this repo's UserAiKey precedent: SQLite, the
+    dev/test default, can't express those reliably)."""
+
+    __tablename__ = "generation_notifications"
+    __table_args__ = (
+        Index("idx_generation_notifications_user", "user_id", "created_at"),
+        Index("idx_generation_notifications_user_read", "user_id", "read"),
+        Index("idx_generation_notifications_job_idem", "job_id", "user_id", "idempotency_key"),
+        Index("idx_generation_notifications_entity", "entity_type", "entity_id"),
+        Index("idx_generation_notifications_entity_idem", "entity_type", "entity_id", "user_id", "idempotency_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    project_id: Mapped[str | None] = mapped_column(String)
+    # LDCN Multi-Agent Runtime, Phase 5: nullable as of
+    # 20260725_l1_generation_notifications_job_id_nullable -- a NULL job_id
+    # never needs to match a row in generation_jobs (standard FK semantics),
+    # so a second producer (Mission Deliverable Jobs, Phase 5) can use
+    # entity_type/entity_id below without one. Every existing GenerationJob
+    # notification still always sets it; nothing about that producer changed.
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("generation_jobs.id", ondelete="CASCADE"), index=True)
+    # LDCN Multi-Agent Runtime, Phase 2: polymorphic subject, additive.
+    # For GenerationJob notifications entity_type/entity_id are set
+    # redundantly equal to ("generation_job", job_id) by _notify() itself.
+    # As of Phase 5 this is the PRIMARY idempotency key (see
+    # GenerationNotificationRepository.create_or_get_idempotent) -- job_id
+    # is kept for the existing job-scoped SSE query and read-side filtering,
+    # never for dedup anymore.
+    entity_type: Mapped[str | None] = mapped_column(String)
+    entity_id: Mapped[str | None] = mapped_column(String)
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    severity: Mapped[str] = mapped_column(String, nullable=False, default="INFO", server_default="INFO")
+    stage: Mapped[str | None] = mapped_column(String)
+    read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0", index=True)
+    action_url: Mapped[str | None] = mapped_column(String)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class BlueprintApproval(Base):
+    __tablename__ = "blueprint_approvals"
+    __table_args__ = (Index("idx_blueprint_approvals_project", "project_id", "blueprint_hash"),)
+
+    approval_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False)
+    blueprint_hash: Mapped[str] = mapped_column(String, nullable=False)
+    approved_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    revoked_at: Mapped[str | None] = mapped_column(String)
+
+
+class GitProviderConnection(Base):
+    __tablename__ = "git_provider_connections"
+    __table_args__ = (PrimaryKeyConstraint("workspace_id", "user_id", "provider"),)
+
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.workspace_id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    encrypted_token: Mapped[str] = mapped_column(Text, nullable=False)
+    profile_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class GitProviderRepositoryRecord(Base):
+    __tablename__ = "git_provider_repositories"
+    __table_args__ = (PrimaryKeyConstraint("workspace_id", "user_id", "repo_key"),)
+
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.workspace_id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    repo_key: Mapped[str] = mapped_column(String, nullable=False)
+    repository_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UserAiKey(Base):
+    """A permanent, named, per-user BYOK provider key (vault 68 - Gestão de
+    Chaves de IA). Unlike GitProviderConnection this is NOT single-row-per-
+    (user, provider): a user may register several keys for the same provider,
+    so each row is individually addressable by `id` with no composite-PK
+    uniqueness constraint on (user_id, provider). `masked` is persisted (not
+    recomputed) so listing never needs to decrypt. `is_default_for_provider`
+    is enforced single-true-per-(user, provider) by the service layer in a
+    transaction, not a DB constraint (SQLite has no reliable partial unique
+    index here). Rotating a key is delete+recreate -- `encrypted_key` is
+    otherwise immutable once created, matching "never editable after
+    creation" from the vault."""
+
+    __tablename__ = "user_ai_keys"
+    __table_args__ = (Index("idx_user_ai_keys_user_provider", "user_id", "provider"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    nome: Mapped[str] = mapped_column(String, nullable=False)
+    apelido: Mapped[str | None] = mapped_column(String, nullable=True)
+    encrypted_key: Mapped[str] = mapped_column(Text, nullable=False)
+    masked: Mapped[str] = mapped_column(String, nullable=False)
+    modelo_padrao: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="untested")
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_default_for_provider: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    last_used_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_validated_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class DownloadRecord(Base):
+    __tablename__ = "download_records"
+    __table_args__ = (
+        Index("idx_download_records_owner_created", "owner_user_id", "created_at"),
+        Index("idx_download_records_project", "project_id", "created_at"),
+    )
+
+    download_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    workspace_id: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    artifact_id: Mapped[str] = mapped_column(String, nullable=False)
+    download_url: Mapped[str] = mapped_column(String, nullable=False)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    downloaded_at: Mapped[str | None] = mapped_column(String)

@@ -6,6 +6,7 @@ import type { LdcnPresenceState } from '@contracts/ldcn.contract';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/cn';
+import { useLocale } from '@/hooks/use-locale';
 
 const STATE_LABELS: Record<LdcnPresenceState, string> = {
   idle: 'idle',
@@ -33,15 +34,17 @@ interface LDCNStatusPillProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 export function LDCNStatusPill({ className, state = 'observing', label = 'LDCN', ...props }: LDCNStatusPillProps) {
+  const { t } = useLocale();
+  const translatedLabel = label === 'LDCN' ? t(`ldcn.${state}`) : `${label} ${STATE_LABELS[state]}`;
   return (
     <Badge
-      className={cn('gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em]', STATE_CLASSES[state], className)}
-      aria-label={`${label} ${STATE_LABELS[state]}`}
+      className={cn('gap-2 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.22em]', STATE_CLASSES[state], className)}
+      aria-label={translatedLabel}
       {...props}
     >
       <span className={cn('status-dot shrink-0', state === 'warning' || state === 'blocked' || state === 'offline' ? 'bg-[color:var(--danger)]' : state === 'thinking' ? 'bg-[color:var(--accent-2)]' : 'bg-[color:var(--accent)]')} />
       <span className="whitespace-nowrap">
-        {label} {STATE_LABELS[state]}
+        {translatedLabel}
       </span>
     </Badge>
   );
