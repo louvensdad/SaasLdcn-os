@@ -52,7 +52,10 @@ services:
       - internal_data
 
   minio:
-    image: minio/minio:latest
+    # quay.io, not Docker Hub: docker.io/minio/minio no longer serves anonymous
+    # pulls, so `docker compose pull` on a fresh host fails with "pull access
+    # denied". Same image from MinIO's own mirror.
+    image: quay.io/minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
