@@ -248,6 +248,11 @@ const v2 = {
 
   'command.headline.runningMany': '{count} misiones están generando',
 
+  'app.tagline': 'De la idea a la entrega',
+  'nav.groupWork': 'Trabajo',
+  'nav.groupEnvironment': 'Entorno',
+  'nav.workspaceHint': 'Tu espacio de trabajo',
+
   'canvas.help': 'Arrastra para desplazarte. Ctrl + rueda o los botones hacen zoom, y 0 encuadra todo el dibujo. Enter inspecciona un nodo; Shift + Enter lo abre.',
   'canvas.controls': 'Controles del lienzo',
   'canvas.zoomIn': 'Acercar',

@@ -248,6 +248,11 @@ const v2 = {
 
   'command.headline.runningMany': '{count} missions sont en génération',
 
+  'app.tagline': 'De l’idée à la livraison',
+  'nav.groupWork': 'Travail',
+  'nav.groupEnvironment': 'Environnement',
+  'nav.workspaceHint': 'Votre espace de travail',
+
   'canvas.help': 'Faites glisser pour vous déplacer. Ctrl + molette ou les boutons zooment, et 0 cadre tout le dessin. Entrée inspecte un nœud ; Maj + Entrée l’ouvre.',
   'canvas.controls': 'Commandes du canevas',
   'canvas.zoomIn': 'Zoom avant',

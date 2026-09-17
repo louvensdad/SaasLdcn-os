@@ -1,8 +1,12 @@
 /* The approved stylesheet lives in ./styles (copied from the prototype). This file only wires what the app adds. */
 
+/* REDESIGN.md §2 — Tipografia. Three system faces, nothing downloaded:
+   headings Bahnschrift (fallback Segoe UI), interface and body Arial
+   (fallback Segoe UI), technical metadata Consolas. */
 :root {
-  --font-ui: var(--font-instrument), "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-martian), "Cascadia Mono", "SF Mono", ui-monospace, Consolas, monospace;
+  --font-display: Bahnschrift, "Segoe UI", sans-serif;
+  --font-ui: Arial, "Segoe UI", sans-serif;
+  --font-mono: Consolas, monospace;
 }
 
 .skip-link {

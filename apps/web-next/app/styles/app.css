@@ -13,7 +13,7 @@ body {
     var(--ground);
   color: var(--ink);
   font-family: var(--font-ui);
-  font-size: var(--t-14);
+  font-size: var(--t-15);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -23,7 +23,7 @@ img, svg { max-width: 100%; }
 a { color: var(--lumen); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--lumen-line); }
 button { font: inherit; color: inherit; }
-:focus-visible { outline: 2px solid var(--lumen); outline-offset: 2px; border-radius: 6px; }
+:focus-visible { outline: 2px solid var(--lumen); outline-offset: 4px; border-radius: 6px; }
 ::selection { background: var(--lumen-glow); color: var(--ink); }
 [hidden] { display: none !important; }
 
@@ -46,13 +46,15 @@ html:not([data-dev="on"]) .dev-only { display: none !important; }
 }
 
 /* ---------------------------------------------------------------- type */
-.display { font-size: var(--t-34); line-height: 1.12; font-weight: 580; letter-spacing: -0.028em; margin: 0; text-wrap: balance; }
-.title { font-size: var(--t-26); line-height: 1.18; font-weight: 580; letter-spacing: -0.022em; margin: 0; text-wrap: balance; }
-.verdict { font-size: var(--t-20); line-height: 1.2; font-weight: 620; letter-spacing: -0.01em; }
-.h-sec { font-size: var(--t-16); line-height: 1.45; font-weight: 600; letter-spacing: -0.008em; margin: 0; text-wrap: balance; }
+/* Headings wear the display face; everything else is the interface face. The redesign
+   sets the page title at 36/1.15 with -1px of tracking, sections at 20, subtitles at 16. */
+.display { font-family: var(--font-display); font-size: var(--t-36); line-height: 1.15; font-weight: 500; letter-spacing: -0.028em; margin: 0; text-wrap: balance; }
+.title { font-family: var(--font-display); font-size: var(--t-24); line-height: 1.25; font-weight: 500; letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
+.verdict { font-family: var(--font-display); font-size: var(--t-20); line-height: 1.35; font-weight: 500; letter-spacing: -0.01em; }
+.h-sec { font-size: var(--t-16); line-height: 1.4; font-weight: 600; margin: 0; text-wrap: balance; }
 .h-sub { font-size: var(--t-14); line-height: 1.45; font-weight: 600; margin: 0; }
-.lede { font-size: 15px; line-height: 1.6; color: var(--ink-2); max-width: 72ch; margin: 8px 0 0; }
-.body { font-size: var(--t-14); line-height: 1.6; max-width: 68ch; margin: 0; }
+.lede { font-size: var(--t-15); line-height: 1.55; color: var(--ink-2); max-width: 670px; margin: 8px 0 0; }
+.body { font-size: var(--t-15); line-height: 1.55; max-width: 68ch; margin: 0; }
 .meta { font-size: var(--t-12); line-height: 1.5; color: var(--ink-2); font-weight: 500; }
 .muted { color: var(--ink-3); }
 .ink2 { color: var(--ink-2); }
@@ -124,8 +126,8 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 
 /* ---------------------------------------------------------------- buttons */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 34px; padding: 0 13px;
-  border-radius: var(--r-control); border: 0; font: 580 13px/1 var(--font-ui); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px; height: 42px; padding: 0 17px;
+  border-radius: var(--r-control); border: 0; font: 650 13px/1 var(--font-ui); cursor: pointer;
   white-space: nowrap; text-decoration: none; background: transparent; color: var(--ink);
   transition: background-color var(--m1) var(--ease), box-shadow var(--m1) var(--ease), color var(--m1) var(--ease), transform var(--m1) var(--ease);
 }
@@ -134,7 +136,7 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 .btn .ico { width: 16px; height: 16px; }
 .btn-primary { background: var(--lumen); color: var(--ink-inverse); }
 .btn-primary:hover { background: var(--ink); }
-.btn-hand { background: var(--hand); color: var(--ink-inverse); }
+.btn-hand { background: var(--hand); color: var(--ink-on-hand); }
 .btn-hand:hover { filter: brightness(1.06); }
 .btn-ghost { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .btn-ghost:hover { background: var(--lumen-soft); }
@@ -142,7 +144,7 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 .btn-quiet:hover { color: var(--ink); background: var(--lumen-soft); }
 .btn-danger { box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink); }
 .btn-danger:hover { background: var(--fault-soft); box-shadow: inset 0 0 0 1px var(--fault-line); }
-.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; gap: 6px; }
+.btn-sm { height: 34px; padding: 0 12px; font-size: 12px; gap: 6px; }
 .btn[disabled], .btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; transform: none; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .iconbtn {
@@ -156,41 +158,55 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 
 /* ---------------------------------------------------------------- shell: rail · context bar · scope · stage · strip */
 .app { display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr); min-height: 100vh; }
+/* The named sidebar (REDESIGN.md §1-2): 224px of navigation surface, the brand, the
+   workspace a person is in, and the destinations under Work / Environment. */
 .rail {
-  position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; align-items: center;
-  gap: 2px; padding: 12px 0 10px; background: color-mix(in srgb, var(--surface-sunken) 88%, transparent);
-  border-right: 1px solid var(--line); z-index: 30;
+  position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
+  padding: 30px 18px; background: var(--ground-lift);
+  border-right: 1px solid var(--line); z-index: 30; overflow-y: auto; overscroll-behavior: contain;
 }
-.rail-mark { width: 40px; height: 40px; display: grid; place-items: center; color: var(--lumen); margin-bottom: 12px; border-radius: 10px; }
-.rail-mark:hover { background: var(--lumen-soft); }
-.rail-mark svg { width: 26px; height: 26px; }
+.rail-mark { display: flex; align-items: center; gap: 12px; color: var(--lumen); text-decoration: none; }
+.rail-mark:hover { text-decoration: none; }
+.rail-mark svg { width: 32px; height: 32px; flex: none; }
+.rail-brand { min-width: 0; }
+.rail-brand b { display: block; font: 600 22px/1.1 var(--font-display); letter-spacing: 0.045em; color: var(--ink); }
+.rail-brand small { display: block; font-size: 9px; line-height: 1.6; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-2); }
+.rail-ws {
+  display: flex; align-items: center; gap: 10px; margin: 30px 0 26px; padding: 13px 12px;
+  border: 1px solid var(--line); border-radius: 10px; color: inherit; text-decoration: none;
+  transition: border-color var(--m1) var(--ease);
+}
+.rail-ws:hover { text-decoration: none; border-color: var(--line-strong); }
+.rail-ws .avatar { width: 32px; height: 32px; border-radius: 9px; flex: none; }
+.rail-ws-name { min-width: 0; }
+.rail-ws-name strong { display: block; font-size: var(--t-12); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-ws-name small { display: block; font-size: 10px; color: var(--ink-2); }
+.rail-group > .label { display: block; padding: 0 12px; margin: 14px 0 8px; font-size: 10px; letter-spacing: 0.18em; }
 .rail-item {
-  position: relative; width: 42px; height: 42px; display: grid; place-items: center; border-radius: 10px;
-  color: var(--ink-3); text-decoration: none; transition: background-color var(--m1) var(--ease), color var(--m1) var(--ease);
+  position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 11px 12px; margin: 3px 0;
+  border-radius: var(--r-control); color: var(--ink-2); text-decoration: none; font-size: var(--t-14);
+  transition: background-color var(--m1) var(--ease), color var(--m1) var(--ease);
 }
-.rail-item .ico { width: 20px; height: 20px; }
-.rail-item:hover { color: var(--ink); background: var(--lumen-soft); text-decoration: none; }
-.rail-item[aria-current="page"] { color: var(--ink); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.rail-item[aria-current="page"]::before {
-  content: ""; position: absolute; left: -9px; top: 12px; bottom: 12px; width: 2px; border-radius: 2px; background: var(--lumen);
+.rail-item .ico { width: 20px; height: 20px; flex: none; }
+.rail-item:hover { color: var(--ink); background: var(--surface-2); text-decoration: none; }
+/* The current place is the one thing in the sidebar that wears the action colour. */
+.rail-item[aria-current="page"] { color: var(--lumen); background: var(--surface-3); box-shadow: inset 3px 0 var(--lumen); }
+.rail-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-badge {
+  margin-left: auto; flex: none; padding: 2px 6px; border-radius: 6px;
+  background: var(--hand-soft); color: var(--hand); font: 600 11px/1.45 var(--font-ui);
 }
 .rail-count {
   position: absolute; top: 4px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
-  background: var(--hand); color: var(--ink-inverse); font: 650 9.5px/16px var(--font-mono); text-align: center;
+  background: var(--hand); color: var(--ink-on-hand); font: 650 9.5px/16px var(--font-mono); text-align: center;
 }
-.rail-tip {
-  position: absolute; left: 52px; top: 50%; transform: translate(-4px, -50%); padding: 5px 9px; border-radius: 7px;
-  background: var(--surface-3); color: var(--ink); font: 500 12px/1.2 var(--font-ui); white-space: nowrap;
-  box-shadow: var(--shadow-pop); pointer-events: none; opacity: 0; transition: opacity var(--m1) var(--ease), transform var(--m1) var(--ease);
-}
-.rail-item:hover .rail-tip, .rail-item:focus-visible .rail-tip { opacity: 1; transform: translate(0, -50%); }
-.rail-spacer { flex: 1; }
-.rail-sep { width: 26px; height: 1px; background: var(--line); margin: 6px 0; }
+.rail-spacer { flex: 1; min-height: 20px; }
+.rail-signout { margin-top: 20px; justify-content: flex-start; padding: 0 12px; }
 
 .main { position: relative; min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
 .ctxbar {
   position: sticky; top: 0; z-index: 25; height: var(--bar-h); display: flex; align-items: center; gap: 8px;
-  padding: 0 14px 0 16px; background: color-mix(in srgb, var(--ground) 78%, transparent); backdrop-filter: blur(14px);
+  padding: 0 40px; background: color-mix(in srgb, var(--ground) 82%, transparent); backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
 }
 .crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
@@ -269,8 +285,8 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 .evl-bar { border-bottom: 1px solid var(--line); padding: 12px 28px; overflow-x: auto; }
 .evl-bar-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .canvas-row { display: flex; min-height: 0; flex: 1; }
-.canvas { flex: 1; min-width: 0; padding: 28px 32px 72px; }
-.canvas-inner { max-width: 1440px; margin: 0 auto; }
+.canvas { flex: 1; min-width: 0; padding: 34px 40px 44px; }
+.canvas-inner { max-width: 1560px; margin: 0 auto; }
 /* Arrival: a place fades up once when it is entered. Transform-free at rest, so sticky and fixed children are unaffected. */
 .canvas-inner.is-arriving { animation: place-in var(--m2) var(--ease-structural) both; }
 /* Context transitions (motion spec §6): the element a person chose travels into the new place's title at L4 while the
@@ -354,6 +370,8 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px 32px; flex-wrap: wrap; padding-bottom: 22px; margin-bottom: 4px; }
 .page-head .grow { min-width: 0; flex: 1 1 520px; }
 .eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+/* The page kicker is the one small label the redesign paints in the action colour. */
+.eyebrow > .label:first-child { color: var(--lumen); font-weight: 600; letter-spacing: 0.18em; }
 .sec { padding: 22px 0; border-top: 1px solid var(--line); }
 .sec:first-child { border-top: 0; padding-top: 0; }
 /* Side-by-side sections start on one line: each carries its own divider, the first one too. */
@@ -373,9 +391,9 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 .row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .divider { height: 1px; background: var(--line); margin: 4px 0; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-panel); min-width: 0; box-shadow: var(--shadow-1); }
-.panel-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.panel-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 15px 24px; border-bottom: 1px solid var(--line); }
 .panel-head .actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.panel-body { padding: 16px; }
+.panel-body { padding: 24px; }
 .panel-body.tight { padding: 0; }
 
 /* Facts wrap onto as many rows as they need; the first fact of every row loses its divider (clipped), not only the first. */
@@ -397,9 +415,9 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th {
   font: 500 10px/1.4 var(--font-mono); font-stretch: var(--mono-stretch); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3);
-  text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap;
+  text-align: left; padding: 13px 20px; border-bottom: 1px solid var(--line); white-space: nowrap;
 }
-.tbl td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tbl td { padding: 17px 20px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .tbl tbody tr { transition: background-color var(--m1) var(--ease); }
 .tbl tbody tr:hover { background: var(--lumen-soft); }
 .tbl tbody tr.is-link { cursor: pointer; }
@@ -629,11 +647,11 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 .dialog { width: min(520px, 100%); background: var(--surface-float); backdrop-filter: blur(18px); border: 0; border-radius: var(--r-float); box-shadow: var(--shadow-float); padding: 20px; display: grid; gap: 12px; animation: rise var(--m2) var(--ease-structural) both; }
 .field { display: grid; gap: 6px; }
 .field input, .field select, .field textarea {
-  height: 38px; padding: 0 11px; border: 0; border-radius: var(--r-control); background: var(--surface-sunken); color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line-strong); font: 500 13px/1 var(--font-ui); transition: box-shadow var(--m1) var(--ease);
+  height: 45px; padding: 0 13px; border: 0; border-radius: 7px; background: var(--surface-sunken); color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-strong); font: 400 var(--t-14)/1 var(--font-ui); transition: box-shadow var(--m1) var(--ease);
 }
 .field input:focus, .field select:focus, .field textarea:focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--lumen); }
-.field textarea { height: auto; padding: 9px 11px; line-height: 1.5; }
+.field textarea { height: auto; padding: 12px 13px; line-height: 1.5; }
 .toast {
   position: fixed; left: 50%; bottom: calc(var(--strip-h) + 20px); translate: -50% 0; z-index: 70; display: flex; align-items: center; gap: 10px;
   padding: 10px 16px; border-radius: var(--r-pill); background: var(--surface-3); box-shadow: var(--shadow-pop); font-size: 13px;
@@ -672,8 +690,8 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 /* ---------------------------------------------------------------- forms & choices */
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
 .form-grid .span-2 { grid-column: 1 / -1; }
-.field label, .field .field-label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-.field .hint { font-size: 12px; color: var(--ink-3); line-height: 1.45; }
+.field label, .field .field-label { font-size: var(--t-13); font-weight: 600; color: var(--ink); }
+.field .hint { font-size: var(--t-11); color: var(--ink-2); line-height: 1.45; }
 .field textarea { min-height: 96px; resize: vertical; }
 .field input[readonly] { color: var(--ink-2); }
 .check { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
@@ -808,6 +826,11 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 @media (min-width: 2200px) {
   .canvas-inner { max-width: 1760px; }
 }
+/* The redesign narrows the sidebar before it drops it. */
+@media (max-width: 1100px) {
+  :root { --rail-w: 190px; }
+  .rail { padding: 24px 12px; }
+}
 @media (max-width: 1439px) {
   :root { --projnav-w: 196px; }
   .searchbtn { min-width: 180px; }
@@ -829,11 +852,10 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 }
 @media (max-width: 1023px) {
   .scope { display: block; }
-  .canvas { padding: 20px 20px 72px; }
+  .canvas { padding: 28px 24px 44px; }
   .evl-bar { padding: 10px 20px; }
   .g-2, .g-side-main { grid-template-columns: minmax(0, 1fr); }
   .provider-chip b { display: none; }
-  .signoutbtn { display: none; }
 }
 @media (max-width: 639px) {
   .app { grid-template-columns: minmax(0, 1fr); }
@@ -847,17 +869,18 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
   .bottombar a[aria-current="page"] { color: var(--ink); }
   .bottombar .ico { width: 20px; height: 20px; }
   .bottombar .rail-count { top: 6px; right: calc(50% - 22px); }
-  .ctxbar { padding: 0 8px; gap: 4px; }
+  .ctxbar { padding: 0 20px; gap: 4px; }
   .scopebar { top: var(--bar-h); padding: 0 12px; gap: 12px; }
+  :root { --bar-h: 65px; }
   .scope-name { display: none; }
   .crumb:not(.is-current), .crumb-sep, .provider-chip, .inbox-chip, .locale-select, .devbtn { display: none; }
   .startbtn span { display: none; }
   .startbtn .ico { display: block; }
   .startbtn { min-width: 0; width: 32px; padding: 0; justify-content: center; }
   .ctxpanel { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: 80vh; border-radius: 20px 20px 0 0; }
-  .canvas { padding: 16px 14px 96px; }
+  .canvas { padding: 27px 20px 96px; }
   .g-3, .g-4 { grid-template-columns: minmax(0, 1fr); }
-  .display { font-size: 26px; }
+  .display { font-size: 30px; line-height: 1.15; }
   .title { font-size: 22px; }
   .fact { padding: 0 14px; }
   .facts { margin-left: -14px; }

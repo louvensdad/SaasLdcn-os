@@ -248,6 +248,11 @@ const v2 = {
 
   'command.headline.runningMany': '{count} missions are generating',
 
+  'app.tagline': 'From an idea to delivery',
+  'nav.groupWork': 'Work',
+  'nav.groupEnvironment': 'Environment',
+  'nav.workspaceHint': 'Your workspace',
+
   'canvas.help': 'Drag to pan. Ctrl + wheel or the buttons zoom, and 0 fits the whole drawing. Enter inspects a node; Shift + Enter opens it.',
   'canvas.controls': 'Canvas controls',
   'canvas.zoomIn': 'Zoom in',

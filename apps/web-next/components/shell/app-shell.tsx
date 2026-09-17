@@ -39,6 +39,9 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   /** The bar carries two standing facts: what is waiting on a person, and which provider is answering. */
   const { decisions } = useWork();
   const llm = useQuery({ queryKey: ['llm-active'], queryFn: api.llmActive });
+  /* The sidebar names the workspace a person is in. Its own read, so a failure here
+     shows as an unknown name instead of taking a screen down. */
+  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: api.workspaces, retry: false });
   const projectKey = pathname.startsWith('/p/') ? decodeURIComponent(pathname.split('/')[2] ?? '') : '';
   /** The scope nav shows the project's own name; the read is the same one its screens make. */
   const projectRoom = useQuery({
@@ -194,18 +197,26 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         ? t('shell.provider.stale')
         : t('shell.provider.ready')
     : '';
+  /* An unresolved read is named as unknown, never replaced by a plausible workspace. */
+  const workspace = workspaces.data?.[0];
+  const workspaceName = workspace?.name ?? (workspaces.isError ? t('signal.unknown') : '—');
+  const workspaceInitials = (workspace?.name ?? '?').slice(0, 2).toUpperCase();
   const help = screenHelp(pathname);
   const user = state.status === 'signed-in' ? state.user : null;
   const initials = (user?.full_name ?? user?.email ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
 
+  /* The redesign's first correction: the destinations carry their names, not just icons
+     (REDESIGN.md §1). Activity keeps its Destination -- the palette and the scope tab still
+     reach it -- but it is not a second top-level entry beside the Decisions it belongs to. */
   const railItem = (destination: Destination) => {
     const label = t(destination.label);
     const count = destination.id === 'inbox' ? decisions.length : 0;
+    const current = active === destination.id || (destination.id === 'inbox' && active === 'activity');
     return (
-      <Link key={destination.id} className="rail-item" href={destination.path} aria-current={active === destination.id ? 'page' : undefined} aria-label={label}>
+      <Link key={destination.id} className="rail-item" href={destination.path} aria-current={current ? 'page' : undefined}>
         <Icon name={destination.icon} />
-        {count > 0 ? <span className="rail-count num" aria-hidden="true">{count}</span> : null}
-        <span className="rail-tip">{label}</span>
+        <span className="rail-name">{label}</span>
+        {count > 0 ? <b className="rail-badge num">{count}</b> : null}
       </Link>
     );
   };
@@ -218,13 +229,30 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
       <a className="skip-link" href="#main">{t('common.skip')}</a>
       <div className={`app ground${panelOpen ? ' has-panel' : ''}`}>
         <nav className="rail" aria-label={t('nav.global')}>
-          <Link className="rail-mark" href="/" aria-label={t('app.name')}>
+          <Link className="rail-mark" href="/">
             <svg aria-hidden="true"><use href="#i-mark" /></svg>
+            <span className="rail-brand">
+              <b>{t('app.name')}</b>
+              <small>{t('app.tagline')}</small>
+            </span>
           </Link>
-          {RAIL.map(railItem)}
+          <Link className="rail-ws" href="/settings/workspace">
+            <span className="avatar" aria-hidden="true">{workspaceInitials}</span>
+            <span className="rail-ws-name">
+              <strong>{workspaceName}</strong>
+              <small>{t('nav.workspaceHint')}</small>
+            </span>
+          </Link>
+          <div className="rail-group">
+            <span className="label">{t('nav.groupWork')}</span>
+            {RAIL.filter((destination) => destination.id !== 'activity').map(railItem)}
+          </div>
+          <div className="rail-group">
+            <span className="label">{t('nav.groupEnvironment')}</span>
+            {RAIL_BOTTOM.map(railItem)}
+          </div>
           <span className="rail-spacer" />
-          <span className="rail-sep" />
-          {RAIL_BOTTOM.map(railItem)}
+          <button className="btn btn-quiet btn-sm rail-signout" type="button" onClick={leave}>{t('shell.signOut')}</button>
         </nav>
         <div className="main">
           <header className="ctxbar">
@@ -299,7 +327,6 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
                 {LOCALES.map((code) => <option key={code} value={code}>{LOCALE_LABEL[code]}</option>)}
               </select>
               <span className="avatar" title={user?.email ?? ''} aria-label={t('shell.account')}>{initials}</span>
-              <button className="btn btn-quiet btn-sm signoutbtn" type="button" onClick={leave}>{t('shell.signOut')}</button>
             </div>
           </header>
           {section ? (
