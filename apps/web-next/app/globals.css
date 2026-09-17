@@ -1,0 +1,37 @@
+/* The approved stylesheet lives in ./styles (copied from the prototype). This file only wires what the app adds. */
+
+:root {
+  --font-ui: var(--font-instrument), "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-martian), "Cascadia Mono", "SF Mono", ui-monospace, Consolas, monospace;
+}
+
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 80;
+  padding: 8px 12px;
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+}
+.skip-link:focus { top: 12px; }
+
+.ext-mark { display: inline-flex; align-items: center; gap: 4px; }
+.ext-mark .ico { width: 13px; height: 13px; color: var(--ink-3); }
+
+.locale-select {
+  height: 30px;
+  padding: 0 6px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-2);
+  font: 500 12px/1 var(--font-ui);
+}
+
+.checking { min-height: 60vh; display: grid; place-items: center; color: var(--ink-3); }
+
+button.li { width: 100%; text-align: left; background: none; border-left: 0; border-right: 0; border-bottom: 0; font: inherit; color: inherit; cursor: pointer; }
+button.li:first-child { border-top: 0; }

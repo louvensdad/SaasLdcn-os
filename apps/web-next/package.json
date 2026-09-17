@@ -1,0 +1,35 @@
+{
+  "name": "@ldcn/web-next",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3200",
+    "build": "next build",
+    "start": "next start -p 3200",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test:e2e": "playwright test",
+    "audit": "node scripts/audit.mjs",
+    "audit:check": "node scripts/audit.mjs --check",
+    "budget": "node scripts/budget.mjs",
+    "budget:check": "node scripts/budget.mjs --check",
+    "verify": "npm run lint && npm run typecheck && npm run audit:check && npm run build && npm run budget:check && npm run test:e2e"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "next": "15.5.21",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.0.0",
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "9.39.5",
+    "eslint-config-next": "15.5.21",
+    "typescript": "^5.0.0"
+  }
+}

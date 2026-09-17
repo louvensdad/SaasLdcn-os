@@ -1,0 +1,253 @@
+/* =====================================================================
+   LDCN OS · V2 "Signal Path" — design tokens (approved 2026-09-16)
+   Source: design/ldcn-next-ui/styles/tokens.css, docs/NEXT-UI-V2-VISUAL-LANGUAGE.md.
+
+   COLOR IS EVIDENCE. The chrome is graphite and ice; saturation only ever
+   comes from a state the backend reported, and every state also has its
+   own glyph shape. Rose (--hand) means one thing: a person must act.
+
+   Dark-first: the bare :root block is the dark palette. Light is a fully
+   designed second theme (system preference or data-theme="light").
+   Text tokens keep >= 4.5:1 against every surface of their theme; ink-4
+   is for disabled states and decoration only.
+   ===================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* Ground & depth layers: ground → workspace → active → focus → floating → overlay */
+  --ground: #06080c;
+  --ground-lift: #0a0e15;
+  --surface: #0b0f15;
+  --surface-2: #10151d;
+  --surface-3: #161d28;
+  --surface-sunken: #05070a;
+  --surface-float: rgba(14, 19, 27, 0.92);
+  --line: rgba(170, 190, 220, 0.11);
+  --line-strong: rgba(200, 214, 235, 0.21);
+  --scrim: rgba(3, 5, 8, 0.66);
+
+  /* Ink */
+  --ink: #e6ecf5;
+  --ink-2: #a5b0c0;
+  --ink-3: #838e9f;
+  --ink-4: #475061;
+  --ink-inverse: #06080c;
+
+  /* Platinum: brand, focus, the selected path. Not a status. (Named lumen for the stylesheet's history.) */
+  --lumen: #cfd9e8;
+  --lumen-soft: rgba(207, 217, 232, 0.1);
+  --lumen-line: rgba(207, 217, 232, 0.36);
+  --lumen-glow: rgba(207, 217, 232, 0.22);
+
+  /* The nine state families — always paired with a shape */
+  --proof: #3ed598;      /* PASSED · READY · VERIFIED · CERTIFIED      */
+  --pulse: #62b4ff;      /* RUNNING · *_GENERATING · starting          */
+  --caution: #f4b740;    /* QUALIFIED · WARNING · approved_with_warnings */
+  --fault: #ff5f66;      /* FAILED · BLOCKER                           */
+  --hand: #ff4fa0;       /* WAITING ON A PERSON — the only rose        */
+  --idle: #7e8898;       /* NOT_RUN · PENDING · QUEUED                 */
+
+  --proof-soft: rgba(62, 213, 152, 0.13);
+  --pulse-soft: rgba(98, 180, 255, 0.13);
+  --caution-soft: rgba(244, 183, 64, 0.13);
+  --fault-soft: rgba(255, 95, 102, 0.13);
+  --hand-soft: rgba(255, 79, 160, 0.14);
+  --idle-soft: rgba(126, 136, 152, 0.1);
+
+  --proof-line: rgba(62, 213, 152, 0.42);
+  --pulse-line: rgba(98, 180, 255, 0.45);
+  --caution-line: rgba(244, 183, 64, 0.45);
+  --fault-line: rgba(255, 95, 102, 0.45);
+  --hand-line: rgba(255, 79, 160, 0.5);
+
+  /* Code */
+  --code-bg: #080b10;
+  --code-add: rgba(62, 213, 152, 0.13);
+  --code-add-ink: #86e6bb;
+  --code-del: rgba(255, 95, 102, 0.13);
+  --code-del-ink: #ff9ca0;
+  --code-key: #b9c8dd;
+  --code-str: #b7d98c;
+  --code-num: #f4b740;
+  --code-com: #6f7c8e;
+
+  /* Type (the families come from next/font in globals.css) */
+  --wdth-identity: 100;
+  --wdth-prose: 100;
+  --wdth-data: 88;
+  --mono-stretch: 90%;
+
+  --t-11: 0.6875rem;
+  --t-12: 0.75rem;
+  --t-13: 0.8125rem;
+  --t-14: 0.875rem;
+  --t-16: 1rem;
+  --t-20: 1.25rem;
+  --t-26: 1.625rem;
+  --t-34: 2.125rem;
+
+  /* Space — 4px base */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+
+  /* Shape — spent by role, not stamped on everything */
+  --r-control: 8px;
+  --r-panel: 14px;
+  --r-float: 16px;
+  --r-pill: 999px;
+
+  /* Elevation — only floating layers are lifted */
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.025) inset;
+  --shadow-float: 0 0 0 1px var(--line-strong), 0 28px 80px rgba(0, 0, 0, 0.62);
+  --shadow-pop: 0 0 0 1px var(--line-strong), 0 18px 48px rgba(0, 0, 0, 0.5);
+
+  /* The ground: engineering paper, barely there */
+  --grid-dot: rgba(170, 190, 220, 0.055);
+  --noise-opacity: 0.035;
+
+  /* Motion — four levels; the interface animates a change, never a wait */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-structural: cubic-bezier(0.16, 1, 0.3, 1);
+  --m1: 140ms;
+  --m2: 230ms;
+  --m3: 380ms;
+  --m4: 580ms;
+  --decay: 1600ms;
+  --d-press: var(--m1);
+  --d-panel: var(--m2);
+  --d-state: var(--m3);
+  --d-arrival: var(--decay);
+
+  /* Shell metrics */
+  --rail-w: 60px;
+  --projnav-w: 216px;
+  --bar-h: 52px;
+  --scope-h: 44px;
+  --strip-h: 30px;
+  --panel-w: 380px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --ground: #eef1f5;
+    --ground-lift: #f6f8fb;
+    --surface: #ffffff;
+    --surface-2: #f3f5f8;
+    --surface-3: #e8ecf2;
+    --surface-sunken: #e6eaf0;
+    --surface-float: rgba(255, 255, 255, 0.95);
+    --line: rgba(20, 32, 52, 0.1);
+    --line-strong: rgba(20, 32, 52, 0.2);
+    --scrim: rgba(20, 26, 36, 0.32);
+    --ink: #0e1420;
+    --ink-2: #4a5566;
+    --ink-3: #5c6778;
+    --ink-4: #a9b1be;
+    --ink-inverse: #ffffff;
+    --lumen: #1b2433;
+    --lumen-soft: rgba(27, 36, 51, 0.07);
+    --lumen-line: rgba(27, 36, 51, 0.3);
+    --lumen-glow: rgba(27, 36, 51, 0.14);
+    --proof: #0f8f5f;
+    --pulse: #1f74c9;
+    --caution: #a86f00;
+    --fault: #d0343c;
+    --hand: #c9206f;
+    --idle: #7a8494;
+    --proof-soft: rgba(15, 143, 95, 0.1);
+    --pulse-soft: rgba(31, 116, 201, 0.1);
+    --caution-soft: rgba(168, 111, 0, 0.11);
+    --fault-soft: rgba(208, 52, 60, 0.1);
+    --hand-soft: rgba(201, 32, 111, 0.1);
+    --idle-soft: rgba(122, 132, 148, 0.1);
+    --proof-line: rgba(15, 143, 95, 0.4);
+    --pulse-line: rgba(31, 116, 201, 0.4);
+    --caution-line: rgba(168, 111, 0, 0.4);
+    --fault-line: rgba(208, 52, 60, 0.4);
+    --hand-line: rgba(201, 32, 111, 0.42);
+    --code-bg: #f6f8fa;
+    --code-add: rgba(15, 143, 95, 0.1);
+    --code-add-ink: #0b6b47;
+    --code-del: rgba(208, 52, 60, 0.09);
+    --code-del-ink: #a3282f;
+    --code-key: #1b2433;
+    --code-str: #3f6b12;
+    --code-num: #8a5b00;
+    --code-com: #6f7987;
+    --shadow-float: 0 0 0 1px var(--line-strong), 0 24px 64px rgba(15, 23, 42, 0.16);
+    --shadow-pop: 0 0 0 1px var(--line-strong), 0 12px 32px rgba(15, 23, 42, 0.12);
+    --grid-dot: rgba(20, 32, 52, 0.07);
+    --noise-opacity: 0.02;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ground: #eef1f5;
+  --ground-lift: #f6f8fb;
+  --surface: #ffffff;
+  --surface-2: #f3f5f8;
+  --surface-3: #e8ecf2;
+  --surface-sunken: #e6eaf0;
+  --surface-float: rgba(255, 255, 255, 0.95);
+  --line: rgba(20, 32, 52, 0.1);
+  --line-strong: rgba(20, 32, 52, 0.2);
+  --scrim: rgba(20, 26, 36, 0.32);
+  --ink: #0e1420;
+  --ink-2: #4a5566;
+  --ink-3: #5c6778;
+  --ink-4: #a9b1be;
+  --ink-inverse: #ffffff;
+  --lumen: #1b2433;
+  --lumen-soft: rgba(27, 36, 51, 0.07);
+  --lumen-line: rgba(27, 36, 51, 0.3);
+  --lumen-glow: rgba(27, 36, 51, 0.14);
+  --proof: #0f8f5f;
+  --pulse: #1f74c9;
+  --caution: #a86f00;
+  --fault: #d0343c;
+  --hand: #c9206f;
+  --idle: #7a8494;
+  --proof-soft: rgba(15, 143, 95, 0.1);
+  --pulse-soft: rgba(31, 116, 201, 0.1);
+  --caution-soft: rgba(168, 111, 0, 0.11);
+  --fault-soft: rgba(208, 52, 60, 0.1);
+  --hand-soft: rgba(201, 32, 111, 0.1);
+  --idle-soft: rgba(122, 132, 148, 0.1);
+  --proof-line: rgba(15, 143, 95, 0.4);
+  --pulse-line: rgba(31, 116, 201, 0.4);
+  --caution-line: rgba(168, 111, 0, 0.4);
+  --fault-line: rgba(208, 52, 60, 0.4);
+  --hand-line: rgba(201, 32, 111, 0.42);
+  --code-bg: #f6f8fa;
+  --code-add: rgba(15, 143, 95, 0.1);
+  --code-add-ink: #0b6b47;
+  --code-del: rgba(208, 52, 60, 0.09);
+  --code-del-ink: #a3282f;
+  --code-key: #1b2433;
+  --code-str: #3f6b12;
+  --code-num: #8a5b00;
+  --code-com: #6f7987;
+  --shadow-float: 0 0 0 1px var(--line-strong), 0 24px 64px rgba(15, 23, 42, 0.16);
+  --shadow-pop: 0 0 0 1px var(--line-strong), 0 12px 32px rgba(15, 23, 42, 0.12);
+  --grid-dot: rgba(20, 32, 52, 0.07);
+  --noise-opacity: 0.02;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Reduced motion: every level becomes a cut. The OS preference and the in-app switch mean the same thing. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --m1: 0ms; --m2: 0ms; --m3: 0ms; --m4: 0ms; --decay: 0ms; }
+}
+:root[data-motion="reduced"] { --m1: 0ms; --m2: 0ms; --m3: 0ms; --m4: 0ms; --decay: 0ms; }

@@ -1,0 +1,277 @@
+/* =====================================================================
+   LDCN OS · V2 canvas engine and the four signature drawings
+   (mission map, company, runtime, evidence). Design source:
+   design/ldcn-next-ui/styles/primitives.css and docs/NEXT-UI-V2-VISUALIZATION-SYSTEM.md.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------- engine */
+.gcanvas {
+  --edge: color-mix(in srgb, var(--ink-3) 62%, transparent);
+  position: relative; overflow: hidden; isolation: isolate; border-radius: var(--r-panel);
+  background-color: var(--surface-sunken);
+  background-image: radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 1.3px);
+  background-size: 24px 24px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.g-viewport { position: absolute; inset: 0; cursor: grab; touch-action: pan-y; outline: none; }
+.g-viewport.is-panning { cursor: grabbing; }
+.g-viewport:focus-visible { box-shadow: inset 0 0 0 2px var(--lumen); border-radius: inherit; }
+.g-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.g-edges { position: absolute; overflow: visible; pointer-events: none; max-width: none; }
+.g-labels, .g-nodes { position: absolute; left: 0; top: 0; }
+
+.gnode { position: absolute; left: 0; top: 0; outline: none; cursor: pointer; transition: opacity var(--m2) var(--ease), filter var(--m2) var(--ease); }
+.gnode.is-inert { cursor: inherit; pointer-events: none; }
+.gcanvas.is-ready .gnode { transition: transform var(--m3) var(--ease-structural), opacity var(--m2) var(--ease), filter var(--m2) var(--ease); }
+.gnode.is-dim { opacity: 0.3; filter: saturate(0.4); }
+.gnode:focus-visible { outline: 2px solid var(--lumen); outline-offset: 6px; border-radius: 12px; }
+
+.gedge-line { fill: none; stroke: var(--edge); stroke-width: 1.4; transition: stroke var(--m2) var(--ease), opacity var(--m2) var(--ease), stroke-width var(--m2) var(--ease); }
+.gcanvas.is-ready .gedge-line { transition: d var(--m3) var(--ease-structural), stroke var(--m2) var(--ease), opacity var(--m2) var(--ease), stroke-width var(--m2) var(--ease); }
+.gedge-arrow { fill: none; stroke: var(--edge); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; transition: opacity var(--m2) var(--ease); }
+.gedge.e-proof .gedge-line, .gedge.e-proof .gedge-arrow { stroke: var(--proof-line); }
+.gedge.e-live .gedge-line, .gedge.e-live .gedge-arrow { stroke: var(--pulse-line); }
+.gedge.e-hand .gedge-line, .gedge.e-hand .gedge-arrow { stroke: var(--hand-line); }
+.gedge.e-declared .gedge-line { stroke-dasharray: 3 4; }
+.gedge.e-blocked .gedge-line, .gedge.e-blocked .gedge-arrow { stroke: var(--fault-line); stroke-dasharray: 4 3; }
+.gedge.e-caution .gedge-line, .gedge.e-caution .gedge-arrow { stroke: var(--caution-line); }
+.gedge.e-critical .gedge-line { stroke: var(--lumen); stroke-width: 2; }
+.gedge.e-critical .gedge-arrow { stroke: var(--lumen); }
+.gedge.e-reports .gedge-line { stroke: var(--ink-4); stroke-width: 1.4; stroke-dasharray: 2 3; }
+.gedge.e-handoff .gedge-line, .gedge.e-handoff .gedge-arrow { stroke: var(--lumen); opacity: 0.6; }
+.gedge.is-dim .gedge-line, .gedge.is-dim .gedge-arrow { opacity: 0.16; }
+.gedge.is-lit .gedge-line { stroke-width: 2.2; opacity: 1; }
+
+.glabel {
+  position: absolute; left: 0; top: 0; padding: 2px 6px; border-radius: 5px; white-space: nowrap;
+  font: 500 10px/1.3 var(--font-mono); font-stretch: var(--mono-stretch); color: var(--ink-3);
+  background: var(--surface-sunken); box-shadow: inset 0 0 0 1px var(--line); transition: opacity var(--m2) var(--ease);
+}
+.glabel.is-dim { opacity: 0.2; }
+
+.g-controls {
+  position: absolute; right: 10px; bottom: 10px; z-index: 3; display: flex; gap: 2px; padding: 3px; border-radius: 10px;
+  background: var(--surface-float); backdrop-filter: blur(10px); box-shadow: var(--shadow-pop);
+}
+.g-controls .iconbtn { width: 30px; height: 30px; }
+.g-coords {
+  position: absolute; left: 14px; bottom: 14px; z-index: 2; pointer-events: none; user-select: none;
+  font: 500 9.5px/1 var(--font-mono); font-stretch: 80%; letter-spacing: 0.08em; color: var(--ink-4);
+}
+.g-toggle {
+  position: absolute; left: 0; top: 0; z-index: 2; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; background: var(--surface-3); color: var(--ink-2);
+  box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--line-strong); font: 600 12px/1 var(--font-mono);
+}
+.gcanvas.is-ready .g-toggle { transition: transform var(--m3) var(--ease-structural), background-color var(--m1) var(--ease); }
+.g-toggle:hover { color: var(--ink); background: var(--surface-2); }
+
+.g-tip {
+  position: absolute; left: 0; top: 0; z-index: 6; width: 248px; padding: 10px 12px; border-radius: 10px; pointer-events: none;
+  background: var(--surface-3); box-shadow: var(--shadow-float); font-size: var(--t-12); line-height: 1.45; color: var(--ink-2);
+  animation: fade-in var(--m1) var(--ease) both;
+}
+.g-tip strong { display: block; color: var(--ink); font-size: var(--t-13); font-weight: 600; margin-bottom: 2px; }
+.g-tip .mono { display: block; color: var(--ink-2); font-size: 11px; overflow-wrap: anywhere; }
+.g-tip .tip-body { margin: 6px 0 0; }
+.g-tip .tip-hint { display: block; margin-top: 6px; color: var(--ink-4); font-size: 11px; }
+
+/* The legend sits in the reserved bottom band with the zoom controls; the inspector floats top-right. Neither pushes the drawing. */
+.g-hud {
+  position: absolute; left: 10px; bottom: 10px; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  max-width: calc(100% - 150px); min-height: 36px; padding: 6px 10px; border-radius: 10px;
+  background: var(--surface-float); backdrop-filter: blur(12px); box-shadow: var(--shadow-pop);
+}
+.g-hud .btn { height: 24px; padding: 0 8px; font-size: 11.5px; }
+.g-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.g-legend span { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-2); white-space: nowrap; }
+.g-legend .sig { width: 12px; height: 12px; }
+.g-legend i { display: inline-block; width: 18px; border-top: 1.5px dashed var(--ink-3); }
+.g-inspect {
+  position: absolute; right: 10px; top: 10px; z-index: 4; width: min(320px, calc(100% - 20px)); max-height: calc(100% - 64px); overflow: auto;
+  display: grid; gap: 10px; padding: 14px; border-radius: var(--r-float); background: var(--surface-float);
+  backdrop-filter: blur(16px); box-shadow: var(--shadow-float); animation: panel-in var(--m2) var(--ease) both;
+}
+.g-inspect-head { display: flex; align-items: flex-start; gap: 10px; }
+.g-inspect-head .grow { flex: 1; min-width: 0; }
+.g-inspect-head .h-sub { overflow-wrap: anywhere; }
+.g-inspect .kv { grid-template-columns: minmax(90px, max-content) minmax(0, 1fr); font-size: 12.5px; gap: 5px 12px; }
+.g-inspect .body { font-size: 13px; }
+.g-inspect .btn-row { gap: 6px; }
+
+/* ---------------------------------------------------------------- stations (mission map) */
+.st { position: relative; width: 100%; height: 100%; --dial: 48px; --ring: var(--line-strong); }
+.st-dial {
+  position: absolute; left: calc(50% - var(--dial) / 2); top: 0; width: var(--dial); height: var(--dial); border-radius: 50%;
+  display: grid; place-items: center; background: radial-gradient(circle at 50% 35%, var(--surface-3), var(--surface));
+  box-shadow: inset 0 0 0 1px var(--line-strong), 0 10px 26px rgba(0, 0, 0, 0.28);
+  transition: box-shadow var(--m3) var(--ease), scale var(--m2) var(--ease), background var(--m3) var(--ease);
+}
+.st-dial .sig { width: 20px; height: 20px; }
+.st-dial::after { content: ""; position: absolute; inset: -5px; border-radius: inherit; box-shadow: inset 0 0 0 1.5px var(--ring); transition: box-shadow var(--m3) var(--ease); pointer-events: none; }
+.st.f-proof { --ring: var(--proof-line); }
+.st.f-pulse { --ring: var(--pulse-line); }
+.st.f-hand { --ring: var(--hand); }
+.st.f-fault { --ring: var(--fault); }
+.st.f-caution { --ring: var(--caution-line); }
+.st.f-idle .st-dial, .st.f-na .st-dial { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.st.f-idle .st-dial::after, .st.f-na .st-dial::after { box-shadow: inset 0 0 0 1px var(--line); }
+.st.f-unknown .st-dial { background: transparent; box-shadow: none; }
+.st.f-unknown .st-dial::after { inset: 0; box-shadow: none; border: 1.5px dashed var(--line-strong); }
+.st.f-hand .st-dial { background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--hand) 24%, var(--surface-3)), var(--surface)); }
+.st.f-fault .st-dial { background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--fault) 18%, var(--surface-3)), var(--surface)); }
+/* The breathing ring answers one fact only: the backend reports this station running right now. */
+.st.is-live .st-dial::before {
+  content: ""; position: absolute; inset: -12px; border-radius: inherit; border: 1px solid var(--pulse-line); pointer-events: none;
+  animation: breathe 2.6s var(--ease) infinite;
+}
+@keyframes breathe { 0%, 100% { opacity: 0.15; transform: scale(0.92); } 50% { opacity: 0.8; transform: scale(1.04); } }
+/* Settle: one ring when the backend reports a different state for a station than the last read did. Never on first paint. */
+.st.just-changed .st-dial::after { animation: settle 1.2s var(--ease) 1; }
+@keyframes settle {
+  0% { box-shadow: inset 0 0 0 1.5px var(--ring), 0 0 0 0 var(--ring); }
+  40% { box-shadow: inset 0 0 0 1.5px var(--ring), 0 0 0 12px transparent; }
+  100% { box-shadow: inset 0 0 0 1.5px var(--ring), 0 0 0 0 transparent; }
+}
+/* The last station is a gate: a rotated rounded square, like the mark. */
+.st.is-gate .st-dial { border-radius: 13px; rotate: 45deg; width: calc(var(--dial) * 0.8); height: calc(var(--dial) * 0.8); left: calc(50% - var(--dial) * 0.4); top: calc(var(--dial) * 0.1); }
+.st.is-gate .st-dial > .sig { rotate: -45deg; }
+.gnode:hover .st-dial, .gnode:focus-visible .st-dial { scale: 1.06; }
+.gnode.is-selected .st-dial { box-shadow: inset 0 0 0 1px var(--line-strong), 0 0 0 6px var(--lumen-soft), 0 14px 36px rgba(0, 0, 0, 0.4); }
+.st-cap { position: absolute; left: -8px; right: -8px; top: calc(var(--dial) + 12px); display: grid; justify-items: center; gap: 3px; text-align: center; pointer-events: none; }
+.st-v .st-dial { left: 0; }
+.st-v .st-cap { left: calc(var(--dial) + 16px); right: 0; top: 50%; transform: translateY(-50%); justify-items: start; text-align: left; }
+.st-label { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); line-height: 1.2; }
+.st-state { font: 500 10px/1.35 var(--font-mono); font-stretch: 86%; letter-spacing: 0.03em; color: var(--ink-3); max-width: 100%; overflow-wrap: anywhere; }
+.st.f-hand .st-state { color: var(--hand); }
+.st.f-fault .st-state { color: var(--fault); }
+.st-meta { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.st.is-sub { --dial: 32px; }
+.st.is-sub .st-dial .sig { width: 14px; height: 14px; }
+.st.is-sub .st-dial::after { inset: -3px; }
+.st.is-sub .st-dial::before { inset: -8px; }
+.st.is-sub .st-cap { top: calc(var(--dial) + 8px); gap: 1px; }
+.st.is-sub .st-label { font-size: 12px; font-weight: 560; color: var(--ink-2); }
+.gnode.is-selected .st.is-sub .st-label { color: var(--ink); }
+
+.band { height: 100%; border-top: 1px solid var(--line-strong); padding-top: 6px; }
+.band .label { color: var(--ink-3); }
+
+.map-canvas, .org-canvas, .proof-canvas, .topo-canvas { height: var(--canvas-h, 460px); }
+
+/* ---------------------------------------------------------------- company (org chart) */
+.team-zone { height: 100%; border-radius: 16px; border: 1px dashed var(--line-strong); background: color-mix(in srgb, var(--surface) 55%, transparent); padding: 10px 12px; }
+.team-zone .label { display: block; }
+.team-zone b { display: block; font-size: 13.5px; margin-top: 2px; }
+.team-zone p { margin: 3px 0 0; font-size: 11.5px; color: var(--ink-3); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.seat-card {
+  position: relative; height: 100%; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 2px 10px; align-content: center;
+  padding: 8px 12px 8px 8px; border-radius: 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong), var(--shadow-1);
+}
+.gnode:hover .seat-card { background: var(--surface-3); }
+.gnode.is-selected .seat-card { box-shadow: inset 0 0 0 1.5px var(--lumen), 0 0 0 5px var(--lumen-soft); }
+.seat-card.is-refused { background: color-mix(in srgb, var(--fault-soft) 55%, var(--surface)); box-shadow: inset 0 0 0 1px var(--fault-line); }
+.seat-card.is-open { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); outline: 1px dashed var(--line-strong); outline-offset: -1px; }
+.seat-glyph { grid-row: 1 / span 3; position: relative; width: 44px; height: 44px; display: grid; place-items: center; align-self: center; }
+.seat-glyph svg.ring { position: absolute; inset: 0; width: 44px; height: 44px; overflow: visible; }
+.seat-glyph .ico { width: 18px; height: 18px; color: var(--ink-2); }
+.ring-seg { fill: none; stroke-width: 3; stroke-linecap: round; }
+.ring-seg.f-proof { stroke: var(--proof); }
+.ring-seg.f-fault { stroke: var(--fault); }
+.ring-seg.f-caution { stroke: var(--caution); }
+.ring-seg.f-idle, .ring-seg.f-unknown, .ring-seg.f-na, .ring-seg.f-stop, .ring-seg.f-pulse, .ring-seg.f-hand { stroke: var(--ink-4); }
+.ring-none { fill: none; stroke: var(--line-strong); stroke-width: 1.5; stroke-dasharray: 3 4; }
+.seat-name { font-size: 13px; font-weight: 600; line-height: 1.25; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seat-line { display: flex; align-items: center; gap: 6px; min-width: 0; font: 500 10.5px/1.3 var(--font-mono); font-stretch: 88%; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seat-line .sig { width: 11px; height: 11px; flex: none; }
+.seat-line.is-refusal { color: var(--fault); }
+
+/* ---------------------------------------------------------------- evidence graph */
+.col-head { height: 100%; border-top: 1px solid var(--line-strong); padding-top: 6px; }
+.enode-card, .pillar-card, .verdict-card {
+  height: 100%; display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 1px 9px; align-content: center;
+  padding: 7px 11px 7px 9px; border-radius: 10px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.enode-card .sig, .pillar-card .sig, .verdict-card .sig { grid-row: 1 / span 2; align-self: center; width: 15px; height: 15px; }
+.enode-card b, .pillar-card b, .verdict-card b { font-size: 12.5px; font-weight: 600; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.enode-card span.mono, .pillar-card span.mono, .verdict-card span.mono { font-size: 10.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.enode-card.is-missing { background: transparent; box-shadow: none; outline: 1px dashed var(--line-strong); outline-offset: -1px; }
+.enode-card.is-missing b { color: var(--ink-2); font-weight: 500; }
+.pillar-card { border-radius: 12px; background: var(--surface-3); }
+.pillar-card b { font-size: 13.5px; }
+.pillar-card .pillar-state { font: 600 11px/1.3 var(--font-mono); font-stretch: 88%; letter-spacing: 0.03em; color: var(--ink-2); }
+.pillar-card.f-fault .pillar-state { color: var(--fault); }
+.pillar-card.f-proof .pillar-state { color: var(--proof); }
+.pillar-card.f-hand .pillar-state { color: var(--hand); }
+.pillar-card.f-caution .pillar-state { color: var(--caution); }
+.pillar-card .pillar-count { grid-column: 2; font: 500 10.5px/1.3 var(--font-mono); font-stretch: 88%; color: var(--ink-3); }
+.pillar-card .sig { grid-row: 1 / span 3; }
+.verdict-card { border-radius: 16px; padding: 12px 14px; grid-template-columns: 24px minmax(0, 1fr); background: radial-gradient(circle at 20% 0%, var(--surface-3), var(--surface-2)); box-shadow: inset 0 0 0 1px var(--line-strong), var(--shadow-pop); }
+.verdict-card .sig { width: 20px; height: 20px; grid-row: 1 / span 3; }
+.verdict-card b { font-size: 16px; letter-spacing: -0.01em; }
+.verdict-card .label { font-size: 10px; }
+.gnode.is-selected .enode-card, .gnode.is-selected .pillar-card, .gnode.is-selected .verdict-card { box-shadow: inset 0 0 0 1.5px var(--lumen), 0 0 0 5px var(--lumen-soft); }
+.gnode:hover .enode-card, .gnode:hover .pillar-card { background: var(--surface-3); }
+
+/* ---------------------------------------------------------------- runtime chain */
+.svc-card {
+  height: 100%; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 1px 10px; align-content: center;
+  padding: 8px 12px 8px 8px; border-radius: 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.svc-card .svc-glyph { grid-row: 1 / span 3; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: var(--surface-3); align-self: center; }
+.svc-card .svc-glyph .sig { width: 15px; height: 15px; }
+.svc-card b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svc-card span.mono { font-size: 10.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svc-card .svc-reason { font-size: 11.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.svc-card.f-fault { box-shadow: inset 0 0 0 1px var(--fault-line); background: color-mix(in srgb, var(--fault-soft) 50%, var(--surface-2)); }
+.svc-card.f-idle, .svc-card.f-na, .svc-card.f-unknown { background: transparent; box-shadow: none; outline: 1px dashed var(--line-strong); outline-offset: -1px; }
+.req-card { grid-template-columns: 30px minmax(0, 1fr); }
+.svc-card.req-card .svc-reason { white-space: normal; overflow-wrap: anywhere; }
+.req-card .svc-reason { grid-row: 1 / span 3; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
+.svc-card.is-critical { box-shadow: inset 0 0 0 1.5px var(--lumen), 0 0 0 4px var(--lumen-soft); }
+.g-legend i.is-critical { border-top: 2px solid var(--lumen); }
+.svc-card.is-planned { background: transparent; box-shadow: none; outline: 1px dashed var(--line-strong); outline-offset: -1px; }
+.gnode.is-selected .svc-card { box-shadow: inset 0 0 0 1.5px var(--lumen), 0 0 0 5px var(--lumen-soft); }
+
+/* ---------------------------------------------------------------- the mission path on a phone: the map becomes a column */
+.mission-map .only-narrow { display: none; }
+.mpath, .mpath-stages { list-style: none; margin: 0; padding: 0; display: grid; }
+.mpath > li { position: relative; }
+.mpath > li:not(:last-child)::before { content: ""; position: absolute; left: 21px; top: 40px; bottom: -6px; width: 1.5px; background: var(--line-strong); }
+.mpath > li.f-proof:not(:last-child)::before { background: var(--proof-line); }
+.mpath > li.is-turn { margin-top: 14px; }
+.mpath-row {
+  width: 100%; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; align-items: center; padding: 6px 4px;
+  border: 0; border-radius: 12px; background: transparent; color: var(--ink); text-align: left; font: inherit; text-decoration: none;
+}
+a.mpath-row:hover, button.mpath-row:hover { background: var(--lumen-soft); text-decoration: none; }
+.mpath-row[aria-pressed="true"] { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--lumen); }
+.mpath-dial {
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; margin: 1px;
+  background: radial-gradient(circle at 50% 35%, var(--surface-3), var(--surface)); box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.mpath-dial .sig { width: 15px; height: 15px; }
+.mpath > li.f-unknown > .mpath-row .mpath-dial { background: transparent; box-shadow: none; border: 1.5px dashed var(--line-strong); }
+.mpath > li.f-hand > .mpath-row .mpath-dial { box-shadow: inset 0 0 0 1.5px var(--hand-line); }
+.mpath > li.is-gate > .mpath-row .mpath-dial { border-radius: 9px; rotate: 45deg; width: 28px; height: 28px; margin: 4px; }
+.mpath > li.is-gate > .mpath-row .mpath-dial .sig { rotate: -45deg; }
+.mpath-text { display: grid; min-width: 0; }
+.mpath-text b { font-size: 14px; font-weight: 600; }
+.mpath-text .mono { font-size: 11px; color: var(--ink-3); overflow-wrap: anywhere; }
+.mpath-stages { margin: 2px 0 6px 44px; gap: 1px; }
+.mpath-stages .mpath-row { grid-template-columns: 26px minmax(0, 1fr); gap: 10px; padding: 4px; }
+.mpath-dial.is-sub { width: 24px; height: 24px; }
+.mpath-dial.is-sub .sig { width: 12px; height: 12px; }
+.mpath-stages .mpath-text b { font-size: 13px; font-weight: 560; color: var(--ink-2); }
+
+@media (max-width: 639px) {
+  .mission-map .only-wide { display: none; }
+  .mission-map .only-narrow { display: grid; }
+  .map-canvas, .org-canvas, .proof-canvas, .topo-canvas { height: 420px; }
+  .g-inspect { left: 8px; right: 8px; top: auto; bottom: 52px; width: auto; max-height: 55%; }
+  .g-hud { display: none; }
+}
+@media (forced-colors: active) {
+  .gedge-line, .gedge-arrow { stroke: CanvasText; }
+  .seat-card, .enode-card, .pillar-card, .verdict-card, .svc-card { border: 1px solid CanvasText; }
+}
