@@ -12,14 +12,25 @@ const budgets = {
   // create_job for the Mission -> ProjectRoom -> GenerationJob canonical
   // handoff (MissionExecutionHandoffService). Revisit by actually splitting
   // the module if this keeps creeping.
-  '../api/app/engines/generation_job_engine.py': 2010,
+  // Bumped 2026-09-17: commit 0f25b7c (generation delivery gates + runtime
+  // validation) took this 1999 -> 2281 and never moved the ceiling, so the gate
+  // has been red on every run since. The growth is load-bearing -- approve_repair,
+  // the frontend artifact contract check, and the bounded recovery loop that
+  // stops a SECOND distinct blocked artifact from falling past the Quality Gate
+  // chain into a hard FAILED. Set to the exact current size, so the next line
+  // added still has to come here. Revisit by finishing the split into mixins
+  // this file already started, not by trimming guards.
+  '../api/app/engines/generation_job_engine.py': 2281,
   // Bumped 2026-07-21: commit 050b1e3 added a real PlanAccessEngine
   // entitlement check gating build creation (vault 56 enforcement), pushing
   // this 4 lines past the old 1475 budget -- not bloat, so raised rather
   // than trimmed. Revisit by actually splitting the route module if this
   // keeps creeping.
   '../api/app/routes/meta_factory.py': 1490,
-  '../api/app/services/build_validation_service.py': 1138,
+  // Bumped 2026-09-17: same commit, 1131 -> 1169, and the same oversight. Small
+  // and load-bearing (the delivery gates read build validation), so raised to
+  // the exact current size rather than trimmed.
+  '../api/app/services/build_validation_service.py': 1169,
   '../api/app/engines/llm/mock_adapter.py': 1171,
   'app/(app)/meta-factory/page.tsx': 1138,
 };

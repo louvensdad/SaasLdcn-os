@@ -169,7 +169,13 @@ jobs:
           cache: pip
           cache-dependency-path: apps/api/requirements-dev.lock
       - run: pip install --require-hashes --requirement requirements-dev.lock
-      - run: docker run --detach --rm --name ldcn-minio --publish 9000:9000 --env MINIO_ROOT_USER=contract-access --env MINIO_ROOT_PASSWORD=contract-secret minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+      # quay.io, not Docker Hub: docker.io/minio/minio stopped serving anonymous
+      # pulls (the registry answers UNAUTHORIZED, which the docker CLI reports as
+      # "pull access denied ... or may require 'docker login'"), so this step died
+      # with exit 125 before the contract tests ever ran. quay.io/minio/minio is
+      # MinIO's own mirror and still serves the SAME tag anonymously -- the image
+      # is unchanged, only where it is fetched from.
+      - run: docker run --detach --rm --name ldcn-minio --publish 9000:9000 --env MINIO_ROOT_USER=contract-access --env MINIO_ROOT_PASSWORD=contract-secret quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
       - run: for i in {1..30}; do curl --fail --silent http://127.0.0.1:9000/minio/health/live && exit 0; sleep 2; done; exit 1
       - run: python -m pytest -q -m integration tests/test_infrastructure_contracts.py
   containers:
