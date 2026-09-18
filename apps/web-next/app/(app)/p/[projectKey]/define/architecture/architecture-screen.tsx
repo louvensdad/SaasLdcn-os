@@ -90,6 +90,29 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
 
       {generate.isError ? <Failure title={t('architecture.failed')} error={generate.error} onRetry={() => generate.mutate()} /> : null}
 
+      {drawing ? (
+        <div className="panel" role="status" style={{ marginBottom: 20 }}>
+          <div className="panel-body stack" style={{ gap: 8 }}>
+            <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+              <Signal family="pulse" live />
+              <b>{t('architecture.drawing.title')}</b>
+            </div>
+            <p className="body ink2">
+              {t('architecture.drawing.body', {
+                when: formatWhen(generate.isPending && generate.submittedAt ? new Date(generate.submittedAt).toISOString() : data.updated_at, locale),
+              })}
+            </p>
+            <p className="meta">{t('architecture.drawing.howLong')}</p>
+            <div className="btn-row">
+              <button className="btn btn-ghost btn-sm" type="button" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
+                {cancel.isPending ? t('architecture.drawing.cancelling') : t('architecture.drawing.cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {cancel.isError ? <Failure title={t('architecture.drawing.cancelFailed')} error={cancel.error} onRetry={() => cancel.mutate()} /> : null}
+
       {stack ? (
         <section className="sec">
           <div className="sec-head">
@@ -127,29 +150,6 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
           <Source>POST /api/project-rooms/{'{'}room_id{'}'}/stack/approve</Source>
         </section>
       ) : null}
-
-      {drawing ? (
-        <div className="panel" role="status" style={{ marginBottom: 20 }}>
-          <div className="panel-body stack" style={{ gap: 8 }}>
-            <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-              <Signal family="pulse" live />
-              <b>{t('architecture.drawing.title')}</b>
-            </div>
-            <p className="body ink2">
-              {t('architecture.drawing.body', {
-                when: formatWhen(generate.isPending && generate.submittedAt ? new Date(generate.submittedAt).toISOString() : data.updated_at, locale),
-              })}
-            </p>
-            <p className="meta">{t('architecture.drawing.howLong')}</p>
-            <div className="btn-row">
-              <button className="btn btn-ghost btn-sm" type="button" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
-                {cancel.isPending ? t('architecture.drawing.cancelling') : t('architecture.drawing.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {cancel.isError ? <Failure title={t('architecture.drawing.cancelFailed')} error={cancel.error} onRetry={() => cancel.mutate()} /> : null}
 
       {!blueprint ? (
         /* An empty state owes a valid path, not a restatement of a condition that is already met

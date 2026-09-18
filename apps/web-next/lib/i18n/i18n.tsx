@@ -27,9 +27,15 @@ const I18nContext = createContext<I18nApi | null>(null);
 
 /**
  * The server picks the locale and hands over that locale's table; the other three stay in their own
- * chunks until someone asks for them. There is no en-US fallback here on purpose: every locale is
- * typed `Record<MessageKey, string>`, so a key present in one is present in all, and a key that is in
- * none came from the backend and must show as itself rather than silently reading in another language.
+ * chunks until someone asks for them. A key that is in no table at all came from the backend and still
+ * shows as itself rather than silently reading in another language -- that is what tDynamic is for.
+ *
+ * `t` has one fallback, and it exists for a failure seen twice on a running dev server: the table a
+ * locale switch lazily loads can be a cached chunk older than the source, and every key added since is
+ * then missing from it, so screens printed `architecture.drawing.title` at people. The compiler
+ * guarantees the four locales carry the same keys, so a key missing from the lazily loaded table is
+ * never a translation gap -- it is a stale chunk. Falling back to the table the server rendered this
+ * page with degrades that to a sentence in the other language instead of to a key.
  */
 export function I18nProvider({ initialLocale, initialMessages, children }: {
   readonly initialLocale: Locale;
@@ -39,7 +45,7 @@ export function I18nProvider({ initialLocale, initialMessages, children }: {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
   const [messages, setMessages] = useState<Messages>(initialMessages);
 
-  const t = useCallback((key: MessageKey, vars?: Vars) => format(messages[key] ?? key, vars), [messages]);
+  const t = useCallback((key: MessageKey, vars?: Vars) => format(messages[key] ?? initialMessages[key] ?? key, vars), [messages, initialMessages]);
 
   const tDynamic = useCallback(
     (key: string, vars?: Vars) => format((messages as Readonly<Record<string, string>>)[key] ?? key, vars),

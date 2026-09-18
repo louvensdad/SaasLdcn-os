@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { mockApi, useEnglish } from './mock-api';
 
@@ -16,6 +16,19 @@ const PROJECT = '/p/room_5b9e2c71a0d4';
 const SESSION = 'as_4d81b6f02e37';
 const GUIDED = 'msn_2a7c91e4f0b8';
 const MISSION = `${PROJECT}/missions/genjob_9f14c7b2e08a55`;
+
+/**
+ * A message key that reached the page. `t` falls back to the key when it finds nothing, which on a
+ * running dev server showed people `architecture.drawing.title` after a locale chunk went stale -- and
+ * nothing in the suite noticed, because every screen still rendered. The prefixes below are this app's
+ * own namespaces, so a backend word with a dot in it (a file path, a version, an endpoint) is not one.
+ */
+const KEY_NAMESPACES = /(app|nav|shell|common|command|projects|inbox|activity|project|mission|discovery|requirements|architecture|review|missions|engineering|runtime|evidence|delivery|governance|memory|workforce|library|studio|platform|settings|learn|terms|start|signin|workspace|table|toolbar|confirm|failure|status|panel|motion|theme|density|state|signal)\.[a-z][A-Za-z0-9]*(\.[A-Za-z0-9]+)*/g;
+
+async function leakedKeys(page: Page): Promise<readonly string[]> {
+  const text = await page.locator('#main').innerText();
+  return [...new Set(text.match(KEY_NAMESPACES) ?? [])];
+}
 
 const SCREENS: readonly (readonly [string, string])[] = [
   ['command', '/'],
@@ -167,6 +180,7 @@ test.describe('screenshots', () => {
       expect(overflow, `${name} scrolls sideways at 1440`).toBe(false);
       expect(errors, `${name} logged errors`).toEqual([]);
       expect(await a11y(page), `${name} has accessibility defects`).toEqual([]);
+      expect(await leakedKeys(page), `${name} printed a message key instead of a sentence`).toEqual([]);
     });
   }
 
