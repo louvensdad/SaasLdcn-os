@@ -64,7 +64,7 @@ export function ProjectsScreen() {
         <div className="sec-head">
           <h2 className="h-sec">{t('projects.count', { count: projects.length })}</h2>
         </div>
-        {pending ? <Skeleton lines={5} /> : null}
+        {pending ? <Skeleton shape="table" rows={3} columns={6} /> : null}
         {!pending && projects.length === 0 ? (
           <StateBlock kind="empty" title={t('projects.empty')}>{t('projects.emptyBody')}</StateBlock>
         ) : null}

@@ -53,7 +53,7 @@ export function ActivityScreen() {
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSearch(draft.trim())}>{t('activity.searchGo')}</button>
       </Toolbar>
 
-      {feed.isPending ? <Skeleton lines={6} /> : null}
+      {feed.isPending ? <Skeleton shape="table" rows={6} columns={5} /> : null}
       {feed.isError ? <StateBlock kind="error" title={t('activity.error')} /> : null}
       {!feed.isPending && !feed.isError && items.length === 0 ? <StateBlock kind="empty" title={t('activity.empty')} /> : null}
 

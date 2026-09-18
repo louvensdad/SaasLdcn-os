@@ -58,7 +58,7 @@ export function WorkforceScreen() {
           <Pill pressed={team === 'all'} onClick={() => setTeam('all')}>{t('workforce.seats.all')}</Pill>
           {teams.map((key) => <Pill key={key} pressed={team === key} onClick={() => setTeam(key)}>{key}</Pill>)}
         </Toolbar>
-        {roles.isPending ? <Skeleton lines={6} /> : null}
+        {roles.isPending ? <Skeleton shape="table" rows={5} columns={5} /> : null}
         {roles.isError ? <StateBlock kind="error" title={t('workforce.seats.unreadable')} /> : null}
         {seats.length > 0 ? (
           <div className="tbl-wrap">
@@ -107,7 +107,7 @@ export function WorkforceScreen() {
           <h2 className="h-sec">{t('workforce.certifications.title')}</h2>
           <span className="meta">{t('workforce.certifications.meta', { count: certified.length })}</span>
         </div>
-        {certifications.isPending ? <Skeleton lines={4} /> : null}
+        {certifications.isPending ? <Skeleton shape="list" rows={4} /> : null}
         {certifications.isError ? <StateBlock kind="error" title={t('workforce.certifications.unreadable')} /> : null}
         {certified.length > 0 ? (
           <div className="list">

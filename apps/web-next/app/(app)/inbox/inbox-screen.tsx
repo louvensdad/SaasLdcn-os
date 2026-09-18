@@ -57,7 +57,7 @@ export function InboxScreen() {
           <div className="sec-head">
             <h2 className="h-sec">{t('inbox.count', { count: shown.length })}</h2>
           </div>
-          {pending ? <Skeleton lines={5} /> : null}
+          {pending ? <Skeleton shape="cards" rows={3} /> : null}
           {!pending && shown.length === 0 ? (
             <StateBlock kind="empty" title={t('inbox.empty')}>{t('inbox.emptyBody')}</StateBlock>
           ) : null}
@@ -80,7 +80,7 @@ export function InboxScreen() {
               <span className="meta">{t('inbox.system.meta')}</span>
             </div>
             <div className="panel-body">
-              {presence.isPending ? <Skeleton lines={3} /> : null}
+              {presence.isPending ? <Skeleton shape="list" rows={3} /> : null}
               {presence.isError ? <p className="meta">{t('inbox.system.error')}</p> : null}
               {presence.data && presence.data.items.length === 0 ? <p className="meta">{t('inbox.system.empty')}</p> : null}
               {presence.data && presence.data.items.length > 0 ? (
@@ -118,7 +118,7 @@ export function InboxScreen() {
               </div>
             </div>
             <div className="panel-body">
-              {notifications.isPending ? <Skeleton lines={3} /> : null}
+              {notifications.isPending ? <Skeleton shape="list" rows={3} /> : null}
               {notifications.isError ? <p className="meta">{t('inbox.notifications.error')}</p> : null}
               {notifications.data && notifications.data.items.length === 0 ? <p className="meta">{t('inbox.notifications.empty')}</p> : null}
               {notifications.data && notifications.data.items.length > 0 ? (

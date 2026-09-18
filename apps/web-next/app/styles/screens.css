@@ -62,12 +62,17 @@ a.mboard-next.is-hand:hover { color: var(--hand); text-decoration: none; }
 .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
 .metric { display: grid; gap: 2px; min-width: 0; }
 .metric.is-wide { grid-column: 1 / -1; }
+/* A leading number is read before anything around it, so it is set in the display face at the size the
+   redesign gives it (32px, 30 on a phone) with a 12px label and, where the figure needs one, a 12px note
+   saying what it is of. Digits line up: a column of numbers that does not is a column nobody compares. */
 .metric-value {
-  font-family: var(--font-mono); font-stretch: 96%; font-variant-numeric: tabular-nums; font-size: 21px; font-weight: 500;
-  letter-spacing: -0.03em; line-height: 1.1; white-space: nowrap;
+  font-family: var(--font-display); font-variant-numeric: tabular-nums; font-size: var(--t-32); font-weight: 500;
+  letter-spacing: -0.016em; line-height: 1.2; white-space: nowrap; margin: 8px 0 5px;
 }
-.metric-value small { font-size: 0.55em; color: var(--ink-3); letter-spacing: 0; }
-.metric-label { font-size: 12px; color: var(--ink-2); }
+.metric-value small { font-size: 0.45em; color: var(--ink-3); letter-spacing: 0; font-family: var(--font-mono); }
+.metric-label { font-size: var(--t-12); color: var(--ink-2); }
+.metric-note { font-size: var(--t-12); color: var(--ink-3); margin: 4px 0 0; max-width: 40ch; }
+.metric-head { display: flex; align-items: center; gap: 8px; }
 
 /* ---------------------------------------------------------------- mission line */
 .mline { display: block; flex: none; overflow: visible; max-width: none; }

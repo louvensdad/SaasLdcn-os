@@ -25,7 +25,7 @@ export function DecisionTracesScreen() {
         </div>
       </div>
 
-      {traces.isPending ? <Skeleton lines={5} /> : null}
+      {traces.isPending ? <Skeleton shape="table" rows={5} columns={5} /> : null}
       {traces.isError ? <StateBlock kind="error" title={t('traces.unreadable')} /> : null}
       {traces.data && traces.data.length === 0 ? (
         <StateBlock kind="empty" title={t('traces.none')}>{t('traces.noneBody')}</StateBlock>

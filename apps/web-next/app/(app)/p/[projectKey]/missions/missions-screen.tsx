@@ -49,7 +49,7 @@ export function MissionsScreen({ projectKey }: { readonly projectKey: string }) 
       </div>
 
       {project.jobs.isError ? <StateBlock kind="error" title={t('missions.unreadable')} /> : null}
-      {project.jobs.isPending ? <Skeleton lines={5} /> : null}
+      {project.jobs.isPending ? <Skeleton shape="table" rows={4} columns={5} /> : null}
       {!project.jobs.isPending && rows.length === 0 ? (
         <StateBlock kind="empty" title={t('project.missions.none')}>{t('project.missions.noneBody')}</StateBlock>
       ) : null}

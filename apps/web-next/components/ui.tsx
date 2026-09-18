@@ -125,11 +125,81 @@ export function Live({ state, children }: { readonly state: 'live' | 'stale' | '
   );
 }
 
-export function Skeleton({ lines = 3 }: { readonly lines?: number }) {
+/**
+ * A read in flight, drawn the size and shape of what is coming (REDESIGN.md §2: "ocupa o tamanho do
+ * conteúdo esperado; sem valores zero fictícios"). It does not shimmer -- waiting is not activity -- and
+ * it never stands in a number, because a placeholder zero is a claim.
+ */
+export function Skeleton({ lines = 3, shape = 'lines', rows = 4, columns = 4 }: {
+  readonly lines?: number;
+  readonly shape?: 'lines' | 'table' | 'cards' | 'facts' | 'list';
+  /** Rows for a table or a list, cards for a grid, figures for a row of them. */
+  readonly rows?: number;
+  readonly columns?: number;
+}) {
   const widths = [92, 76, 84, 60, 70];
+  if (shape === 'table') {
+    const track = { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` };
+    return (
+      <div className="sk-table" aria-hidden="true">
+        <div className="sk-row is-head" style={track}>
+          {Array.from({ length: columns }, (_, i) => <div key={i} className="sk" style={{ width: `${54 + (i % 3) * 12}%` }} />)}
+        </div>
+        {Array.from({ length: rows }, (_, row) => (
+          <div className="sk-row" key={row} style={track}>
+            {Array.from({ length: columns }, (_, cell) => <div key={cell} className="sk" style={{ width: `${widths[(row + cell) % widths.length]}%` }} />)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (shape === 'cards') {
+    return <div className="sk-cards" aria-hidden="true">{Array.from({ length: rows }, (_, i) => <div className="sk-card" key={i} />)}</div>;
+  }
+  if (shape === 'facts') {
+    return (
+      <div className="sk-facts" aria-hidden="true">
+        {Array.from({ length: rows }, (_, i) => <div className="sk-fact" key={i}><div className="sk" /><div className="sk" /></div>)}
+      </div>
+    );
+  }
+  if (shape === 'list') {
+    return (
+      <div className="sk-list" aria-hidden="true">
+        {Array.from({ length: rows }, (_, i) => (
+          <div className="sk-li" key={i}>
+            <div className="sk-dot" />
+            <div className="sk" style={{ width: `${widths[i % widths.length]}%` }} />
+            <div className="sk" style={{ width: `${44 + (i % 3) * 9}%`, height: 9 }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div aria-hidden="true">
       {Array.from({ length: lines }, (_, i) => <div key={i} className="sk" style={{ width: `${widths[i % widths.length]}%` }} />)}
+    </div>
+  );
+}
+
+/**
+ * A leading figure: the number first, then what it counts, then -- when the number needs one -- the unit
+ * and period it is of. REDESIGN.md §3.4 asks for that last line, because a cost estimate is not an
+ * invoice and a percentage of flow is not a forecast of time.
+ */
+export function Metric({ value, label, note, badge }: {
+  readonly value: ReactNode;
+  readonly label: string;
+  readonly note?: string;
+  readonly badge?: ReactNode;
+}) {
+  return (
+    <div className="metric">
+      {badge ? <div className="metric-head">{badge}</div> : null}
+      <div className="metric-value num">{value}</div>
+      <div className="metric-label">{label}</div>
+      {note ? <p className="metric-note">{note}</p> : null}
     </div>
   );
 }

@@ -139,9 +139,9 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 .btn:active { transform: scale(0.97); }
 .btn .ico { width: 16px; height: 16px; }
 .btn-primary { background: var(--lumen); color: var(--ink-inverse); }
-.btn-primary:hover { background: var(--ink); }
+.btn-primary:hover { filter: brightness(1.08); }
 .btn-hand { background: var(--hand); color: var(--ink-on-hand); }
-.btn-hand:hover { filter: brightness(1.06); }
+.btn-hand:hover { filter: brightness(1.08); }
 .btn-ghost { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .btn-ghost:hover { background: var(--lumen-soft); }
 .btn-quiet { color: var(--ink-2); padding: 0 8px; }
@@ -515,6 +515,23 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 /* A skeleton holds the layout's shape while a read is in flight. It does not shimmer: waiting is not activity. */
 .sk { background: var(--surface-3); border-radius: 5px; height: 12px; }
 .sk + .sk { margin-top: 8px; }
+/* REDESIGN.md §2: a skeleton "ocupa o tamanho do conteúdo esperado". A table waits as a table, a grid of
+   cards as cards, a row of figures as figures -- so nothing jumps when the read lands, and no fictional
+   zero is ever shown in the meantime. */
+.sk-table { display: grid; gap: 1px; }
+.sk-table .sk-row { display: grid; gap: 12px; padding: 17px 20px; border-bottom: 1px solid var(--line); }
+.sk-table .sk-row.is-head { padding: 13px 20px; }
+.sk-table .sk-row.is-head .sk { height: 9px; }
+.sk-table .sk + .sk { margin-top: 0; }
+.sk-cards { display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.sk-card { height: 132px; border-radius: var(--r-panel); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+.sk-facts { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.sk-fact .sk:first-child { height: 30px; width: 62%; border-radius: 7px; }
+.sk-fact .sk:last-child { height: 10px; width: 84%; margin-top: 10px; }
+.sk-list { display: grid; }
+.sk-li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+.sk-li:first-child { border-top: 0; }
+.sk-li .sk-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--surface-3); grid-row: span 2; }
 
 .live { display: inline-flex; align-items: center; gap: 7px; font: 500 11px/1 var(--font-mono); font-stretch: var(--mono-stretch); color: var(--ink-2); white-space: nowrap; }
 .live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pulse); flex: none; box-shadow: 0 0 0 3px var(--pulse-soft); }
@@ -944,6 +961,7 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
   .canvas { padding: 27px 20px 96px; }
   .g-3, .g-4 { grid-template-columns: minmax(0, 1fr); }
   .display { font-size: 30px; line-height: 1.15; }
+  .metric-value { font-size: 30px; }
   .title { font-size: 22px; }
   .fact { padding: 0 14px; }
   .facts { margin-left: -14px; }
