@@ -253,6 +253,30 @@ const v2 = {
   'nav.groupEnvironment': 'Ambiente',
   'nav.workspaceHint': 'Seu espaço de trabalho',
 
+  'table.showing': 'Mostrando {shown} de {total}',
+  'table.showingFiltered': 'Mostrando {shown} dos {matched} que combinam, de {total}',
+  'table.page': 'Página {page} de {pages}',
+  'table.previous': 'Anterior',
+  'table.next': 'Próxima',
+  'table.sortBy': 'Ordenar por {column}',
+  'table.sortedAsc': '{column}, do menor para o maior. Ordenar ao contrário',
+  'table.sortedDesc': '{column}, do maior para o menor. Ordenar ao contrário',
+  'toolbar.search': 'Buscar nesta lista',
+  'toolbar.clear': 'Limpar a busca',
+  'toolbar.noMatch': 'Nada aqui combina com “{query}”',
+  'toolbar.noMatchBody': 'A lista continua com {total}. Limpe a busca para vê-los de novo.',
+  'confirm.scope': 'O que isso alcança',
+  'confirm.cancel': 'Cancelar',
+
+  'projects.searchPlaceholder': 'Buscar projetos',
+  'projects.filter.all': 'Todos',
+  'projects.filter.running': 'Ainda andando',
+
+  'activity.searchGo': 'Buscar',
+  'activity.showing': 'Mostrando {shown} eventos',
+
+  'workforce.searchPlaceholder': 'Buscar postos e competências',
+
   'canvas.help': 'Arraste para mover. Ctrl + roda ou os botões dão zoom, e 0 enquadra o desenho inteiro. Enter inspeciona um nó; Shift + Enter abre.',
   'canvas.controls': 'Controles do canvas',
   'canvas.zoomIn': 'Aproximar',

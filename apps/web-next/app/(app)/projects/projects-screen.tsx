@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Fragment, useState } from 'react';
 
 import { MissionLine } from '@/components/mission-line';
+import { Pill, SortTh, TableFoot, Toolbar, useTableView } from '@/components/operate';
 import { Icon, Signal } from '@/components/signal';
 import { Badge, GapChip, Skeleton, Source, StateBlock } from '@/components/ui';
 import { formatWhen } from '@/lib/format';
@@ -19,6 +20,21 @@ export function ProjectsScreen() {
   const say = useStatusLabel();
   const { projects, unreadable, pending } = useWork();
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  /* Only what is still moving, or everything. A filter is a question about the list, so it sits
+     above it and survives opening a row. */
+  const [running, setRunning] = useState(false);
+  const shown = running ? projects.filter((row) => isRunning(row.state)) : projects;
+  const view = useTableView(shown, {
+    search: (row) => `${row.name} ${row.key} ${row.state}`,
+    sorters: {
+      project: (row) => row.name,
+      state: (row) => row.state,
+      missions: (row) => row.missions,
+      updated: (row) => row.at ?? '',
+    },
+    initialSort: ['updated', 'desc'],
+    resetOn: running,
+  });
 
   const toggle = (key: string) => setOpen((current) => {
     const next = new Set(current);
@@ -53,21 +69,29 @@ export function ProjectsScreen() {
           <StateBlock kind="empty" title={t('projects.empty')}>{t('projects.emptyBody')}</StateBlock>
         ) : null}
         {projects.length > 0 ? (
-          <div className="tbl-wrap">
+          <>
+            <Toolbar view={view} placeholder={t('projects.searchPlaceholder')}>
+              <Pill pressed={!running} onClick={() => setRunning(false)}>{t('projects.filter.all')}</Pill>
+              <Pill pressed={running} onClick={() => setRunning(true)}>{t('projects.filter.running')}</Pill>
+            </Toolbar>
+            {view.matched === 0 ? (
+              <StateBlock kind="empty" title={t('toolbar.noMatch', { query: view.query })}>{t('toolbar.noMatchBody', { total: String(view.total) })}</StateBlock>
+            ) : null}
+            <div className="tbl-wrap">
             <table className="tbl">
               <thead>
                 <tr>
                   <th aria-hidden="true" />
-                  <th>{t('projects.col.project')}</th>
+                  <SortTh column="project" label={t('projects.col.project')} view={view} />
                   <th className="proj-line">{t('projects.col.line')}</th>
-                  <th>{t('projects.col.state')}</th>
+                  <SortTh column="state" label={t('projects.col.state')} view={view} />
                   <th>{t('projects.col.room')}</th>
-                  <th className="r">{t('projects.col.missions')}</th>
-                  <th>{t('projects.col.updated')}</th>
+                  <SortTh column="missions" label={t('projects.col.missions')} view={view} align="right" />
+                  <SortTh column="updated" label={t('projects.col.updated')} view={view} />
                 </tr>
               </thead>
               <tbody>
-                {projects.map((row) => {
+                {view.rows.map((row) => {
                   const expanded = open.has(row.key);
                   const detailId = `missions-${row.key}`;
                   return (
@@ -91,7 +115,7 @@ export function ProjectsScreen() {
                         </td>
                         <td className="proj-line"><MissionLine points={projectLine(row.room, row.latest)} label={row.name} /></td>
                         <td><Badge value={row.state} family={familyFor(row.state)} live={isRunning(row.state)} /></td>
-                        <td>{row.roomState ? <span className="mono">{row.roomState}</span> : <span className="meta">—</span>}</td>
+                        <td>{row.roomState ? <span>{say(row.roomState)}<span className="src">{row.roomState}</span></span> : <span className="meta">—</span>}</td>
                         <td className="r">{row.missions}</td>
                         <td className="meta nowrap">{formatWhen(row.at, locale)}</td>
                       </tr>
@@ -104,7 +128,7 @@ export function ProjectsScreen() {
                                   <li key={job.id}>
                                     <Signal family={familyFor(job.status)} live={!job.archived && isRunning(job.status)} label={job.status} />
                                     <span>
-                                      <Link className="mono" href={`/p/${encodeURIComponent(row.key)}/missions/${encodeURIComponent(job.id)}`}>{job.status}</Link>
+                                      <Link href={`/p/${encodeURIComponent(row.key)}/missions/${encodeURIComponent(job.id)}`}>{say(job.status)}</Link>
                                       <span className="meta"> · {t('project.missions.stage', { stage: say(job.currentStage) })} · {t('command.evidence.build', { status: say(job.buildStatus) })}</span>
                                     </span>
                                     <span className="meta nowrap">{formatWhen(job.finishedAt ?? job.startedAt, locale)}</span>
@@ -120,7 +144,9 @@ export function ProjectsScreen() {
                 })}
               </tbody>
             </table>
-          </div>
+            <TableFoot view={view} />
+            </div>
+          </>
         ) : null}
         <p className="meta" style={{ marginTop: 10 }}>{t('command.board.tail')}</p>
         <Source>GET /api/project-rooms · GET /api/meta-factory/jobs · GET /api/projects</Source>

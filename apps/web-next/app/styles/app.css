@@ -444,6 +444,56 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 [data-density="compact"] .grid { gap: 14px; }
 [data-density="compact"] .facts { row-gap: 10px; }
 
+/* ---------------------------------------------------------------- operating a list: toolbar, sorting, paging, panel, confirmation */
+/* One row of controls above a list (REDESIGN.md §2 toolbar): what to look for on the left, which
+   slice to look at on the right. */
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.searchfield {
+  display: inline-flex; align-items: center; gap: 10px; min-width: min(280px, 100%); height: 42px; padding: 0 6px 0 13px;
+  border-radius: 7px; background: var(--surface-sunken); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink-3);
+  transition: box-shadow var(--m1) var(--ease);
+}
+.searchfield:focus-within { box-shadow: inset 0 0 0 1.5px var(--lumen); }
+.searchfield .ico { width: 16px; height: 16px; flex: none; }
+.searchfield input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; color: var(--ink); font: 400 var(--t-14)/1 var(--font-ui); outline: none; }
+.searchfield input::placeholder { color: var(--ink-3); }
+.searchfield input::-webkit-search-cancel-button { display: none; }
+
+.pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.pill {
+  height: 34px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2); font: 500 var(--t-12)/1 var(--font-ui); cursor: pointer; white-space: nowrap;
+  transition: background-color var(--m1) var(--ease), color var(--m1) var(--ease), box-shadow var(--m1) var(--ease);
+}
+.pill:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.pill.is-on { background: var(--lumen-soft); box-shadow: inset 0 0 0 1px var(--lumen-line); color: var(--lumen); }
+
+/* A column that orders the table says so, and stays a real button for the keyboard. */
+.tbl th:has(.th-sort) { padding: 0; }
+.th-sort {
+  display: inline-flex; align-items: center; gap: 6px; width: 100%; padding: 13px 20px; border: 0; background: none;
+  color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; text-align: left;
+}
+.tbl .r .th-sort { justify-content: flex-end; }
+.th-sort:hover { color: var(--ink); }
+.th-sort .ico { width: 13px; height: 13px; opacity: 0.45; }
+.tbl th[aria-sort="ascending"] .th-sort, .tbl th[aria-sort="descending"] .th-sort { color: var(--lumen); }
+.tbl th[aria-sort="ascending"] .th-sort .ico, .tbl th[aria-sort="descending"] .th-sort .ico { opacity: 1; }
+
+/* How much of the list is on screen, and the way to the rest of it. */
+.tablefoot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap;
+  padding: 15px 20px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: var(--t-12);
+}
+
+/* The detail panel closes the loop back to the list it was opened from. */
+.cp-foot { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--surface-float); }
+
+/* A confirmation states what it reaches before it does it; cancel left, the real verb right. */
+.scrim { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: var(--scrim); backdrop-filter: blur(3px); }
+.confirm-scope { padding: 14px 16px; border-radius: 10px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); display: grid; gap: 6px; }
+.confirm-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }
+
 /* ---------------------------------------------------------------- decisions, states, live */
 .decision {
   display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 2px 12px; padding: 16px;
@@ -907,6 +957,9 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
   .topo .topo-group { position: static; }
   .topo .topo-group + .topo-group { order: 2; margin-top: 8px; }
   .toast { bottom: 80px; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .searchfield { min-width: 0; }
+  .tablefoot { gap: 10px; font-size: var(--t-11); }
 }
 
 @media (prefers-reduced-motion: reduce) {

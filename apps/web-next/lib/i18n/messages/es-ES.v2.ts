@@ -253,6 +253,30 @@ const v2 = {
   'nav.groupEnvironment': 'Entorno',
   'nav.workspaceHint': 'Tu espacio de trabajo',
 
+  'table.showing': 'Mostrando {shown} de {total}',
+  'table.showingFiltered': 'Mostrando {shown} de los {matched} que coinciden, de {total}',
+  'table.page': 'Página {page} de {pages}',
+  'table.previous': 'Anterior',
+  'table.next': 'Siguiente',
+  'table.sortBy': 'Ordenar por {column}',
+  'table.sortedAsc': '{column}, de menor a mayor. Ordenar al revés',
+  'table.sortedDesc': '{column}, de mayor a menor. Ordenar al revés',
+  'toolbar.search': 'Buscar en esta lista',
+  'toolbar.clear': 'Limpiar la búsqueda',
+  'toolbar.noMatch': 'Nada aquí coincide con “{query}”',
+  'toolbar.noMatchBody': 'La lista sigue teniendo {total}. Limpia la búsqueda para verlos otra vez.',
+  'confirm.scope': 'Qué alcanza esto',
+  'confirm.cancel': 'Cancelar',
+
+  'projects.searchPlaceholder': 'Buscar proyectos',
+  'projects.filter.all': 'Todos',
+  'projects.filter.running': 'Todavía en marcha',
+
+  'activity.searchGo': 'Buscar',
+  'activity.showing': 'Mostrando {shown} eventos',
+
+  'workforce.searchPlaceholder': 'Buscar puestos y competencias',
+
   'canvas.help': 'Arrastra para desplazarte. Ctrl + rueda o los botones hacen zoom, y 0 encuadra todo el dibujo. Enter inspecciona un nodo; Shift + Enter lo abre.',
   'canvas.controls': 'Controles del lienzo',
   'canvas.zoomIn': 'Acercar',

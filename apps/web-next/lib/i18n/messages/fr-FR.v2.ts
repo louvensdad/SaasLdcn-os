@@ -253,6 +253,30 @@ const v2 = {
   'nav.groupEnvironment': 'Environnement',
   'nav.workspaceHint': 'Votre espace de travail',
 
+  'table.showing': 'Affichage de {shown} sur {total}',
+  'table.showingFiltered': 'Affichage de {shown} sur les {matched} qui correspondent, parmi {total}',
+  'table.page': 'Page {page} sur {pages}',
+  'table.previous': 'Précédent',
+  'table.next': 'Suivant',
+  'table.sortBy': 'Trier par {column}',
+  'table.sortedAsc': '{column}, du plus petit au plus grand. Trier dans l’autre sens',
+  'table.sortedDesc': '{column}, du plus grand au plus petit. Trier dans l’autre sens',
+  'toolbar.search': 'Chercher dans cette liste',
+  'toolbar.clear': 'Effacer la recherche',
+  'toolbar.noMatch': 'Rien ici ne correspond à « {query} »',
+  'toolbar.noMatchBody': 'La liste en contient toujours {total}. Effacez la recherche pour les revoir.',
+  'confirm.scope': 'Ce que cela touche',
+  'confirm.cancel': 'Annuler',
+
+  'projects.searchPlaceholder': 'Chercher des projets',
+  'projects.filter.all': 'Tous',
+  'projects.filter.running': 'Encore en cours',
+
+  'activity.searchGo': 'Chercher',
+  'activity.showing': 'Affichage de {shown} événements',
+
+  'workforce.searchPlaceholder': 'Chercher des postes et des compétences',
+
   'canvas.help': 'Faites glisser pour vous déplacer. Ctrl + molette ou les boutons zooment, et 0 cadre tout le dessin. Entrée inspecte un nœud ; Maj + Entrée l’ouvre.',
   'canvas.controls': 'Commandes du canevas',
   'canvas.zoomIn': 'Zoom avant',

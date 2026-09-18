@@ -253,6 +253,30 @@ const v2 = {
   'nav.groupEnvironment': 'Environment',
   'nav.workspaceHint': 'Your workspace',
 
+  'table.showing': 'Showing {shown} of {total}',
+  'table.showingFiltered': 'Showing {shown} of {matched} that match, out of {total}',
+  'table.page': 'Page {page} of {pages}',
+  'table.previous': 'Previous',
+  'table.next': 'Next',
+  'table.sortBy': 'Sort by {column}',
+  'table.sortedAsc': '{column}, sorted low to high. Sort the other way',
+  'table.sortedDesc': '{column}, sorted high to low. Sort the other way',
+  'toolbar.search': 'Search this list',
+  'toolbar.clear': 'Clear the search',
+  'toolbar.noMatch': 'Nothing here matches “{query}”',
+  'toolbar.noMatchBody': 'The list still has {total}. Clear the search to see them again.',
+  'confirm.scope': 'What this reaches',
+  'confirm.cancel': 'Cancel',
+
+  'projects.searchPlaceholder': 'Search projects',
+  'projects.filter.all': 'All',
+  'projects.filter.running': 'Still moving',
+
+  'activity.searchGo': 'Search',
+  'activity.showing': 'Showing {shown} events',
+
+  'workforce.searchPlaceholder': 'Search seats and competencies',
+
   'canvas.help': 'Drag to pan. Ctrl + wheel or the buttons zoom, and 0 fits the whole drawing. Enter inspects a node; Shift + Enter opens it.',
   'canvas.controls': 'Canvas controls',
   'canvas.zoomIn': 'Zoom in',

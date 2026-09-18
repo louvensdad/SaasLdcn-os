@@ -151,9 +151,31 @@ test('a project row opens onto every mission behind its line', async ({ page }) 
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await toggle.click();
   await expect(page.getByRole('button', { name: 'Hide the missions of Nova Commerce' })).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByRole('link', { name: 'BACKEND_GENERATING' })).toHaveAttribute('href', '/p/room_5b9e2c71a0d4/missions/genjob_9f14c7b2e08a55');
+  await expect(page.getByRole('link', { name: 'Generating the backend' })).toHaveAttribute('href', '/p/room_5b9e2c71a0d4/missions/genjob_9f14c7b2e08a55');
   // The archived failed attempt is still one of this project's missions: the row does not hide it.
-  await expect(page.getByRole('link', { name: 'FAILED' })).toHaveAttribute('href', '/p/room_5b9e2c71a0d4/missions/genjob_2c81f0e9a47d13');
+  await expect(page.getByRole('link', { name: 'Failed' })).toHaveAttribute('href', '/p/room_5b9e2c71a0d4/missions/genjob_2c81f0e9a47d13');
+});
+
+test('a list is searched and ordered, and says how much of it is on screen', async ({ page }) => {
+  await page.goto('/projects');
+  await expect(page.getByText('Showing 3 of 3')).toBeVisible();
+  // Ordering is a real button, and it tells a screen reader which way the column now runs.
+  const project = page.getByRole('button', { name: 'Sort by Project' });
+  await project.click();
+  await expect(page.getByRole('button', { name: /^Project, sorted low to high/ })).toBeVisible();
+  const first = page.locator('.tbl tbody tr').first();
+  await expect(first).toContainText('Atlas Field Ops');
+  // The search narrows the list and says what it narrowed from; clearing it brings the rest back.
+  await page.getByRole('searchbox', { name: 'Search projects' }).fill('helios');
+  await expect(page.getByText('Showing 1 of 1 that match, out of 3')).toBeVisible();
+  await expect(page.locator('.tbl tbody tr')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Clear the search' }).click();
+  await expect(page.getByText('Showing 3 of 3')).toBeVisible();
+  // A filter is a question about the list, and it survives opening a row.
+  await page.getByRole('button', { name: 'Still moving' }).click();
+  await expect(page.locator('.tbl tbody tr')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Show the missions of Nova Commerce' }).click();
+  await expect(page.getByRole('button', { name: 'Still moving' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('the learn panel answers for the screen it is opened on', async ({ page }) => {

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
+import { Pill, SortTh, TableFoot, Toolbar, useTableView } from '@/components/operate';
 import { Signal } from '@/components/signal';
 import { Badge, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
@@ -22,6 +23,18 @@ export function WorkforceScreen() {
   );
   const seats = (roles.data?.seats ?? []).filter((seat) => team === 'all' || seat.team_key === team);
   const certified = certifications.data ?? [];
+  /* 157 seats is a list nobody reads top to bottom: it is searched, ordered and paged. */
+  const view = useTableView(seats, {
+    search: (seat) => `${seat.title} ${seat.seat} ${seat.role} ${seat.team_key} ${seat.competencies.join(' ')}`,
+    sorters: {
+      seat: (seat) => seat.title,
+      team: (seat) => seat.team_key,
+      competencies: (seat) => seat.competencies.length,
+      reports: (seat) => seat.reports_to ?? null,
+    },
+    initialSort: ['seat', 'asc'],
+    resetOn: team,
+  });
 
   return (
     <>
@@ -40,13 +53,11 @@ export function WorkforceScreen() {
         <div className="sec-head">
           <h2 className="h-sec">{t('workforce.seats.title')}</h2>
           <span className="meta">{t('workforce.seats.meta', { seats: roles.data?.seats.length ?? 0, roles: roles.data?.roles.length ?? 0 })}</span>
-          <div className="actions seg" role="group" aria-label={t('workforce.seats.filter')}>
-            <button type="button" aria-pressed={team === 'all'} onClick={() => setTeam('all')}>{t('workforce.seats.all')}</button>
-            {teams.map((key) => (
-              <button key={key} type="button" aria-pressed={team === key} onClick={() => setTeam(key)}>{key}</button>
-            ))}
-          </div>
         </div>
+        <Toolbar view={view} placeholder={t('workforce.searchPlaceholder')}>
+          <Pill pressed={team === 'all'} onClick={() => setTeam('all')}>{t('workforce.seats.all')}</Pill>
+          {teams.map((key) => <Pill key={key} pressed={team === key} onClick={() => setTeam(key)}>{key}</Pill>)}
+        </Toolbar>
         {roles.isPending ? <Skeleton lines={6} /> : null}
         {roles.isError ? <StateBlock kind="error" title={t('workforce.seats.unreadable')} /> : null}
         {seats.length > 0 ? (
@@ -54,15 +65,15 @@ export function WorkforceScreen() {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>{t('workforce.col.seat')}</th>
-                  <th>{t('workforce.col.team')}</th>
-                  <th>{t('workforce.col.competencies')}</th>
-                  <th>{t('workforce.col.reports')}</th>
+                  <SortTh column="seat" label={t('workforce.col.seat')} view={view} />
+                  <SortTh column="team" label={t('workforce.col.team')} view={view} />
+                  <SortTh column="competencies" label={t('workforce.col.competencies')} view={view} />
+                  <SortTh column="reports" label={t('workforce.col.reports')} view={view} />
                   <th>{t('workforce.col.reviews')}</th>
                 </tr>
               </thead>
               <tbody>
-                {seats.map((seat) => (
+                {view.rows.map((seat) => (
                   <tr key={`${seat.team_key}-${seat.seat}`}>
                     <td>
                       <strong>{seat.title}</strong>
@@ -81,7 +92,11 @@ export function WorkforceScreen() {
                 ))}
               </tbody>
             </table>
+            <TableFoot view={view} />
           </div>
+        ) : null}
+        {seats.length > 0 && view.matched === 0 ? (
+          <StateBlock kind="empty" title={t('toolbar.noMatch', { query: view.query })}>{t('toolbar.noMatchBody', { total: String(view.total) })}</StateBlock>
         ) : null}
         <p className="meta" style={{ marginTop: 10 }}>{t('workforce.seats.note')}</p>
         <Source>GET /api/companies/roles</Source>

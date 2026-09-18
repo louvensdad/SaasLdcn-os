@@ -4,15 +4,17 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 import { DayMap } from '@/components/drawings/day-map';
+import { Pill, Toolbar } from '@/components/operate';
 import { Signal } from '@/components/signal';
 import { Badge, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
+import { statusLabel } from '@/lib/status';
 import { familyFor } from '@/lib/status';
 
 export function ActivityScreen() {
-  const { t, locale } = useI18n();
+  const { t, tDynamic, locale } = useI18n();
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
@@ -36,20 +38,20 @@ export function ActivityScreen() {
           <h1 className="title">{t('activity.title')}</h1>
           <p className="lede">{t('activity.lede')}</p>
         </div>
-        <form className="btn-row" onSubmit={(event) => { event.preventDefault(); setSearch(draft.trim()); }}>
-          <label className="field">
-            <span className="sr-only">{t('activity.search')}</span>
-            <input type="search" value={draft} placeholder={t('activity.search')} onChange={(event) => setDraft(event.target.value)} />
-          </label>
-          <label className="field">
-            <span className="sr-only">{t('activity.filter.all')}</span>
-            <select value={category} onChange={(event) => setCategory(event.target.value)}>
-              <option value="">{t('activity.filter.all')}</option>
-              {categories.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
-          </label>
-        </form>
       </div>
+
+      {/* One row of controls above the feed. The search reaches the backend, so it is submitted rather
+          than typed live; the categories are only the ones that actually came back. */}
+      <Toolbar
+        view={{ query: draft, setQuery: (value) => { setDraft(value); if (!value) setSearch(''); } }}
+        placeholder={t('activity.search')}
+      >
+        <Pill pressed={category === ''} onClick={() => setCategory('')}>{t('activity.filter.all')}</Pill>
+        {categories.map((value) => (
+          <Pill key={value} pressed={category === value} onClick={() => setCategory(value)}>{value}</Pill>
+        ))}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSearch(draft.trim())}>{t('activity.searchGo')}</button>
+      </Toolbar>
 
       {feed.isPending ? <Skeleton lines={6} /> : null}
       {feed.isError ? <StateBlock kind="error" title={t('activity.error')} /> : null}
@@ -74,11 +76,11 @@ export function ActivityScreen() {
                 <tr key={item.id}>
                   <td>
                     <span className="row" style={{ gap: 8, alignItems: 'center' }}>
-                      <Signal family={familyFor(item.status)} label={item.action} />
-                      <span className="mono">{item.action}</span>
+                      <Signal family={familyFor(item.status)} label={statusLabel(item.action, tDynamic)} />
+                      <span>{statusLabel(item.action, tDynamic)}<span className="src">{item.action}</span></span>
                     </span>
                   </td>
-                  <td className="id">{item.category}</td>
+                  <td>{item.category}</td>
                   <td><Badge value={item.status} family={familyFor(item.status)} /></td>
                   <td className="id">{item.project_id ?? '—'}</td>
                   <td className="meta nowrap">{formatWhen(item.occurred_at, locale)}</td>
@@ -86,6 +88,10 @@ export function ActivityScreen() {
               ))}
             </tbody>
           </table>
+          <div className="tablefoot">
+            <span className="meta">{t('activity.showing', { shown: String(items.length) })}</span>
+            {feed.hasNextPage ? <span className="meta">{t('activity.more')}</span> : null}
+          </div>
         </div>
       ) : null}
 
