@@ -297,6 +297,10 @@ const v2 = {
   'requirements.decision.approvedBody': 'Cette définition est approuvée ; l’architecture peut être planifiée à partir d’elle.',
   'requirements.decision.open': 'Planifier l’architecture',
 
+  'architecture.blocked': 'Il n’y a pas encore de quoi planifier',
+  'architecture.blockedBody': 'Le blueprint est planifié à partir d’un PromptMaster, et cette salle n’en a pas encore écrit.',
+  'architecture.blockedAction': 'Aller au PromptMaster',
+
   'canvas.help': 'Faites glisser pour vous déplacer. Ctrl + molette ou les boutons zooment, et 0 cadre tout le dessin. Entrée inspecte un nœud ; Maj + Entrée l’ouvre.',
   'canvas.controls': 'Commandes du canevas',
   'canvas.zoomIn': 'Zoom avant',

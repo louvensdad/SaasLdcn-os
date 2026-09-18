@@ -297,6 +297,10 @@ const v2 = {
   'requirements.decision.approvedBody': 'This definition is approved; the architecture can be planned from it.',
   'requirements.decision.open': 'Plan the architecture',
 
+  'architecture.blocked': 'There is nothing to plan from yet',
+  'architecture.blockedBody': 'The blueprint is planned from a PromptMaster, and this room has not written one yet.',
+  'architecture.blockedAction': 'Go to the PromptMaster',
+
   'canvas.help': 'Drag to pan. Ctrl + wheel or the buttons zoom, and 0 fits the whole drawing. Enter inspects a node; Shift + Enter opens it.',
   'canvas.controls': 'Canvas controls',
   'canvas.zoomIn': 'Zoom in',

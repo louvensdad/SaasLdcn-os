@@ -21,6 +21,24 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page, { signedIn: true });
 });
 
+test('in Portuguese the decision is in Portuguese, down to the confirmation', async ({ page, context }) => {
+  /* The screen the owner actually reads. A locale whose table is missing one of these keys shows the key
+     itself, which is what this asserts can never be true again for this dialog. */
+  await context.clearCookies();
+  await mockApi(page, { signedIn: true });
+  await roomAt(page, 'PROMPT_READY');
+  await expect(page.locator('.decision')).toContainText('A decisão que esta tela existe para tomar');
+  await page.locator('.decision').getByRole('button', { name: 'Aprovar o PromptMaster' }).click();
+  const dialog = page.getByRole('dialog', { name: 'A decisão que esta tela existe para tomar' });
+  await expect(dialog).toContainText('O que isso alcança');
+  await expect(dialog).toContainText('Nova Commerce · versão 2');
+  await expect(dialog.getByRole('button', { name: 'Cancelar' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Aprovar a versão 2' })).toBeVisible();
+  // Nothing on this dialog is a key that leaked through for want of a translation.
+  await expect(dialog).not.toContainText('requirements.decision');
+  await expect(dialog).not.toContainText('confirm.');
+});
+
 test('the approval is a decision the screen states, with a verb that names it', async ({ page }) => {
   await roomAt(page, 'PROMPT_READY');
   const decision = page.locator('.decision');

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 
 import { DecisionMap } from '@/components/drawings/decision-map';
 import { Signal } from '@/components/signal';
@@ -85,7 +86,38 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
       ) : null}
 
       {!blueprint ? (
-        <StateBlock kind="empty" title={t('architecture.none')}>{t('architecture.noneBody')}</StateBlock>
+        /* An empty state owes a valid path, not a restatement of a condition that is already met
+           (REDESIGN.md §2). With a PromptMaster in hand the way forward is the planning itself; without
+           one it is the screen where the PromptMaster is written. */
+        data.prompt_master_md ? (
+          <StateBlock
+            kind="empty"
+            title={t('architecture.none')}
+            illustration="gap"
+            action={(
+              <div className="btn-row">
+                <button className="btn btn-primary" type="button" disabled={generate.isPending} onClick={() => generate.mutate()}>
+                  {generate.isPending ? t('architecture.generating') : t('architecture.generate')}
+                </button>
+              </div>
+            )}
+          >
+            {t('architecture.noneBody')}
+          </StateBlock>
+        ) : (
+          <StateBlock
+            kind="empty"
+            title={t('architecture.blocked')}
+            illustration="gap"
+            action={(
+              <div className="btn-row">
+                <Link className="btn btn-ghost" href={`/p/${encodeURIComponent(projectKey)}/define/requirements`}>{t('architecture.blockedAction')}</Link>
+              </div>
+            )}
+          >
+            {t('architecture.blockedBody')}
+          </StateBlock>
+        )
       ) : (
         <>
         <section className="sec">

@@ -297,6 +297,10 @@ const v2 = {
   'requirements.decision.approvedBody': 'Esta definición está aprobada; la arquitectura puede planificarse a partir de ella.',
   'requirements.decision.open': 'Planificar la arquitectura',
 
+  'architecture.blocked': 'Todavía no hay desde dónde planificar',
+  'architecture.blockedBody': 'El blueprint se planifica a partir de un PromptMaster, y esta sala aún no ha escrito uno.',
+  'architecture.blockedAction': 'Ir al PromptMaster',
+
   'canvas.help': 'Arrastra para desplazarte. Ctrl + rueda o los botones hacen zoom, y 0 encuadra todo el dibujo. Enter inspecciona un nodo; Shift + Enter lo abre.',
   'canvas.controls': 'Controles del lienzo',
   'canvas.zoomIn': 'Acercar',
