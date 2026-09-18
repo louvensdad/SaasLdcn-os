@@ -277,6 +277,17 @@ const v2 = {
 
   'workforce.searchPlaceholder': 'Buscar postos e competências',
 
+  'discovery.sayMore': 'Acrescente algo, ou responda uma das perguntas em aberto',
+  'discovery.thinking': 'Lendo o que você disse e respondendo com o seu provedor. Demora o que o modelo demorar.',
+  'discovery.writing': 'Escrevendo o PromptMaster a partir desta conversa.',
+  'discovery.locked': 'A conversa fica presa enquanto o modelo responde, para a mesma coisa nunca ser perguntada duas vezes.',
+  'discovery.prompt.title': 'PromptMaster',
+  'discovery.prompt.meta': 'versão {version} · {when}',
+  'discovery.prompt.degraded': 'Escrito sem modelo',
+  'discovery.prompt.open': 'Revisar e aprovar',
+  'discovery.prompt.expand': 'Ler o documento inteiro',
+  'discovery.prompt.collapse': 'Mostrar menos',
+
   'canvas.help': 'Arraste para mover. Ctrl + roda ou os botões dão zoom, e 0 enquadra o desenho inteiro. Enter inspeciona um nó; Shift + Enter abre.',
   'canvas.controls': 'Controles do canvas',
   'canvas.zoomIn': 'Aproximar',

@@ -277,6 +277,17 @@ const v2 = {
 
   'workforce.searchPlaceholder': 'Search seats and competencies',
 
+  'discovery.sayMore': 'Add something, or answer one of the open questions',
+  'discovery.thinking': 'Reading what you said and answering with your provider. This takes as long as the model takes.',
+  'discovery.writing': 'Writing the PromptMaster from this conversation.',
+  'discovery.locked': 'The conversation is held while the model answers, so the same thing is never asked twice.',
+  'discovery.prompt.title': 'PromptMaster',
+  'discovery.prompt.meta': 'version {version} · {when}',
+  'discovery.prompt.degraded': 'Written without a model',
+  'discovery.prompt.open': 'Review and approve it',
+  'discovery.prompt.expand': 'Read the whole document',
+  'discovery.prompt.collapse': 'Show less',
+
   'canvas.help': 'Drag to pan. Ctrl + wheel or the buttons zoom, and 0 fits the whole drawing. Enter inspects a node; Shift + Enter opens it.',
   'canvas.controls': 'Canvas controls',
   'canvas.zoomIn': 'Zoom in',

@@ -277,6 +277,17 @@ const v2 = {
 
   'workforce.searchPlaceholder': 'Chercher des postes et des compétences',
 
+  'discovery.sayMore': 'Ajoutez quelque chose, ou répondez à une des questions ouvertes',
+  'discovery.thinking': 'Lecture de ce que vous avez dit et réponse via votre fournisseur. Cela prend le temps que le modèle prend.',
+  'discovery.writing': 'Rédaction du PromptMaster à partir de cette conversation.',
+  'discovery.locked': 'La conversation est retenue pendant que le modèle répond, pour que la même chose ne soit jamais demandée deux fois.',
+  'discovery.prompt.title': 'PromptMaster',
+  'discovery.prompt.meta': 'version {version} · {when}',
+  'discovery.prompt.degraded': 'Rédigé sans modèle',
+  'discovery.prompt.open': 'Relire et approuver',
+  'discovery.prompt.expand': 'Lire tout le document',
+  'discovery.prompt.collapse': 'Afficher moins',
+
   'canvas.help': 'Faites glisser pour vous déplacer. Ctrl + molette ou les boutons zooment, et 0 cadre tout le dessin. Entrée inspecte un nœud ; Maj + Entrée l’ouvre.',
   'canvas.controls': 'Commandes du canevas',
   'canvas.zoomIn': 'Zoom avant',
