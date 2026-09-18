@@ -16,11 +16,19 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
 
-  const room = useQuery({ queryKey: ['room', projectKey], queryFn: () => api.room(projectKey), retry: false });
+  const room = useQuery({
+    queryKey: ['room', projectKey],
+    queryFn: () => api.room(projectKey),
+    retry: false,
+    /* While the room says it is drawing, keep asking: that is how this screen notices the end of a long
+       call, a cancellation, or the reservation expiring, without anyone reloading the page. */
+    refetchInterval: (query) => (query.state.data?.status === 'BLUEPRINT_GENERATING' ? 5000 : false),
+  });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['room', projectKey] });
   const generate = useMutation({ mutationFn: () => api.generateBlueprint(projectKey), onSuccess: refresh });
   const approveStack = useMutation({ mutationFn: () => api.approveStack(projectKey), onSuccess: refresh });
   const restore = useMutation({ mutationFn: (version: number) => api.restoreBlueprint(projectKey, version), onSuccess: refresh });
+  const cancel = useMutation({ mutationFn: () => api.cancelBlueprint(projectKey), onSuccess: refresh });
 
   /* A refusal is about a moment, not a standing fact. Once the room carries a blueprint -- or is drawing
      one right now -- an earlier "approve the PromptMaster first" is no longer true of this screen, and
@@ -110,6 +118,24 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
           <Source>POST /api/project-rooms/{'{'}room_id{'}'}/stack/approve</Source>
         </section>
       ) : null}
+
+      {drawing ? (
+        <div className="panel" role="status" style={{ marginBottom: 20 }}>
+          <div className="panel-body stack" style={{ gap: 8 }}>
+            <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+              <Signal family="pulse" live />
+              <b>{t('architecture.drawing.title')}</b>
+            </div>
+            <p className="body ink2">{t('architecture.drawing.body', { when: formatWhen(data.updated_at, locale) })}</p>
+            <div className="btn-row">
+              <button className="btn btn-ghost btn-sm" type="button" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
+                {cancel.isPending ? t('architecture.drawing.cancelling') : t('architecture.drawing.cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {cancel.isError ? <Failure title={t('architecture.drawing.cancelFailed')} error={cancel.error} onRetry={() => cancel.mutate()} /> : null}
 
       {!blueprint ? (
         /* An empty state owes a valid path, not a restatement of a condition that is already met

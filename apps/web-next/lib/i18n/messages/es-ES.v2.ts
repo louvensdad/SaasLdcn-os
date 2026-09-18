@@ -321,6 +321,12 @@ const v2 = {
   'architecture.blueprint.tokens': 'Tokens',
   'architecture.blueprint.degradedNote': 'Esta versión se escribió sin modelo, así que repite los valores por defecto de la plataforma en vez de razonar sobre este proyecto. Planificar otra vez con una clave que funcione la reemplaza.',
 
+  'architecture.drawing.title': 'El blueprint se está dibujando',
+  'architecture.drawing.body': 'Empezó {when}. La sala lo reserva por diez minutos: si quien lo dibuja deja de responder, la sala vuelve sola y dice por qué.',
+  'architecture.drawing.cancel': 'Cancelar esta planificación',
+  'architecture.drawing.cancelling': 'Cancelando…',
+  'architecture.drawing.cancelFailed': 'La planificación no se canceló',
+
   'canvas.help': 'Arrastra para desplazarte. Ctrl + rueda o los botones hacen zoom, y 0 encuadra todo el dibujo. Enter inspecciona un nodo; Shift + Enter lo abre.',
   'canvas.controls': 'Controles del lienzo',
   'canvas.zoomIn': 'Acercar',

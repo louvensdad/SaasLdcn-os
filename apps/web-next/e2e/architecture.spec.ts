@@ -127,3 +127,23 @@ test('a stack already approved reads as a state, and the planning is not offered
   // The room is drawing one right now, so asking for one again is not an action.
   await expect(page.getByRole('button', { name: 'Planning…' })).toBeDisabled();
 });
+
+test('a room that is drawing says so and offers the way out, instead of a dead button', async ({ page }) => {
+  await page.goto(ROOM);
+  const room = await page.evaluate(async () => (await fetch('/api/project-rooms/room_5b9e2c71a0d4')).json());
+  await page.route('**/api/project-rooms/room_5b9e2c71a0d4', (route, request) => (
+    request.method() === 'GET'
+      ? route.fulfill({ json: { ...(room as Record<string, unknown>), status: 'BLUEPRINT_GENERATING' } })
+      : route.fallback()
+  ));
+  let cancelled = 0;
+  await page.route('**/api/project-rooms/*/blueprint/cancel', (route) => { cancelled += 1; return route.fulfill({ json: room }); });
+  await page.reload();
+
+  const state = page.getByRole('status').filter({ hasText: 'The blueprint is being drawn' });
+  await expect(state).toContainText('The room reserves this for ten minutes');
+  // The planning button is not the way out -- this is.
+  await expect(page.getByRole('button', { name: 'Planning…' })).toBeDisabled();
+  await state.getByRole('button', { name: 'Cancel this planning' }).click();
+  await expect.poll(() => cancelled).toBe(1);
+});

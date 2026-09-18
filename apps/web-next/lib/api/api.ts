@@ -294,6 +294,8 @@ export const api = {
     apiFetch<ProjectRoom>(`/api/project-rooms/${encodeURIComponent(roomId)}/approve`, { method: 'POST', timeoutMs: LONG_TIMEOUT_MS }),
   generateBlueprint: (roomId: string) =>
     apiFetch<ProjectRoom>(`/api/project-rooms/${encodeURIComponent(roomId)}/blueprint`, { method: 'POST', timeoutMs: LONG_TIMEOUT_MS }),
+  cancelBlueprint: (roomId: string) =>
+    apiFetch<ProjectRoom>(`/api/project-rooms/${encodeURIComponent(roomId)}/blueprint/cancel`, { method: 'POST' }),
   restoreBlueprint: (roomId: string, version: number) =>
     apiFetch<ProjectRoom>(`/api/project-rooms/${encodeURIComponent(roomId)}/blueprints/${version}/restore`, { method: 'POST' }),
   approveStack: (roomId: string) =>
