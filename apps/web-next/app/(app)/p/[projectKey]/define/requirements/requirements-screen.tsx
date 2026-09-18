@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import { Confirm } from '@/components/operate';
 import { Signal } from '@/components/signal';
-import { Badge, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Failure, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
@@ -70,7 +70,7 @@ export function RequirementsScreen({ projectKey }: { readonly projectKey: string
         </div>
       </div>
 
-      {approve.isError ? <Notice family="fault" title={t('requirements.failed')}>{String(approve.error)}</Notice> : null}
+      {approve.isError ? <Failure title={t('requirements.failed')} error={approve.error} onRetry={() => approve.mutate()} /> : null}
 
       {data.prompt_master_md ? (
         <div className="decision" style={{ marginBottom: 20 }}>

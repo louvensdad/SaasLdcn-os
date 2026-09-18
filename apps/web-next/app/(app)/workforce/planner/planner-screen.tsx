@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import { EvidenceLine } from '@/components/evidence-line';
 import { Signal } from '@/components/signal';
-import { Badge, Kv, Notice, Source, StateBlock } from '@/components/ui';
+import { Badge, Kv, Failure, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { useI18n } from '@/lib/i18n/i18n';
 import { familyFor } from '@/lib/status';
@@ -110,7 +110,7 @@ export function PlannerScreen() {
         <Source>POST /api/workforce/plan</Source>
       </section>
 
-      {plan.isError ? <Notice family="fault" title={t('planner.failed')}>{String(plan.error)}</Notice> : null}
+      {plan.isError ? <Failure title={t('planner.failed')} error={plan.error} onRetry={() => plan.mutate()} /> : null}
 
       {result ? (
         <>

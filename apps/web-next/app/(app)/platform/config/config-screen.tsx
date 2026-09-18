@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { Notice, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Failure, Notice, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { useI18n } from '@/lib/i18n/i18n';
 
@@ -66,7 +66,7 @@ export function RuntimeConfigScreen() {
               {save.isPending ? t('config.saving') : t('config.save')}
             </button>
           </div>
-          {save.isError ? <Notice family="fault" title={t('config.failed')}>{String(save.error)}</Notice> : null}
+          {save.isError ? <Failure title={t('config.failed')} error={save.error} onRetry={() => save.mutate()} /> : null}
           {save.isSuccess ? <Notice family="proof" title={t('config.saved')} /> : null}
           <p className="meta" style={{ marginTop: 10 }}>{t('config.note')}</p>
           <Source>GET · PUT /api/runtime/config</Source>

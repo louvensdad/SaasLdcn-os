@@ -2,6 +2,7 @@
 
 import { Fragment, type ReactNode } from 'react';
 
+import { ApiError } from '@/lib/api/http';
 import { useI18n } from '@/lib/i18n/i18n';
 import { statusLabel } from '@/lib/status';
 
@@ -83,6 +84,52 @@ export function PageState({ eyebrow, title, kind, stateTitle, children, action, 
       </div>
       <StateBlock kind={kind} title={stateTitle} action={action} illustration={illustration ?? PAGE_DRAWING[kind]}>{children}</StateBlock>
     </>
+  );
+}
+
+/**
+ * What a failed call actually says. `String(error)` prints the JavaScript class in front of it --
+ * "ApiError: Aprove o PromptMaster.md antes de gerar o Blueprint" -- and the class name is noise to
+ * everyone: REDESIGN.md §1 puts the technical original in the detail, not in the sentence.
+ */
+export function failureReason(error: unknown): { readonly message: string; readonly detail: string | null; readonly offline: boolean } {
+  if (error instanceof ApiError) {
+    const detail = [`HTTP ${error.status}`, error.code].filter(Boolean).join(' · ');
+    return { message: error.message, detail: detail || null, offline: error.offline };
+  }
+  if (error instanceof Error) return { message: error.message, detail: error.name, offline: false };
+  return { message: String(error ?? ''), detail: null, offline: false };
+}
+
+/**
+ * A call that failed, in the shape REDESIGN.md §2 asks for: what failed, what the backend said about it,
+ * and the way to try again. The status and the backend's code ride along as a technical detail, so the
+ * person who needs them still has them.
+ */
+export function Failure({ title, error, onRetry, retryLabel, children }: {
+  readonly title: string;
+  readonly error: unknown;
+  readonly onRetry?: () => void;
+  readonly retryLabel?: string;
+  /** What is still true after the failure — only where the screen actually knows. */
+  readonly children?: ReactNode;
+}) {
+  const { t } = useI18n();
+  const reason = failureReason(error);
+  return (
+    <div className="panel is-fault" role="alert">
+      <div className="panel-body stack" style={{ gap: 8 }}>
+        <div className="row" style={{ gap: 8, alignItems: 'center' }}><Signal family="fault" label={title} /><b>{title}</b></div>
+        <p className="body ink2">{reason.offline ? t('failure.offline') : reason.message}</p>
+        {children}
+        {onRetry ? (
+          <div className="btn-row">
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onRetry}>{retryLabel ?? t('common.retry')}</button>
+          </div>
+        ) : null}
+        {reason.detail ? <span className="src">{reason.detail}</span> : null}
+      </div>
+    </div>
   );
 }
 

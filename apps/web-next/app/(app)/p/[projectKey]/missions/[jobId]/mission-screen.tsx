@@ -9,7 +9,7 @@ import { MissionMap } from '@/components/drawings/mission-map';
 import { EvidenceLine } from '@/components/evidence-line';
 import { HeroLink } from '@/components/hero-link';
 import { Icon, Signal, type Family } from '@/components/signal';
-import { Badge, GapChip, Kv, Live, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, GapChip, Kv, Live, Failure, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { testRoomHref } from '@/lib/evidence/test-room';
 import { formatWhen } from '@/lib/format';
@@ -235,7 +235,7 @@ export function MissionScreen({ projectKey, jobId }: { readonly projectKey: stri
       </div>
 
       {state === 'timeout' ? <Notice family="caution" title={t('mission.stream.timeout')}>{timeoutMessage ?? ''}</Notice> : null}
-      {control.isError ? <Notice family="fault" title={t('mission.actionFailed')}>{String(control.error)}</Notice> : null}
+      {control.isError ? <Failure title={t('mission.actionFailed')} error={control.error} /> : null}
 
       <div className="facts">
         <div className="fact">

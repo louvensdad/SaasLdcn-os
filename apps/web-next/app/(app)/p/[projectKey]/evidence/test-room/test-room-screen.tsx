@@ -10,7 +10,7 @@ import { EvidenceLine } from '@/components/evidence-line';
 import { ScopeMission, ScopeNoProject, ScopeNotice, ScopeUnresolved } from '@/components/mission-scope';
 import { RunTimeline } from '@/components/run-timeline';
 import { Icon, Signal } from '@/components/signal';
-import { Badge, Kv, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Kv, Failure, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { evidenceFamily, isResult, newestFirst, testRoomHref } from '@/lib/evidence/test-room';
 import { formatDuration, formatWhen } from '@/lib/format';
@@ -114,7 +114,7 @@ export function TestRoomScreen({ projectKey }: { readonly projectKey: string }) 
 
       <ScopeNotice scope={scope} latestHref={latestHref} />
       {unsupported ? <Notice family="caution" title={t('testroom.unsupported')}>{profile.data?.reason ?? ''}</Notice> : null}
-      {run.isError ? <Notice family="fault" title={t('testroom.runFailed')}>{String(run.error)}</Notice> : null}
+      {run.isError ? <Failure title={t('testroom.runFailed')} error={run.error} onRetry={() => run.mutate()} /> : null}
       {run.data ? <RunOutput run={run.data} /> : null}
 
       {sessions.isPending ? <Skeleton lines={6} /> : null}

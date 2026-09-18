@@ -2,10 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
+import { useEffect } from 'react';
 
 import { DecisionMap } from '@/components/drawings/decision-map';
 import { Signal } from '@/components/signal';
-import { Badge, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Failure, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
@@ -20,6 +21,15 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
   const generate = useMutation({ mutationFn: () => api.generateBlueprint(projectKey), onSuccess: refresh });
   const approveStack = useMutation({ mutationFn: () => api.approveStack(projectKey), onSuccess: refresh });
   const restore = useMutation({ mutationFn: (version: number) => api.restoreBlueprint(projectKey, version), onSuccess: refresh });
+
+  /* A refusal is about a moment, not a standing fact. Once the room carries a blueprint -- or is drawing
+     one right now -- an earlier "approve the PromptMaster first" is no longer true of this screen, and
+     leaving it on the page next to the stack it refused to plan reads as two contradictory answers. */
+  const planned = Boolean(room.data?.architecture_blueprint) || room.data?.status === 'BLUEPRINT_GENERATING';
+  const generateReset = generate.reset;
+  useEffect(() => {
+    if (planned) generateReset();
+  }, [planned, generateReset]);
 
   if (room.isPending) return <Skeleton lines={6} />;
   if (!room.data) {
@@ -54,7 +64,7 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
         </div>
       </div>
 
-      {generate.isError ? <Notice family="fault" title={t('architecture.failed')}>{String(generate.error)}</Notice> : null}
+      {generate.isError ? <Failure title={t('architecture.failed')} error={generate.error} onRetry={() => generate.mutate()} /> : null}
 
       {stack ? (
         <section className="sec">

@@ -1,16 +1,19 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Signal } from '@/components/signal';
-import { Badge, Kv, Notice, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Kv, Failure, Notice, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatCount, formatUsd, formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
 import { familyFor } from '@/lib/status';
 
 const PROVIDERS = ['openai', 'anthropic', 'google', 'deepseek', 'groq'] as const;
+
+/* One <option> carries a provider and a model; neither can contain this. */
+const SEPARATOR = ' \u00b7\u00b7 ';
 
 export function AiSettingsScreen() {
   const { t, locale } = useI18n();
@@ -31,6 +34,32 @@ export function AiSettingsScreen() {
     onSuccess: () => { setForm({ ...form, nome: '', api_key: '', modelo_padrao: '' }); refresh(); },
   });
   const setDefault = useMutation({ mutationFn: (keyId: string) => api.setDefaultAiKey(keyId), onSuccess: refresh });
+  /* Which model answers is a real setting the backend takes; the screen used to show it and offer no way
+     to change it. The choices are only what this account's own keys carry -- REDESIGN.md §3.5: never
+     invent the names of available models. */
+  const activeChoice = active.data?.provider ? `${active.data.provider}${SEPARATOR}${active.data.model ?? ''}` : '';
+  const [choice, setChoice] = useState<string | null>(null);
+  const selected = choice ?? activeChoice;
+  const dirty = selected !== activeChoice;
+  /* Every distinct provider+model this account holds a key for, and nothing else. A key with no default
+     model still offers its provider, because the backend accepts a provider with a null model. */
+  const modelChoices = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const key of keys.data?.keys ?? []) {
+      const model = key.modelo_padrao?.trim() ?? '';
+      const value = `${key.provider}${SEPARATOR}${model}`;
+      if (!seen.has(value)) seen.set(value, model ? `${key.provider} \u00b7 ${model}` : key.provider);
+    }
+    return [...seen].map(([value, label]) => ({ value, label }));
+  }, [keys.data]);
+
+  const setActive = useMutation({
+    mutationFn: () => {
+      const [provider, model] = selected ? selected.split(SEPARATOR) : [null, null];
+      return api.setActiveLlm({ provider: provider || null, model: model || null });
+    },
+    onSuccess: () => { setChoice(null); refresh(); },
+  });
   const test = useMutation({ mutationFn: (keyId: string) => api.testAiKey(keyId), onSuccess: refresh });
   const remove = useMutation({ mutationFn: (keyId: string) => api.deleteAiKey(keyId), onSuccess: refresh });
 
@@ -66,6 +95,28 @@ export function AiSettingsScreen() {
             />
             <Source>GET /api/llm/settings/active</Source>
           </>
+        ) : null}
+
+        {keys.data ? (
+          <div className="stack" style={{ marginTop: 16, maxWidth: 520 }}>
+            <label className="field">
+              <span className="field-label">{t('settings.ai.active.choose')}</span>
+              <select value={selected} onChange={(event) => setChoice(event.target.value)} disabled={setActive.isPending}>
+                <option value="">{t('settings.ai.active.platform')}</option>
+                {modelChoices.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <span className="hint">{modelChoices.length > 0 ? t('settings.ai.active.hint') : t('settings.ai.active.noKeys')}</span>
+            </label>
+            <div className="btn-row">
+              <button className="btn btn-primary" type="button" disabled={setActive.isPending || !dirty} onClick={() => setActive.mutate()}>
+                {setActive.isPending ? t('settings.ai.active.applying') : t('settings.ai.active.apply')}
+              </button>
+            </div>
+            {setActive.isError ? <Failure title={t('settings.ai.active.failed')} error={setActive.error} onRetry={() => setActive.mutate()} /> : null}
+            <Source>PUT /api/llm/settings/active</Source>
+          </div>
         ) : null}
       </section>
 
@@ -136,7 +187,7 @@ export function AiSettingsScreen() {
             {add.isPending ? t('settings.ai.add.saving') : t('settings.ai.add.save')}
           </button>
         </div>
-        {add.isError ? <Notice family="fault" title={t('settings.ai.add.failed')}>{String(add.error)}</Notice> : null}
+        {add.isError ? <Failure title={t('settings.ai.add.failed')} error={add.error} onRetry={() => add.mutate()} /> : null}
         <p className="meta" style={{ marginTop: 10 }}>{t('settings.ai.add.note')}</p>
         <Source>POST /api/user-ai-keys</Source>
       </section>

@@ -301,6 +301,16 @@ const v2 = {
   'architecture.blockedBody': 'El blueprint se planifica a partir de un PromptMaster, y esta sala aún no ha escrito uno.',
   'architecture.blockedAction': 'Ir al PromptMaster',
 
+  'settings.ai.active.choose': 'Qué modelo responde',
+  'settings.ai.active.platform': 'Dejar que la plataforma elija',
+  'settings.ai.active.hint': 'Solo los proveedores y modelos que llevan tus propias claves. No se ofrece nada más, porque un modelo que esta cuenta no alcanza no es una opción.',
+  'settings.ai.active.apply': 'Usar este modelo',
+  'settings.ai.active.applying': 'Cambiando…',
+  'settings.ai.active.failed': 'El modelo no se cambió',
+  'settings.ai.active.noKeys': 'No hay nada que elegir hasta que se añada una clave abajo.',
+
+  'failure.offline': 'No se pudo alcanzar la plataforma. No se envió nada, así que nada cambió; inténtalo otra vez cuando vuelva la conexión.',
+
   'canvas.help': 'Arrastra para desplazarte. Ctrl + rueda o los botones hacen zoom, y 0 encuadra todo el dibujo. Enter inspecciona un nodo; Shift + Enter lo abre.',
   'canvas.controls': 'Controles del lienzo',
   'canvas.zoomIn': 'Acercar',

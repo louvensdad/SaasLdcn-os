@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EvidenceLine } from '@/components/evidence-line';
 import { HeroLink } from '@/components/hero-link';
 import { Signal } from '@/components/signal';
-import { Badge, Kv, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Kv, Failure, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { testRoomHref } from '@/lib/evidence/test-room';
 import { formatWhen } from '@/lib/format';
@@ -76,7 +76,7 @@ export function VerificationScreen({ projectKey }: { readonly projectKey: string
         </div>
       </div>
 
-      {run.isError ? <Notice family="fault" title={t('verification.failed')}>{String(run.error)}</Notice> : null}
+      {run.isError ? <Failure title={t('verification.failed')} error={run.error} onRetry={() => run.mutate()} /> : null}
       {unsupported ? <Notice family="caution" title={t('verification.unsupported')}>{profile.data?.reason ?? ''}</Notice> : null}
 
       <div className="grid g-2">

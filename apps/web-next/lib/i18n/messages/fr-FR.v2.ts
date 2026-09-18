@@ -301,6 +301,16 @@ const v2 = {
   'architecture.blockedBody': 'Le blueprint est planifié à partir d’un PromptMaster, et cette salle n’en a pas encore écrit.',
   'architecture.blockedAction': 'Aller au PromptMaster',
 
+  'settings.ai.active.choose': 'Quel modèle répond',
+  'settings.ai.active.platform': 'Laisser la plateforme choisir',
+  'settings.ai.active.hint': 'Uniquement les fournisseurs et modèles que portent vos propres clés. Rien d’autre n’est proposé, car un modèle que ce compte ne peut pas atteindre n’est pas un choix.',
+  'settings.ai.active.apply': 'Utiliser ce modèle',
+  'settings.ai.active.applying': 'Changement…',
+  'settings.ai.active.failed': 'Le modèle n’a pas été changé',
+  'settings.ai.active.noKeys': 'Il n’y a rien à choisir tant qu’aucune clé n’est ajoutée ci-dessous.',
+
+  'failure.offline': 'La plateforme n’a pas pu être jointe. Rien n’a été envoyé, donc rien n’a changé ; réessayez quand la connexion revient.',
+
   'canvas.help': 'Faites glisser pour vous déplacer. Ctrl + molette ou les boutons zooment, et 0 cadre tout le dessin. Entrée inspecte un nœud ; Maj + Entrée l’ouvre.',
   'canvas.controls': 'Commandes du canevas',
   'canvas.zoomIn': 'Zoom avant',

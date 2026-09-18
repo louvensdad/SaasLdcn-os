@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import { EvidenceLine, type Station } from '@/components/evidence-line';
 import { Icon, Signal } from '@/components/signal';
-import { Badge, Kv, Notice, PageState, Skeleton, Source } from '@/components/ui';
+import { Badge, Kv, Failure, Notice, PageState, Skeleton, Source } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
@@ -191,8 +191,8 @@ export function DeliveryScreen({ projectKey }: { readonly projectKey: string }) 
                 <Icon name="download" /> {t('delivery.package.download')}
               </button>
             </div>
-            {prepare.isError ? <Notice family="fault" title={t('delivery.package.failed')}>{String(prepare.error)}</Notice> : null}
-            {download.isError ? <Notice family="fault" title={t('delivery.package.failed')}>{String(download.error)}</Notice> : null}
+            {prepare.isError ? <Failure title={t('delivery.package.failed')} error={prepare.error} onRetry={() => prepare.mutate()} /> : null}
+            {download.isError ? <Failure title={t('delivery.package.failed')} error={download.error} onRetry={() => download.mutate()} /> : null}
             {prepare.data ? (
               <Kv
                 pairs={[
@@ -253,7 +253,7 @@ export function DeliveryScreen({ projectKey }: { readonly projectKey: string }) 
             <Icon name="git" /> {t('delivery.git.export', { provider })}
           </button>
         </div>
-        {exportRepo.isError ? <Notice family="fault" title={t('delivery.git.failed')}>{String(exportRepo.error)}</Notice> : null}
+        {exportRepo.isError ? <Failure title={t('delivery.git.failed')} error={exportRepo.error} onRetry={() => exportRepo.mutate()} /> : null}
         {exportRepo.data ? (
           <div className="panel" style={{ marginTop: 12 }}>
             <div className="panel-head">

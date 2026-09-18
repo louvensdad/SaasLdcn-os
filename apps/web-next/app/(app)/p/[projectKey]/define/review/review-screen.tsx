@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Signal } from '@/components/signal';
-import { Badge, GapChip, Kv, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, GapChip, Kv, Failure, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { useI18n } from '@/lib/i18n/i18n';
 import { useSay } from '@/lib/i18n/say';
@@ -72,7 +72,7 @@ export function ReviewScreen({ projectKey }: { readonly projectKey: string }) {
         </div>
       </div>
 
-      {run.isError ? <Notice family="fault" title={t('review.failed')}>{String(run.error)}</Notice> : null}
+      {run.isError ? <Failure title={t('review.failed')} error={run.error} onRetry={() => run.mutate()} /> : null}
 
       {!review ? (
         <StateBlock kind="empty" title={t('review.none')}>{t('review.noneBody')}</StateBlock>

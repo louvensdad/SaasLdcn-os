@@ -301,6 +301,16 @@ const v2 = {
   'architecture.blockedBody': 'The blueprint is planned from a PromptMaster, and this room has not written one yet.',
   'architecture.blockedAction': 'Go to the PromptMaster',
 
+  'settings.ai.active.choose': 'Which model answers',
+  'settings.ai.active.platform': 'Let the platform choose',
+  'settings.ai.active.hint': 'Only the providers and models your own keys carry. Nothing else is offered, because a model this account cannot reach is not a choice.',
+  'settings.ai.active.apply': 'Use this model',
+  'settings.ai.active.applying': 'Switching…',
+  'settings.ai.active.failed': 'The model was not switched',
+  'settings.ai.active.noKeys': 'There is nothing to choose from until a key is added below.',
+
+  'failure.offline': 'The platform could not be reached. Nothing was sent, so nothing changed; try again when the connection is back.',
+
   'canvas.help': 'Drag to pan. Ctrl + wheel or the buttons zoom, and 0 fits the whole drawing. Enter inspects a node; Shift + Enter opens it.',
   'canvas.controls': 'Canvas controls',
   'canvas.zoomIn': 'Zoom in',

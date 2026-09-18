@@ -5,7 +5,7 @@ import Link from 'next/link';
 
 import { ChangeTrace } from '@/components/drawings/change-trace';
 import { EvidenceLine } from '@/components/evidence-line';
-import { Badge, Kv, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Kv, Failure, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
@@ -71,7 +71,7 @@ export function ChangeScreen({ projectKey, changeRequestId }: { readonly project
         <div className="btn-row"><Link className="btn btn-ghost" href={base}>{t('change.back')}</Link></div>
       </div>
 
-      {act.isError ? <Notice family="fault" title={t('change.actionFailed')}>{String(act.error)}</Notice> : null}
+      {act.isError ? <Failure title={t('change.actionFailed')} error={act.error} /> : null}
       {data.last_failure ? (
         <Notice family="fault" title={t('change.lastFailure')}>{JSON.stringify(data.last_failure)}</Notice>
       ) : null}

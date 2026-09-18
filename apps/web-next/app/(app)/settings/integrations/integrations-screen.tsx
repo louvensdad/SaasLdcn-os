@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { Badge, Kv, Notice, Skeleton, Source } from '@/components/ui';
+import { Badge, Kv, Failure, Skeleton, Source } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
@@ -42,7 +42,7 @@ export function IntegrationsScreen() {
         </div>
       </div>
 
-      {connect.isError ? <Notice family="fault" title={t('settings.integrations.failed')}>{String(connect.error)}</Notice> : null}
+      {connect.isError ? <Failure title={t('settings.integrations.failed')} error={connect.error} /> : null}
 
       <div className="grid g-2">
         {PROVIDERS.map((provider) => {

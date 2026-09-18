@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { Icon, Signal } from '@/components/signal';
-import { Notice, Skeleton, Source } from '@/components/ui';
+import { Failure, Skeleton, Source } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { useI18n } from '@/lib/i18n/i18n';
 import { roomTitleFrom } from '@/lib/work/room-title';
@@ -69,8 +69,8 @@ export function StartScreen() {
         </div>
       </div>
 
-      {createRoom.isError ? <Notice family="fault" title={t('start.room.failed')}>{String(createRoom.error)}</Notice> : null}
-      {createMission.isError ? <Notice family="fault" title={t('start.mission.failed')}>{String(createMission.error)}</Notice> : null}
+      {createRoom.isError ? <Failure title={t('start.room.failed')} error={createRoom.error} onRetry={() => createRoom.mutate()} /> : null}
+      {createMission.isError ? <Failure title={t('start.mission.failed')} error={createMission.error} onRetry={() => createMission.mutate()} /> : null}
 
       <section className="panel">
         <div className="panel-head"><h2 className="h-sub">{t('start.idea.title')}</h2></div>

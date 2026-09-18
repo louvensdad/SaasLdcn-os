@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import { WorkbenchTrace } from '@/components/drawings/workbench-trace';
 import { Icon } from '@/components/signal';
-import { Badge, Kv, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Kv, Failure, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { useI18n } from '@/lib/i18n/i18n';
 import { useProject } from '@/lib/project/use-project';
@@ -150,7 +150,7 @@ export function EngineeringScreen({ projectKey }: { readonly projectKey: string 
             <Icon name="terminal" /> {run.isPending ? t('engineering.terminal.running') : t('engineering.terminal.run')}
           </button>
         </div>
-        {run.isError ? <Notice family="fault" title={t('engineering.terminal.failed')}>{String(run.error)}</Notice> : null}
+        {run.isError ? <Failure title={t('engineering.terminal.failed')} error={run.error} onRetry={() => run.mutate()} /> : null}
         {run.data ? (
           <section className="console" style={{ marginTop: 12 }} aria-label={t('engineering.terminal.title')}>
             <div className="console-head">

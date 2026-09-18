@@ -7,7 +7,7 @@ import { RuntimeChain } from '@/components/drawings/runtime-chain';
 import { HeroLink } from '@/components/hero-link';
 import { ScopeMission, ScopeNoProject, ScopeNotice, ScopeUnresolved } from '@/components/mission-scope';
 import { Icon, Signal } from '@/components/signal';
-import { Badge, Kv, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Kv, Failure, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { ApiError } from '@/lib/api/http';
 import { testRoomHref } from '@/lib/evidence/test-room';
@@ -94,7 +94,7 @@ export function RuntimeScreen({ projectKey }: { readonly projectKey: string }) {
       </div>
 
       <ScopeNotice scope={scope} latestHref={latestHref} />
-      {start.isError ? <Notice family="fault" title={t('runtime.failed')}>{String(start.error)}</Notice> : null}
+      {start.isError ? <Failure title={t('runtime.failed')} error={start.error} onRetry={() => start.mutate()} /> : null}
 
       <section className="sec">
         <div className="sec-head">

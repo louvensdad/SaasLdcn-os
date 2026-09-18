@@ -8,7 +8,7 @@ import { ProofGraph } from '@/components/drawings/proof-graph';
 import { HeroLink } from '@/components/hero-link';
 import { ScopeMission, ScopeNoProject, ScopeNotice, ScopeUnresolved } from '@/components/mission-scope';
 import { Signal, type Family } from '@/components/signal';
-import { Badge, Kv, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Kv, Failure, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatWhen } from '@/lib/format';
 import { proofModel } from '@/lib/evidence/proof-graph';
@@ -340,7 +340,7 @@ export function EvidenceScreen({ projectKey }: { readonly projectKey: string }) 
 
       <section className="sec">
         <div className="sec-head"><h2 className="h-sec">{t('evidence.actions.title')}</h2></div>
-        {run.isError ? <Notice family="fault" title={t('mission.actionFailed')}>{String(run.error)}</Notice> : null}
+        {run.isError ? <Failure title={t('mission.actionFailed')} error={run.error} /> : null}
         {run.isSuccess ? <Notice family="proof" title={t('evidence.actions.done')} /> : null}
         <div className="btn-row" style={{ marginBottom: 14 }}>
           <button className="btn btn-ghost" type="button" disabled={run.isPending} onClick={() => run.mutate('validate')}>{t('evidence.actions.validate')}</button>

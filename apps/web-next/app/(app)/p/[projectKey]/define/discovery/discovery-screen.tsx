@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { Signal } from '@/components/signal';
-import { Badge, Kv, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Kv, Failure, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import type { PhaseEstimate } from '@contracts/room-insights.contract';
 import { formatWhen } from '@/lib/format';
@@ -85,7 +85,7 @@ export function DiscoveryScreen({ projectKey }: { readonly projectKey: string })
         </div>
       </div>
 
-      {send.isError ? <Notice family="fault" title={t('discovery.failed')}>{String(send.error)}</Notice> : null}
+      {send.isError ? <Failure title={t('discovery.failed')} error={send.error} onRetry={() => send.mutate()} /> : null}
       {data.degraded ? <Notice family="caution" title={t('discovery.degraded.title')}>{t('discovery.degraded.body')}</Notice> : null}
 
       <div className="grid g-main-side">
