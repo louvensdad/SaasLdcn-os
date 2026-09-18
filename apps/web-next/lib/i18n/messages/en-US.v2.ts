@@ -288,6 +288,15 @@ const v2 = {
   'discovery.prompt.expand': 'Read the whole document',
   'discovery.prompt.collapse': 'Show less',
 
+  'requirements.decision.title': 'The decision this screen exists for',
+  'requirements.decision.body': 'Approving the PromptMaster is what lets the architecture be planned from it. Nothing is overwritten: version {version} stays, and asking for a change writes a new one.',
+  'requirements.decision.scope': '{project} · version {version}. The room moves to approved and the architecture can be planned from this document. Asking for a change afterwards writes a new version instead of editing this one.',
+  'requirements.decision.confirm': 'Approve version {version}',
+  'requirements.decision.blocked': 'Not yet — this room cannot take the approval',
+  'requirements.decision.approved': 'Approved',
+  'requirements.decision.approvedBody': 'This definition is approved; the architecture can be planned from it.',
+  'requirements.decision.open': 'Plan the architecture',
+
   'canvas.help': 'Drag to pan. Ctrl + wheel or the buttons zoom, and 0 fits the whole drawing. Enter inspects a node; Shift + Enter opens it.',
   'canvas.controls': 'Canvas controls',
   'canvas.zoomIn': 'Zoom in',

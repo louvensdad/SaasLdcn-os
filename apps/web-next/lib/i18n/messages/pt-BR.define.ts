@@ -46,9 +46,9 @@ const define = {
 
   'requirements.title': 'O PromptMaster',
   'requirements.lede': 'A definição escrita que todo o pipeline lê. Aprovar é o que libera o planejamento da arquitetura.',
-  'requirements.approve': 'Aprovar',
+  'requirements.approve': 'Aprovar o PromptMaster',
   'requirements.approving': 'Aprovando…',
-  'requirements.approveWhen': 'O backend aceita a aprovação em PROMPT_READY, não em {status}.',
+  'requirements.approveWhen': 'A aprovação é aceita quando o PromptMaster está pronto para você. Esta sala está em {status}.',
   'requirements.failed': 'A aprovação foi recusada',
   'requirements.none': 'Ainda não há PromptMaster',
   'requirements.noneBody': 'Ele é escrito a partir da conversa de descoberta; vá até lá e peça.',

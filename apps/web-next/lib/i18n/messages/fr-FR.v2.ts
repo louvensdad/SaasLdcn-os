@@ -288,6 +288,15 @@ const v2 = {
   'discovery.prompt.expand': 'Lire tout le document',
   'discovery.prompt.collapse': 'Afficher moins',
 
+  'requirements.decision.title': 'La décision pour laquelle cet écran existe',
+  'requirements.decision.body': 'Approuver le PromptMaster est ce qui permet de planifier l’architecture à partir de lui. Rien n’est écrasé : la version {version} reste, et demander une modification en écrit une nouvelle.',
+  'requirements.decision.scope': '{project} · version {version}. La salle passe à approuvée et l’architecture peut être planifiée depuis ce document. Demander une modification ensuite écrit une nouvelle version au lieu de modifier celle-ci.',
+  'requirements.decision.confirm': 'Approuver la version {version}',
+  'requirements.decision.blocked': 'Pas encore — cette salle n’accepte pas l’approbation',
+  'requirements.decision.approved': 'Approuvé',
+  'requirements.decision.approvedBody': 'Cette définition est approuvée ; l’architecture peut être planifiée à partir d’elle.',
+  'requirements.decision.open': 'Planifier l’architecture',
+
   'canvas.help': 'Faites glisser pour vous déplacer. Ctrl + molette ou les boutons zooment, et 0 cadre tout le dessin. Entrée inspecte un nœud ; Maj + Entrée l’ouvre.',
   'canvas.controls': 'Commandes du canevas',
   'canvas.zoomIn': 'Zoom avant',

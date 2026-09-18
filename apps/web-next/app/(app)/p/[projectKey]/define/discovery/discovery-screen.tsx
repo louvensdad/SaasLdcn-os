@@ -148,7 +148,7 @@ export function DiscoveryScreen({ projectKey }: { readonly projectKey: string })
                 <button type="button" className="btn btn-ghost btn-sm" aria-expanded={wholePrompt} onClick={() => setWholePrompt((open) => !open)}>
                   {t(wholePrompt ? 'discovery.prompt.collapse' : 'discovery.prompt.expand')}
                 </button>
-                <Link className="btn btn-ghost btn-sm" href={`/p/${encodeURIComponent(projectKey)}/define/requirements`}>{t('discovery.prompt.open')}</Link>
+                <Link className="btn btn-hand btn-sm" href={`/p/${encodeURIComponent(projectKey)}/define/requirements`}>{t('discovery.prompt.open')}</Link>
               </span>
             </div>
             <pre className={`code pm-doc${wholePrompt ? ' is-whole' : ''}`}>{data.prompt_master_md}</pre>

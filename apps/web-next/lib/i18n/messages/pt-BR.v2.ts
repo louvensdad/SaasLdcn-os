@@ -288,6 +288,15 @@ const v2 = {
   'discovery.prompt.expand': 'Ler o documento inteiro',
   'discovery.prompt.collapse': 'Mostrar menos',
 
+  'requirements.decision.title': 'A decisão que esta tela existe para tomar',
+  'requirements.decision.body': 'Aprovar o PromptMaster é o que deixa a arquitetura ser planejada a partir dele. Nada é sobrescrito: a versão {version} fica, e pedir uma mudança escreve uma nova.',
+  'requirements.decision.scope': '{project} · versão {version}. A sala passa para aprovada e a arquitetura pode ser planejada a partir deste documento. Pedir uma mudança depois escreve uma nova versão em vez de editar esta.',
+  'requirements.decision.confirm': 'Aprovar a versão {version}',
+  'requirements.decision.blocked': 'Ainda não — esta sala não aceita a aprovação',
+  'requirements.decision.approved': 'Aprovado',
+  'requirements.decision.approvedBody': 'Esta definição está aprovada; a arquitetura pode ser planejada a partir dela.',
+  'requirements.decision.open': 'Planejar a arquitetura',
+
   'canvas.help': 'Arraste para mover. Ctrl + roda ou os botões dão zoom, e 0 enquadra o desenho inteiro. Enter inspeciona um nó; Shift + Enter abre.',
   'canvas.controls': 'Controles do canvas',
   'canvas.zoomIn': 'Aproximar',

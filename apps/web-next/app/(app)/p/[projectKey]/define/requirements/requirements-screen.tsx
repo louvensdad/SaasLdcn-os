@@ -1,22 +1,29 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useState } from 'react';
 
+import { Confirm } from '@/components/operate';
 import { Signal } from '@/components/signal';
 import { Badge, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
+import { useStatusLabel } from '@/lib/i18n/status-label';
 import { familyFor } from '@/lib/status';
 
 /** Statuses at which the backend accepts the PromptMaster approval (project_room_service.PROMPT_APPROVED_STATUSES). */
 const CAN_APPROVE = new Set(['PROMPT_READY', 'UNDER_REVIEW']);
+/** Statuses that come before there is anything to approve. Everything else is past the approval. */
+const BEFORE_APPROVAL = new Set(['DRAFT', 'SPEC_GENERATING']);
 
 export function RequirementsScreen({ projectKey }: { readonly projectKey: string }) {
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const [adjustment, setAdjustment] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const say = useStatusLabel();
 
   const room = useQuery({ queryKey: ['room', projectKey], queryFn: () => api.room(projectKey), retry: false });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['room', projectKey] });
@@ -34,6 +41,11 @@ export function RequirementsScreen({ projectKey }: { readonly projectKey: string
 
   const data = room.data;
   const versions = [...(data.prompt_master_versions ?? [])].sort((a, b) => b.version - a.version);
+  const version = versions[0]?.version ?? 1;
+  /* Three states, and the screen says which one it is in rather than greying a button and hoping the
+     tooltip is found: the approval is open, it is not open yet, or it was already given. */
+  const canApprove = Boolean(data.prompt_master_md) && CAN_APPROVE.has(data.status);
+  const approved = Boolean(data.prompt_master_md) && !CAN_APPROVE.has(data.status) && !BEFORE_APPROVAL.has(data.status);
 
   return (
     <>
@@ -48,19 +60,55 @@ export function RequirementsScreen({ projectKey }: { readonly projectKey: string
           <p className="lede">{t('requirements.lede')}</p>
         </div>
         <div className="btn-row">
-          <button
-            className="btn btn-hand"
-            type="button"
-            disabled={approve.isPending || !data.prompt_master_md || !CAN_APPROVE.has(data.status)}
-            title={CAN_APPROVE.has(data.status) ? undefined : t('requirements.approveWhen', { status: data.status })}
-            onClick={() => approve.mutate()}
-          >
-            {approve.isPending ? t('requirements.approving') : t('requirements.approve')}
-          </button>
+          {approved ? (
+            <Link className="btn btn-primary" href={`/p/${encodeURIComponent(projectKey)}/define/architecture`}>{t('requirements.decision.open')}</Link>
+          ) : (
+            <button className="btn btn-hand" type="button" disabled={!canApprove || approve.isPending} onClick={() => setConfirming(true)}>
+              {approve.isPending ? t('requirements.approving') : t('requirements.approve')}
+            </button>
+          )}
         </div>
       </div>
 
       {approve.isError ? <Notice family="fault" title={t('requirements.failed')}>{String(approve.error)}</Notice> : null}
+
+      {data.prompt_master_md ? (
+        <div className="decision" style={{ marginBottom: 20 }}>
+          <Signal family={approved ? 'proof' : 'hand'} />
+          <div className="decision-body">
+            <div className="decision-kicker">{t('nav.requirements')}</div>
+            <p className="decision-title">
+              {approved ? t('requirements.decision.approved') : canApprove ? t('requirements.decision.title') : t('requirements.decision.blocked')}
+            </p>
+            <p className="decision-why">
+              {approved
+                ? t('requirements.decision.approvedBody')
+                : canApprove
+                  ? t('requirements.decision.body', { version })
+                  : t('requirements.approveWhen', { status: say(data.status) })}
+            </p>
+            <div className="decision-actions">
+              {approved ? (
+                <Link className="btn btn-primary" href={`/p/${encodeURIComponent(projectKey)}/define/architecture`}>{t('requirements.decision.open')}</Link>
+              ) : (
+                <button className="btn btn-hand" type="button" disabled={!canApprove || approve.isPending} onClick={() => setConfirming(true)}>
+                  {approve.isPending ? t('requirements.approving') : t('requirements.approve')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirming ? (
+        <Confirm
+          title={t('requirements.decision.title')}
+          scope={t('requirements.decision.scope', { project: data.title, version })}
+          confirmLabel={t('requirements.decision.confirm', { version })}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => { setConfirming(false); approve.mutate(); }}
+        />
+      ) : null}
 
       {!data.prompt_master_md ? (
         <StateBlock kind="empty" title={t('requirements.none')}>{t('requirements.noneBody')}</StateBlock>
