@@ -147,3 +147,26 @@ test('a room that is drawing says so and offers the way out, instead of a dead b
   await state.getByRole('button', { name: 'Cancel this planning' }).click();
   await expect.poll(() => cancelled).toBe(1);
 });
+
+test('a planning request in flight is shown as the state, not as a frozen button', async ({ page }) => {
+  /* The POST takes as long as the model takes -- measured at 9m16s on a real room -- and until it
+     answers this tab's cached room still says PROMPT_APPROVED. Hold the reply open to stand in that
+     moment, which is where the screen used to show a disabled button and nothing else. */
+  await roomWithout(page, { architecture_blueprint: null, blueprint_versions: [] });
+  let release: (() => void) | undefined;
+  const answered = new Promise<void>((resolve) => { release = resolve; });
+  await page.route('**/api/project-rooms/*/blueprint', async (route) => {
+    await answered;
+    await route.fulfill({ json: {} });
+  });
+
+  await page.getByRole('status').getByRole('button', { name: 'Plan the architecture' }).click();
+
+  const state = page.getByRole('status').filter({ hasText: 'The blueprint is being drawn' });
+  await expect(state).toContainText('around nine minutes');
+  await expect(state.getByRole('button', { name: 'Cancel this planning' })).toBeEnabled();
+  // The empty state stepped aside: there is no emptiness to explain while it is being drawn.
+  await expect(page.getByText('Nothing has been planned yet')).toBeHidden();
+
+  release?.();
+});

@@ -16,16 +16,20 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
 
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['room', projectKey] });
+  /* Declared before the room read on purpose: the read polls while this is in flight. The POST takes as
+     long as the model takes -- two real runs measured 9m16s and 8m49s -- and until it answers, this tab's
+     cached room still says PROMPT_APPROVED, so without this the screen showed a disabled button and
+     nothing else for nine minutes. A request in flight IS this room being planned. */
+  const generate = useMutation({ mutationFn: () => api.generateBlueprint(projectKey), onSuccess: refresh });
   const room = useQuery({
     queryKey: ['room', projectKey],
     queryFn: () => api.room(projectKey),
     retry: false,
-    /* While the room says it is drawing, keep asking: that is how this screen notices the end of a long
-       call, a cancellation, or the reservation expiring, without anyone reloading the page. */
-    refetchInterval: (query) => (query.state.data?.status === 'BLUEPRINT_GENERATING' ? 5000 : false),
+    /* While the room is being drawn -- by this tab or by anyone -- keep asking: that is how this screen
+       notices the end of a long call, a cancellation, or the reservation expiring, without a reload. */
+    refetchInterval: (query) => (generate.isPending || query.state.data?.status === 'BLUEPRINT_GENERATING' ? 5000 : false),
   });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['room', projectKey] });
-  const generate = useMutation({ mutationFn: () => api.generateBlueprint(projectKey), onSuccess: refresh });
   const approveStack = useMutation({ mutationFn: () => api.approveStack(projectKey), onSuccess: refresh });
   const restore = useMutation({ mutationFn: (version: number) => api.restoreBlueprint(projectKey, version), onSuccess: refresh });
   const cancel = useMutation({ mutationFn: () => api.cancelBlueprint(projectKey), onSuccess: refresh });
@@ -33,9 +37,14 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
   /* A refusal is about a moment, not a standing fact. Once the room carries a blueprint -- or is drawing
      one right now -- an earlier "approve the PromptMaster first" is no longer true of this screen, and
      leaving it on the page next to the stack it refused to plan reads as two contradictory answers. */
-  /* The room is drawing the blueprint right now: the button that asks for one has nothing left to ask. */
-  const drawing = room.data?.status === 'BLUEPRINT_GENERATING';
-  const planned = Boolean(room.data?.architecture_blueprint) || drawing;
+  /* The room is drawing the blueprint right now -- because it says so, or because this tab is the one
+     asking and has not been answered yet. Either way the button that asks for one has nothing left to ask. */
+  const roomIsDrawing = room.data?.status === 'BLUEPRINT_GENERATING';
+  const drawing = generate.isPending || roomIsDrawing;
+  /* Deliberately NOT `drawing`: whether an earlier refusal is still true is a fact about the room, not
+     about this tab having a request in flight. Reading it from `drawing` reset the very mutation that was
+     in flight, so a refusal that came back was thrown away before anyone could read it. */
+  const planned = Boolean(room.data?.architecture_blueprint) || roomIsDrawing;
   const generateReset = generate.reset;
   useEffect(() => {
     if (planned) generateReset();
@@ -126,7 +135,12 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
               <Signal family="pulse" live />
               <b>{t('architecture.drawing.title')}</b>
             </div>
-            <p className="body ink2">{t('architecture.drawing.body', { when: formatWhen(data.updated_at, locale) })}</p>
+            <p className="body ink2">
+              {t('architecture.drawing.body', {
+                when: formatWhen(generate.isPending && generate.submittedAt ? new Date(generate.submittedAt).toISOString() : data.updated_at, locale),
+              })}
+            </p>
+            <p className="meta">{t('architecture.drawing.howLong')}</p>
             <div className="btn-row">
               <button className="btn btn-ghost btn-sm" type="button" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
                 {cancel.isPending ? t('architecture.drawing.cancelling') : t('architecture.drawing.cancel')}
@@ -140,8 +154,9 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
       {!blueprint ? (
         /* An empty state owes a valid path, not a restatement of a condition that is already met
            (REDESIGN.md §2). With a PromptMaster in hand the way forward is the planning itself; without
-           one it is the screen where the PromptMaster is written. */
-        data.prompt_master_md ? (
+           one it is the screen where the PromptMaster is written. While the blueprint is actually being
+           drawn there is no emptiness to explain -- the panel above is the state of this screen. */
+        drawing ? null : data.prompt_master_md ? (
           <StateBlock
             kind="empty"
             title={t('architecture.none')}

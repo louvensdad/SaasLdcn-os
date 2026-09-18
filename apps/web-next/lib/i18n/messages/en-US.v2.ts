@@ -327,6 +327,8 @@ const v2 = {
   'architecture.drawing.cancelling': 'Cancelling…',
   'architecture.drawing.cancelFailed': 'The planning was not cancelled',
 
+  'architecture.drawing.howLong': 'This takes as long as the model takes. Runs on this platform have been measured at around nine minutes; the page keeps itself up to date, so you can leave it and come back.',
+
   'canvas.help': 'Drag to pan. Ctrl + wheel or the buttons zoom, and 0 fits the whole drawing. Enter inspects a node; Shift + Enter opens it.',
   'canvas.controls': 'Canvas controls',
   'canvas.zoomIn': 'Zoom in',

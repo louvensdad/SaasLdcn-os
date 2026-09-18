@@ -327,6 +327,8 @@ const v2 = {
   'architecture.drawing.cancelling': 'Annulation…',
   'architecture.drawing.cancelFailed': 'La planification n’a pas été annulée',
 
+  'architecture.drawing.howLong': 'Cela prend le temps que le modèle prend. Les exécutions sur cette plateforme ont été mesurées autour de neuf minutes ; la page se tient à jour toute seule, vous pouvez partir et revenir.',
+
   'canvas.help': 'Faites glisser pour vous déplacer. Ctrl + molette ou les boutons zooment, et 0 cadre tout le dessin. Entrée inspecte un nœud ; Maj + Entrée l’ouvre.',
   'canvas.controls': 'Commandes du canevas',
   'canvas.zoomIn': 'Zoom avant',

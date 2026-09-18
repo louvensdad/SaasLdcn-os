@@ -327,6 +327,8 @@ const v2 = {
   'architecture.drawing.cancelling': 'Cancelando…',
   'architecture.drawing.cancelFailed': 'O planejamento não foi cancelado',
 
+  'architecture.drawing.howLong': 'Isso demora o que o modelo demorar. Execuções nesta plataforma foram medidas em cerca de nove minutos; a página se mantém atualizada sozinha, então você pode sair e voltar.',
+
   'canvas.help': 'Arraste para mover. Ctrl + roda ou os botões dão zoom, e 0 enquadra o desenho inteiro. Enter inspeciona um nó; Shift + Enter abre.',
   'canvas.controls': 'Controles do canvas',
   'canvas.zoomIn': 'Aproximar',
