@@ -311,6 +311,16 @@ const v2 = {
 
   'failure.offline': 'The platform could not be reached. Nothing was sent, so nothing changed; try again when the connection is back.',
 
+  'architecture.stack.locked': 'The stack is locked for this generation.',
+  'architecture.blueprint.writtenBy': 'Written by',
+  'architecture.blueprint.withoutModel': 'no model — written deterministically',
+  'architecture.blueprint.when': 'Written at',
+  'architecture.blueprint.decisions': 'Decisions',
+  'architecture.blueprint.confidence': 'Confidence the author reported',
+  'architecture.blueprint.time': 'Time it took',
+  'architecture.blueprint.tokens': 'Tokens',
+  'architecture.blueprint.degradedNote': 'This version was written without a model, so it repeats the platform defaults rather than reasoning about this project. Planning again with a working key replaces it.',
+
   'canvas.help': 'Drag to pan. Ctrl + wheel or the buttons zoom, and 0 fits the whole drawing. Enter inspects a node; Shift + Enter opens it.',
   'canvas.controls': 'Canvas controls',
   'canvas.zoomIn': 'Zoom in',

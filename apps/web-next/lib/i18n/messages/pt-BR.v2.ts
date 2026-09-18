@@ -311,6 +311,16 @@ const v2 = {
 
   'failure.offline': 'Não foi possível alcançar a plataforma. Nada foi enviado, então nada mudou; tente de novo quando a conexão voltar.',
 
+  'architecture.stack.locked': 'A stack está travada para esta geração.',
+  'architecture.blueprint.writtenBy': 'Escrito por',
+  'architecture.blueprint.withoutModel': 'sem modelo — escrito deterministicamente',
+  'architecture.blueprint.when': 'Escrito em',
+  'architecture.blueprint.decisions': 'Decisões',
+  'architecture.blueprint.confidence': 'Confiança que o autor informou',
+  'architecture.blueprint.time': 'Tempo que levou',
+  'architecture.blueprint.tokens': 'Tokens',
+  'architecture.blueprint.degradedNote': 'Esta versão foi escrita sem modelo, então repete os padrões da plataforma em vez de raciocinar sobre este projeto. Planejar de novo com uma chave que funcione a substitui.',
+
   'canvas.help': 'Arraste para mover. Ctrl + roda ou os botões dão zoom, e 0 enquadra o desenho inteiro. Enter inspeciona um nó; Shift + Enter abre.',
   'canvas.controls': 'Controles do canvas',
   'canvas.zoomIn': 'Aproximar',

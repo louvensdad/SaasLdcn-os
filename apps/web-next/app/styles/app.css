@@ -684,7 +684,13 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
 .step-title { font-weight: 600; font-size: 13px; }
 .step-sub { grid-column: 2 / 4; font-size: 12px; color: var(--ink-2); }
 .list { display: grid; }
-.li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); }
+/* The third column holds a value, and a long one used to win the whole row: `auto` grew until the title
+   column was a letter wide and "Backend" wrapped down the page one character per line. The title keeps a
+   floor, and the value shrinks and wraps instead of starving it. */
+.li { display: grid; grid-template-columns: 16px minmax(9ch, 1fr) minmax(0, auto); gap: 2px 10px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); }
+.li > .meta { min-width: 0; overflow-wrap: anywhere; }
+/* A stack choice is a sentence, not a chip: it sits under the area it is the choice for. */
+.li-choice { grid-column: 2 / 4; font-size: 12px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; margin-top: 2px; }
 .li:first-child { border-top: 0; padding-top: 2px; }
 .li .sig { align-self: center; }
 .li-title { font-weight: 560; font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; }

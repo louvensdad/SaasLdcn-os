@@ -311,6 +311,16 @@ const v2 = {
 
   'failure.offline': 'La plateforme n’a pas pu être jointe. Rien n’a été envoyé, donc rien n’a changé ; réessayez quand la connexion revient.',
 
+  'architecture.stack.locked': 'La stack est fixée pour cette génération.',
+  'architecture.blueprint.writtenBy': 'Rédigé par',
+  'architecture.blueprint.withoutModel': 'sans modèle — rédigé de façon déterministe',
+  'architecture.blueprint.when': 'Rédigé le',
+  'architecture.blueprint.decisions': 'Décisions',
+  'architecture.blueprint.confidence': 'Confiance annoncée par l’auteur',
+  'architecture.blueprint.time': 'Temps écoulé',
+  'architecture.blueprint.tokens': 'Jetons',
+  'architecture.blueprint.degradedNote': 'Cette version a été rédigée sans modèle : elle répète les valeurs par défaut de la plateforme au lieu de raisonner sur ce projet. Replanifier avec une clé valide la remplace.',
+
   'canvas.help': 'Faites glisser pour vous déplacer. Ctrl + molette ou les boutons zooment, et 0 cadre tout le dessin. Entrée inspecte un nœud ; Maj + Entrée l’ouvre.',
   'canvas.controls': 'Commandes du canevas',
   'canvas.zoomIn': 'Zoom avant',

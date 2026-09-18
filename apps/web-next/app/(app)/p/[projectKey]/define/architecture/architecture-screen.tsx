@@ -6,9 +6,9 @@ import { useEffect } from 'react';
 
 import { DecisionMap } from '@/components/drawings/decision-map';
 import { Signal } from '@/components/signal';
-import { Badge, Failure, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
+import { Badge, Failure, Kv, Notice, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
-import { formatWhen } from '@/lib/format';
+import { formatCount, formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
 import { familyFor } from '@/lib/status';
 
@@ -25,7 +25,9 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
   /* A refusal is about a moment, not a standing fact. Once the room carries a blueprint -- or is drawing
      one right now -- an earlier "approve the PromptMaster first" is no longer true of this screen, and
      leaving it on the page next to the stack it refused to plan reads as two contradictory answers. */
-  const planned = Boolean(room.data?.architecture_blueprint) || room.data?.status === 'BLUEPRINT_GENERATING';
+  /* The room is drawing the blueprint right now: the button that asks for one has nothing left to ask. */
+  const drawing = room.data?.status === 'BLUEPRINT_GENERATING';
+  const planned = Boolean(room.data?.architecture_blueprint) || drawing;
   const generateReset = generate.reset;
   useEffect(() => {
     if (planned) generateReset();
@@ -58,8 +60,13 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
           <p className="lede">{t('architecture.lede')}</p>
         </div>
         <div className="btn-row">
-          <button className="btn btn-primary" type="button" disabled={generate.isPending || !data.prompt_master_md} onClick={() => generate.mutate()}>
-            {generate.isPending ? t('architecture.generating') : t('architecture.generate')}
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={generate.isPending || !data.prompt_master_md || drawing}
+            onClick={() => generate.mutate()}
+          >
+            {generate.isPending || drawing ? t('architecture.generating') : t('architecture.generate')}
           </button>
         </div>
       </div>
@@ -77,7 +84,7 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
               <div className="li" key={item.area}>
                 <Signal family={stack.status === 'APPROVED' ? 'proof' : 'hand'} label={item.label} />
                 <span className="li-title">{item.label}</span>
-                <span className="meta mono">{item.choice}</span>
+                <span className="li-choice mono">{item.choice}</span>
                 <span className="li-sub">
                   {item.reason}
                   {item.alternatives.length > 0 ? ` · ${t('architecture.stack.alternatives')}: ${item.alternatives.join(', ')}` : ''}
@@ -86,9 +93,18 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
             ))}
           </div>
           <div className="btn-row" style={{ marginTop: 12 }}>
-            <button className="btn btn-hand" type="button" disabled={approveStack.isPending || stack.status === 'APPROVED'} onClick={() => approveStack.mutate()}>
-              {stack.status === 'APPROVED' ? t('architecture.stack.approved') : t('architecture.stack.approve')}
-            </button>
+            {/* A stack that is already approved says so; a greyed-out verb reads as a control that broke. */}
+            {stack.status === 'APPROVED' ? (
+              <span className="row" style={{ gap: 8, alignItems: 'center' }}>
+                <Signal family="proof" label={t('architecture.stack.approved')} />
+                <b>{t('architecture.stack.approved')}</b>
+                <span className="meta">{t('architecture.stack.locked')}</span>
+              </span>
+            ) : (
+              <button className="btn btn-hand" type="button" disabled={approveStack.isPending} onClick={() => approveStack.mutate()}>
+                {t('architecture.stack.approve')}
+              </button>
+            )}
           </div>
           <p className="meta" style={{ marginTop: 10 }}>{t('architecture.stack.note')}</p>
           <Source>POST /api/project-rooms/{'{'}room_id{'}'}/stack/approve</Source>
@@ -145,6 +161,30 @@ export function ArchitectureScreen({ projectKey }: { readonly projectKey: string
               <h2 className="h-sec">{t('architecture.blueprint.title')}</h2>
               <span className="meta">{t('architecture.blueprint.meta', { version: blueprint.version ?? 0 })}</span>
             </div>
+            {/* This section used to hold nothing but a developer-only <details>, so with the switch off it
+                was a title over an empty half-page. The blueprint already carries who wrote it and at what
+                cost; that is the part a person reading a decision wants. */}
+            {blueprint.degraded || blueprint.fallback ? (
+              <Notice family="caution" title={t('architecture.blueprint.withoutModel')}>{t('architecture.blueprint.degradedNote')}</Notice>
+            ) : null}
+            <Kv
+              pairs={[
+                [t('architecture.blueprint.writtenBy'), blueprint.mode === 'llm' && blueprint.providerLabel
+                  ? `${blueprint.providerLabel}${blueprint.model ? ` · ${blueprint.model}` : ''}`
+                  : t('architecture.blueprint.withoutModel')],
+                [t('architecture.blueprint.when'), blueprint.generatedAt || blueprint.generated_at
+                  ? formatWhen(blueprint.generatedAt || blueprint.generated_at, locale)
+                  : '—'],
+                [t('architecture.blueprint.decisions'), String(blueprint.decisions?.length ?? 0)],
+                [t('architecture.blueprint.confidence'), typeof blueprint.confidence === 'number'
+                  ? `${Math.round(blueprint.confidence * 100)}%`
+                  : '—'],
+                [t('architecture.blueprint.time'), blueprint.generation_time_ms || blueprint.latencyMs
+                  ? `${Math.round((blueprint.generation_time_ms || blueprint.latencyMs) / 100) / 10} s`
+                  : '—'],
+                [t('architecture.blueprint.tokens'), blueprint.tokensUsed ? formatCount(blueprint.tokensUsed, locale) : '—'],
+              ]}
+            />
             <details className="dev-only">
               <summary className="meta">{t('archmap.raw')}</summary>
               <pre className="json">{JSON.stringify(blueprint, null, 2).slice(0, 8000)}</pre>

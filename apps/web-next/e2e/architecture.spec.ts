@@ -75,3 +75,55 @@ test('a refusal the room has moved past stops being shown next to what it refuse
   await page.goBack();
   await expect(page.locator('.panel.is-fault')).toBeHidden();
 });
+
+test('a long stack choice never squeezes the area it belongs to', async ({ page }) => {
+  const long = 'Java 17 + Spring Boot 3.3 (Maven) com modulos controller/service/repository/domain, Spring Web, Spring Data JPA, Validation, Security, Flyway e PostgreSQL Driver';
+  await page.goto(ROOM);
+  const room = await page.evaluate(async () => (await fetch('/api/project-rooms/room_5b9e2c71a0d4')).json());
+  const source = room as { stack_proposal: { items: { choice: string }[] } };
+  await page.route('**/api/project-rooms/room_5b9e2c71a0d4', (route, request) => (
+    request.method() === 'GET'
+      ? route.fulfill({ json: { ...room as Record<string, unknown>, stack_proposal: {
+          ...source.stack_proposal,
+          items: source.stack_proposal.items.map((item, index) => (index === 0 ? { ...item, choice: long } : item)),
+        } } })
+      : route.fallback()
+  ));
+  await page.reload();
+  /* The title used to collapse to one character wide and wrap down the page, because the value column
+     was `auto` and won the whole row. */
+  const title = page.locator('.li-title').first();
+  const box = await title.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThan(60);
+});
+
+test('a blueprint says who wrote it and at what cost, without the developer switch', async ({ page }) => {
+  await page.goto(ROOM);
+  const section = page.locator('.sec').filter({ hasText: 'Blueprint' }).last();
+  await expect(section).toContainText('Written by');
+  await expect(section).toContainText('Decisions');
+  // The raw payload stays a developer detail; the provenance does not.
+  await expect(section.locator('details.dev-only')).toBeHidden();
+});
+
+test('a stack already approved reads as a state, and the planning is not offered while it runs', async ({ page }) => {
+  await page.goto(ROOM);
+  const room = await page.evaluate(async () => (await fetch('/api/project-rooms/room_5b9e2c71a0d4')).json());
+  await page.route('**/api/project-rooms/room_5b9e2c71a0d4', (route, request) => (
+    request.method() === 'GET'
+      ? route.fulfill({
+          json: {
+            ...(room as Record<string, unknown>),
+            status: 'BLUEPRINT_GENERATING',
+            stack_proposal: { ...(room as { stack_proposal: object }).stack_proposal, status: 'APPROVED' },
+          },
+        })
+      : route.fallback()
+  ));
+  await page.reload();
+  // Not a greyed-out verb: the state, and what it means.
+  await expect(page.getByText('The stack is locked for this generation.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approve the stack' })).toHaveCount(0);
+  // The room is drawing one right now, so asking for one again is not an action.
+  await expect(page.getByRole('button', { name: 'Planning…' })).toBeDisabled();
+});
