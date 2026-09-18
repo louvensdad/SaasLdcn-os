@@ -9,6 +9,7 @@ import settings from './fr-FR.settings';
 import learn from './fr-FR.learn';
 import project from './fr-FR.project';
 import work from './fr-FR.work';
+import status from './fr-FR.status';
 import v2 from './fr-FR.v2';
 import type { Messages } from './index';
 
@@ -24,6 +25,7 @@ const frFR: Messages = {
   ...learn,
   ...project,
   ...work,
+  ...status,
   ...v2,
   'app.name': 'LDCN OS',
   'common.loading': 'Chargement…',
@@ -33,7 +35,7 @@ const frFR: Messages = {
   'common.yes': 'oui',
   'common.no': 'non',
   'common.notYet': 'pas encore',
-  'common.gap': 'lacune {id}',
+  'common.gap': 'Le backend ne fournit pas cela',
   'common.currentApp': 'ouvre l’application actuelle',
   'common.skip': 'Aller au contenu',
 

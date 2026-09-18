@@ -10,6 +10,7 @@ import { HeroLink, useHeroPush } from '@/components/hero-link';
 import { Signal } from '@/components/signal';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
+import { useStatusLabel } from '@/lib/i18n/status-label';
 import { layoutRuntimeChain, type ChainNodeData } from '@/lib/runtime/runtime-chain';
 
 import { Inspector } from './inspector';
@@ -26,6 +27,7 @@ export function RuntimeChain({ sessions, sessionsRead, preview, previewRead, con
   readonly testRoomLink?: (sessionId: string) => string;
 }) {
   const { t, locale } = useI18n();
+  const say = useStatusLabel();
   const push = useHeroPush();
   const [selected, setSelected] = useState<string | null>(null);
   const session = useMemo(() => [...(sessions ?? [])].sort((a, b) => b.started_at.localeCompare(a.started_at))[0] ?? null, [sessions]);
@@ -33,13 +35,13 @@ export function RuntimeChain({ sessions, sessionsRead, preview, previewRead, con
   const { nodes, edges } = useMemo(() => layoutRuntimeChain({
     session, sessionRead: sessionsRead, preview, previewRead, console: entries, consoleRead,
     labels: {
-      gate: (gate) => `${gate.label}: ${gate.status}`,
+      gate: (gate) => `${gate.label}: ${say(gate.status)}`,
       probe: (evidence) => `${evidence.label}: ${evidence.status}`,
       preview: (state) => `${t('runmap.preview')}: ${state}`,
       console: (errors) => `${t('runmap.console')}: ${t('runmap.errors', { count: errors })}`,
       noSession: t('runmap.noSession'),
     },
-  }), [consoleRead, entries, preview, previewRead, session, sessionsRead, t]);
+  }), [say, consoleRead, entries, preview, previewRead, session, sessionsRead, t]);
 
   const render = (node: GraphNode<ChainNodeData>) => {
     const data = node.data;
@@ -112,7 +114,7 @@ export function RuntimeChain({ sessions, sessionsRead, preview, previewRead, con
 
   const tip = (node: GraphNode<ChainNodeData>) => {
     const data = node.data;
-    if (data.kind === 'gate') return <><strong>{data.gate.label}</strong><span className="mono">{data.gate.status}</span>{data.gate.reason ? <p className="tip-body">{data.gate.reason}</p> : null}</>;
+    if (data.kind === 'gate') return <><strong>{data.gate.label}</strong><span>{say(data.gate.status)}</span><span className="src">{data.gate.status}</span>{data.gate.reason ? <p className="tip-body">{data.gate.reason}</p> : null}</>;
     if (data.kind === 'probe') return <><strong>{data.evidence.label}</strong><span className="mono">{[data.evidence.status, ...data.readings].join(' · ')}</span>{data.evidence.reason ? <p className="tip-body">{data.evidence.reason}</p> : null}</>;
     if (data.kind === 'preview') return <><strong>{t('runmap.preview')}</strong><span className="mono">{data.state}</span>{data.session?.reason ? <p className="tip-body">{data.session.reason}</p> : null}</>;
     if (data.kind === 'console') return <><strong>{t('runmap.console')}</strong><span className="mono">{t('runmap.errors', { count: data.errors })}</span></>;

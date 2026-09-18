@@ -49,8 +49,10 @@ test('an execution served by a fallback says so', async ({ page }) => {
 test('an agent shows what it was hired as and what its runs say now', async ({ page }) => {
   await page.goto(`${COMPANY}/agents/ai_1`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Backend engineer');
-  await expect(page.getByText('CERTIFIED').first()).toBeVisible();
-  await expect(page.getByText('QUALIFIED').first()).toBeVisible();
+  // The state is read as a sentence; the backend's own code stays reachable as the badge's title.
+  await expect(page.getByText('Certified').first()).toBeVisible();
+  await expect(page.getByText('Passed with reservations').first()).toBeVisible();
+  await expect(page.locator('.badge', { hasText: 'Passed with reservations' }).first()).toHaveAttribute('title', 'QUALIFIED');
   await expect(page.getByText('The hired state is what the company was assembled under')).toBeVisible();
   // The latest cognitive run of the role, axis by axis, with the depth it was measured at.
   await expect(page.getByRole('img', { name: 'Axes passed in the latest cognitive run: 2 of 2' })).toBeVisible();
@@ -62,7 +64,7 @@ test('the workforce lists seats without a pipeline step and says which are certi
   await expect(page.getByRole('row', { name: /Architect/ })).toContainText('architecture');
   await expect(page.getByText('12 runs · 9 passed · 2 failed')).toBeVisible();
   await expect(page.getByText('No run has been recorded for this definition.')).toBeVisible();
-  await expect(page.getByText('WOULD_REFUSE').first()).toBeVisible();
+  await expect(page.getByText('Would refuse').first()).toBeVisible();
 });
 
 test('the planner composes a plan and names what it cannot cover', async ({ page }) => {

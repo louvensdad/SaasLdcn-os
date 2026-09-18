@@ -10,6 +10,7 @@ import settings from './pt-BR.settings';
 import learn from './pt-BR.learn';
 import project from './pt-BR.project';
 import work from './pt-BR.work';
+import status from './pt-BR.status';
 import v2 from './pt-BR.v2';
 
 const ptBR: Messages = {
@@ -24,6 +25,7 @@ const ptBR: Messages = {
   ...learn,
   ...project,
   ...work,
+  ...status,
   ...v2,
   'app.name': 'LDCN OS',
   'common.loading': 'Carregando…',
@@ -33,7 +35,7 @@ const ptBR: Messages = {
   'common.yes': 'sim',
   'common.no': 'não',
   'common.notYet': 'ainda não',
-  'common.gap': 'lacuna {id}',
+  'common.gap': 'O backend não fornece isso',
   'common.currentApp': 'abre o app atual',
   'common.skip': 'Pular para o conteúdo',
 

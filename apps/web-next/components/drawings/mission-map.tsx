@@ -11,6 +11,7 @@ import type { GraphNode } from '@/components/canvas/geometry';
 import { Signal } from '@/components/signal';
 import { api } from '@/lib/api/api';
 import { useI18n } from '@/lib/i18n/i18n';
+import { useStatusLabel } from '@/lib/i18n/status-label';
 import {
   layoutMissionMap, missionStations, RUN, type MapNodeData, type MapStage, type MapStation, type MapStationId,
 } from '@/lib/mission/mission-map';
@@ -30,6 +31,7 @@ export function MissionMap({ projectKey, job, stage, onStage }: {
   readonly onStage: (stage: string) => void;
 }) {
   const { t } = useI18n();
+  const say = useStatusLabel();
   const push = useHeroPush();
   const base = `/p/${encodeURIComponent(projectKey)}`;
   const generatedProjectId = job.generatedProjectId ?? null;
@@ -82,9 +84,9 @@ export function MissionMap({ projectKey, job, stage, onStage }: {
     stages,
     expanded,
     name: (id) => t(`map.station.${id}`),
-    stageLabel: (item) => t('map.stageLabel', { stage: item.id, state: item.state }),
+    stageLabel: (item) => t('map.stageLabel', { stage: item.id, state: say(item.state) }),
     toggleLabel: (open) => t(open ? 'map.stages.hide' : 'map.stages.show'),
-  }), [expanded, stages, stations, t]);
+  }), [expanded, say, stages, stations, t]);
 
   const stationById = new Map(stations.map((item) => [item.id, item]));
   const selectedStation = selected && !selected.startsWith('stage:') ? stationById.get(selected as MapStationId) : undefined;
@@ -119,7 +121,7 @@ export function MissionMap({ projectKey, job, stage, onStage }: {
     if (data.kind === 'stage') {
       return (
         <>
-          <strong>{t('map.stageLabel', { stage: data.stage.id, state: data.stage.state })}</strong>
+          <strong>{t('map.stageLabel', { stage: data.stage.id, state: say(data.stage.state) })}</strong>
           <span className="tip-hint">{t('map.stageHint')}</span>
         </>
       );

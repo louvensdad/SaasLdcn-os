@@ -3,22 +3,30 @@
 import { Fragment, type ReactNode } from 'react';
 
 import { useI18n } from '@/lib/i18n/i18n';
+import { statusLabel } from '@/lib/status';
 
 import { Illustration, type IllustrationName } from './illustration';
 import { Signal, type Family } from './signal';
 
-/** Status badge: glyph + the exact backend value + optional plain reading. */
+/**
+ * Status badge: glyph + what the state means, in the page's language. The backend's own value is not
+ * lost -- it rides along as the badge's title and as a technical detail the developer switch reveals
+ * (REDESIGN.md §3.1: keep the state in the contract, translate only its presentation).
+ */
 export function Badge({ value, family, human, live }: {
   readonly value: string;
   readonly family: Family;
+  /** A reading this screen wants instead of the vocabulary's own phrase. */
   readonly human?: string;
   readonly live?: boolean;
 }) {
+  const { tDynamic } = useI18n();
+  const label = human ?? statusLabel(value, tDynamic);
   return (
-    <span className={`badge b-${family}`}>
-      <Signal family={family} label={value} live={live} />
-      <span>{value}</span>
-      {human ? <span className="human">{human}</span> : null}
+    <span className={`badge b-${family}`} title={value}>
+      <Signal family={family} label={label} live={live} />
+      <span>{label}</span>
+      <span className="code">{value}</span>
     </span>
   );
 }

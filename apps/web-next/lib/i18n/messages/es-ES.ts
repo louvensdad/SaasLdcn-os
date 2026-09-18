@@ -9,6 +9,7 @@ import settings from './es-ES.settings';
 import learn from './es-ES.learn';
 import project from './es-ES.project';
 import work from './es-ES.work';
+import status from './es-ES.status';
 import v2 from './es-ES.v2';
 import type { Messages } from './index';
 
@@ -24,6 +25,7 @@ const esES: Messages = {
   ...learn,
   ...project,
   ...work,
+  ...status,
   ...v2,
   'app.name': 'LDCN OS',
   'common.loading': 'Cargando…',
@@ -33,7 +35,7 @@ const esES: Messages = {
   'common.yes': 'sí',
   'common.no': 'no',
   'common.notYet': 'todavía no',
-  'common.gap': 'brecha {id}',
+  'common.gap': 'El backend no entrega esto',
   'common.currentApp': 'abre la app actual',
   'common.skip': 'Saltar al contenido',
 

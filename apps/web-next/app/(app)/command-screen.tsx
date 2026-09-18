@@ -11,6 +11,7 @@ import { Badge, Kv, Live, Skeleton, Source, StateBlock } from '@/components/ui';
 import { api } from '@/lib/api/api';
 import { formatCount, formatTime, formatUsd, formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
+import { useStatusLabel } from '@/lib/i18n/status-label';
 import { currentAppUrl } from '@/lib/routes';
 import { rememberedWorkspace } from '@/lib/session/session';
 import { familyFor, isRunning } from '@/lib/status';
@@ -25,6 +26,7 @@ import { useWork } from '@/lib/work/use-work';
  */
 export function CommandScreen() {
   const { t, locale } = useI18n();
+  const say = useStatusLabel();
   const { jobs, decisions, projects, unreadable, pending } = useWork();
   const llm = useQuery({ queryKey: ['llm-active'], queryFn: api.llmActive });
   const usage = useQuery({ queryKey: ['llm-usage'], queryFn: api.llmUsage });
@@ -49,7 +51,7 @@ export function CommandScreen() {
       ? t('command.headline.waiting', { count: decisions.length })
       : t('command.headline.idle');
   const lede = running
-    ? t('command.lede.running', { stage: running.currentStage })
+    ? t('command.lede.running', { stage: say(running.currentStage) })
     : decisions.length > 0
       ? t('command.lede.waiting')
       : t('command.lede.idle');
@@ -122,7 +124,7 @@ export function CommandScreen() {
                   {next ? (
                     <Link className="mboard-next is-hand" href={next.href}>
                       <Signal family="hand" />
-                      <span>{t('command.board.decide', { state: next.state })}</span>
+                      <span>{t('command.board.decide', { state: say(next.state) })}</span>
                     </Link>
                   ) : (
                     <span className="mboard-next"><Signal family="idle" /><span>{t('command.board.nothing')}</span></span>
@@ -164,12 +166,12 @@ export function CommandScreen() {
             <div className="panel-body stack">
               <div className="row" style={{ gap: 10 }}>
                 <strong>{running.projectName}</strong>
-                <span className="mono muted" style={{ fontSize: 11 }}>{running.id}</span>
+                <span className="src">{running.id}</span>
               </div>
               <div className="meter" aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, running.progress))}%` }} /></div>
               <Kv
                 pairs={[
-                  [t('command.mission.stage'), <span className="mono" key="stage">{running.currentStage}</span>],
+                  [t('command.mission.stage'), <span key="stage">{say(running.currentStage)}<span className="src">{running.currentStage}</span></span>],
                   [t('command.mission.progress'), `${running.progress}%`],
                   [t('command.mission.started'), formatWhen(running.startedAt, locale)],
                   [t('command.mission.provider'), running.providerLabel || '—'],
@@ -194,7 +196,7 @@ export function CommandScreen() {
                   <span className="mono num">{formatTime(job.finishedAt ? Date.parse(job.finishedAt) : 0, locale)}</span>
                   <Signal family={familyFor(job.status)} label={job.status} />
                   <span className="grow">
-                    <b>{job.status === 'READY' ? t('command.evidence.ready') : t('command.evidence.failed', { stage: job.currentStage })}</b>
+                    <b>{job.status === 'READY' ? t('command.evidence.ready') : t('command.evidence.failed', { stage: say(job.currentStage) })}</b>
                     <span className="meta">{job.projectName} · {t('command.evidence.build', { status: job.buildStatus })}</span>
                   </span>
                 </li>
@@ -252,6 +254,7 @@ export function CommandScreen() {
 /** One decision in the queue: what waits, on which project, since when — and the screen that takes it. */
 function QueueItem({ decision }: { readonly decision: Decision }) {
   const { t, tDynamic, locale } = useI18n();
+  const say = useStatusLabel();
   const title = tDynamic(`inbox.rule.${decision.rule}`, { project: decision.project });
   const body = (
     <>
@@ -262,7 +265,7 @@ function QueueItem({ decision }: { readonly decision: Decision }) {
           <span className="meta num">{formatWhen(decision.at, locale)}</span>
         </span>
         <span className="qitem-title">{title}</span>
-        <span className="meta mono">{decision.state}</span>
+        <span className="meta">{say(decision.state)}<span className="src">{decision.state}</span></span>
       </span>
     </>
   );

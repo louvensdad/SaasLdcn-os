@@ -25,3 +25,37 @@ export function familyFor(value: string | null | undefined): Family {
 export function isRunning(status: string): boolean {
   return familyFor(status) === 'pulse';
 }
+
+/* The part of the system a composed state names, and what is being done to it: BACKEND_GENERATING,
+   PACKAGE_CREATING, VALIDATION_FAILED. The suffix list is the same one familyFor reasons about. */
+const DOING = /_(GENERATING|VALIDATING|REVALIDATING|RUNNING|CREATING|PLANNING|REPAIRING|FAILED|COMPLETED|BLOCKED)$/;
+
+/**
+ * The sentence a person reads for a backend state. REDESIGN.md 3.1: the state stays exactly as it is in
+ * the contract with the service, and only its presentation is translated -- Badge still carries the code
+ * in the technical detail, so nothing is hidden, it just stops being the headline.
+ *
+ * Three steps, in order: the state's own phrase; a phrase composed from the part and the action when the
+ * backend built the code that way; and, for a code nobody has mapped yet, the words of the code itself
+ * rather than a SCREAMING_SNAKE token in the middle of a sentence. The audit fails on an unmapped code
+ * that a screen actually renders, so step three stays a safety net and never a habit.
+ */
+export function statusLabel(value: string | null | undefined, tDynamic: (key: string, vars?: Record<string, string | number>) => string): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const code = raw.toUpperCase().replace(/[\s-]+/g, '_');
+  const own = `status.${code}`;
+  const phrase = tDynamic(own);
+  if (phrase !== own) return phrase;
+  const doing = code.match(DOING);
+  if (doing) {
+    const partKey = `status.part.${code.slice(0, code.length - doing[0].length)}`;
+    const doingKey = `status.doing.${doing[1]}`;
+    const part = tDynamic(partKey);
+    if (part !== partKey) {
+      const sentence = tDynamic(doingKey, { part });
+      if (sentence !== doingKey) return sentence;
+    }
+  }
+  return code.toLowerCase().split('_').filter(Boolean).join(' ').replace(/^./, (first) => first.toUpperCase());
+}

@@ -87,13 +87,17 @@ html:not([data-dev="on"]) .dev-only { display: none !important; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------------------------------------------------------------- badges & chips */
+/* A badge reads as a sentence, not as a token: the redesign's 11px label, sentence case, in the
+   interface face. The backend's own code sits beside it as a technical detail. */
 .badge {
-  display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px 0 6px;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 4px 9px 4px 7px;
   border-radius: 6px; border: 0; background: var(--surface-3); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong);
-  font: 560 10.5px/1 var(--font-mono); font-stretch: var(--mono-stretch); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
+  font: 600 11px/1.45 var(--font-ui); white-space: nowrap;
 }
 .badge .sig { width: 12px; height: 12px; }
-.badge .human { font: 500 12px/1 var(--font-ui); text-transform: none; letter-spacing: 0; color: var(--ink-2); }
+.badge .human { font: 500 12px/1 var(--font-ui); color: var(--ink-2); }
+.badge .code { font: 450 10px/1.45 var(--font-mono); letter-spacing: 0; color: var(--ink-3); }
+html:not([data-dev="on"]) .badge .code { display: none; }
 .b-proof { background: var(--proof-soft); box-shadow: inset 0 0 0 1px var(--proof-line); }
 .b-pulse { background: var(--pulse-soft); box-shadow: inset 0 0 0 1px var(--pulse-line); }
 .b-caution { background: var(--caution-soft); box-shadow: inset 0 0 0 1px var(--caution-line); }
@@ -101,7 +105,7 @@ html:not([data-dev="on"]) .dev-only { display: none !important; }
 .b-hand { background: var(--hand-soft); box-shadow: inset 0 0 0 1px var(--hand-line); }
 .b-idle, .b-na, .b-unknown { background: transparent; box-shadow: none; outline: 1px dashed var(--line-strong); outline-offset: -1px; color: var(--ink-2); }
 .b-stop { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink-2); }
-.badge-lg { height: 30px; padding: 0 12px 0 9px; font-size: 12px; border-radius: 8px; }
+.badge-lg { min-height: 30px; padding: 6px 13px 6px 10px; font-size: 12px; border-radius: 8px; }
 .badge-lg .sig { width: 14px; height: 14px; }
 
 .chip {
@@ -890,11 +894,11 @@ a.chip-link:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-st
   .ev-type { grid-column: 2; grid-row: 1; }
   .ev-time { grid-column: 3; grid-row: 1; }
   .ev-msg, .ev-meta { grid-column: 2 / -1; }
-  /* A long status word (META_FACTORY_RUNNING) must wrap rather than push the page sideways. */
-  .badge { height: auto; min-height: 22px; padding-block: 3px; white-space: normal; }
+  /* A phrase still wraps rather than pushing the page sideways. */
+  .badge { height: auto; min-height: 22px; white-space: normal; }
   .badge > span { overflow-wrap: anywhere; }
   /* Except inside a table, which scrolls on its own: there the word stays whole and the table gets wider. */
-  .tbl .badge { height: 22px; white-space: nowrap; padding-block: 0; }
+  .tbl .badge { white-space: nowrap; }
   .tbl .badge > span { overflow-wrap: normal; }
   .topo { height: auto; display: grid; gap: 8px; padding: 12px; background-image: none; }
   .topo svg.edges { display: none; }

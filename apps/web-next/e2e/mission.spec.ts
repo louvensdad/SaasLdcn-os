@@ -109,7 +109,7 @@ test('selecting a station opens its inspector, and selecting a stage drives the 
   await inspector.getByRole('button', { name: 'Close' }).click();
   await expect(inspector).toHaveCount(0);
 
-  await map.getByRole('button', { name: 'Stage contracts: success' }).click();
+  await map.getByRole('button', { name: 'Stage contracts: Succeeded' }).click();
   await expect(page.getByText('Stage contracts', { exact: true })).toBeVisible();
 });
 

@@ -15,11 +15,11 @@ test('the runtime chain is the gates a Test Room session recorded, then the live
   await expect(chain.getByRole('button', { name: 'Build: observed' })).toBeVisible();
   await expect(chain.getByRole('button', { name: 'API: failed' })).toBeVisible();
   // The health gate never ran because the API gate failed first: not executed is not proof.
-  await expect(chain.getByRole('button', { name: 'Health: not_executed', exact: true })).toBeVisible();
+  await expect(chain.getByRole('button', { name: 'Health: Not run', exact: true })).toBeVisible();
   await expect(chain.getByRole('button', { name: 'Live preview: running' })).toBeVisible();
   await expect(chain.getByRole('button', { name: 'Browser console: Errors: 1' })).toBeVisible();
   // What the backend does not report is named on the drawing instead of being drawn as an empty success.
-  await expect(chain).toContainText('Not reported by the backend (gap G6).');
+  await expect(chain).toContainText('Not reported by the backend.');
 });
 
 test('a node is inspected from the keyboard and the inspector closes with Escape', async ({ page }) => {

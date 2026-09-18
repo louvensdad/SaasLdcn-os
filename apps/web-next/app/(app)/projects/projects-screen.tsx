@@ -8,6 +8,7 @@ import { Icon, Signal } from '@/components/signal';
 import { Badge, GapChip, Skeleton, Source, StateBlock } from '@/components/ui';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
+import { useStatusLabel } from '@/lib/i18n/status-label';
 import { familyFor, isRunning } from '@/lib/status';
 import { projectLine } from '@/lib/work/mission-line';
 import { useWork } from '@/lib/work/use-work';
@@ -15,6 +16,7 @@ import { useWork } from '@/lib/work/use-work';
 /** Everything being built, one row per project with its mission line; a row opens onto the missions behind it. */
 export function ProjectsScreen() {
   const { t, locale } = useI18n();
+  const say = useStatusLabel();
   const { projects, unreadable, pending } = useWork();
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
 
@@ -103,7 +105,7 @@ export function ProjectsScreen() {
                                     <Signal family={familyFor(job.status)} live={!job.archived && isRunning(job.status)} label={job.status} />
                                     <span>
                                       <Link className="mono" href={`/p/${encodeURIComponent(row.key)}/missions/${encodeURIComponent(job.id)}`}>{job.status}</Link>
-                                      <span className="meta"> · {t('project.missions.stage', { stage: job.currentStage })} · {t('command.evidence.build', { status: job.buildStatus })}</span>
+                                      <span className="meta"> · {t('project.missions.stage', { stage: say(job.currentStage) })} · {t('command.evidence.build', { status: say(job.buildStatus) })}</span>
                                     </span>
                                     <span className="meta nowrap">{formatWhen(job.finishedAt ?? job.startedAt, locale)}</span>
                                   </li>

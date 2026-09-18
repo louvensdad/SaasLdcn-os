@@ -9,6 +9,7 @@ import { Signal } from '@/components/signal';
 import { Badge, Kv, PageState, Skeleton, Source, StateBlock } from '@/components/ui';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
+import { useStatusLabel } from '@/lib/i18n/status-label';
 import { projectStations, type StationId } from '@/lib/project/stations';
 import { useProject } from '@/lib/project/use-project';
 import { familyFor } from '@/lib/status';
@@ -16,6 +17,7 @@ import { deriveDecisions } from '@/lib/work/decisions';
 
 export function CockpitScreen({ projectKey }: { readonly projectKey: string }) {
   const { t, locale } = useI18n();
+  const say = useStatusLabel();
   const project = useProject(projectKey);
   const { room, abstract, missions, latest, running, kernel, delivery, generatedProjectId } = project;
   const base = `/p/${encodeURIComponent(projectKey)}`;
@@ -63,7 +65,7 @@ export function CockpitScreen({ projectKey }: { readonly projectKey: string }) {
           </div>
           <h1 className="display" aria-busy={project.naming || undefined}>{project.name}</h1>
           {abstract.data?.abstract_state ? (
-            <p className="lede">{t('project.abstract', { state: abstract.data.abstract_state })}</p>
+            <p className="lede">{t('project.abstract', { state: say(abstract.data.abstract_state) })}</p>
           ) : null}
         </div>
         <div className="btn-row">
@@ -138,7 +140,7 @@ export function CockpitScreen({ projectKey }: { readonly projectKey: string }) {
                   <span className="li-title mono">{mission.id}</span>
                   <span className="meta num">{formatWhen(mission.finishedAt ?? mission.startedAt, locale)}</span>
                   <span className="li-sub">
-                    <span className="mono">{mission.status}</span> · {t('project.missions.stage', { stage: mission.currentStage })} · {t('command.evidence.build', { status: mission.buildStatus })}
+                    <span>{say(mission.status)}</span> · {t('project.missions.stage', { stage: say(mission.currentStage) })} · {t('command.evidence.build', { status: say(mission.buildStatus) })}
                   </span>
                 </Link>
               ))}

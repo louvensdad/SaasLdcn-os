@@ -2,6 +2,7 @@
 
 import type { Family } from '@/components/signal';
 import { useI18n } from '@/lib/i18n/i18n';
+import { useStatusLabel } from '@/lib/i18n/status-label';
 import type { LinePoint } from '@/lib/work/mission-line';
 
 /**
@@ -16,6 +17,7 @@ export function MissionLine({ points, label, gap = 30, r = 5.5 }: {
   readonly r?: number;
 }) {
   const { t } = useI18n();
+  const say = useStatusLabel();
   const pad = r + 3;
   const split = 10;
   const xs = points.map((_, i) => pad + i * gap + (i > 1 ? split : 0));
@@ -25,7 +27,7 @@ export function MissionLine({ points, label, gap = 30, r = 5.5 }: {
   const height = r * 2 + 8;
   const y = height / 2;
   const segment = (a: Family, b: Family) => (a === 'idle' || b === 'idle' || a === 'na' || b === 'na' || a === 'unknown' || b === 'unknown' ? 'idle' : b);
-  const summary = points.map((point) => `${t(`line.point.${point.id}`)} ${point.state}`).join(' · ');
+  const summary = points.map((point) => `${t(`line.point.${point.id}`)} ${say(point.state)}`).join(' · ');
 
   return (
     <svg className="mline" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${label}: ${summary}`}>
@@ -35,7 +37,7 @@ export function MissionLine({ points, label, gap = 30, r = 5.5 }: {
       <path className="ml-seg ml-tail" d={`M${last + r + 3} ${y}H${width - 2}`} />
       {points.map((point, i) => {
         const x = xs[i]!;
-        const title = <title>{`${t(`line.point.${point.id}`)}: ${point.state}`}</title>;
+        const title = <title>{`${t(`line.point.${point.id}`)}: ${say(point.state)}`}</title>;
         if (point.family === 'hand') {
           return <path key={point.id} className="ml-dot f-hand" d={`M${x} ${y - r - 1.5}L${x + r + 1.5} ${y}L${x} ${y + r + 1.5}L${x - r - 1.5} ${y}z`}>{title}</path>;
         }

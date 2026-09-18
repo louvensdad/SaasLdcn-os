@@ -10,6 +10,7 @@ import settings from './en-US.settings';
 import learn from './en-US.learn';
 import project from './en-US.project';
 import work from './en-US.work';
+import status from './en-US.status';
 import v2 from './en-US.v2';
 
 const enUS = {
@@ -24,6 +25,7 @@ const enUS = {
   ...learn,
   ...project,
   ...work,
+  ...status,
   ...v2,
   'app.name': 'LDCN OS',
   'common.loading': 'Loading…',
@@ -33,7 +35,7 @@ const enUS = {
   'common.yes': 'yes',
   'common.no': 'no',
   'common.notYet': 'not yet',
-  'common.gap': 'gap {id}',
+  'common.gap': 'The backend does not serve this',
   'common.currentApp': 'opens the current app',
   'common.skip': 'Skip to content',
 

@@ -90,7 +90,7 @@ test('the package reports what it contains before it is downloaded', async ({ pa
   await page.goto(DELIVERY);
   await page.getByRole('button', { name: 'Prepare the package' }).click();
   await expect(page.getByText('214')).toBeVisible();
-  await expect(page.getByText('clean')).toBeVisible();
+  await expect(page.getByText('clean').first()).toBeVisible();
 });
 
 test('the export form sends the fields the backend declares', async ({ page }) => {

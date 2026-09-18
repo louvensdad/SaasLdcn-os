@@ -47,15 +47,28 @@ test('the signal strip keeps each signal whole: none runs over the next, and wha
   }
 });
 
+test('a state reads as a sentence, and the backend word behind it is still reachable', async ({ page }) => {
+  await page.goto('/');
+  // BACKEND_GENERATING is composed from a part and an action; PROMPT_READY has its own phrase.
+  const generating = page.locator('.badge', { hasText: 'Generating the backend' }).first();
+  await expect(generating).toBeVisible();
+  await expect(generating).toHaveAttribute('title', 'BACKEND_GENERATING');
+  await expect(page.getByText('BACKEND_GENERATING').first()).toBeHidden();
+  await expect(page.locator('.badge', { hasText: 'PromptMaster ready for you' }).first()).toBeVisible();
+  // Turning on developer details puts the backend's own word back on the page, next to the sentence.
+  await page.getByRole('button', { name: /^Developer details/ }).click();
+  await expect(generating.locator('.code')).toHaveText('BACKEND_GENERATING');
+});
+
 test('the missions board draws one line per project and links the decision that waits on it', async ({ page }) => {
   await page.goto('/');
   const board = page.getByRole('list', { name: 'Missions' });
   const nova = board.getByRole('listitem').filter({ hasText: 'Nova Commerce' });
-  await expect(nova.getByRole('img', { name: /Nova Commerce: .*Generation BACKEND_GENERATING/ })).toBeVisible();
+  await expect(nova.getByRole('img', { name: /Nova Commerce: .*Generation Generating the backend/ })).toBeVisible();
   const helios = board.getByRole('listitem').filter({ hasText: 'Helios Billing' });
-  await expect(helios.getByRole('link', { name: 'Decide · PROMPT_READY' })).toHaveAttribute('href', '/p/room_88e3a1f5602c/define/requirements');
+  await expect(helios.getByRole('link', { name: 'Decide · PromptMaster ready for you' })).toHaveAttribute('href', '/p/room_88e3a1f5602c/define/requirements');
   // The list cannot read quality, certification or delivery without a request per project: it says so.
-  await expect(page.getByText('a list cannot read them without one request per project (gap G5)')).toBeVisible();
+  await expect(page.getByText('a list cannot read them without one request per project')).toBeVisible();
 });
 
 test('the bar carries the decision count and the provider that is answering', async ({ page }) => {

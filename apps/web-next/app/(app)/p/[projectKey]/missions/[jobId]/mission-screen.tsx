@@ -14,6 +14,7 @@ import { api } from '@/lib/api/api';
 import { testRoomHref } from '@/lib/evidence/test-room';
 import { formatWhen } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/i18n';
+import { useStatusLabel } from '@/lib/i18n/status-label';
 import { STAGE_FAMILY } from '@/lib/mission/mission-map';
 import { useMission } from '@/lib/mission/use-mission';
 import { missionQuery } from '@/lib/project/mission-scope';
@@ -126,6 +127,7 @@ function MissionProof({ base, job }: { readonly base: string; readonly job: Resi
 
 export function MissionScreen({ projectKey, jobId }: { readonly projectKey: string; readonly jobId: string }) {
   const { t, tDynamic, locale } = useI18n();
+  const say = useStatusLabel();
   const { job, events, state, lastEventId, timeoutMessage, isPending, isError } = useMission(jobId);
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<ConsoleFilter>('all');
@@ -213,7 +215,7 @@ export function MissionScreen({ projectKey, jobId }: { readonly projectKey: stri
             <Live state={liveState}>{liveLabel}</Live>
           </div>
           <h1 className="display">{job.projectName}</h1>
-          <p className="lede">{t('mission.lede', { stage: job.currentStage })}</p>
+          <p className="lede">{t('mission.lede', { stage: say(job.currentStage) })}</p>
         </div>
         <div className="btn-row">
           {isRunning(job.status) ? (

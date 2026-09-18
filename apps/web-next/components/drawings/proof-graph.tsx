@@ -10,6 +10,7 @@ import {
   layoutProofGraph, PILLARS, type PillarId, type ProofEvidence, type ProofNodeData, type ProofPillar, type ProofRelease, type ProofVerdict,
 } from '@/lib/evidence/proof-graph';
 import { useI18n } from '@/lib/i18n/i18n';
+import { useStatusLabel } from '@/lib/i18n/status-label';
 
 import { Inspector } from './inspector';
 
@@ -24,6 +25,7 @@ export function ProofGraph({ pillars, evidence, verdict, release, fitKey, testRo
   readonly testRoomHref?: string | null;
 }) {
   const { t } = useI18n();
+  const say = useStatusLabel();
   const push = useHeroPush();
   const [selected, setSelected] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<PillarId>>(new Set());
@@ -35,10 +37,10 @@ export function ProofGraph({ pillars, evidence, verdict, release, fitKey, testRo
       evidence: (item) => `${item.label}: ${item.state}`,
       pillar: (item) => `${t(`proofmap.pillar.${item.id}`)}: ${item.state}`,
       toggle: (item, open) => t(open ? 'proofmap.fold' : 'proofmap.unfold', { pillar: t(`proofmap.pillar.${item.id}`) }),
-      verdict: `${t('proofmap.verdict')}: ${verdict.phase}`,
-      release: `${t('proofmap.release')}: ${release.state}`,
+      verdict: `${t('proofmap.verdict')}: ${say(verdict.phase)}`,
+      release: `${t('proofmap.release')}: ${say(release.state)}`,
     },
-  }), [evidence, expanded, pillars, release, t, verdict]);
+  }), [evidence, expanded, pillars, release, say, t, verdict]);
 
   const toggle = (id: string) => {
     const pillar = id.replace('pillar:', '') as PillarId;

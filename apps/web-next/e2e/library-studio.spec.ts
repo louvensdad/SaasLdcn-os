@@ -17,7 +17,7 @@ test('the library universe sizes each body by what its catalog serves and draws 
   await expect(universe.getByRole('link', { name: /^Technology catalog: \d+$/ })).toBeVisible();
   await expect(universe.getByRole('link', { name: /^Marketplace: \d+$/ })).toBeVisible();
   // Research has no read endpoint: it is a named gap, never a zero.
-  await expect(universe.getByRole('link', { name: 'Research intelligence: no read endpoint (gap G3)' })).toBeVisible();
+  await expect(universe.getByRole('link', { name: 'Research intelligence: no read endpoint' })).toBeVisible();
   await universe.getByRole('link', { name: /^Certification Center: / }).click();
   await expect(page).toHaveURL(/\/library\/certification$/);
 });
@@ -58,7 +58,7 @@ test('the technology catalog switches source with the tab, and names each one', 
 
 test('a skill says what it is allowed to do, in the words the backend uses', async ({ page }) => {
   await page.goto('/library/templates');
-  await expect(page.getByText('read_only', { exact: true })).toBeVisible();
+  await expect(page.getByText('Read only', { exact: true })).toBeVisible();
   await expect(page.getByText('no model call', { exact: true })).toBeVisible();
   /* The second skill may call a model, so it must NOT claim it cannot. */
   const planning = page.locator('.li', { hasText: 'Plan the work' });
@@ -94,7 +94,8 @@ test('a marketplace item shows the permissions it asks for, and an install that 
 test('research says the registry has no endpoint rather than inventing sources', async ({ page }) => {
   await page.goto('/library/research');
   await expect(page.getByText('The research surface has no read endpoint')).toBeVisible();
-  await expect(page.getByText('gap G3')).toBeVisible();
+  // The limitation is stated in words; the review's own id for it is a technical detail, not the message.
+  await expect(page.getByText('The backend does not serve this').first()).toBeVisible();
   /* The trust classes are the contract's vocabulary, in the backend's own rank order. */
   await expect(page.getByText('SECURITY_AUTHORITY', { exact: true })).toBeVisible();
   await expect(page.getByText('rank 6', { exact: true })).toBeVisible();
