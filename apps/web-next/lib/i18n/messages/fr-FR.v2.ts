@@ -322,7 +322,7 @@ const v2 = {
   'architecture.blueprint.degradedNote': 'Cette version a été rédigée sans modèle : elle répète les valeurs par défaut de la plateforme au lieu de raisonner sur ce projet. Replanifier avec une clé valide la remplace.',
 
   'architecture.drawing.title': 'Le blueprint est en cours de dessin',
-  'architecture.drawing.body': 'Commencé {when}. La salle le réserve dix minutes : si celui qui le dessine cesse de répondre, la salle revient d’elle-même et dit pourquoi.',
+  'architecture.drawing.body': 'Commencé {when}. La salle le réserve trente minutes : si celui qui le dessine cesse de répondre, la salle revient d’elle-même et dit pourquoi.',
   'architecture.drawing.cancel': 'Annuler cette planification',
   'architecture.drawing.cancelling': 'Annulation…',
   'architecture.drawing.cancelFailed': 'La planification n’a pas été annulée',

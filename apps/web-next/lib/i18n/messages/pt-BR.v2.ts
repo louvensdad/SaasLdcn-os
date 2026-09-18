@@ -322,7 +322,7 @@ const v2 = {
   'architecture.blueprint.degradedNote': 'Esta versão foi escrita sem modelo, então repete os padrões da plataforma em vez de raciocinar sobre este projeto. Planejar de novo com uma chave que funcione a substitui.',
 
   'architecture.drawing.title': 'O blueprint está sendo desenhado',
-  'architecture.drawing.body': 'Começou {when}. A sala reserva isso por dez minutos: se quem está desenhando parar de responder, a sala volta sozinha e diz o motivo.',
+  'architecture.drawing.body': 'Começou {when}. A sala reserva isso por trinta minutos: se quem está desenhando parar de responder, a sala volta sozinha e diz o motivo.',
   'architecture.drawing.cancel': 'Cancelar este planejamento',
   'architecture.drawing.cancelling': 'Cancelando…',
   'architecture.drawing.cancelFailed': 'O planejamento não foi cancelado',

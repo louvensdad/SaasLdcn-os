@@ -322,7 +322,7 @@ const v2 = {
   'architecture.blueprint.degradedNote': 'This version was written without a model, so it repeats the platform defaults rather than reasoning about this project. Planning again with a working key replaces it.',
 
   'architecture.drawing.title': 'The blueprint is being drawn',
-  'architecture.drawing.body': 'Started {when}. The room reserves this for ten minutes: if whatever is drawing it stops answering, the room comes back on its own and says why.',
+  'architecture.drawing.body': 'Started {when}. The room reserves this for thirty minutes: if whatever is drawing it stops answering, the room comes back on its own and says why.',
   'architecture.drawing.cancel': 'Cancel this planning',
   'architecture.drawing.cancelling': 'Cancelling…',
   'architecture.drawing.cancelFailed': 'The planning was not cancelled',

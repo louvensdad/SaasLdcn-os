@@ -141,7 +141,7 @@ test('a room that is drawing says so and offers the way out, instead of a dead b
   await page.reload();
 
   const state = page.getByRole('status').filter({ hasText: 'The blueprint is being drawn' });
-  await expect(state).toContainText('The room reserves this for ten minutes');
+  await expect(state).toContainText('The room reserves this for thirty minutes');
   // The planning button is not the way out -- this is.
   await expect(page.getByRole('button', { name: 'Planning…' })).toBeDisabled();
   await state.getByRole('button', { name: 'Cancel this planning' }).click();
